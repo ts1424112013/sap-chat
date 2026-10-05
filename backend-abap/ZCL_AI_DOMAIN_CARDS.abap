@@ -118,17 +118,35 @@ CLASS zcl_ai_domain_cards IMPLEMENTATION.
         |【run_sql 写法规范(必须逐条遵守, 违反会被后端拒绝)】\n| &&
         |1. 只允许一条 SELECT; INTO/UP TO/PACKAGE SIZE 由系统自动添加,\n| &&
         |   语句中出现这些子句会被直接拒绝。\n| &&
-        |2. 支持: 多表 JOIN(最多 8 张)/GROUP BY/HAVING/聚合(COUNT/SUM/AVG/\n| &&
+        |2. 推荐统一使用以下 SAP Open SQL 写法: 表使用别名(如 VBAK AS H),\n| &&
+        |   字段使用别名加波浪号(如 H~KUNNR), 多表使用显式 JOIN ... ON。\n| &&
+        |   JOIN 优先写 LEFT OUTER JOIN/INNER JOIN, 不要混用隐式逗号连接。\n| &&
+        |3. 支持: 多表 JOIN(最多 8 张)/GROUP BY/HAVING/聚合(COUNT/SUM/AVG/\n| &&
         |   MIN/MAX)/CASE WHEN/ORDER BY。当前系统 7.50: 不支持 FROM 子查询、\n| &&
         |   不支持 WITH(CTE)和窗口函数, 不要尝试。\n| &&
-        |3. 字符串常量用单引号(如 WHERE MTART = 'FERT'); 日期字段是 YYYYMMDD\n| &&
+        |4. SELECT 中的非聚合字段必须全部出现在 GROUP BY。聚合字段使用英文\n| &&
+        |   ASCII 别名, 只用字母/数字/下划线(如 ORDER_CNT、NETWR_TOTAL),\n| &&
+        |   不要使用中文别名。不要使用 SELECT *, 只取回答问题所需字段。\n| &&
+        |5. ORDER BY 优先引用 SELECT 中的英文别名, 例如 ORDER BY ORDER_CNT\n| &&
+        |   DESCENDING。COUNT(DISTINCT 字段) 仅在确实需要去重计数时使用。\n| &&
+        |6. 字符串常量用单引号(如 WHERE MTART = 'FERT'); 日期字段是 YYYYMMDD\n| &&
         |   格式的字符串(如 ERDAT >= '20260101')。\n| &&
-        |4. 大表(MSEG/BSEG/ACDOCA/MATDOC/VBFA/CDPOS)取明细必须带 WHERE 条件;\n| &&
+        |7. 大表(MSEG/BSEG/ACDOCA/MATDOC/VBFA/CDPOS)取明细必须带 WHERE 条件;\n| &&
         |   统计类问题优先 GROUP BY, 不要把几千行明细拉回来。\n| &&
-        |5. 金额/数量列必须连同货币/单位列一起查询或分组, 禁止跨币种/跨单位加总。\n| &&
-        |6. 单次请求最多执行 5 次 run_sql(含修正重试); 语句编译/执行报错时\n| &&
+        |8. 金额/数量列必须连同货币/单位列一起查询或分组, 禁止跨币种/跨单位加总。\n| &&
+        |9. 单次请求最多执行 5 次 run_sql(含修正重试); 语句编译/执行报错时\n| &&
         |   按报错信息修正后重试, 同一错误不要重试超过一次。\n| &&
-        |7. 表权限不足或表属于受保护表时, 如实告知用户, 不要换表绕过。\n| &&
+        |10. 表权限不足或表属于受保护表时, 如实告知用户, 不要换表绕过。\n| &&
+        |\n| &&
+        |【推荐 SQL 模板】\n| &&
+        |SELECT H~KUNNR AS CUSTOMER_ID, C~NAME1 AS CUSTOMER_NAME,\n| &&
+        |       COUNT( DISTINCT H~VBELN ) AS ORDER_CNT,\n| &&
+        |       SUM( H~NETWR ) AS NETWR_TOTAL\n| &&
+        |  FROM VBAK AS H\n| &&
+        |  LEFT OUTER JOIN KNA1 AS C ON H~KUNNR = C~KUNNR\n| &&
+        |  WHERE H~ERDAT >= '20260101'\n| &&
+        |  GROUP BY H~KUNNR, C~NAME1\n| &&
+        |  ORDER BY ORDER_CNT DESCENDING\n| &&
         |\n| &&
         |【常用业务表地图(写 SQL 前仍应 describe_table 确认字段)】\n| &&
         |- MM 采购: EKKO(采购订单头)/EKPO(行项目)/EBAN(采购申请)\n| &&

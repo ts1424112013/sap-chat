@@ -183,7 +183,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           lv_t1       TYPE i,
           " V1.3.0: 本次运行积累的数据集与结构化分析结果
           lt_datasets TYPE zcl_ai_data_analysis_service=>tt_dataset,
-          ls_analysis TYPE zcl_ai_data_analysis_service=>ty_analysis.
+          ls_analysis TYPE zcl_ai_data_analysis_service=>ty_analysis,
+          " SQL 规范: 本次请求中成功 describe 过的表, run_sql 只能使用这些表
+          lt_described_tabs TYPE zcl_ai_sql_guard=>tt_names.
 
     CLEAR: es_result, lt_trace.
     es_result-session_id = iv_session_id.
@@ -549,37 +551,69 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                             label  = lv_sql_label
                             status = 'REJECTED' ) TO lt_trace.
           ELSE.
-            DATA(ls_run) = zcl_ai_sql_executor=>run_sql(
-                             iv_sql        = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'sql' )
-                             iv_purpose    = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'purpose' )
-                             iv_session_id = iv_session_id ).
-
-            " 回填裁剪: 副本只留前 200 行给模型; 全量数据集进前端通道
-            DATA(ls_feed_ds) = ls_run-dataset.
-            IF lines( ls_feed_ds-rows ) > zcl_ai_sql_executor=>gc_llm_rows.
-              DELETE ls_feed_ds-rows FROM zcl_ai_sql_executor=>gc_llm_rows + 1.
-              ls_feed_ds-total_rows  = zcl_ai_sql_executor=>gc_llm_rows.
-              ls_feed_ds-truncated   = abap_true.
-              ls_feed_ds-error       = |共 { ls_run-dataset-total_rows } 行, 已仅回填前 { zcl_ai_sql_executor=>gc_llm_rows } 行明细; 如需整体结论请改用 GROUP BY 汇总|.
+            " 规范校验: 先确认本 SQL 涉及的每张表都成功 describe 过,
+            " 避免模型凭表地图猜字段; SQL_EXECUTOR 后续仍会再次做完整安全校验。
+            DATA: lv_pre_sql   TYPE string,
+                  lv_pre_clean TYPE string,
+                  lt_pre_tabs  TYPE zcl_ai_sql_guard=>tt_names,
+                  lv_pre_error  TYPE string.
+            lv_pre_sql = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'sql' ).
+            zcl_ai_sql_guard=>validate_sql(
+              EXPORTING iv_sql        = lv_pre_sql
+              IMPORTING ev_sql_clean  = lv_pre_clean
+                        et_tables     = lt_pre_tabs
+                        ev_error      = lv_pre_error ).
+            IF lv_pre_error IS INITIAL.
+              LOOP AT lt_pre_tabs INTO DATA(lv_pre_tab).
+                READ TABLE lt_described_tabs TRANSPORTING NO FIELDS
+                  WITH KEY table_line = lv_pre_tab.
+                IF sy-subrc <> 0.
+                  lv_pre_error = |执行 run_sql 前必须先 describe_table 确认表 { lv_pre_tab } 的字段|.
+                  EXIT.
+                ENDIF.
+              ENDLOOP.
             ENDIF.
-            lv_sql_json = '{"ok":' && COND #( WHEN ls_run-status = 'OK' THEN 'true' ELSE 'false' ) &&
-                          ',"dataset":' && zcl_ai_data_analysis_service=>build_datasets_json( VALUE #( ( ls_feed_ds ) ) ) && '}'.
 
-            lv_sql_label = COND #( WHEN ls_run-status = 'OK'
-                                   THEN |SQL 查询: { ls_run-dataset-name }, { ls_run-dataset-total_rows } 行|
-                                   ELSE |SQL 查询失败: { ls_run-dataset-error }| ).
+            IF lv_pre_error IS NOT INITIAL.
+              lv_sql_json = '{"ok":false,"error":"' && lv_pre_error && '"}'.
+              lv_sql_label = |run_sql 被拒绝: { lv_pre_error }|.
+              APPEND VALUE #( phase  = 'EXECUTING'
+                              tool   = ls_out-tool
+                              label  = lv_sql_label
+                              status = 'REJECTED' ) TO lt_trace.
+            ELSE.
+              DATA(ls_run) = zcl_ai_sql_executor=>run_sql(
+                               iv_sql        = lv_pre_sql
+                               iv_purpose    = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'purpose' )
+                               iv_session_id = iv_session_id ).
 
-            IF ls_run-status = 'OK'.
-              APPEND ls_run-dataset TO lt_datasets.
+              " 回填裁剪: 副本只留前 200 行给模型; 全量数据集进前端通道
+              DATA(ls_feed_ds) = ls_run-dataset.
+              IF lines( ls_feed_ds-rows ) > zcl_ai_sql_executor=>gc_llm_rows.
+                DELETE ls_feed_ds-rows FROM zcl_ai_sql_executor=>gc_llm_rows + 1.
+                ls_feed_ds-total_rows  = zcl_ai_sql_executor=>gc_llm_rows.
+                ls_feed_ds-truncated   = abap_true.
+                ls_feed_ds-error       = |共 { ls_run-dataset-total_rows } 行, 已仅回填前 { zcl_ai_sql_executor=>gc_llm_rows } 行明细; 如需整体结论请改用 GROUP BY 汇总|.
+              ENDIF.
+              lv_sql_json = '{"ok":' && COND #( WHEN ls_run-status = 'OK' THEN 'true' ELSE 'false' ) &&
+                            ',"dataset":' && zcl_ai_data_analysis_service=>build_datasets_json( VALUE #( ( ls_feed_ds ) ) ) && '}'.
+
+              lv_sql_label = COND #( WHEN ls_run-status = 'OK'
+                                     THEN |SQL 查询: { ls_run-dataset-name }, { ls_run-dataset-total_rows } 行|
+                                     ELSE |SQL 查询失败: { ls_run-dataset-error }| ).
+
+              IF ls_run-status = 'OK'.
+                APPEND ls_run-dataset TO lt_datasets.
+              ENDIF.
+
+              APPEND VALUE #( phase      = 'EXECUTING'
+                              tool       = ls_out-tool
+                              label      = lv_sql_label
+                              status     = COND #( WHEN ls_run-status = 'OK' THEN 'OK' ELSE 'ERROR' )
+                              elapsed_ms = ls_run-dataset-elapsed_ms
+                              rows       = ls_run-dataset-total_rows
+                              detail     = ls_run-sql ) TO lt_trace.
             ENDIF.
-
-            APPEND VALUE #( phase      = 'EXECUTING'
-                            tool       = ls_out-tool
-                            label      = lv_sql_label
-                            status     = COND #( WHEN ls_run-status = 'OK' THEN 'OK' ELSE 'ERROR' )
-                            elapsed_ms = ls_run-dataset-elapsed_ms
-                            rows       = ls_run-dataset-total_rows
-                            detail     = ls_run-sql ) TO lt_trace.
           ENDIF.
 
         ELSE.
@@ -592,6 +626,10 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
             DATA(lv_tabname) = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'table' ).
             lv_sql_json = zcl_ai_ddic_tools=>describe_table( iv_tabname = lv_tabname ).
             lv_sql_label = |读表结构: { lv_tabname }|.
+            IF lv_sql_json CS '"ok":true'.
+              DATA(lv_desc_tab) = to_upper( lv_tabname ).
+              INSERT lv_desc_tab INTO TABLE lt_described_tabs.
+            ENDIF.
           ENDIF.
           APPEND VALUE #( phase  = 'EXECUTING'
                           tool   = ls_out-tool

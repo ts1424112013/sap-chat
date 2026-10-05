@@ -9,17 +9,20 @@ cd test-server
 npm install
 ```
 
-### 2. 配置 DeepSeek API Key
+### 2. 配置 LLM API Key（默认 GLM，OpenAI 兼容）
+
+Key 配置在 `test-server/.env`（已被 .gitignore 排除，不会提交）：
 
 ```bash
-export DEEPSEEK_API_KEY=your-key-here
+LLM_API_KEY=你的key
+LLM_MODEL=glm-5.3-flash
+LLM_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4/chat/completions
 ```
 
-或者在 `agent-loop.js` 第 10 行直接改：
-
-```javascript
-const DEEPSEEK_API_KEY = 'your-key-here';
-```
+- **Coding Plan 订阅用户必须用 `/api/coding/paas/v4` 端点**：订阅额度只在该端点生效，走 `/api/paas/v4`（按量付费）会报 `1113 余额不足`
+- glm-5.3-flash 等新一代模型是"始终思考"型：代码已自动用 `thinking:{budget:"low"}` 档（报 1210 时也会自动降级重试）
+- 也可换任意 OpenAI 兼容端点（DeepSeek/Ollama 等），改 `LLM_BASE_URL` 和 `LLM_MODEL` 即可
+- `npm start` 会自动通过 `--env-file-if-exists=.env` 加载配置
 
 ### 3. 启动 Mock 服务器
 
@@ -79,7 +82,7 @@ test-server/
   ├── mock-tools.js      ← Mock 工具（模拟库存/SQL 工具）
   └── mock-data          ← 内存数据（物料/库存/表结构）
        ↓
-  DeepSeek API (外网模型)
+  GLM API (默认 glm-4.5-flash，任意 OpenAI 兼容端点可替换)
 ```
 
 ---
@@ -133,7 +136,7 @@ test-server/
 5. 工具返回：库位 1001（5000 KG）+ 库位 1002（3000 KG）
 6. 第 3 轮：模型 `action=final`，回答 "合计 8000 KG"
 
-### 用例 2：SQL 分析（工具链：search_tables → describe_table → run_sql）
+### 用例 2：SQL 分析（工具链：describe_table → run_sql）
 
 ```json
 {
@@ -143,13 +146,11 @@ test-server/
 
 **预期流程**：
 1. 意图路由 → DATA 域（领域卡里有 SQL 规范）
-2. 第 1 轮：模型调用 `search_tables`，关键词 "销售订单"
-3. 工具返回：VBAK（销售订单头）
-4. 第 2 轮：模型调用 `describe_table`，表 VBAK
-5. 工具返回：字段列表（VBELN/KUNNR/NETWR/ERDAT）
-6. 第 3 轮：模型调用 `run_sql`，SQL: `SELECT KUNNR, COUNT(*) AS CNT, SUM(NETWR) AS TOTAL FROM VBAK GROUP BY KUNNR`
-7. 工具返回：3 行聚合结果
-8. 第 4 轮：模型 `action=final`，回答 "共 3 个客户，C001 有 2 单..."
+2. 模型确认 VBAK/KNA1 字段：调用 `describe_table`
+3. 模型调用 `run_sql`，使用 SAP Open SQL 推荐格式：表别名、`~` 字段、显式 JOIN、英文聚合别名、完整 GROUP BY
+4. 模型基于数据集输出最终结果
+
+> 如果用户只给出业务关键词，先 `search_tables`；如果用户已经明确给出表名，可以直接 `describe_table`。本次请求中未成功 `describe_table` 的表，`run_sql` 会被拒绝。
 
 ### 用例 3：安全拦截测试（验证 SQL 校验）
 
@@ -217,7 +218,7 @@ else if (/FROM\s+YOUR_TABLE/i.test(sql)) {
 | SQL 校验 | 简单正则（只拦黑名单关键字） | ZCL_AI_SQL_GUARD 完整校验 |
 | 表权限 | 无 | VIEW_AUTHORITY_CHECK |
 | 审计日志 | 无 | ZAI_SQL_LOG / ZAI_AGENT_STEP |
-| 模型 | DeepSeek | Azure OpenAI（可配） |
+| 模型 | GLM（默认 glm-4.5-flash） | Azure OpenAI（可配） |
 | 工具数量 | 6 个（库存 3 + SQL 3） | 11 个（含批次/收发/受控取数） |
 
 **结论**：Mock 版本只能验证 **Agent 工作流逻辑**（意图路由 → 工具调用 → 循环收口），**不能验证安全性**（表权限/黑名单/审计）和真实数据。
@@ -238,18 +239,20 @@ var sServiceUrl = "/sap/opu/odata/sap/ZSAP_AI_CHAT_SRV";
 
 ## 故障排查
 
-### 问题 1：DeepSeek API 超时
+### 问题 1：GLM API 报错
 
-**症状**：`ECONNREFUSED` 或 `timeout`  
-**原因**：网络/API Key 错误/配额用尽  
-**解决**：检查 API Key，或换成本地 Ollama：
+**症状与原因**：
+- `1113 余额不足`：用错了端点（订阅 Key 必须走 `/api/coding/paas/v4`）或所选模型不在订阅范围
+- `1305 访问量过大` / `429`：模型临时过载，稍后重试
+- `1210 不支持关闭思考`：新一代模型始终思考，代码已自动降级为 low 档，无需处理
 
-```javascript
-// agent-loop.js 第 50 行改成
-const response = await axios.post(
-  'http://localhost:11434/api/chat',  // Ollama
-  { model: 'qwen2.5', messages: messages }
-);
+**解决**：核对 `.env` 的 `LLM_BASE_URL` 是否为 coding 端点；或换 `LLM_MODEL`。也可以换本地 Ollama：
+
+```bash
+# .env 改成：
+LLM_BASE_URL=http://localhost:11434/v1/chat/completions
+LLM_MODEL=qwen2.5
+LLM_API_KEY=ollama
 ```
 
 ### 问题 2：前端 CORS 错误

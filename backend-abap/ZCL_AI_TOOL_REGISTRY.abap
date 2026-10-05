@@ -195,7 +195,11 @@ CLASS zcl_ai_tool_registry IMPLEMENTATION.
                     && '单条语句; 禁止 INTO/UP TO/PACKAGE SIZE(系统自动添加); '
                     && '禁止 INSERT/UPDATE/DELETE/子查询(FROM 后); 字符串常量用单引号; '
                     && '最多关联 8 张表; 支持多表 JOIN/GROUP BY/HAVING/聚合/CASE。'
-                    && '先 search_tables/describe_table 确认表和字段再写 SQL; '
+                    && '首选格式: 表使用 AS 别名, 字段使用 别名~字段, 显式 JOIN ... ON; '
+                    && '非聚合字段全部写入 GROUP BY; 聚合字段使用英文 ASCII 别名; '
+                    && '不要 SELECT * 或中文别名; ORDER BY 优先使用 SELECT 别名。'
+                    && 'run_sql 前本次请求必须成功 describe_table 确认涉及的每张表; '
+                    && '已明确表名时可直接 describe_table, 否则先 search_tables; '
                     && '大表明细必须带 WHERE; 汇总场景优先 GROUP BY。'
                     && 'args: {"sql":"<SELECT 语句>","purpose":"<一句话说明, 作为结果标题>"}'
       params      = lt_p

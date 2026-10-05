@@ -99,7 +99,7 @@ app.listen(PORT, () => {
 ╔════════════════════════════════════════╗
 ║   SAP Agent Mock Server 已启动         ║
 ║   端口: ${PORT}                         ║
-║   模型: DeepSeek API                   ║
+║   模型: ${process.env.LLM_MODEL || 'glm-4.6'}                        ║
 ╚════════════════════════════════════════╝
 
 测试命令:
@@ -112,6 +112,6 @@ app.listen(PORT, () => {
   var sServiceUrl = "http://localhost:3000";
 
 环境变量:
-  export DEEPSEEK_API_KEY=your-key-here
+  export LLM_API_KEY=your-key-here
   `);
 });

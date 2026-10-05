@@ -1,11 +1,11 @@
 {
   "name": "sap-chat-test-server",
   "version": "1.0.0",
-  "description": "SAP Agent Mock Server for local testing with DeepSeek",
+  "description": "SAP Agent Mock Server for local testing (GLM / any OpenAI-compatible LLM)",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "node test-cases.js"
+    "start": "node --env-file-if-exists=.env server.js",
+    "test": "node --env-file-if-exists=.env test-cases.js"
   },
   "dependencies": {
     "express": "^4.18.2",
