@@ -1,0 +1,32 @@
+/******************************************************************
+	Style of the RTA Overlays - sap_fiori_3_hcw Theme
+*******************************************************************/
+@_sap_ui_rta_Overlay_ResizeHandleColor: darken(@sapUiSelected, 40%); //#0042c2
+@_sap_ui_rta_Overlay_PlaceholderBackgroundColor: @sapUiContentSelectedBackground; //#8fb5ff
+
+.sapUiRta {
+	.sapUiDtOverlayDropZone {
+		> .sapUiDtOverlayChildren {
+			> .sapUiRtaOverlayPlaceholder {
+				background: @_sap_ui_rta_Overlay_PlaceholderBackgroundColor !important;
+				// no "focus" border
+				&:focus {
+					&:before {
+						content: none;
+					}
+				}
+
+				// all descendants
+				* {
+					background: @_sap_ui_rta_Overlay_PlaceholderBackgroundColor;
+					// no "focus" border
+					&:focus {
+						&:before {
+							content: none;
+						}
+					}
+				}
+			}
+		}
+	}
+}

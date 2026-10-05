@@ -1,0 +1,48 @@
+/* =========================== */
+/* CSS for control sap.m/Link  */
+/* Fiori 3 theme               */
+/* =========================== */
+
+.sapMLnkDsbl {
+	opacity: var(--sapContent_DisabledOpacity);
+	outline: none;
+	cursor: default;
+	text-decoration: none;
+}
+
+.sapMLIBActive .sapMLnk {
+	color: var(--sapList_Active_TextColor);
+	text-decoration: underline;
+}
+
+.sapMLnk.sapMLnkSubtle {
+	color: var(--sapLink_SubtleColor);
+	text-decoration: none;
+}
+
+.sapMLnkSubtle:focus {
+	color: var(--sapContent_FocusColor);
+}
+
+.sapMLnk:not(.sapMLnkDsbl) {
+	text-shadow: var(--sapContent_TextShadow);
+}
+
+.sapMLnk:hover:not(.sapMLnkDsbl) {
+	color: var(--sapLink_Hover_Color);
+}
+
+.sapMLnk:active:not(.sapMLnkDsbl),
+.sapMLnk:focus:not(.sapMLnkDsbl) {
+	color: var(--sapLink_Active_Color);
+}
+
+/* align Link in Form with Label */
+.sapUiFormEdit .sapMLnk {
+	margin-top: 0.875rem; /* don't use padding as this would stretch the focus outline */
+	margin-bottom: 0.625rem; /* for some reason browser adds 4px, display: block would lead to stretched focus outline */
+}
+
+.sapMListTblRow.sapMLIBSelected .sapMLnk:not(.sapMLnkDsbl) {
+	text-shadow: var(--sapContent_TextShadow);
+}

@@ -1,0 +1,28 @@
+/* ================================== */
+/* CSS for control sap.m/ActionTile  */
+/* Fiori 3 theme                      */
+/* ================================== */
+
+.sapMAT:hover {
+	box-shadow: 0 0 0 1px fade(@sapUiContentShadowColor, 30);
+	transition: background 0.2s;
+	background: var(--sapTile_Hover_Background);
+}
+
+.sapMAT:focus {
+
+	.sapMATFocusDiv {
+		border: var(--sapContent_FocusWidth) var(--sapContent_FocusStyle) var(--sapContent_FocusColor) !important;
+	}
+
+	.sapMGTFocusDiv {
+		border: var(--sapContent_FocusWidth) var(--sapContent_FocusStyle) var(--sapContent_FocusColor) !important;
+	}
+}
+
+.sapMAT:active {
+
+	.sapMATFocusDiv {
+		border: none;
+	}
+}

@@ -1,0 +1,24 @@
+{
+  "name": "zai-chat-ui5",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI 对话助手 - SAP UI5 前端（对接 ABAP OData / 多种大模型，支持本地私有化部署）",
+  "scripts": {
+    "start": "ui5 serve --port 8080 --open index.html",
+    "start:no-open": "ui5 serve --port 8080",
+    "build": "ui5 build --all --clean-dest"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@ui5/cli": "^3.9.0",
+    "docx": "^8.5.0",
+    "zui5-simple-proxy": "file:./local-middleware/zui5-simple-proxy"
+  },
+  "ui5": {
+    "dependencies": [
+      "zui5-simple-proxy"
+    ]
+  }
+}

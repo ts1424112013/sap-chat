@@ -1,0 +1,66 @@
+/* ==================================== */
+/* CSS for control sap.ui.unified/Menu  */
+/* Quartz High Contrast White theme     */
+/* ==================================== */
+
+.sapUiMnuItm.sapUiMnuTfItm .sapUiMnuTfItemTf.sapUiMnuTfItemTfDsbl {
+	opacity: @sapUiContentDisabledOpacity;
+}
+
+.sapUiMnuItm:focus {
+	outline: 0.125rem dotted @sapUiContentFocusColor;
+}
+
+.sapUiMnuItm.sapUiMnuItmSubMnuOpen.sapUiMnuItmHov:hover {
+	background-color: @sapUiListSelectionHoverBackground;
+}
+
+.sapUiMnu  .sapUiMnuDiv>hr,
+.sapMList .sapMListItems .sapUiMnuDiv>hr{
+	border-top: 0.0625rem solid @sapUiGroupContentBorderColor;
+	left: 0rem;
+	right: 0rem;
+}
+
+.sapMMenuLIArrowRightIcon {
+	font-size: 0.75rem;
+	width: 0.75rem;
+	height: 2.75rem;
+	line-height: 2.75rem;
+	padding-inline-start: 1rem;
+}
+
+.sapUiMnu .sapUiMnuLst .sapUiMnuItm.sapUiMnuItmSubMnuOpen,
+.sapUiMnu .sapUiMnuLst .sapUiMnuItm.sapUiMnuItmSubMnuOpen.sapUiMnuItmHov {
+	border-bottom: 1px solid @sapUiListSelectionBorderColor;
+}
+
+.sapUiMnu .sapUiMnuLst .sapUiMnuItm {
+	border-bottom: 1px solid transparent;
+}
+
+.sapUiMnu .sapUiMnuLst .sapUiMnuItm.sapUiMnuItmHov:active{
+	border-bottom: 1px solid transparent;
+}
+
+.sapUiMnu .sapUiMnuLst .sapUiMnuItm.sapUiMnuItmSubMnuOpen.sapUiMnuItmHov:active{
+	border-bottom: 1px solid transparent;
+	background-color: @sapUiListActiveBackground;
+}
+
+.sapUiMnuItm {
+	padding: 0 0.75rem;
+}
+
+.sapUiMnuItmIco {
+	min-width: 1rem;
+	max-width: 1rem;
+	padding-inline-end: 0.5rem;
+}
+
+.sapMMenuLIImgThumbWrapper:empty,
+.sapUiMnuItmIco:empty {
+	min-width: 0;
+	max-width: 0;
+	padding-inline-end: 0;
+}

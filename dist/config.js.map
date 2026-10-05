@@ -1,0 +1,1 @@
+{"version":3,"file":"config.js","names":["window","ZAI_CONFIG","mode","host","path","probeTimeoutMs","ui5Src","ui5Theme"],"sources":["config-dbg.js"],"mappings":"AAUAA,OAAOC,WAAa,CAIZC,KAAM,UAKNC,KAAM,GAGNC,KAAM,mCAGNC,eAAgB,IAahBC,OAAQ,6BACRC,SAAU","ignoreList":[]}

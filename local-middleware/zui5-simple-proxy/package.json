@@ -1,0 +1,7 @@
+{
+  "name": "zui5-simple-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "零依赖的 UI5 本地代理中间件（替代 ui5-middleware-simpleproxy，兼容 Node 18+）",
+  "main": "lib/proxy.js"
+}

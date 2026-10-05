@@ -1,0 +1,204 @@
+<core:FragmentDefinition
+        xmlns="sap.m"
+        xmlns:f="sap.ui.layout.form"
+        xmlns:core="sap.ui.core">
+
+        <!-- ======================= 设置对话框：连接配置 + 模型管理 ======================= -->
+        <Dialog id="settingsDialog"
+                contentWidth="40rem"
+                resizable="true"
+                draggable="true">
+                <!-- V5.2：自定义头部（标题 + 右上角 × 关闭） -->
+                <customHeader>
+                        <Toolbar class="dlgHeadToolbar" design="Transparent">
+                                <Title level="H3" text="{i18n>settings}" class="dlgHeadTitle"/>
+                                <ToolbarSpacer/>
+                                <Button icon="sap-icon://decline" type="Transparent"
+                                        tooltip="{i18n>close}" press=".onCloseSettings" class="dlgCloseBtn"/>
+                        </Toolbar>
+                </customHeader>
+                <content>
+                        <IconTabBar id="settingsTabs" headerBackgroundDesign="Transparent" upperCase="false">
+                                <items>
+                                        <!-- ========== 页签1：连接配置 ========== -->
+                                        <IconTabFilter icon="sap-icon://world" text="{i18n>tabConnection}" key="connection">
+                                                <f:SimpleForm editable="true"
+                                                        layout="ResponsiveGridLayout"
+                                                        labelSpanL="4" labelSpanM="4" labelSpanS="12"
+                                                        emptySpanL="1" emptySpanM="1"
+                                                        columnsL="1" columnsM="1"
+                                                        singleContainerFullSize="false">
+                                                        <f:content>
+                                                                <!-- V8：登录账号与退出（强制登录取代 SAP Basic 弹窗） -->
+                                                                <Label text="{i18n>loginStateTitle}"/>
+                                                                <HBox alignItems="Center">
+                                                                        <Text text="{settings>/loginUserId}" class="sessionText"/>
+                                                                        <ToolbarSpacer/>
+                                                                        <Button text="{i18n>logoutBtn}" icon="sap-icon://log" press=".onAppLogout" type="Transparent"/>
+                                                                </HBox>
+                                                                <Label text="{i18n>serviceMode}"/>
+                                                                <Select id="modeSelect"
+                                                                        selectedKey="{settings>/mode}"
+                                                                        change=".onModeChange"
+                                                                        editable="{settings>/isAdmin}">
+                                                                        <items>
+                                                                                <core:Item key="mock" text="{i18n>modeMock}"/>
+                                                                                <core:Item key="backend" text="{i18n>modeBackend}"/>
+                                                                        </items>
+                                                                </Select>
+                                                                <Label text="{i18n>backendHost}"/>
+                                                                <Input value="{settings>/host}"
+                                                                        placeholder="{i18n>backendHostPh}"
+                                                                        editable="{settings>/isAdmin}"
+                                                                        description="（留空走本地代理）"/>
+                                                                <Label text="{i18n>servicePath}"/>
+                                                                <Input value="{settings>/path}"
+                                                                        placeholder="/sap/opu/odata/sap/ZAI_CHAT_SRV/"
+                                                                        editable="{settings>/isAdmin}"/>
+                                                                <Label text="{i18n>sessionId}"/>
+                                                                <HBox alignItems="Center" width="100%">
+                                                                        <Text text="{settings>/sessionId}" class="sessionText" wrapping="false"/>
+                                                                        <ToolbarSpacer/>
+                                                                        <Button icon="sap-icon://refresh" text="{i18n>resetSession}" press=".onNewSession" type="Transparent"/>
+                                                                </HBox>
+                                                                <VBox>
+                                                                        <Text text="{i18n>connectionHint}" class="hintText" wrapping="true"/>
+                                                                        <!-- V8：普通用户提示（连接设置仅管理员可改） -->
+                                                                        <Text text="{i18n>settingsReadonlyTip}" class="hintText" wrapping="true"
+                                                                                visible="{= !${settings>/isAdmin} }"/>
+                                                                </VBox>
+                                                                <!-- V5.1：SAP 网关登录（V8 起由应用层强制登录取代，默认隐藏） -->
+                                                                <Label text="{i18n>sapAuthSection}" visible="{settings>/showSapAuth}"/>
+                                                                <VBox class="sapUiSmallMarginBottom" visible="{settings>/showSapAuth}">
+                                                                        <ObjectStatus id="sapAuthState" class="sapUiSmallMarginBottom"/>
+                                                                        <HBox>
+                                                                                <Button text="{i18n>changeCred}" icon="sap-icon://key" press=".onOpenSapLogin" type="Transparent"/>
+                                                                                <Button text="{i18n>clearCred}" press=".onClearSapAuth" type="Transparent" enabled="{= ${settings>/mode} === 'backend' }"/>
+                                                                        </HBox>
+                                                                        <Text text="{i18n>sapAuthHint}" class="hintText" wrapping="true"/>
+                                                                </VBox>
+                                                        </f:content>
+                                                </f:SimpleForm>
+                                        </IconTabFilter>
+
+                                        <!-- ========== 页签2：模型管理（新增/维护大模型，无需改后台代码） ========== -->
+                                        <IconTabFilter icon="sap-icon://wrench" text="{i18n>tabModels}" key="models">
+                                                <VBox class="sapUiSmallMargin">
+                                                        <Text text="{i18n>modelMgmtHint}" class="hintText" wrapping="true"/>
+                                                        <!-- V10：超长源码分块分析全局开关（仅管理员可改，存后端配置表）；
+                                                             模型级开关在"模型编辑"里逐模型配置 -->
+                                                        <VBox id="codeAclCard" class="codeAclCard">
+                                                                <HBox alignItems="Center">
+                                                                        <Title level="H5" text="{i18n>chunkTitle}" class="codeAclTitle"/>
+                                                                        <ToolbarSpacer/>
+                                                                        <Switch id="chunkSwitch"
+                                                                                state="{settings>/chunkMode}"
+                                                                                change=".onChunkModeChange"
+                                                                                enabled="{settings>/isAdmin}"
+                                                                                tooltip="{i18n>chunkTitle}"/>
+                                                                </HBox>
+                                                                <Text text="{i18n>chunkHint}" class="codeAclHint" wrapping="true"/>
+                                                                <Text text="{i18n>codeAclReadonly}" class="codeAclHint" wrapping="true"
+                                                                        visible="{= !${settings>/isAdmin} }"/>
+                                                        </VBox>
+                                                        <Table id="modelTable"
+                                                                items="{settings>/modelList}"
+                                                                noDataText="{i18n>noModels}"
+                                                                growing="true"
+                                                                growingThreshold="20">
+                                                                <headerToolbar>
+                                                                        <Toolbar>
+                                                                                <ToolbarSpacer/>
+                                                                                <Button text="{i18n>addModel}" icon="sap-icon://add" press=".onAddModel" type="Emphasized"/>
+                                                                        </Toolbar>
+                                                                </headerToolbar>
+                                                                <columns>
+                                                                        <Column width="7rem"><Text text="{i18n>colModelId}"/></Column>
+                                                                        <Column width="9rem"><Text text="{i18n>colModelName}"/></Column>
+                                                                        <Column width="5.5rem" minScreenWidth="Tablet" demandPopin="true"><Text text="{i18n>colModelType}"/></Column>
+                                                                        <Column minScreenWidth="Tablet" demandPopin="true"><Text text="{i18n>colEndpoint}"/></Column>
+                                                                        <Column width="4rem"><Text text="{i18n>colActive}"/></Column>
+                                                                        <Column width="4.5rem"><Text text="{i18n>colTest}"/></Column>
+                                                                        <Column width="4rem"><Text text="{i18n>colEdit}"/></Column>
+                                                                </columns>
+                                                                <items>
+                                                                        <ColumnListItem>
+                                                                                <cells>
+                                                                                        <Text text="{settings>ModelId}"/>
+                                                                                        <Text text="{settings>ModelName}"/>
+                                                                                        <Text text="{settings>ModelType}"/>
+                                                                                        <Text text="{settings>EndpointUrl}" wrapping="true"/>
+                                                                                        <ObjectStatus state="{settings>ActiveState}" text="{settings>IsActive}"/>
+                                                                                        <Button text="{i18n>testConn}" type="Transparent" press=".onTestModel" tooltip="{i18n>testConnTip}" class="testBtn">
+                                                                                                <customData>
+                                                                                                        <core:CustomData key="modelId" value="{settings>ModelId}"/>
+                                                                                                </customData>
+                                                                                        </Button>
+                                                                                        <Button icon="sap-icon://edit" type="Transparent" press=".onEditModel" tooltip="{i18n>edit}">
+                                                                                                <customData>
+                                                                                                        <core:CustomData key="modelId" value="{settings>ModelId}"/>
+                                                                                                </customData>
+                                                                                        </Button>
+                                                                                </cells>
+                                                                        </ColumnListItem>
+                                                                </items>
+                                                        </Table>
+                                                </VBox>
+                                        </IconTabFilter>
+
+                                        <!-- ========== 页签3：用户管理（V8，仅管理员可见） ========== -->
+                                        <IconTabFilter icon="sap-icon://group" text="{i18n>tabUsers}" key="users"
+                                                visible="{settings>/isAdmin}">
+                                                <VBox class="sapUiSmallMargin">
+                                                        <Text text="{i18n>usersHint}" class="hintText" wrapping="true"/>
+                                                        <Table id="userTable"
+                                                                items="{settings>/userList}"
+                                                                noDataText="暂无用户"
+                                                                growing="true">
+                                                                <columns>
+                                                                        <Column width="9rem"><Text text="{i18n>colUserId}"/></Column>
+                                                                        <Column width="9rem"><Text text="{i18n>colUserName}"/></Column>
+                                                                        <Column width="9rem"><Text text="{i18n>colUserRole}"/></Column>
+                                                                        <Column width="5rem"><Text text="{i18n>colUserActive}"/></Column>
+                                                                        <Column width="4.5rem"><Text text="{i18n>colUserDel}"/></Column>
+                                                                </columns>
+                                                                <items>
+                                                                        <ColumnListItem>
+                                                                                <cells>
+                                                                                        <Text text="{settings>UserId}"/>
+                                                                                        <Text text="{settings>UserName}"/>
+                                                                                        <Text text="{settings>Role}"/>
+                                                                                        <ObjectStatus state="{settings>ActiveState}" text="{settings>IsActive}"/>
+                                                                                        <Button icon="sap-icon://decline" type="Transparent" press=".onDeleteUser" tooltip="{i18n>delSess}">
+                                                                                                <customData>
+                                                                                                        <core:CustomData key="userId" value="{settings>UserId}"/>
+                                                                                                </customData>
+                                                                                        </Button>
+                                                                                </cells>
+                                                                        </ColumnListItem>
+                                                                </items>
+                                                        </Table>
+                                                        <!-- 开通用户：SAP 用户名 + 姓名 + 初始密码 + 角色 -->
+                                                        <Label text="{i18n>addUserTitle}" class="sapUiSmallMarginTop"/>
+                                                        <HBox alignItems="Center" wrap="Wrap" class="sapUiTinyMarginTop">
+                                                                <Input value="{settings>/newUserId}" placeholder="{i18n>addUserPh}" width="9rem" class="sapUiTinyMarginEnd" maxLength="40"/>
+                                                                <Input value="{settings>/newUserName}" placeholder="{i18n>addUserNamePh}" width="8rem" class="sapUiTinyMarginEnd" maxLength="40"/>
+                                                                <Input value="{settings>/newUserPwd}" placeholder="{i18n>addUserPwdPh}" width="11rem" class="sapUiTinyMarginEnd" type="Password" maxLength="40"/>
+                                                                <Select width="7rem" selectedKey="{settings>/newUserRole}" class="sapUiTinyMarginEnd">
+                                                                        <items>
+                                                                                <core:Item key="USER" text="USER · 使用者"/>
+                                                                                <core:Item key="ADMIN" text="ADMIN · 管理员"/>
+                                                                        </items>
+                                                                </Select>
+                                                                <Button text="{i18n>userAdd}" icon="sap-icon://add" type="Emphasized" press=".onAddUser"/>
+                                                        </HBox>
+                                                </VBox>
+                                        </IconTabFilter>
+                                </items>
+                        </IconTabBar>
+                </content>
+                <buttons>
+                        <Button text="{i18n>close}" press=".onCloseSettings"/>
+                </buttons>
+        </Dialog>
+</core:FragmentDefinition>

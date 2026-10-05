@@ -1,0 +1,7 @@
+specVersion: "2.6"
+kind: extension
+type: server-middleware
+metadata:
+  name: zui5-simple-proxy
+middleware:
+  path: lib/proxy.js

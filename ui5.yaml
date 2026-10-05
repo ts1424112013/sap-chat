@@ -1,0 +1,46 @@
+specVersion: "3.0"
+type: application
+metadata:
+  name: zai-chat-ui5
+
+# ---------------------------------------------------------------------------
+# V9.1：框架声明 —— ui5 build --all 时把 OpenUI5 1.130 运行时一起打进 dist
+# （构建机需能访问 OpenUI5 CDN；产物 dist/resources 内含 sap-ui-core.js，
+#   部署后前端可完全脱离公网 CDN 与服务器内置 UI5 版本运行，
+#   配合 config.js 的 ui5Src: "./resources/sap-ui-core.js" 启用）
+# ---------------------------------------------------------------------------
+framework:
+  name: OpenUI5
+  version: "1.130.0"
+  libraries:
+    - name: sap.ui.core
+    - name: sap.m
+    - name: sap.ui.layout
+    - name: themelib_sap_horizon
+    - name: themelib_sap_fiori_3
+
+# ---------------------------------------------------------------------------
+# 本地开发服务器 (npm start)
+# ---------------------------------------------------------------------------
+server:
+  customMiddleware:
+    # 代理 /sap 到你的 SAP 网关，解决本地开发时的跨域(CORS)问题。
+    # 这是项目内置的零依赖中间件(Node 18+ 均可运行，无需额外安装)。
+    # 前端设置里"后端地址"留空时，请求会走本代理。
+    - name: zui5-simple-proxy
+      mountPath: /sap
+      afterMiddleware: compression
+      configuration:
+        # ★ 已配置: SAP 开发机网关地址 ★
+        mountPath: "/sap"      # ← 加这一行
+        baseUri: "http://sapgls4dev.idpbg.efoxconn.com:8000"
+        # 可选：固定 Basic 认证头，避免浏览器反复弹登录框。
+        # 生成方式: echo -n "USER:PASSWORD" | base64
+        # 注意：不要把真实密码提交到代码仓库！
+        # （登录框里填的凭据/Basic 头会经代理原样转发，这里可不配；
+        #   若想让所有请求无条件走同一账号，可取消下面注释并填入 base64）
+        # httpHeaders:
+        #   Authorization: "Basic dXNlcjpwYXNzd29yZA=="
+        # SAP 开发机使用自签名证书，开发环境打开：
+        strictSSL: false
+
