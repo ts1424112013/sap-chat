@@ -27,7 +27,7 @@
 用户提问（Agent 模式）
   -> 模型: search_tables  按业务关键词查表（DD02T 描述）
   -> 模型: describe_table 读字段、类型、描述、主键
-  -> 模型: run_sql        提交一条 SELECT
+  -> 模型: run_sql        提交一条已完成字段确认的 SELECT
        -> ZCL_AI_SQL_GUARD     词法扫描 + 规则校验 + 表权限校验
        -> ZCL_AI_SQL_EXECUTOR  执行（行数上限）-> 统一数据集
        -> 失败: 报错原文回给模型，修正后重试（有次数上限）
@@ -41,7 +41,7 @@
 
 ### 方案 A（推荐）：ABAP Open SQL + 动态生成子程序执行
 
-模型编写 Open SQL 的 SELECT（新语法，逗号分隔、`~` 表示别名字段）。后端把它包进一个临时生成的子程序池：
+模型编写规范化的 Open SQL SELECT（表使用 AS 别名、字段优先使用 `~` 表示别名字段、显式 JOIN、英文聚合别名）。后端把它包进一个临时生成的子程序池：
 
 ```abap
 PROGRAM.
@@ -56,6 +56,11 @@ ENDFORM.
 ```
 
 `GENERATE SUBROUTINE POOL` 会返回编译报错（行号、消息），直接回给模型修正。`INTO`、`UP TO` 由后端拼接，模型的语句里不允许写这两个子句。
+
+补充约束：
+- `run_sql` 前，本次请求中涉及的每张表都必须成功执行 `describe_table`；未确认字段时返回明确错误，由模型补充字段确认后重试。
+- 聚合查询中的非聚合字段必须全部出现在 `GROUP BY`；聚合字段统一使用英文 ASCII 别名，避免中文别名和不同模型的字段命名差异。
+- 已知表名可以跳过 `search_tables`，但不能跳过 `describe_table`。
 
 优点：
 - 支持 JOIN、子查询、GROUP BY、HAVING、ORDER BY、聚合函数、CASE 和 7.5x 的 SQL 表达式，满足多表分析。
