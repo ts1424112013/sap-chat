@@ -12,6 +12,7 @@
 * 依赖:   ZCL_AI_SQL_GUARD, ZCL_AI_DATA_ANALYSIS_SERVICE(仅类型)
 * 安装:   SE24 (ABAP 7.50)
 * 激活顺序: ZCL_AI_SQL_GUARD -> 本类 -> ZCL_AI_DDIC_TOOLS
+* V1.2 20261005: 生成代码改用 GET REFERENCE OF, 免整表拷贝(语义不变)
 *=======================================================================
 CLASS zcl_ai_sql_executor DEFINITION
   PUBLIC
@@ -104,6 +105,8 @@ CLASS zcl_ai_sql_executor IMPLEMENTATION.
 
     " ---- 3. 拼装子程序池源码 ----
     " 模型语句 + 后端拼接的 INTO/UP TO; 表/字段/语法在编译期即校验
+    " V1.2: GET REFERENCE OF 直接引用结果表(ABAP GC 保证 FORM 返回后
+    " 数据存活), 替代 CREATE DATA+ASSIGN+整表拷贝, 省一次 5000 行复制
     DATA lv_code TYPE string.
     lv_code =
       |PROGRAM. | &&
@@ -112,10 +115,7 @@ CLASS zcl_ai_sql_executor IMPLEMENTATION.
       |TRY. | &&
       |{ lv_clean } | &&
       |INTO TABLE @DATA(lt_result) UP TO @iv_max ROWS. | &&
-      |CREATE DATA cr_data LIKE lt_result. | &&
-      |FIELD-SYMBOLS <lt_gen> TYPE ANY TABLE. | &&
-      |ASSIGN cr_data->* TO <lt_gen>. | &&
-      |<lt_gen> = lt_result. | &&
+      |GET REFERENCE OF lt_result INTO cr_data. | &&
       |CATCH cx_root INTO DATA(lx_gen). | &&
       |cv_err = lx_gen->get_text( ). | &&
       |ENDTRY. | &&

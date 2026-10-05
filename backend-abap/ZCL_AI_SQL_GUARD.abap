@@ -10,8 +10,9 @@
 *         - 配置(ZAI_CHAT_CFG): SQL_ANALYSIS_ENABLED / SQL_MAX_ROWS /
 *           SQL_MAX_EXEC; 黑名单首版为常量, P2 迁 ZAI_SQL_BLACKLIST 表
 * 依赖:   无(纯校验, 不执行 SQL; 被 AGENT_SERVICE / SQL_EXECUTOR 调用)
-* 安装:   SE24 -> 创建类 -> 源代码粘帖 (适用 ABAP 7.50)
+* 安装:   SE24 -> 创建类 -> 源代码粘帖 (适用 ABAP 7.50, 755 兼容)
 * 激活顺序: 本类 -> ZCL_AI_SQL_EXECUTOR -> ZCL_AI_DDIC_TOOLS
+* V1.2 20261005: is_sensitive 提为 public(黑名单单一来源); 实现未动
 *=======================================================================
 CLASS zcl_ai_sql_guard DEFINITION
   PUBLIC
@@ -51,6 +52,12 @@ CLASS zcl_ai_sql_guard DEFINITION
     CLASS-METHODS read_max_exec
       RETURNING VALUE(rv_n) TYPE i.
 
+    " V1.2: 提为 public —— DDIC_TOOLS 的 search/describe 委托本方法,
+    " 敏感表黑名单全系统只维护这一处(原 DDIC_TOOLS 里的硬编码副本已删)
+    CLASS-METHODS is_sensitive
+      IMPORTING iv_table     TYPE string
+      RETURNING VALUE(rv_yes) TYPE abap_bool.
+
   PRIVATE SECTION.
 
     CLASS-METHODS strip_literals
@@ -61,10 +68,6 @@ CLASS zcl_ai_sql_guard DEFINITION
 
     CLASS-METHODS get_blacklist
       RETURNING VALUE(rt_bl) TYPE tt_blacklist.
-
-    CLASS-METHODS is_sensitive
-      IMPORTING iv_table     TYPE string
-      RETURNING VALUE(rv_yes) TYPE abap_bool.
 
     CLASS-METHODS table_exists
       IMPORTING iv_table      TYPE string

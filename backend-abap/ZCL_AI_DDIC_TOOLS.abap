@@ -6,9 +6,12 @@
 *         - describe_table  读表字段清单(DDIF_FIELDINFO_GET, 与普通对话的
 *                           表结构读取同一口径), 供模型写 SELECT 前确认字段
 *         - 两个工具均只读; describe_table 前做敏感表黑名单 + 表权限校验
-* 依赖:   ZCL_AI_SQL_GUARD(黑名单/开关)
-* 安装:   SE24 (ABAP 7.50)
+* 依赖:   ZCL_AI_SQL_GUARD(黑名单/开关; V1.2 起敏感表判断直接委托 GUARD)
+* 安装:   SE24 (ABAP 7.50, 755 兼容)
 * 激活顺序: ZCL_AI_SQL_GUARD -> ZCL_AI_SQL_EXECUTOR -> 本类
+* V1.2 20261005: search_tables 改 JOIN 一次取 tabclass(免 N+1 查询);
+*         删除私有黑名单副本, 委托 GUARD=>is_sensitive(单一来源);
+*         json_str 修复 CRLF 转义顺序(裸 CR 产生非法 JSON)
 *=======================================================================
 CLASS zcl_ai_ddic_tools DEFINITION
   PUBLIC
@@ -35,10 +38,6 @@ CLASS zcl_ai_ddic_tools DEFINITION
     CLASS-METHODS json_str
       IMPORTING iv_text        TYPE string
       RETURNING VALUE(rv_json) TYPE string.   " JSON 字符串字面量(含引号)
-
-    CLASS-METHODS is_sensitive
-      IMPORTING iv_table       TYPE string
-      RETURNING VALUE(rv_yes)  TYPE abap_bool.
 
 ENDCLASS.
 
@@ -72,21 +71,33 @@ CLASS zcl_ai_ddic_tools IMPLEMENTATION.
     CONDENSE lv_like.
     DATA(lv_pat) = '%' && lv_like && '%'.
 
-    SELECT tabname, ddtext
-      FROM dd02t
-      WHERE ddlanguage = @sy-langu
-        AND ( tabname LIKE @lv_pat OR ddtext LIKE @lv_pat )
-      ORDER BY tabname
+    " V1.2: JOIN DD02L 一次带出 tabclass(仅活动版本/透明表/视图),
+    " 替代循环内逐表 SELECT SINGLE(原实现最多 ~300 次 DB 往返)
+    SELECT t~tabname, t~ddtext, l~tabclass
+      FROM dd02t AS t
+      INNER JOIN dd02l AS l
+        ON  l~tabname  = t~tabname
+        AND l~as4local = 'A'
+        AND l~tabclass IN ( 'TRANSP', 'VIEW' )
+      WHERE t~ddlanguage = @sy-langu
+        AND t~as4local   = 'A'
+        AND ( t~tabname LIKE @lv_pat OR t~ddtext LIKE @lv_pat )
+      ORDER BY t~tabname
       INTO TABLE @DATA(lt_hits)
       UP TO 200 ROWS.
 
     " 当前语言命中不足时回退英文(技术表常只有英文描述)
     IF lines( lt_hits ) < 5.
-      SELECT tabname, ddtext
-        FROM dd02t
-        WHERE ddlanguage = 'E'
-          AND ( tabname LIKE @lv_pat OR ddtext LIKE @lv_pat )
-        ORDER BY tabname
+      SELECT t~tabname, t~ddtext, l~tabclass
+        FROM dd02t AS t
+        INNER JOIN dd02l AS l
+          ON  l~tabname  = t~tabname
+          AND l~as4local = 'A'
+          AND l~tabclass IN ( 'TRANSP', 'VIEW' )
+        WHERE t~ddlanguage = 'E'
+          AND t~as4local   = 'A'
+          AND ( t~tabname LIKE @lv_pat OR t~ddtext LIKE @lv_pat )
+        ORDER BY t~tabname
         INTO TABLE @DATA(lt_hits_en)
         UP TO 100 ROWS.
       LOOP AT lt_hits_en INTO DATA(ls_en).
@@ -97,24 +108,17 @@ CLASS zcl_ai_ddic_tools IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
-    " 补表类别并过滤: 只要透明表/视图; 排除敏感表; 限量
+    " 过滤: JOIN 已保证透明表/视图 + 活动版本; 这里排除敏感表并限量
     DATA(lv_count) = 0.
     LOOP AT lt_hits INTO DATA(ls_hit).
       IF lv_count >= gc_max_hits.
         EXIT.
       ENDIF.
-      SELECT SINGLE tabclass FROM dd02l
-        WHERE tabname = @ls_hit-tabname
-          AND tabclass IN ( 'TRANSP', 'VIEW' )
-        INTO @DATA(lv_class).
-      IF sy-subrc <> 0.
-        CONTINUE.
-      ENDIF.
-      IF is_sensitive( ls_hit-tabname ) = abap_true.
+      IF zcl_ai_sql_guard=>is_sensitive( ls_hit-tabname ) = abap_true.
         CONTINUE.
       ENDIF.
       lv_count = lv_count + 1.
-      APPEND |{{"name":{ json_str( ls_hit-tabname ) },"desc":{ json_str( ls_hit-ddtext ) },"class":"{ lv_class }"}}|
+      APPEND |{{"name":{ json_str( ls_hit-tabname ) },"desc":{ json_str( ls_hit-ddtext ) },"class":"{ ls_hit-tabclass }"}}|
         TO lt_out.
     ENDLOOP.
 
@@ -140,12 +144,12 @@ CLASS zcl_ai_ddic_tools IMPLEMENTATION.
       rv_json = '{"ok":false,"error":"SQL 分析功能未开启"}'.
       RETURN.
     ENDIF.
-    IF is_sensitive( lv_tab ) = abap_true.
+    IF zcl_ai_sql_guard=>is_sensitive( lv_tab ) = abap_true.
       rv_json = '{"ok":false,"error":"该表属于受保护表, 不允许查询"}'.
       RETURN.
     ENDIF.
 
-    " 表权限(与 run_sql 执行前同一口径)
+    " 表权限(与 run_sql 执行前同一口径); 敏感表判断委托 GUARD 单一来源
     CALL FUNCTION 'VIEW_AUTHORITY_CHECK'
       EXPORTING
         view             = lv_tab
@@ -218,22 +222,13 @@ CLASS zcl_ai_ddic_tools IMPLEMENTATION.
     rv_json = iv_text.
     REPLACE ALL OCCURRENCES OF `\` IN rv_json WITH `\\`.
     REPLACE ALL OCCURRENCES OF `"` IN rv_json WITH `\"`.
-    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>newline IN rv_json WITH `\n`.
+    " V1.2 修复转义顺序: 先 CRLF 再孤立 LF/CR —— 原顺序会把 CRLF 中的 LF
+    " 先转成 \n 字面量, 残留的裸 CR 在严格 JSON 解析器中是非法控制字符
     REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf IN rv_json WITH `\n`.
+    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>newline IN rv_json WITH `\n`.
+    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_char IN rv_json WITH `\n`.
     REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>horizontal_tab IN rv_json WITH `\t`.
     rv_json = |"{ rv_json }"|.
-
-  ENDMETHOD.
-
-
-  METHOD is_sensitive.
-
-    " 与 SQL_GUARD 同一黑名单(私有方法, 不走 validate 全流程)
-    DATA(lv_tab) = to_upper( iv_table ).
-    rv_yes = xsdbool( lv_tab CP 'USR%' OR lv_tab CP 'USH%' OR lv_tab CP 'USRPWD%'
-                   OR lv_tab = 'AGR_1251' OR lv_tab CP 'RSECTAB' OR lv_tab CP 'SSF%'
-                   OR lv_tab CP 'SECSTORE%' OR lv_tab = 'ZAI_MODEL_CFG'
-                   OR lv_tab = 'ZAI_CHAT_USER' ).
 
   ENDMETHOD.
 
