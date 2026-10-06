@@ -3,8 +3,9 @@ sap.ui.define([
         "sap/ui/model/odata/v2/ODataModel",
         "sap/ui/model/Filter",
         "sap/ui/model/FilterOperator",
-        "sap/ui/model/Sorter"
-], function (Log, ODataModel, Filter, FilterOperator, Sorter) {
+        "sap/ui/model/Sorter",
+        "zai/chat/service/TraceService"
+], function (Log, ODataModel, Filter, FilterOperator, Sorter, TraceService) {
         "use strict";
 
         /**
@@ -498,34 +499,21 @@ sap.ui.define([
                                                 ModelId: oPayload.modelId || ""
                                         },
                                         success: function (oData) {
-                                                // 与 send 相同的解包兼容：d.AnalyzeAgent 或直接对象
-                                                var res = oData && (oData.AnalyzeAgent || oData) || {};
-                                                var aTrace = [];
-                                                try {
-                                                        aTrace = JSON.parse(res.TraceJson || "[]") || [];
-                                                } catch (e) {
-                                                        aTrace = [];   // Trace 仅用于展示，解析失败不阻断回答
-                                                }
+                                                // AGENT_TRACE_FINISH_V1：统一解包与统计转换，坏 Trace 不影响正文。
+                                                var res = TraceService.normalizeResult(oData, oPayload.modelId);
                                                 // V1.3：结构化数据分析结果（可选字段，旧后端无此字段）
                                                 var oAnalysis = null;
-                                                if (res.AnalysisJson) {
+                                                if (res.analysisJson) {
                                                         try {
                                                                 oAnalysis = Service._sanitizeAnalysis(
-                                                                        JSON.parse(res.AnalysisJson));
+                                                                        JSON.parse(res.analysisJson));
                                                         } catch (e) {
                                                                 oAnalysis = null;   // 仅影响表格/图表渲染
                                                         }
                                                 }
-                                                fnResolve({
-                                                        answer: res.Answer || "",
-                                                        status: res.Status || "OK",
-                                                        elapsedMs: parseInt(res.ElapsedMs || "0", 10) || 0,
-                                                        rounds: parseInt(res.Rounds || "0", 10) || 0,
-                                                        message: res.Message || "",
-                                                        modelId: res.ModelId || oPayload.modelId || "",
-                                                        trace: aTrace,
-                                                        analysis: oAnalysis
-                                                });
+                                                res.analysis = oAnalysis;
+                                                delete res.analysisJson;
+                                                fnResolve(res);
                                         },
                                         error: function (oError) {
                                                 that._maybeAuthFail(oError);
@@ -1007,8 +995,8 @@ sap.ui.define([
                                         var sAnswer;
                                         var oAnalysis = null;
                                         if (bInv) {
-                                                aTrace.push({ phase: "EXECUTING", label: "查询库存快照（MARD 0001/A001，演示）", status: "OK", elapsedMs: 580, rows: 2 });
-                                                aTrace.push({ phase: "EXECUTING", label: "查询当天收发（MSEG 过账日汇总，演示）", status: "OK", elapsedMs: 710, rows: 2 });
+                                                aTrace.push({ phase: "EXECUTING", tool: "get_stock_snapshot", label: "查询库存快照（MARD 0001/A001，演示）", status: "OK", elapsedMs: 580, rows: 2 });
+                                                aTrace.push({ phase: "EXECUTING", tool: "get_daily_movement", label: "查询当天收发（MSEG 过账日汇总，演示）", status: "OK", elapsedMs: 710, rows: 2 });
                                                 aTrace.push({ phase: "COMPOSING", label: "整理回答", status: "OK", elapsedMs: 1200 });
                                                 sAnswer = [
                                                         "【A001 在 0001 工厂的库存分析】(单位: PC)",
@@ -1062,8 +1050,8 @@ sap.ui.define([
                                                         ],
                                                         datasets: [oDsGroup, oDsTrend]
                                                 };
-                                                aTrace.push({ phase: "EXECUTING", label: "数据分析查询: 按物料类型统计, 5 行", status: "OK", elapsedMs: 640, rows: 5 });
-                                                aTrace.push({ phase: "EXECUTING", label: "数据分析查询: 按创建月份趋势, 6 行", status: "OK", elapsedMs: 520, rows: 6 });
+                                                aTrace.push({ phase: "EXECUTING", tool: "sap_data_analysis", label: "数据分析查询: 按物料类型统计, 5 行", status: "OK", elapsedMs: 640, rows: 5 });
+                                                aTrace.push({ phase: "EXECUTING", tool: "sap_data_analysis", label: "数据分析查询: 按创建月份趋势, 6 行", status: "OK", elapsedMs: 520, rows: 6 });
                                                 aTrace.push({ phase: "COMPOSING", label: "生成结构化分析", status: "OK", elapsedMs: 860 });
                                                 sAnswer = [
                                                         "【物料主档分析】",

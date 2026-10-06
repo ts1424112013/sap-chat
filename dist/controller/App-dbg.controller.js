@@ -15,8 +15,9 @@ sap.ui.define([
         "sap/ui/core/HTML",
         "sap/ui/util/Storage",
         "zai/chat/service/ChatService",
+        "zai/chat/service/TraceService",
         "zai/chat/utils/Formatter"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, Formatter) {
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter) {
         "use strict";
 
         /**
@@ -1014,6 +1015,7 @@ sap.ui.define([
                         if (bAgent) {
                                 oPending.sender = oRB.getText("agentSender");
                                 oPending.agentThinking = true;
+                                oPending.requestPending = true;
                                 oPending.thinkingLabel = oRB.getText("agentPhaseUnderstand");
                         }
                         var iAssistantIdx = oChatModel.getProperty("/messages").length;
@@ -1037,9 +1039,30 @@ sap.ui.define([
                         this._sStreamToken = sSendToken;
                         this._sAbortToken = "";
 
+                        // 本轮拥有当前消息和动画时才允许收尾，迟到响应不能影响下一轮。
+                        var fnIsCurrent = function () {
+                                var oNow = oChatModel.getProperty("/currentSession") || {};
+                                return that._sStreamToken === sSendToken && oNow.id === sSessionId;
+                        };
+
                         /** 出错：移除占位气泡，替换为错误消息 */
                         var fnSetError = function (sMsg) {
                                 var aMsgs = oChatModel.getProperty("/messages");
+                                if (bAgent && aMsgs[iAssistantIdx]) {
+                                        var sPath = "/messages/" + iAssistantIdx;
+                                        var oErrorEntry = that._buildEntry("assistant", sMsg, "", "");
+                                        oChatModel.setProperty(sPath + "/raw", oErrorEntry.raw);
+                                        oChatModel.setProperty(sPath + "/html", oErrorEntry.html);
+                                        oChatModel.setProperty(sPath + "/time", oErrorEntry.time);
+                                        oChatModel.setProperty(sPath + "/streaming", false);
+                                        that._attachAgentProcess(iAssistantIdx, { status: "ERROR", traceValid: false });
+                                        // 正文 HTML 与普通流式渲染一样直接同步到已有控件。
+                                        var oBody = that._findMsgBodyCtrl(iAssistantIdx);
+                                        if (oBody) {
+                                                oBody.setContent('<div class="bubbleBody">' + oErrorEntry.html + "</div>");
+                                        }
+                                        return;
+                                }
                                 if (aMsgs[iAssistantIdx] && aMsgs[iAssistantIdx].streaming) {
                                         aMsgs.splice(iAssistantIdx, 1);
                                         that._pushEntry("error", sMsg, "");
@@ -1049,6 +1072,10 @@ sap.ui.define([
 
                         /** 收尾：解除忙碌、吸底、刷新会话列表 */
                         var fnFinish = function () {
+                                if (!fnIsCurrent()) {
+                                        return;
+                                }
+                                that._stopThinkingTicker();
                                 oChatModel.setProperty("/busy", false);
                                 that._setSendBtnBusy(false);
                                 that._refreshMessages();
@@ -1069,19 +1096,13 @@ sap.ui.define([
                                 modelId: sModelId
                         });
 
-                        pReq.then(function (oRes) {
+                        return pReq.then(function (oRes) {
                                 // V5：响应到达前用户已停止 → 丢弃本次回复（后端已存库）
-                                that._stopThinkingTicker();
-                                if (that._sAbortToken === sSendToken) {
-                                        that._sAbortToken = "";
+                                if (!fnIsCurrent()) {
                                         that._refreshSessions();
                                         return;
                                 }
-                                // 会话切换后，迟到的响应不能写入新会话的消息列表。
-                                var oCtxAtResponse = oChatModel.getProperty("/currentSession") || {};
-                                if ((oCtxAtResponse.id || "") !== sSessionId) {
-                                        return;
-                                }
+                                that._stopThinkingTicker();
                                 if (!bAgent && oRes.status === "ERROR") {
                                         fnSetError(oRes.message || "服务返回错误");
                                         fnFinish();
@@ -1089,29 +1110,22 @@ sap.ui.define([
                                         // V11~V13：Agent 的 TIMEOUT/DENIED/ERROR 已由后端护栏生成
                                         // 可读降级文案（不含原始堆栈），按正常回答渲染并附过程摘要
                                         var sDoneMeta = bAgent ? that._agentMeta(oRes) : "";
-                                        that._streamAnswer(iAssistantIdx, oRes.answer || "（空回复）", sDoneMeta, sSendToken)
+                                        if (bAgent) {
+                                                // HTTP 已结束：立即收口，空/坏 Trace 也不能继续显示正在执行。
+                                                that._attachAgentProcess(iAssistantIdx, oRes);
+                                                that._updateAgentSessionStatus(sSessionId, oRes.status);
+                                        }
+                                        return that._streamAnswer(iAssistantIdx, oRes.answer || oRes.message || "（空回复）", sDoneMeta, sSendToken)
                                                 .then(function () {
-                                                        if (bAgent) {
-                                                                that._updateAgentSessionStatus(sSessionId, oRes.status);
-                                                                // V1.3：Trace 或数据分析结果任一存在即重建条目渲染
-                                                                if ((oRes.trace && oRes.trace.length) || oRes.analysis) {
-                                                                        that._attachAgentProcess(iAssistantIdx, oRes);
-                                                                }
-                                                        }
                                                         fnFinish();
                                                 });
                                 }
                         }).catch(function (oErr) {
-                                that._stopThinkingTicker();
-                                if (that._sAbortToken === sSendToken) {
-                                        that._sAbortToken = "";
+                                if (!fnIsCurrent()) {
                                         that._refreshSessions();
                                         return;
                                 }
-                                var oCtxAtError = oChatModel.getProperty("/currentSession") || {};
-                                if ((oCtxAtError.id || "") !== sSessionId) {
-                                        return;
-                                }
+                                that._stopThinkingTicker();
                                 fnSetError((oErr && oErr.message) || String(oErr));
                                 if (bAgent) {
                                         that._updateAgentSessionStatus(sSessionId, "ERROR");
@@ -1140,7 +1154,7 @@ sap.ui.define([
                         this._iThinkTimer = window.setInterval(function () {
                                 // 会话/条目已切换或已停止 → 静默终止
                                 var aMsgs = oChatModel.getProperty("/messages");
-                                if (!aMsgs || !aMsgs[iIndex] || !aMsgs[iIndex].agentThinking) {
+                                if (!aMsgs || !aMsgs[iIndex] || !aMsgs[iIndex].requestPending) {
                                         that._stopThinkingTicker();
                                         return;
                                 }
@@ -1158,9 +1172,8 @@ sap.ui.define([
                 },
 
                 /**
-                  * V13：为 Agent 回复附"已思考 N 秒"过程摘要卡（可折叠）。
-                  * 以含 thinking 数据的新条目替换旧条目 → 该条重走工厂渲染；
-                  * raw/html 已随流式更新到位，重渲染不丢内容。
+                  * AGENT_TRACE_FINISH_V1：响应/错误统一收口，按消息绑定完成态。
+                  * UI5 同长度列表会复用控件；更新绑定属性，不能依赖工厂重新执行。
                   * V1.3：同时携带数据分析结构化结果（analysis），由工厂渲染
                   * 数据集表格与 SVG 图表（见 _buildAnalysisHtml）。
                   * @param {int} iIndex 消息下标
@@ -1173,28 +1186,20 @@ sap.ui.define([
                         if (!oOld) {
                                 return;
                         }
-                        var oNew = this._buildEntry("assistant", oOld.raw || "", "", oOld.meta || "");
-                        oNew.sender = this._rb().getText("agentSender");
-                        oNew.thinking = {
-                                elapsedMs: oRes.elapsedMs || 0,
-                                phases: (oRes.trace || []).map(function (t) {
-                                        return {
-                                                phase: t.phase || "",
-                                                label: t.label || t.summary || "",
-                                                status: t.status || "OK",
-                                                elapsedMs: t.elapsedMs || 0,
-                                                rows: t.rows || 0,
-                                                detail: t.detail || ""
-                                        };
-                                })
-                        };
+                        var oFinished = TraceService.finish(oRes);
+                        oFinished.title = this._agentMeta(oRes, true);
+                        oFinished.hasPhases = oFinished.phases.length > 0;
+                        var sPath = "/messages/" + iIndex;
+                        oChatModel.setProperty(sPath + "/agentThinking", false);
+                        oChatModel.setProperty(sPath + "/requestPending", false);
+                        oChatModel.setProperty(sPath + "/thinkingLabel", "");
+                        oChatModel.setProperty(sPath + "/thinking", oFinished);
+                        oChatModel.setProperty(sPath + "/meta", this._agentMeta(oRes));
                         // V1.3：数据分析结果（ChatService._sanitizeAnalysis 已复核，
                         // 无数据分析路径时为 null，不影响普通 Agent 回答）
-                        if (oRes.analysis) {
-                                oNew.analysis = oRes.analysis;
-                        }
-                        aMsgs[iIndex] = oNew;
-                        oChatModel.setProperty("/messages", aMsgs);
+                        oChatModel.setProperty(sPath + "/analysis", oRes.analysis || null);
+                        oChatModel.setProperty(sPath + "/analysisHtml",
+                                oRes.analysis ? this._buildAnalysisHtml(oRes.analysis) : "");
                 },
 
                 /* =========================================================
@@ -1497,6 +1502,9 @@ sap.ui.define([
                         var oLast = aMsgs && aMsgs[aMsgs.length - 1];
                         if (oLast && oLast.streaming) {
                                 oLast.streaming = false;
+                                if (oLast.requestPending) {
+                                        this._attachAgentProcess(aMsgs.length - 1, { status: "STOPPED", traceValid: false });
+                                }
                                 if (!oLast.raw) {
                                         oLast.html = "";
                                 }
@@ -1818,20 +1826,19 @@ sap.ui.define([
                 },
 
                 /** Agent 响应的 meta 摘要（轮数/工具调用数/耗时；异常态前缀可解释说明） */
-                _agentMeta: function (oRes) {
+                _agentMeta: function (oRes, bIncludeDone) {
                         var oRB = this._rb();
-                        var sSec = ((oRes.elapsedMs || 0) / 1000).toFixed(1) + "s";
-                        var iTools = (oRes.trace || []).filter(function (t) {
-                                return t.phase === "EXECUTING";
-                        }).length;
-                        var sBase = oRB.getText("agentMeta", [oRes.rounds || 0, iTools, sSec]);
-                        var sPrefix = "";
-                        if (oRes.status === "TIMEOUT") {
+                        var oFinished = TraceService.finish(oRes);
+                        var sBase = oRB.getText("agentMeta", TraceService.stats(oFinished));
+                        var sPrefix = bIncludeDone ? oRB.getText("sessStCompleted") : "";
+                        if (oFinished.status === "TIMEOUT") {
                                 sPrefix = oRB.getText("agentStTimeout");
-                        } else if (oRes.status === "DENIED") {
+                        } else if (oFinished.status === "DENIED") {
                                 sPrefix = oRB.getText("agentStDenied");
-                        } else if (oRes.status === "ERROR") {
+                        } else if (oFinished.status === "ERROR") {
                                 sPrefix = oRB.getText("agentStError");
+                        } else if (oFinished.status === "STOPPED") {
+                                return oRB.getText("stopped");
                         }
                         return sPrefix ? sPrefix + " · " + sBase : sBase;
                 },
@@ -2038,7 +2045,7 @@ sap.ui.define([
                                 // raw 属性为空时可见，首帧正文到达后自动隐藏）
                                 var oHeadLeft = new HBox({ alignItems: "Center" }).addStyleClass("bubbleHeadLeft");
                                 oHeadLeft.addItem(new Text({ text: oEntry.sender }).addStyleClass("bubbleSender"));
-                                if (oEntry.streaming) {
+                                if (oEntry.streaming && !oEntry.agentThinking && !oEntry.thinking) {
                                         oHeadLeft.addItem(new Text({
                                                 text: "思考中…",
                                                 visible: "{= ${chat>raw} === '' }"
@@ -2058,25 +2065,29 @@ sap.ui.define([
                                 // 运行中：动态阶段文案（_startThinkingTicker 轮换，thinkingLabel 绑定刷新）；
                                 // 完成后：后端 TraceJson 的真实阶段摘要（✓ 阶段 · 耗时），可折叠。
                                 // 只展示阶段/友好摘要/状态/耗时；SQL 单独折叠，不展示思维链、Prompt 或密钥
-                                if (oEntry.agentThinking) {
+                                if (oEntry.agentThinking || oEntry.thinking) {
                                         var oLiveHead = new HBox({ alignItems: "Center" }).addStyleClass("agentThinkingHeader");
                                         oLiveHead.addItem(new Text({ text: oRB.getText("agentThinking") })
                                                 .addStyleClass("agentThinkingTitle agentThinkingPulse"));
                                         oLiveHead.addItem(new Text({ text: "{chat>thinkingLabel}" })
                                                 .addStyleClass("agentThinkingPhase"));
-                                        var oLiveCard = new VBox().addStyleClass("agentThinkingCard agentThinkingLive");
+                                        var oLiveCard = new VBox({ visible: "{chat>requestPending}" })
+                                                .addStyleClass("agentThinkingCard agentThinkingLive");
                                         oLiveCard.addItem(oLiveHead);
                                         oCol.addItem(oLiveCard);
-                                } else if (oEntry.thinking && oEntry.thinking.phases && oEntry.thinking.phases.length) {
-                                        var oTh = oEntry.thinking;
-                                        var iThoughtSec = Math.max(1, Math.round((oTh.elapsedMs || 0) / 1000));
-                                        var oStepsBox = new VBox().addStyleClass("agentThinkingSteps");
-                                        oTh.phases.forEach(function (p) {
+                                        var oStepsBox = new VBox({
+                                                visible: "{chat>thinking/hasPhases}"
+                                        }).addStyleClass("agentThinkingSteps");
+                                        oStepsBox.bindAggregation("items", {
+                                                path: "chat>thinking/phases",
+                                                templateShareable: false,
+                                                factory: function (sStepId, oStepContext) {
+                                                var p = oStepContext.getObject();
                                                 var bOk = (p.status || "OK") === "OK";
                                                 var sGlyph = bOk ? "✓" : (p.status === "REJECTED" ? "⚠" : "✕");
-                                                var sCost = (p.elapsedMs || 0) >= 1000
-                                                        ? ((p.elapsedMs || 0) / 1000).toFixed(1) + "s"
-                                                        : (p.elapsedMs || 0) + "ms";
+                                                var sCost = p.elapsedMs === null ? "--" : p.elapsedMs >= 1000
+                                                        ? (p.elapsedMs / 1000).toFixed(1) + "s"
+                                                        : p.elapsedMs + "ms";
                                                 var oStepRow = new HBox({ alignItems: "Center" })
                                                         .addStyleClass("agentThinkingStep" + (bOk ? "" : " agentThinkingStepFail"));
                                                 oStepRow.addItem(new Text({ text: sGlyph }).addStyleClass("agentStepGlyph"));
@@ -2084,7 +2095,9 @@ sap.ui.define([
                                                         .addStyleClass("agentStepLabel"));
                                                 oStepRow.addItem(new Text({ text: sCost }).addStyleClass("agentStepTime"));
                                                 // 动态 SQL 仅展示后端已校验的语句，默认折叠，避免 Trace 撑满页面。
-                                                if (p.detail) {
+                                                var oStepBox = new VBox();
+                                                oStepBox.addItem(oStepRow);
+                                                if (p.detail && p.tool === "run_sql") {
                                                         var oSqlText = new Text({ text: p.detail, wrapping: true, visible: false })
                                                                 .addStyleClass("agentSqlDetail");
                                                         var oSqlBtn = new Button({ text: "SQL", type: "Transparent" })
@@ -2095,25 +2108,29 @@ sap.ui.define([
                                                                 oSqlBtn.setText(bVisible ? "SQL" : "收起");
                                                         });
                                                         oStepRow.addItem(oSqlBtn);
-                                                        oStepsBox.addItem(oStepRow);
-                                                        oStepsBox.addItem(oSqlText);
-                                                } else {
-                                                        oStepsBox.addItem(oStepRow);
+                                                        oStepBox.addItem(oSqlText);
+                                                }
+                                                return oStepBox;
                                                 }
                                         });
                                         var oDoneHead = new HBox({ alignItems: "Center", justifyContent: "SpaceBetween" })
                                                 .addStyleClass("agentThinkingHeader");
                                         oDoneHead.addItem(new Text({
-                                                text: oRB.getText("agentThoughtDone", [iThoughtSec])
+                                                text: "{chat>thinking/title}"
                                         }).addStyleClass("agentThinkingTitle"));
-                                        var oFoldLink = new sap.m.Link({ text: "▴" }).addStyleClass("agentThinkingFold");
+                                        var oFoldLink = new sap.m.Link({
+                                                text: "▴",
+                                                visible: "{chat>thinking/hasPhases}"
+                                        }).addStyleClass("agentThinkingFold");
                                         oFoldLink.attachPress(function () {
                                                 var bV = oStepsBox.getVisible();
                                                 oStepsBox.setVisible(!bV);
                                                 oFoldLink.setText(bV ? "▾" : "▴");
                                         });
                                         oDoneHead.addItem(oFoldLink);
-                                        var oDoneCard = new VBox().addStyleClass("agentThinkingCard");
+                                        var oDoneCard = new VBox({
+                                                visible: "{= !${chat>requestPending} }"
+                                        }).addStyleClass("agentThinkingCard");
                                         oDoneCard.addItem(oDoneHead);
                                         oDoneCard.addItem(oStepsBox);
                                         oCol.addItem(oDoneCard);
@@ -2125,7 +2142,14 @@ sap.ui.define([
                                 // 发现/错误提示），位于文字回答之下。
                                 // 安全模型与 markdown 正文相同：所有动态文本先 escapeHtml，
                                 // 所有标签由 _buildAnalysisHtml 构造，无注入路径
-                                if (oEntry.analysis) {
+                                if (oEntry.agentThinking || oEntry.thinking) {
+                                        oCol.addItem(new HTML({
+                                                content: "{chat>analysisHtml}",
+                                                visible: "{= !!${chat>analysisHtml} }",
+                                                preferDOM: false,
+                                                sanitizeContent: false
+                                        }));
+                                } else if (oEntry.analysis) {
                                         var sAnalysisHtml = this._buildAnalysisHtml(oEntry.analysis);
                                         if (sAnalysisHtml) {
                                                 oCol.addItem(new HTML({
