@@ -13,6 +13,15 @@
 * 安装:   SE24 -> 创建类 -> 源代码粘帖 (适用 ABAP 7.50, 755 兼容)
 * 激活顺序: 本类 -> ZCL_AI_SQL_EXECUTOR -> ZCL_AI_DDIC_TOOLS
 * V1.2 20261005: is_sensitive 提为 public(黑名单单一来源); 实现未动
+* V1.2.1 20261006: 修复 SE24 激活语法错(12 处报错)
+* V1.2.2 20261006: 修复运行时 dump VIEW_AUTHORITY_CHECK
+*   ①形参 view→view_name(本系统 FM 已改名) ②string 实参→CHAR30 引用形参 ILLEGAL_TYPE,
+*   显式中转变量 lv_vname(dd02v-tabname) ③异常名对齐标准全名 no_clientindep_authority
+*   ★ 重贴后核对标记: 本类内应有 lv_vname 中转与 no_clientindep_authority
+*   ① SHIFT ... LEFT LEADING 非法组合(2 处) → LEFT DELETING LEADING / RIGHT DELETING TRAILING
+*   ② offset/length 位置不允许 strlen() 表达式 → SHIFT RIGHT DELETING TRAILING 替代循环
+*   ③ STRING 写入位置子串赋值非法(writer 位置须 flat) → STRIP_LITERALS 改 CHAR 4000 缓冲
+*   ★ 重贴后核对标记: validate_sql 内应有 "SHIFT lv_sql RIGHT DELETING TRAILING space."
 *=======================================================================
 CLASS zcl_ai_sql_guard DEFINITION
   PUBLIC
@@ -106,10 +115,8 @@ CLASS zcl_ai_sql_guard IMPLEMENTATION.
     " 换行/制表符折叠为空格(行首 * 注释因此退化为乘号, 无注释注入面);
     " 只掐头去尾, 不压缩内部空格 —— 字面量内的连续空格可能参与过滤条件
     REPLACE ALL OCCURRENCES OF REGEX '[\r\n\t]+' IN lv_sql WITH ` `.
-    SHIFT lv_sql LEFT LEADING DELETING LEADING space.
-    WHILE strlen( lv_sql ) > 0 AND lv_sql+strlen( lv_sql )-1(1) = space.
-      lv_sql = lv_sql(strlen( lv_sql )-1).
-    ENDWHILE.
+    SHIFT lv_sql LEFT DELETING LEADING space.      " V1.2.1: LEFT LEADING 非法组合
+    SHIFT lv_sql RIGHT DELETING TRAILING space.    " V1.2.1: 替代 STRING 子串写入循环
 
     IF lv_sql IS INITIAL.
       ev_error = 'SQL 语句为空'.
@@ -132,13 +139,9 @@ CLASS zcl_ai_sql_guard IMPLEMENTATION.
     DATA(lv_work) = lv_sql.
 
     " 尾部句点(模型常见习惯)允许剥离; 内部句点(多语句)拒绝
-    WHILE strlen( lv_work ) > 0 AND lv_work+strlen( lv_work )-1(1) = '.'.
-      lv_work = lv_work(strlen( lv_work )-1).
-    ENDWHILE.
-    SHIFT lv_work LEFT LEADING DELETING LEADING space.
-    WHILE strlen( lv_work ) > 0 AND lv_work+strlen( lv_work )-1(1) = space.
-      lv_work = lv_work(strlen( lv_work )-1).
-    ENDWHILE.
+    SHIFT lv_work RIGHT DELETING TRAILING '.'.     " V1.2.1
+    SHIFT lv_work LEFT DELETING LEADING space.     " V1.2.1
+    SHIFT lv_work RIGHT DELETING TRAILING space.   " V1.2.1
     IF lv_work IS INITIAL.
       ev_error = 'SQL 语句为空'.
       RETURN.
@@ -265,14 +268,18 @@ CLASS zcl_ai_sql_guard IMPLEMENTATION.
         RETURN.
       ENDIF.
 
-      CALL FUNCTION 'VIEW_AUTHORITY_CHECK'
-        EXPORTING
-          view             = lv_tab
-        EXCEPTIONS
-          no_authority     = 1
-          no_clientindep_auth = 2
-          table_not_found  = 3
-          OTHERS           = 4.
+    " V1.1.7: FM 形参 view_name(CHAR30, 按引用) —— string 实参须显式中转;
+    " CALL FUNCTION 参数位置不允许 CONV 表达式; 异常名用标准全名
+    DATA lv_vname TYPE dd02v-tabname.
+    lv_vname = lv_tab.
+    CALL FUNCTION 'VIEW_AUTHORITY_CHECK'
+      EXPORTING
+        view_name                 = lv_vname
+      EXCEPTIONS
+        no_authority              = 1
+        no_clientindep_authority  = 2
+        table_not_found           = 3
+        OTHERS                    = 4.
       IF sy-subrc <> 0.
         ev_error = |没有权限读取表 { lv_tab } (需要 S_TABU_NAM/S_TABU_DIS 显示权限)|.
         RETURN.
@@ -292,28 +299,37 @@ CLASS zcl_ai_sql_guard IMPLEMENTATION.
     " ABAP 单引号字面量中 '' 表示一个引号(转义); 同时检查常量长度
     CLEAR: ev_stripped, ev_unbalanced, ev_lit_too_long.
 
+    " V1.2.1: 改用 CHAR 4000 定长缓冲扫描 —— ABAP 不允许对 STRING 在
+    " 写入位置(writer position)做子串赋值(操作数必须 flat 类型);
+    " 双 offset 写法 iv_sql+lv_i+1(1) 亦非法, 改用变量 lv_last
     DATA: lv_len  TYPE i,
           lv_i    TYPE i,
+          lv_last TYPE i,
           lv_ch   TYPE c LENGTH 1,
           lv_open TYPE abap_bool,
-          lv_lits TYPE i.               " 当前常量长度
+          lv_lits TYPE i,               " 当前常量长度
+          lv_buf  TYPE c LENGTH 4000.   " 定长扫描缓冲(CHAR 子串写入合法)
 
     lv_len = strlen( iv_sql ).
-    ev_stripped = iv_sql.
+    IF lv_len > 4000.
+      lv_len = 4000.                    " validate_sql 已限长 4000, 此处兜底
+    ENDIF.
+    lv_buf = iv_sql(lv_len).
 
     WHILE lv_i < lv_len.
-      lv_ch = iv_sql+lv_i(1).
+      lv_ch = lv_buf+lv_i(1).
       IF lv_open = abap_true.
         lv_lits = lv_lits + 1.
         IF lv_lits > 150.
           ev_lit_too_long = abap_true.
           RETURN.
         ENDIF.
-        ev_stripped+lv_i(1) = ` `.
+        lv_buf+lv_i(1) = ` `.
         IF lv_ch = `'`.
           " 判断是转义('')还是闭合
-          IF lv_i + 1 < lv_len AND iv_sql+lv_i+1(1) = `'`.
-            ev_stripped+lv_i+1(1) = ` `.
+          lv_last = lv_i + 1.
+          IF lv_last < lv_len AND lv_buf+lv_last(1) = `'`.
+            lv_buf+lv_last(1) = ` `.
             lv_i = lv_i + 1.
             lv_lits = lv_lits + 1.
           ELSE.
@@ -323,11 +339,12 @@ CLASS zcl_ai_sql_guard IMPLEMENTATION.
       ELSEIF lv_ch = `'`.
         lv_open = abap_true.
         lv_lits = 0.
-        ev_stripped+lv_i(1) = ` `.
+        lv_buf+lv_i(1) = ` `.
       ENDIF.
       lv_i = lv_i + 1.
     ENDWHILE.
 
+    ev_stripped = lv_buf.
     ev_unbalanced = xsdbool( lv_open = abap_true ).
 
   ENDMETHOD.
@@ -456,3 +473,4 @@ CLASS zcl_ai_sql_guard IMPLEMENTATION.
   ENDMETHOD.
 
 ENDCLASS.
+

@@ -21,7 +21,7 @@
 *                                      V12 增返 Mode/AgentType/Status
 *                                      (对话与 Agent 模式分离)
 *         5) SESSIONS_DELETE_ENTITY  - DELETE /Sessions('...')
-*         6) AGENTCAPABILITIES_GET_ENTITYSET - GET /AgentCapabilities
+*         6) AGENTCAPABILITIE_GET_ENTITYSET - GET /AgentCapabilities
 *                                      (V1.3.0 数据分析能力目录, 计划 §5/§14;
 *                                       需先在 SEGW 增加 AgentCapability
 *                                       EntityType + AgentCapabilities
@@ -45,6 +45,12 @@
 * 注意: SEGW 属性名与代码字段一一对应(如属性 ModelId -> 字段 modelid),
 *       若你在 SEGW 中使用了不同的属性名, 请同步修改本类中的字段名。
 *=======================================================================
+* V1.1.1 20261006: 修复激活错 "method does not exist / 相似 AGENTCAPABILITIE_GET_ENTITYSET"
+*   EntitySet AgentCapabilities 拼接 _GET_ENTITYSET = 32 字符, 超 ABAP 30 上限,
+*   SEGW 生成基类方法名自动截尾(去掉 Capability 尾 s) —— 本类 REDEFINITION
+*   方法名同步改为截断版(2 处: DEFINITION + IMPLEMENTATION), 方法体逻辑不变;
+*   URL /AgentCapabilities 不受影响(metadata 用 EntitySet 全名)
+*   ★ 重贴后核对标记: 搜 agentcapabilitie_get_entityset 应有 2 处(代码区)
 CLASS zcl_zai_chat_dpc_ext DEFINITION
   PUBLIC
   INHERITING FROM zcl_zai_chat_dpc
@@ -70,7 +76,7 @@ CLASS zcl_zai_chat_dpc_ext DEFINITION
     METHODS sessions_delete_entity REDEFINITION.
 
     " V1.3.0: GET /AgentCapabilities - 数据分析能力目录(计划 §5)
-    METHODS agentcapabilities_get_entityset REDEFINITION.
+    METHODS agentcapabilitie_get_entityset REDEFINITION.
 
     " V2.0: 读取 Function Import 的指定参数(大小写不敏感, 未传返回空)
     METHODS v8_param
@@ -386,7 +392,7 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
   ENDMETHOD.
 
 
-  METHOD agentcapabilities_get_entityset.
+  METHOD agentcapabilitie_get_entityset.
 
     " V1.3.0: GET /AgentCapabilities —— 数据分析能力目录(计划 §5)。
     " 只读声明项: 实体/标签/维度/指标/操作/上限/权限; 前端仅用于

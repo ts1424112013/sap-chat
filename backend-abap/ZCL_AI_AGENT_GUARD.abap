@@ -2,6 +2,15 @@
 * 对象:   ZCL_AI_AGENT_GUARD
 * 用途:   模型输出护栏: 严格 JSON 协议解析、参数 Schema 校验、结果裁剪
 * V1.1:   数据分析扩展(《SAP数据分析能力_开发计划》§13.3):
+* V1.1.1 20261006: 修复激活错 PARSE_ANALYSIS_PLAN Line 5 "Field IV_RAW is unknown"
+* V1.1.2 20261006: 修复激活错 EXTRACT_ARGS_OBJECT Line 12
+*   "Offsets or lengths cannot be specified for STRING in the current statement"
+*   extract_args_object 内 iv_raw+lv_off(无 length STRING offset 传实参)被拒
+*   等价替换为 substring( val = iv_raw off = lv_off )
+*   ★ 重贴后核对标记: 本方法内应有 substring 调用(搜 off = lv_off)
+*   签名 IMPORTING iv_json, 方法体误用 iv_raw(7z 源码笔误) → 改 iv_json
+*   全包已做"签名-方法体参数名一致性"静态扫描, 真雷仅此一处
+*   ★ 重贴后核对标记: parse_analysis_plan 方法内应有 "DATA(lv_raw) = iv_json."
 *         - parse_analysis_plan    查询计划 JSON 解析与规范化
 *                                  (白名单校验在 DATA_ANALYSIS_SERVICE)
 *         - parse_analysis_output  结构化分析输出解析+字段清洗+图表引用校验
@@ -395,7 +404,8 @@ CLASS zcl_ai_agent_guard IMPLEMENTATION.
 
     CLEAR: es_plan, ev_error.
 
-    DATA(lv_raw) = iv_raw.
+    " V1.1.1: 签名参数名为 iv_json, 方法体误写 iv_raw(SE24 激活报 Field IV_RAW is unknown)
+    DATA(lv_raw) = iv_json.
     REPLACE ALL OCCURRENCES OF REGEX '```[a-zA-Z]*' IN lv_raw WITH ``.
     CONDENSE lv_raw.
 
@@ -611,7 +621,9 @@ CLASS zcl_ai_agent_guard IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    rv = extract_json_object( iv_raw+lv_off ).
+    " V1.1.2: STRING 无 length offset(iv_raw+lv_off) 被该解析器拒绝(当前语句禁用)
+    "         改内置函数 substring, 彻底绕开 offset 语法
+    rv = extract_json_object( substring( val = iv_raw off = lv_off ) ).
 
   ENDMETHOD.
 
@@ -676,3 +688,5 @@ CLASS zcl_ai_agent_guard IMPLEMENTATION.
   ENDMETHOD.
 
 ENDCLASS.
+
+

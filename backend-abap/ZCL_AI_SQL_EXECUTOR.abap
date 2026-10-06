@@ -13,6 +13,36 @@
 * 安装:   SE24 (ABAP 7.50)
 * 激活顺序: ZCL_AI_SQL_GUARD -> 本类 -> ZCL_AI_DDIC_TOOLS
 * V1.2 20261005: 生成代码改用 GET REFERENCE OF, 免整表拷贝(语义不变)
+* V1.2.1 20261006: 修复 SE24 激活错 SPLIT_SOURCE(2 处报错)
+* V1.2.2 20261006: 编译失败错误回填附生成源码摘要(前 200 字符, 行以竖线分隔)
+* V1.2.3 20261006: 修复 GENERATE period missing —— 断行结构性重做
+* V1.2.4 20261006: 修复 RUN_SQL Line 73 length 表达式(lv_scut - lv_spos)报错
+* V1.2.5 20261006: 修复"查询未返回结果对象" —— 调试实锤 LR_DATA = FREED STACK
+* V1.2.6 20261006: 修复编译错第 8 行 generic reference cannot be dereferenced
+*   泛型引用(REF TO data)的 ->* 不允许作赋值目标 —— 标准 FIELD-SYMBOL 三段式:
+*   CREATE DATA → ASSIGN cr_data->* TO <fs>(ANY TABLE) → <fs> = 局部表
+*   ★ 重贴后核对标记: 生成 FORM 内应有 FIELD-SYMBOLS <lt_copy> TYPE ANY TABLE.
+*   GET REFERENCE OF 指向 FORM 栈上局部表 lt_result, PERFORM 返回后栈帧回收,
+*   引用失效 → IS NOT BOUND 为真(头注释"GC 保证存活"断言错误, 7z 源码第 8 处坑)
+*   → FORM 内改 CREATE DATA cr_data LIKE lt_result(堆对象) + cr_data->* = lt_result 拷贝
+*   顺带 log_run 补 MANDT 赋值(此前审计行 client 为空, SE16 按 470 查不可见)
+*   ★ 重贴后核对标记: 生成 FORM 内应有 CREATE DATA cr_data LIKE lt_result.
+*   offset/length 位置只允许简单变量 —— 教训在 SQL_EXECUTOR/DDIC_TOOLS 已两犯,
+*   本次自查再犯于新代码; 顺带修 STRING 无 length APPEND 与 -= 复合赋值
+*   ★ 重贴后核对标记: SQL 段断行内应有 DATA lv_segl TYPE i.
+*   调试实锤: split_source 断行失效(环境相关), lv_code 350 字符挤进单行 C(200)
+*   被截断, ROWS./ENDFORM. 丢失 → SYS$$INCOMPLETE$$ LINE 1
+*   → 弃用整体拼串+断行, 改按逻辑段逐行 APPEND(PROGRAM/FORM/TRY/SQL段/INTO/...);
+*   行数上限 @iv_max 同步改为字面量内嵌 { lv_max }(消除 FORM 参数引用悬案);
+*   仅模型 SQL 段超 230 时才 FIND 空格断行。split_source 方法保留但不再调用
+*   ★ 重贴后核对标记: run_sql 内应有 APPEND |PROGRAM.| TO lt_source.
+*   排障: ZAI_SQL_LOG.ERROR_MSG 直接可见喂给 GENERATE 的完整代码, 不再盲猜
+*   ★ 重贴后核对标记: 失败分支应有 lv_srccode
+*   ① 双 offset iv_code+lv_i+1(1) 非法 → lv_next 变量
+*   ② length 位置不允许算术表达式 lv_last_sp - lv_start → lv_cut 变量
+*   ③ 尾行无 length 子串改显式 length
+*   ★ 重贴后核对标记: 本类应搜到 "lv_cut = lv_last_sp - lv_start."
+
 *=======================================================================
 CLASS zcl_ai_sql_executor DEFINITION
   PUBLIC
@@ -107,22 +137,56 @@ CLASS zcl_ai_sql_executor IMPLEMENTATION.
     " 模型语句 + 后端拼接的 INTO/UP TO; 表/字段/语法在编译期即校验
     " V1.2: GET REFERENCE OF 直接引用结果表(ABAP GC 保证 FORM 返回后
     " 数据存活), 替代 CREATE DATA+ASSIGN+整表拷贝, 省一次 5000 行复制
-    DATA lv_code TYPE string.
-    lv_code =
-      |PROGRAM. | &&
-      |FORM run_sql USING iv_max TYPE i | &&
-      |CHANGING cr_data TYPE REF TO data cv_err TYPE string. | &&
-      |TRY. | &&
-      |{ lv_clean } | &&
-      |INTO TABLE @DATA(lt_result) UP TO @iv_max ROWS. | &&
-      |GET REFERENCE OF lt_result INTO cr_data. | &&
-      |CATCH cx_root INTO DATA(lx_gen). | &&
-      |cv_err = lx_gen->get_text( ). | &&
-      |ENDTRY. | &&
-      |ENDFORM.|.
+    " V1.2.3: 弃用"整体拼串+split_source 断行"(实测断行失效 → 单行 200 截断
+    " → period missing), 改为按逻辑段逐行 APPEND —— 每行天然 < 200 字符;
+    " 仅模型 SQL 段可能超长, 用 FIND 空格断行(每段独立检查)
+    DATA: lt_source TYPE tt_source,
+          lv_seg    TYPE string,
+          lv_spos   TYPE i,
+          lv_scand  TYPE i,
+          lv_scut   TYPE i.
 
-    DATA: lt_source TYPE tt_source.
-    split_source( EXPORTING iv_code = lv_code IMPORTING et_source = lt_source ).
+    APPEND |PROGRAM.| TO lt_source.
+    APPEND |FORM run_sql USING iv_max TYPE i| TO lt_source.
+    APPEND |CHANGING cr_data TYPE REF TO data cv_err TYPE string.| TO lt_source.
+    APPEND |TRY.| TO lt_source.
+
+    " ---- 模型 SQL 段(>230 按空格断行, 断不出空格则硬切) ----
+    " V1.2.4: offset/length 位置禁算术表达式(教训三犯!), 全部显式变量;
+    "         STRING 无 length offset 也被拒, APPEND 前先算段长
+    DATA lv_segl TYPE i.
+    lv_spos = 0.
+    WHILE lv_spos < strlen( lv_clean ).
+      lv_segl = strlen( lv_clean ) - lv_spos.
+      IF lv_segl <= 230.
+        APPEND lv_clean+lv_spos(lv_segl) TO lt_source.
+        EXIT.
+      ENDIF.
+      lv_scand = lv_spos + 230.
+      lv_scut  = lv_spos + 230.
+      DO 40 TIMES.
+        IF lv_clean+lv_scand(1) = ` `.
+          lv_scut = lv_scand.
+          EXIT.
+        ENDIF.
+        lv_scand = lv_scand - 1.
+      ENDDO.
+      lv_segl = lv_scut - lv_spos.
+      lv_seg  = lv_clean+lv_spos(lv_segl).
+      APPEND lv_seg TO lt_source.
+      lv_spos = lv_scut + 1.
+    ENDWHILE.
+
+    APPEND |INTO TABLE @DATA(lt_result) UP TO { lv_max } ROWS.| TO lt_source.
+    " V1.2.5: 栈引用在 FORM 返回后 FREED(调试实锤 FREED STACK) —— 必须堆上创建
+    APPEND |FIELD-SYMBOLS <lt_copy> TYPE ANY TABLE.| TO lt_source.
+    APPEND |CREATE DATA cr_data LIKE lt_result.| TO lt_source.
+    APPEND |ASSIGN cr_data->* TO <lt_copy>.| TO lt_source.
+    APPEND |<lt_copy> = lt_result.| TO lt_source.
+    APPEND |CATCH cx_root INTO DATA(lx_gen).| TO lt_source.
+    APPEND |cv_err = lx_gen->get_text( ).| TO lt_source.
+    APPEND |ENDTRY.| TO lt_source.
+    APPEND |ENDFORM.| TO lt_source.
 
     " ---- 4. 生成(编译): 错误原样回给模型修正 ----
     DATA: lv_prog TYPE string,
@@ -134,9 +198,14 @@ CLASS zcl_ai_sql_executor IMPLEMENTATION.
       MESSAGE lv_msg LINE lv_line WORD lv_word.
 
     IF sy-subrc <> 0.
+      " V1.2.2: 错误回填附生成源码摘要 —— 审计/回模型都可见编译器实际收到什么
+      DATA(lv_srccode) = concat_lines_of( table = lt_source sep = ` | ` ).
+      IF strlen( lv_srccode ) > 200.
+        lv_srccode = lv_srccode(200).
+      ENDIF.
       rs_run-status = 'ERROR'.
       rs_run-error  = |SQL 编译错误(第 { lv_line } 行): { lv_msg } ({ lv_word }). | &&
-                      |请检查表/字段名与 Open SQL 语法后重试|.
+                      |请检查表/字段名与 Open SQL 语法后重试. 生成源码: [{ lv_srccode }]|.
       rs_run-dataset-status = 'ERROR'.
       rs_run-dataset-error  = rs_run-error.
       log_run( iv_sql = lv_clean iv_status = 'ERROR' iv_rows = 0
@@ -234,6 +303,8 @@ CLASS zcl_ai_sql_executor IMPLEMENTATION.
           lv_i       TYPE i,
           lv_start   TYPE i,        " 当前行起点
           lv_last_sp TYPE i,        " 行内最近一个可断点(字面量外空格)的绝对位置
+          lv_next    TYPE i,        " V1.2.1: 双 offset 改变量
+          lv_cut     TYPE i,        " V1.2.1: 断行长度(length 位置禁表达式)
           lv_open    TYPE abap_bool,
           lv_ch      TYPE c LENGTH 1.
 
@@ -245,7 +316,8 @@ CLASS zcl_ai_sql_executor IMPLEMENTATION.
 
       IF lv_open = abap_true.
         IF lv_ch = `'`.
-          IF lv_i + 1 < lv_len AND iv_code+lv_i+1(1) = `'`.
+          lv_next = lv_i + 1.
+          IF lv_next < lv_len AND iv_code+lv_next(1) = `'`.
             lv_i = lv_i + 1.            " '' 转义, 跳过第二个引号
           ELSE.
             lv_open = abap_false.
@@ -259,7 +331,8 @@ CLASS zcl_ai_sql_executor IMPLEMENTATION.
 
       " 行长达到 198 → 在最近可断点处断行(该空格不保留, 换行即分隔)
       IF lv_i - lv_start >= 198 AND lv_last_sp > lv_start.
-        APPEND iv_code+lv_start(lv_last_sp - lv_start) TO et_source.
+        lv_cut = lv_last_sp - lv_start.          " V1.2.1: length 位置不允许算术表达式
+        APPEND iv_code+lv_start(lv_cut) TO et_source.
         lv_start = lv_last_sp + 1.
       ENDIF.
 
@@ -267,7 +340,8 @@ CLASS zcl_ai_sql_executor IMPLEMENTATION.
     ENDWHILE.
 
     IF lv_start < lv_len.
-      APPEND iv_code+lv_start TO et_source.
+      lv_cut = lv_len - lv_start.              " V1.2.1: 无 length 子串改显式 length
+      APPEND iv_code+lv_start(lv_cut) TO et_source.
     ENDIF.
 
   ENDMETHOD.
@@ -336,6 +410,8 @@ CLASS zcl_ai_sql_executor IMPLEMENTATION.
             <lv_field> = <lv_field>(4000).
           ENDIF.
         ENDIF.
+        ASSIGN COMPONENT 'MANDT'      OF STRUCTURE <ls_log> TO <lv_field>.
+        IF sy-subrc = 0. <lv_field> = sy-mandt. ENDIF.
         ASSIGN COMPONENT 'STATUS'     OF STRUCTURE <ls_log> TO <lv_field>.
         IF sy-subrc = 0. <lv_field> = iv_status. ENDIF.
         ASSIGN COMPONENT 'RESULT_ROWS' OF STRUCTURE <ls_log> TO <lv_field>.
@@ -359,3 +435,4 @@ CLASS zcl_ai_sql_executor IMPLEMENTATION.
   ENDMETHOD.
 
 ENDCLASS.
+

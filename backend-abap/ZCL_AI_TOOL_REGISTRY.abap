@@ -15,6 +15,10 @@
 *         get_daily_movement 指定过账日期的收发汇总(MSEG, 按移动类型/方向)
 *         get_batch_stock    批次库存明细(MCHB, 批次管理料号按需调用)
 * V1.1:   新增数据分析工具(《SAP数据分析能力_开发计划》§13.2):
+* V1.1.1 20261006: 修复 SE24 激活错 get_tools_for_domain
+*   同一方法内两次 DATA(ls_tool) 内联声明("LS_TOOL was already declared")
+*   → DATA 分支 LOOP 改 INTO ls_tool(沿用 INVENTORY 分支声明)
+*   ★ 重贴后核对标记: 本方法内应只有一处 "INTO DATA(ls_tool)"
 *         sap_data_analysis  受控查询计划取数(能力目录白名单实体/字段),
 *                            args 直接承载计划 JSON 对象(不走扁平 kv),
 *                            解析/校验见 AGENT_GUARD.parse_analysis_plan,
@@ -224,7 +228,8 @@ CLASS zcl_ai_tool_registry IMPLEMENTATION.
         rt_tools = lt_inv.
       WHEN 'DATA'.
         " V14: 数据分析域 = 受控查询计划(sap_data_analysis) + 动态 SQL 三工具
-        LOOP AT get_tools( ) INTO DATA(ls_tool).
+        " V1.1.1: 改 INTO ls_tool 沿用 INVENTORY 分支声明 —— 同一方法内重复 DATA(ls_tool) 内联声明激活报错
+        LOOP AT get_tools( ) INTO ls_tool.
           IF ls_tool-tool_id = gc_tool_data_analysis
              OR ls_tool-tool_id = gc_tool_search_tables
              OR ls_tool-tool_id = gc_tool_describe_tab

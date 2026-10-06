@@ -53,6 +53,10 @@
 *         6) 会话置顶/重命名: ZAI_CHAT_SESS 新增 PINNED, 新增 v8_update_session
 *            (FI UpdateSession), 仅限本人会话。
 * V2.2.4: 编译修正版(2026-10-01) ——
+* V1.8.1 20261006: 修复运行时 dump VIEW_AUTHORITY_CHECK
+*   ①形参 view→view_name(本系统 FM 已改名) ②string 实参→CHAR30 引用形参 ILLEGAL_TYPE,
+*   显式中转变量 lv_vname(dd02v-tabname) ③异常名对齐标准全名 no_clientindep_authority
+*   ★ 重贴后核对标记: 本类内应有 lv_vname 中转与 no_clientindep_authority
 *         read_program_meta: TRDIRT 的程序名字段是 NAME 而非 PROGNAME
 *         (PROGNAME 是 REPOSRC 的字段, 原代码两处混用导致
 *         "Unknown column name PROGNAME", 并连带 LV_T 内联声明失败报
@@ -1163,13 +1167,18 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
       RETURN.
     ENDIF.
 
+    " V1.1.7: FM 形参 view_name(CHAR30, 按引用) —— string 实参须显式中转;
+    " CALL FUNCTION 参数位置不允许 CONV 表达式; 异常名用标准全名
+    DATA lv_vname TYPE dd02v-tabname.
+    lv_vname = iv_tabname.
     CALL FUNCTION 'VIEW_AUTHORITY_CHECK'
       EXPORTING
-        view               = iv_tabname
+        view_name                 = lv_vname
       EXCEPTIONS
-        no_authorization   = 1
-        table_not_found    = 2
-        OTHERS             = 3.
+        no_authority              = 1
+        no_clientindep_authority  = 2
+        table_not_found           = 3
+        OTHERS                    = 4.
     IF sy-subrc <> 0.
       ev_note = |没有权限读取表 { iv_tabname }(需要 S_TABU_NAM/S_TABU_DIS 权限)|.
       RETURN.
@@ -1962,3 +1971,4 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
     rs-success = 'X'. rs-message = '已开通'.
   ENDMETHOD.
 ENDCLASS.
+

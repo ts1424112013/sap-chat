@@ -47,6 +47,9 @@
 *            宿主变量 lv_now(报错 String templates can only be used
 *            within @( ... ) here)。
 * V1.2.1: 编译修正版(2026-10-01) —— 会话模式列名修正: MODE 是 DDIC 保留字,
+* V1.3.1 20261006: read_cfg_int 钳制上限修正(AGENT_MAX_ROUNDS 6→10 / AGENT_BUDGET_SEC 120→180)
+*   原上限 < 默认值: 不配置生效 10轮/180s, 一配置反被钳成 6轮/120s —— 与文档 7.2 建议值冲突
+*   ★ 重贴后核对标记: analyze_agent 内应有 iv_max = 10 与 iv_max = 180
 *         SE11 无法建名为 MODE 的列, ZAI_CHAT_SESS 表字段实际为 SESSION_MODE
 *         (见文档表 2-2)。本版将 ensure_agent_session / save_chat 中全部
 *         mode 组件引用改为 session_mode, 其余逻辑与 V1.2 一致。
@@ -253,9 +256,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     ENDIF.
 
     DATA(lv_max_rounds) = read_cfg_int( iv_key = 'AGENT_MAX_ROUNDS' iv_default = gc_max_rounds
-                                        iv_min = 2 iv_max = 6 ).
+                                        iv_min = 2 iv_max = 10 ).   " V1.3.1: 上限 6→10(与默认 gc_max_rounds=10 对齐, 20261006)
     DATA(lv_budget_ms)  = read_cfg_int( iv_key = 'AGENT_BUDGET_SEC' iv_default = gc_budget_ms / 1000
-                                        iv_min = 30 iv_max = 120 ) * 1000.
+                                        iv_min = 30 iv_max = 180 ) * 1000.   " V1.3.1: 上限 120→180(与默认 180s 对齐, 20261006)
 
     DATA lv_run_id TYPE c LENGTH 32.
     CALL FUNCTION 'GUID_CREATE' IMPORTING ev_guid_32 = lv_run_id.
@@ -1207,3 +1210,5 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
 
 ENDCLASS.
+
+
