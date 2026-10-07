@@ -87,7 +87,17 @@ sap.ui.define([
                                 heroTitle: "",                  // 空状态标题（随模式）
                                 heroSub: "",                    // 空状态副标题（随模式）
                                 heroPh: "",                     // 输入占位文案（随模式）
-                                inputPh: ""
+                                inputPh: "",
+                                // ---- V15：多业务任务区（只展示后端确认的状态） ----
+                                currentTask: null,              // {taskId,module,status,shortId,needsInput,pending[]}
+                                taskStripVisible: false,        // 任务区显隐（对话态）
+                                taskBadge: "",                  // 任务徽标（模块/状态/短标识）
+                                taskBadgeState: "None",         // 徽标状态色
+                                taskTitle: "",                  // 任务标题
+                                runStatus: "",                  // 报表运行状态行
+                                runVisible: false,
+                                paramFormVisible: false,        // 参数表单显隐
+                                paramError: ""                  // 服务端返回的参数校验错误
                         });
                         this.getView().setModel(oChatModel, "chat");
 
@@ -1088,12 +1098,18 @@ sap.ui.define([
                                 that._refreshSessions();
                         };
 
+                        // V15：Agent 模式走 AnalyzeTask（携带当前 TaskId 与本轮
+                        // ClientRequestId）；后端无新接口时 ChatService 内部
+                        // 自动回退旧 AnalyzeAgent，调用方无感
+                        var oCurTask = oChatModel.getProperty("/currentTask") || {};
                         var pReq = ChatService.sendByMode({
                                 mode: oCfg.mode,
                                 agentType: oCfg.agentType,
                                 sessionId: sSessionId,
                                 question: oCfg.question,
-                                modelId: sModelId
+                                modelId: sModelId,
+                                taskId: bAgent ? (oCurTask.taskId || "") : "",
+                                clientRequestId: bAgent ? this._newSessionId() : ""
                         });
 
                         return pReq.then(function (oRes) {
@@ -1114,6 +1130,8 @@ sap.ui.define([
                                                 // HTTP 已结束：立即收口，空/坏 Trace 也不能继续显示正在执行。
                                                 that._attachAgentProcess(iAssistantIdx, oRes);
                                                 that._updateAgentSessionStatus(sSessionId, oRes.status);
+                                                // V15：任务状态/参数表单/任务徽标回写（后端确认的状态）
+                                                that._updateTaskState(oRes, sSessionId);
                                         }
                                         return that._streamAnswer(iAssistantIdx, oRes.answer || oRes.message || "（空回复）", sDoneMeta, sSendToken)
                                                 .then(function () {
@@ -3552,6 +3570,329 @@ sap.ui.define([
                                 });
                         }).catch(function (oErr) {
                                 MessageToast.show(Formatter.escapeHtml((oErr && oErr.message) || String(oErr)));
+                        });
+                },
+
+                /* =========================================================
+                 * V15：多业务任务区（当前任务/参数表单/报表运行轮询）
+                 * 原则：前端只展示后端确认的状态，不决定权限/白名单/
+                 * 报表存在性/运行成功与否；轮询按 runId+会话归属写入，
+                 * 不把结果写进其他任务；轮询独立于聊天 busy
+                 * ========================================================= */
+
+                /** 任务徽标文案（模块中文名 + 状态） */
+                _taskModuleLabel: function (sModule) {
+                        var aMap = { REPORT: "报表", INVENTORY: "库存", DATA: "数据", CODE: "源码", GENERAL: "通用" };
+                        return aMap[sModule] || sModule || "";
+                },
+
+                _taskStateColor: function (sSts) {
+                        var aMap = {
+                                COMPLETED: "Success", RUNNING: "Information", ANALYZING: "Information",
+                                QUEUED: "Information", WAITING_INPUT: "Warning", PAUSED: "Warning",
+                                PARTIAL: "Warning", FAILED: "Error", CANCELLED: "Error", EXPIRED: "Error"
+                        };
+                        return aMap[sSts] || "None";
+                },
+
+                /**
+                  * Agent 应答后回写任务区（oRes.taskId 为空 = 后端任务层未开启，
+                  * 清空展示，不虚构任务状态）
+                  * @param {object} oRes sendTask 返回（taskId/taskModule/taskStatus/needsInput/pendingParamsJson）
+                  */
+                _updateTaskState: function (oRes, sSessionId) {
+                        var oChatModel = this.getView().getModel("chat");
+                        if (!oRes || !oRes.taskId) {
+                                oChatModel.setProperty("/currentTask", null);
+                                oChatModel.setProperty("/taskStripVisible", false);
+                                oChatModel.setProperty("/taskBadge", "");
+                                oChatModel.setProperty("/paramFormVisible", false);
+                                return;
+                        }
+                        var aPending = [];
+                        if (oRes.pendingParamsJson) {
+                                try {
+                                        aPending = JSON.parse(oRes.pendingParamsJson) || [];
+                                } catch (e) {
+                                        aPending = [];
+                                }
+                        }
+                        var oTask = {
+                                taskId: oRes.taskId,
+                                shortId: (oRes.taskId || "").substring(0, 8),
+                                module: oRes.taskModule || "",
+                                status: oRes.taskStatus || "",
+                                needsInput: oRes.needsInput === true,
+                                sessionId: sSessionId
+                        };
+                        oChatModel.setProperty("/currentTask", oTask);
+                        oChatModel.setProperty("/taskBadge",
+                                this._taskModuleLabel(oTask.module) + " · " + oTask.status + " · " + oTask.shortId);
+                        oChatModel.setProperty("/taskBadgeState", this._taskStateColor(oTask.status));
+                        oChatModel.setProperty("/taskTitle", "");
+                        oChatModel.setProperty("/taskStripVisible",
+                                oChatModel.getProperty("/listVisible") === true);
+                        // 待填参数 → 表单（缺参数 = WAITING_INPUT；执行开关状态由后端在提交时判定）
+                        this._renderParamForm(oTask.needsInput ? aPending : []);
+                },
+
+                /**
+                  * 按后端参数 Schema 渲染表单（多值约定：逗号分隔 → 服务端
+                  * 校验；只读展示不允许前端自造参数）
+                  */
+                _renderParamForm: function (aPending) {
+                        var oBox = this.byId("paramForm");
+                        var oChatModel = this.getView().getModel("chat");
+                        oBox.destroyItems();
+                        oChatModel.setProperty("/paramError", "");
+                        if (!aPending || !aPending.length) {
+                                oChatModel.setProperty("/paramFormVisible", false);
+                                return;
+                        }
+                        aPending.slice(0, 20).forEach(function (oP) {
+                                if (!oP || !oP.param_id) {
+                                        return;
+                                }
+                                var sLabel = oP.label || oP.param_id;
+                                if (oP.required === true) {
+                                        sLabel += " *";
+                                }
+                                if (oP.multi_value === true) {
+                                        sLabel += "（多值用英文逗号分隔）";
+                                } else if (oP.range_allowed === true) {
+                                        sLabel += "（范围用 low,high）";
+                                }
+                                oBox.addItem(new HBox({
+                                        alignItems: "Center",
+                                        items: [
+                                                new Text({ text: sLabel, width: "16rem" }),
+                                                new Input({
+                                                        width: "18rem",
+                                                        placeholder: oP.data_type === "DATE" ? "YYYYMMDD" : "",
+                                                        customData: [new sap.ui.core.CustomData({
+                                                                key: "paramId", value: oP.param_id
+                                                        })]
+                                                })
+                                        ]
+                                }).addStyleClass("paramRow"));
+                        });
+                        oChatModel.setProperty("/paramFormVisible", true);
+                },
+
+                /** 提交报表执行（每次用户主动提交 = 新 ClientRequestId；幂等由后端保证） */
+                onSubmitReportRun: function () {
+                        var oChatModel = this.getView().getModel("chat");
+                        var oTask = oChatModel.getProperty("/currentTask");
+                        if (!oTask || !oTask.taskId) {
+                                return;
+                        }
+                        var that = this;
+                        var oParams = {};
+                        this.byId("paramForm").getItems().forEach(function (oRow) {
+                                if (!(oRow instanceof HBox)) {
+                                        return;
+                                }
+                                var aItems = oRow.getItems();
+                                var oInp = null;
+                                aItems.forEach(function (oIt) {
+                                        if (oIt instanceof Input) {
+                                                oInp = oIt;
+                                        }
+                                });
+                                if (!oInp) {
+                                        return;
+                                }
+                                var sPid = "";
+                                (oInp.getCustomData() || []).forEach(function (oCd) {
+                                        if (oCd.getKey() === "paramId") {
+                                                sPid = oCd.getValue();
+                                        }
+                                });
+                                if (sPid) {
+                                        oParams[sPid] = (oInp.getValue() || "").trim();
+                                }
+                        });
+
+                        ChatService.startReportRun({
+                                sessionId: oTask.sessionId,
+                                taskId: oTask.taskId,
+                                reportId: oTask.module === "REPORT" ? (oTask.reportId || "") : "",
+                                paramsJson: JSON.stringify(oParams),
+                                clientRequestId: that._newSessionId()
+                        }).then(function (oRes) {
+                                if (oRes && oRes.needsInput) {
+                                        oChatModel.setProperty("/paramError", oRes.message || "参数未通过服务端校验");
+                                        return;
+                                }
+                                if (oRes && oRes.rejected) {
+                                        oChatModel.setProperty("/paramError", oRes.message || "提交被拒绝");
+                                        return;
+                                }
+                                oChatModel.setProperty("/paramError", "");
+                                // 后台运行：不锁聊天输入；轮询独立进行
+                                that._pollReportRun(oRes.reportRunId, oTask.sessionId, oTask.taskId);
+                        }).catch(function (oErr) {
+                                oChatModel.setProperty("/paramError", (oErr && oErr.message) || String(oErr));
+                        });
+                },
+
+                /**
+                  * 报表运行轮询（3s 间隔；独立于聊天 busy）。
+                  * 归属守卫：结果只写入发起时的会话/任务 —— 会话已切换时
+                  * 仅静默停止，不把结果写进其他任务。
+                  * TIMEOUT ≠ 作业停止、UNKNOWN 需继续查询（上限 100 次后提示人工核对）
+                  */
+                _pollReportRun: function (sRunId, sSessionId, sTaskId) {
+                        if (!sRunId) {
+                                return;
+                        }
+                        var that = this;
+                        var oChatModel = this.getView().getModel("chat");
+                        var iCount = 0;
+                        oChatModel.setProperty("/runVisible", true);
+                        oChatModel.setProperty("/runStatus",
+                                "报表运行 " + (sRunId || "").substring(0, 8) + " · 已提交，后台执行中…");
+
+                        var iTimer = window.setInterval(function () {
+                                iCount += 1;
+                                ChatService.getReportRunStatus(sRunId).then(function (oSts) {
+                                        if (!oSts || !oSts.status) {
+                                                window.clearInterval(iTimer);
+                                                oChatModel.setProperty("/runStatus", "运行状态查询失败，请稍后在任务中查看");
+                                                return;
+                                        }
+                                        var sLine = "报表运行 " + (oSts.shortId || (sRunId || "").substring(0, 8)) +
+                                                " · " + oSts.status +
+                                                (oSts.artifactShort ? " · 结果 " + oSts.artifactShort : "");
+                                        oChatModel.setProperty("/runStatus", sLine);
+
+                                        var bTerminal = oSts.status === "READY" || oSts.status === "FAILED";
+                                        var bGiveUp = iCount >= 100;   // UNKNOWN/TIMEOUT 轮询上限
+                                        if (!bTerminal && !bGiveUp) {
+                                                return;   // 继续轮询（TIMEOUT/UNKNOWN 不等于作业已停止）
+                                        }
+                                        window.clearInterval(iTimer);
+                                        if (bGiveUp) {
+                                                oChatModel.setProperty("/runStatus",
+                                                        sLine + " · 状态长时间未确认，请人工核对（本次不伪造结果）");
+                                                return;
+                                        }
+                                        if (oSts.status === "FAILED") {
+                                                oChatModel.setProperty("/runStatus",
+                                                        sLine + (oSts.errorMessage ? " · " + oSts.errorMessage : ""));
+                                                return;
+                                        }
+                                        // READY：读结果并按归属写入当前会话（其他会话不写）
+                                        var oNow = oChatModel.getProperty("/currentSession") || {};
+                                        if ((oNow.id || "") !== sSessionId) {
+                                                oChatModel.setProperty("/runVisible", false);
+                                                return;
+                                        }
+                                        ChatService.getReportResult(oSts.artifactId).then(function (oRes2) {
+                                                oChatModel.setProperty("/runVisible", false);
+                                                if (!oRes2 || oRes2.message) {
+                                                        oChatModel.setProperty("/runStatus",
+                                                                sLine + " · " + ((oRes2 && oRes2.message) || "结果读取失败"));
+                                                        return;
+                                                }
+                                                that._renderReportResult(oRes2, sRunId);
+                                        }).catch(function () {
+                                                oChatModel.setProperty("/runVisible", false);
+                                        });
+                                }).catch(function () {
+                                        // 单次查询失败不终止轮询（网络抖动），计入次数即可
+                                        if (iCount >= 100) {
+                                                window.clearInterval(iTimer);
+                                                oChatModel.setProperty("/runVisible", false);
+                                        }
+                                });
+                        }, 3000);
+                },
+
+                /** 结果渲染（只渲染后端下发的 schema+样例行；标注 MOCK/来源） */
+                _renderReportResult: function (oRes, sRunId) {
+                        var aCols = [];
+                        var aRows = [];
+                        try {
+                                aCols = (JSON.parse(oRes.schemaJson || "{}").columns) || [];
+                        } catch (e) { /* 坏 schema 不渲染表格 */ }
+                        try {
+                                aRows = JSON.parse(oRes.rowsJson || "[]") || [];
+                        } catch (e) { /* 坏行数据不渲染表格 */ }
+                        var sHtml = "<p><b>报表结果</b>（运行 " + (sRunId || "").substring(0, 8) +
+                                "，共 " + (oRes.rowCount || 0) + " 行，以下为受控样例）</p>";
+                        if (aCols.length && aRows.length) {
+                                sHtml += "<table class=\"rptResultTable\"><thead><tr>";
+                                aCols.forEach(function (c) {
+                                        sHtml += "<th>" + Formatter.escapeHtml(c.label || c.name) + "</th>";
+                                });
+                                sHtml += "</tr></thead><tbody>";
+                                aRows.slice(0, 50).forEach(function (r) {
+                                        sHtml += "<tr>";
+                                        aCols.forEach(function (c) {
+                                                sHtml += "<td>" + Formatter.escapeHtml(String(r[c.name] === undefined ? "" : r[c.name])) + "</td>";
+                                        });
+                                        sHtml += "</tr>";
+                                });
+                                sHtml += "</tbody></table>";
+                        } else if ((oRes.rowCount || 0) === 0) {
+                                sHtml += "<p>0 行结果（有效业务事实，不是失败）</p>";
+                        }
+                        var oEntry = this._buildEntry("assistant", sHtml, "", "REPORT_RESULT");
+                        oEntry.html = sHtml;   // 已自构 HTML（全部 escapeHtml）
+                        var oChatModel = this.getView().getModel("chat");
+                        oChatModel.getProperty("/messages").push(oEntry);
+                        oChatModel.setProperty("/messages", oChatModel.getProperty("/messages").slice());
+                        this._scrollToBottom();
+                },
+
+                /** 会话任务列表（切换/恢复：展示后端返回的任务，点击置为当前任务） */
+                onTaskListPress: function () {
+                        var that = this;
+                        var oChatModel = this.getView().getModel("chat");
+                        var oCtx = oChatModel.getProperty("/currentSession") || {};
+                        ChatService.getTasks(oCtx.id || "").then(function (aTasks) {
+                                var oPop = new Dialog({
+                                        title: "会话任务",
+                                        contentWidth: "26rem",
+                                        content: (function () {
+                                                var oVBox = new VBox();
+                                                if (!aTasks || !aTasks.length) {
+                                                        oVBox.addItem(new Text({ text: "当前会话暂无任务（后端未开启任务层或还没有业务提问）" }));
+                                                }
+                                                (aTasks || []).slice(0, 20).forEach(function (oT) {
+                                                        oVBox.addItem(new Button({
+                                                                text: that._taskModuleLabel(oT.module_id) + " · " + oT.status +
+                                                                        " · " + (oT.short_id || (oT.task_id || "").substring(0, 8)) +
+                                                                        (oT.title ? " · " + oT.title : ""),
+                                                                type: "Transparent",
+                                                                press: (function (oTask) {
+                                                                        return function () {
+                                                                                oChatModel.setProperty("/currentTask", {
+                                                                                        taskId: oTask.task_id,
+                                                                                        shortId: (oTask.task_id || "").substring(0, 8),
+                                                                                        module: oTask.module_id || "",
+                                                                                        status: oTask.status || "",
+                                                                                        needsInput: false,
+                                                                                        sessionId: oCtx.id || ""
+                                                                                });
+                                                                                oChatModel.setProperty("/taskBadge",
+                                                                                        that._taskModuleLabel(oTask.module_id) + " · " + oTask.status + " · " +
+                                                                                        (oTask.task_id || "").substring(0, 8));
+                                                                                oChatModel.setProperty("/taskBadgeState", that._taskStateColor(oTask.status));
+                                                                                oChatModel.setProperty("/taskStripVisible", true);
+                                                                                oPop.close();
+                                                                        };
+                                                                })(oT)
+                                                        }));
+                                                });
+                                                return oVBox;
+                                        })(),
+                                        endButton: new Button({ text: "关闭", press: function () { oPop.close(); } })
+                                });
+                                oPop.open();
+                        }).catch(function () {
+                                MessageToast.show("任务列表获取失败（后端未开启任务层时不可用）");
                         });
                 },
 

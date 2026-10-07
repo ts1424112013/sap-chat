@@ -51,6 +51,31 @@
 *   方法名同步改为截断版(2 处: DEFINITION + IMPLEMENTATION), 方法体逻辑不变;
 *   URL /AgentCapabilities 不受影响(metadata 用 EntitySet 全名)
 *   ★ 重贴后核对标记: 搜 agentcapabilitie_get_entityset 应有 2 处(代码区)
+* V13.1 20261007(踩坑清单 §2.3 对齐): ANALYZEAGENT 改经无下划线中间结构
+*   ty_agent_odata 输出 —— copy_data_to_ref 按属性名大写精确匹配不容忍
+*   下划线, 带下划线字段直传会静默置空(图表不出根因); 仓库此前版本
+*   缺该修复, 本版补齐(ANALYZEAGENT + ANALYZETASK 共用)
+* V15 20261007(P1~P3): 新增 ANALYZETASK/Tasks/TaskContext/ReportDefinitions/
+*   StartReportRun/ReportRunStatus/ReportResult/TaskAction 分支
+*   (GenericResult 走 ty_generic_odata 无下划线输出)
+*   ★ 重贴后核对标记: 搜 to_agent_odata 应有 2 处调用(ANALYZEAGENT/
+*   ANALYZETASK) + 1 处实现; to_generic_odata 应有 7 处调用 + 1 处实现
+*=======================================================================
+* V15(P1~P3) 20261007: Agent 多业务任务与报表分析接口
+*   新增函数导入分支(全部旁路, 不改既有分支; SEGW 未建 metadata 前
+*   网关在 metadata 层直接拒绝, 本类分支不生效 —— 见部署清单):
+*   - ANALYZETASK        复用 ComplexType AgentResult + 新增可选属性
+*                        TaskId/TaskModule/TaskStatus/NeedsInput/
+*                        PendingParamsJson/ArtifactRefsJson(旧前端忽略)
+*   - TASKS / TASKCONTEXT / REPORTDEFINITIONS / STARTREPORTRUN /
+*     REPORTRUNSTATUS / REPORTRESULT / TASKACTION
+*                        返回统一 ComplexType GenericResult{Success,
+*                        Message, ResultJson}: ResultJson 承载服务层
+*                        结构化 JSON(协议见 02 设计 §4.3), 前端能力
+*                        探测失败时回退旧 AnalyzeAgent
+*   安全: 后端是事实源 —— 未登记报表/未开开关/归属不符一律拒绝;
+*   前端不能决定权限、白名单、报表存在性与运行成功与否
+*=======================================================================
 CLASS zcl_zai_chat_dpc_ext DEFINITION
   PUBLIC
   INHERITING FROM zcl_zai_chat_dpc
@@ -83,6 +108,73 @@ CLASS zcl_zai_chat_dpc_ext DEFINITION
       IMPORTING it_parameter TYPE /iwbep/t_mgw_name_value_pair
                 iv_name      TYPE string
       RETURNING VALUE(rv)    TYPE string.
+
+  PRIVATE SECTION.
+
+    " V15: 结构化接口统一返回的服务侧结构(分支内填充, 输出前经
+    " to_generic_odata 转无下划线结构再 copy_data_to_ref)
+    TYPES: BEGIN OF ty_generic_result,
+             success     TYPE string,
+             message     TYPE string,
+             result_json TYPE string,
+           END OF ty_generic_result.
+
+    " V15: 无下划线中间结构(踩坑清单 §2.3: copy_data_to_ref 按属性名
+    " 大写精确匹配, 不容忍下划线 —— 带下划线字段静默置空不报错)。
+    " ★ 重贴后核对标记: 搜 ty_agent_odata / ty_generic_odata 应各有多处引用
+    " AgentResult: SEGW 属性 SessionId/Answer/Status/ModelId/Rounds/
+    " ElapsedMs/TraceJson/AnalysisJson/Message + V15 新增 TaskId/
+    " TaskModule/TaskStatus/NeedsInput/PendingParamsJson/ArtifactRefsJson
+    TYPES: BEGIN OF ty_agent_odata,
+             sessionid          TYPE string,
+             answer             TYPE string,
+             status             TYPE string,
+             modelid            TYPE string,
+             rounds             TYPE string,
+             elapsedms          TYPE string,
+             tracejson          TYPE string,
+             analysisjson       TYPE string,
+             message            TYPE string,
+             taskid             TYPE string,
+             taskmodule         TYPE string,
+             taskstatus         TYPE string,
+             needsinput         TYPE string,
+             pendingparamsjson  TYPE string,
+             artifactrefsjson   TYPE string,
+           END OF ty_agent_odata.
+
+    " GenericResult: SEGW 属性 Success/Message/ResultJson
+    TYPES: BEGIN OF ty_generic_odata,
+             success     TYPE string,
+             message     TYPE string,
+             resultjson  TYPE string,
+           END OF ty_generic_odata.
+
+    " AgentResult(ty_agent_result) → 无下划线 OData 结构逐字段搬运
+    CLASS-METHODS to_agent_odata
+      IMPORTING is_agent    TYPE zcl_ai_agent_service=>ty_agent_result
+      RETURNING VALUE(rs)   TYPE ty_agent_odata.
+
+    " GenericResult 服务结构 → 无下划线 OData 结构
+    CLASS-METHODS to_generic_odata
+      IMPORTING is_result   TYPE ty_generic_result
+      RETURNING VALUE(rs)   TYPE ty_generic_odata.
+
+    " V15: TASKS 返回行(TaskItem)
+    TYPES: BEGIN OF ty_task_item,
+             task_id     TYPE string,
+             short_id    TYPE string,
+             module_id   TYPE string,
+             intent_code TYPE string,
+             title       TYPE string,
+             status      TYPE string,
+             focus_artifact TYPE string,
+             version     TYPE i,
+             pending_json TYPE string,
+             summary_text TYPE string,
+             created_at  TYPE string,
+             changed_at  TYPE string,
+           END OF ty_task_item.
 
 ENDCLASS.
 
@@ -125,6 +217,8 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
       WHEN 'ANALYZEAGENT'.
         " Agent V1.0: 库存分析受限工具循环(与普通聊天路径完全分离;
         " 参数 SessionId/Question/ModelId 与 AnalyzeCode 同名复用上方解析)
+        " V15: 改经无下划线中间结构输出(踩坑清单 §2.3/V13.1 修复对齐 ——
+        " 带下划线字段直传 copy_data_to_ref 会静默置空)
         DATA: ls_agent TYPE zcl_ai_agent_service=>ty_agent_result.
 
         zcl_ai_agent_service=>analyze_agent(
@@ -133,7 +227,7 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
                     iv_model_id   = lv_model
           IMPORTING es_result     = ls_agent ).
 
-        copy_data_to_ref( EXPORTING is_data  = ls_agent
+        copy_data_to_ref( EXPORTING is_data  = to_agent_odata( ls_agent )
                           CHANGING  cr_data  = er_data ).
 
       WHEN 'SAVEMODELCFG'.
@@ -252,6 +346,257 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
                                              iv_session_id = v8_param( it_parameter = it_parameter iv_name = 'SessionId' )
                                              iv_title      = v8_param( it_parameter = it_parameter iv_name = 'Title' )
                                              iv_pinned     = v8_param( it_parameter = it_parameter iv_name = 'Pinned' ) )
+                          CHANGING  cr_data  = er_data ).
+
+      " ===============================================================
+      " V15(P1~P3): Agent 多业务任务与报表分析接口(旁路新增)
+      " ===============================================================
+      WHEN 'ANALYZETASK'.
+        " 任务化 Agent 入口(与 AnalyzeAgent 并行): 参数在旧三参基础上
+        " 新增 TaskId/ClientRequestId/FocusedArtifactId(P1 由后端
+        " 确定性任务层解析; TaskId 仅作为候选值, 归属由后端校验)
+        DATA: ls_atask TYPE zcl_ai_agent_service=>ty_agent_result,
+              lv_at_tid TYPE string,
+              lv_at_rid TYPE string,
+              lv_at_fid TYPE string.
+        CLEAR: lv_at_tid, lv_at_rid, lv_at_fid.
+        LOOP AT it_parameter INTO ls_param.
+          CASE to_upper( ls_param-name ).
+            WHEN 'TASKID'.            lv_at_tid = ls_param-value.
+            WHEN 'CLIENTREQUESTID'.   lv_at_rid = ls_param-value.
+            WHEN 'FOCUSEDARTIFACTID'. lv_at_fid = ls_param-value.
+          ENDCASE.
+        ENDLOOP.
+
+        zcl_ai_agent_service=>analyze_agent(
+          EXPORTING iv_session_id = lv_session
+                    iv_question   = lv_question
+                    iv_model_id   = lv_model
+          IMPORTING es_result     = ls_atask ).
+
+        " 显式指定 TaskId 且与后端解析一致时以显式为准(归属已校验);
+        " 不一致以后端为准(后端是事实源)
+        IF lv_at_tid IS NOT INITIAL AND ls_atask-task_id IS INITIAL.
+          " 后端未启用任务层时原样回显候选值(前端据此降级)
+          ls_atask-task_id = lv_at_tid.
+        ENDIF.
+
+        copy_data_to_ref( EXPORTING is_data  = to_agent_odata( ls_atask )
+                          CHANGING  cr_data  = er_data ).
+
+      WHEN 'TASKS'.
+        " 会话任务列表(只读; 归属 = 当前用户)
+        DATA: ls_tasks TYPE ty_generic_result,
+              lt_tlist TYPE zcl_ai_task_service=>tt_task,
+              lt_titems TYPE STANDARD TABLE OF ty_task_item WITH DEFAULT KEY.
+        CLEAR: ls_tasks, lt_tlist, lt_titems.
+        lt_tlist = zcl_ai_task_service=>list_tasks( lv_session ).
+        LOOP AT lt_tlist INTO DATA(ls_t1).
+          APPEND VALUE #( task_id = ls_t1-task_id
+                          short_id = zcl_ai_task_service=>short_id( ls_t1-task_id )
+                          module_id = ls_t1-module_id
+                          intent_code = ls_t1-intent_code
+                          title = ls_t1-title
+                          status = ls_t1-status
+                          focus_artifact = COND #( WHEN ls_t1-focus_artifact_id IS NOT INITIAL
+                            THEN zcl_ai_task_service=>short_id( ls_t1-focus_artifact_id ) ELSE '' )
+                          version = ls_t1-current_version
+                          pending_json = ls_t1-pending_json
+                          summary_text = ls_t1-summary_text
+                          created_at = ls_t1-created_at
+                          changed_at = ls_t1-changed_at ) TO lt_titems.
+        ENDLOOP.
+        ls_tasks-success = 'X'.
+        ls_tasks-result_json = /ui2/cl_json=>serialize(
+                                 data = lt_titems compress = abap_true ).
+        copy_data_to_ref( EXPORTING is_data  = to_generic_odata( ls_tasks )
+                          CHANGING  cr_data  = er_data ).
+
+      WHEN 'TASKCONTEXT'.
+        " 任务上下文(摘要/待办/结果索引/相关消息摘要)
+        DATA: ls_tctx TYPE ty_generic_result,
+              ls_ctx  TYPE zcl_ai_task_service=>ty_context.
+        CLEAR: ls_tctx, ls_ctx.
+        ls_ctx = zcl_ai_task_service=>build_context(
+                   iv_session_id = lv_session
+                   iv_task_id    = v8_param( it_parameter = it_parameter iv_name = 'TaskId' ) ).
+        IF ls_ctx-task_id IS NOT INITIAL.
+          ls_tctx-success = 'X'.
+          ls_tctx-result_json = zcl_ai_task_service=>context_json( ls_ctx ).
+        ELSE.
+          ls_tctx-success = ''.
+          ls_tctx-message = '任务不存在、能力未开启或不属于当前用户'.
+        ENDIF.
+        copy_data_to_ref( EXPORTING is_data  = to_generic_odata( ls_tctx )
+                          CHANGING  cr_data  = er_data ).
+
+      WHEN 'REPORTDEFINITIONS'.
+        " 登记报表 + 参数 Schema(REPORT_READ_ENABLED 未开 → 空清单)
+        DATA: ls_rdefs TYPE ty_generic_result.
+        CLEAR ls_rdefs.
+        IF zcl_ai_report_service=>read_enabled( ) = abap_true.
+          DATA(lt_rdefs) = zcl_ai_report_service=>list_defs( ).
+          " 参数 Schema 逐报表附带(前端表单据此生成; 不含敏感默认值)
+          DATA: BEGIN OF ls_rd,
+                  report_id TYPE string,
+                  tcode     TYPE string,
+                  name      TYPE string,
+                  description TYPE string,
+                  exec_enabled TYPE string,
+                  config_version TYPE string,
+                  params    TYPE zcl_ai_report_service=>tt_param,
+                END OF ls_rd,
+                lt_rd LIKE STANDARD TABLE OF ls_rd.
+          CLEAR: lt_rd.
+          LOOP AT lt_rdefs INTO DATA(ls_rd1).
+            CLEAR ls_rd.
+            ls_rd-report_id = ls_rd1-report_id.
+            ls_rd-tcode = ls_rd1-tcode.
+            ls_rd-name = ls_rd1-report_name.
+            ls_rd-description = ls_rd1-description.
+            ls_rd-exec_enabled = COND #( WHEN ls_rd1-exec_enabled = abap_true THEN 'X' ELSE '' ).
+            ls_rd-config_version = ls_rd1-config_version.
+            ls_rd-params = zcl_ai_report_service=>get_params(
+                             iv_report_id = ls_rd1-report_id
+                             iv_config_version = ls_rd1-config_version ).
+            APPEND ls_rd TO lt_rd.
+          ENDLOOP.
+          ls_rdefs-success = 'X'.
+          ls_rdefs-result_json = /ui2/cl_json=>serialize(
+                                    data = lt_rd compress = abap_true ).
+        ELSE.
+          ls_rdefs-success = 'X'.
+          ls_rdefs-message = '报表读取能力未开启(REPORT_READ_ENABLED)'.
+          ls_rdefs-result_json = '[]'.
+        ENDIF.
+        copy_data_to_ref( EXPORTING is_data  = to_generic_odata( ls_rdefs )
+                          CHANGING  cr_data  = er_data ).
+
+      WHEN 'STARTREPORTRUN'.
+        " 幂等启动报表运行(P3; REPORT_EXEC_ENABLED 默认关闭)
+        DATA: ls_srun TYPE ty_generic_result,
+              ls_rst  TYPE zcl_ai_report_service=>ty_run_start.
+        CLEAR: ls_srun, ls_rst.
+        ls_rst = zcl_ai_report_service=>start_run(
+                   iv_task_id     = v8_param( it_parameter = it_parameter iv_name = 'TaskId' )
+                   iv_session_id  = v8_param( it_parameter = it_parameter iv_name = 'SessionId' )
+                   iv_report_id   = v8_param( it_parameter = it_parameter iv_name = 'ReportId' )
+                   iv_params_json = v8_param( it_parameter = it_parameter iv_name = 'ParamsJson' )
+                   iv_request_id  = v8_param( it_parameter = it_parameter iv_name = 'ClientRequestId' ) ).
+        ls_srun-success = COND #( WHEN ls_rst-rejected = abap_true THEN '' ELSE 'X' ).
+        ls_srun-message = ls_rst-message.
+        ls_srun-result_json = /ui2/cl_json=>serialize(
+                                 data = ls_rst compress = abap_true
+                                 pretty_name = /ui2/cl_json=>pretty_mode-camel_case ).
+        copy_data_to_ref( EXPORTING is_data  = to_generic_odata( ls_srun )
+                          CHANGING  cr_data  = er_data ).
+
+      WHEN 'REPORTRUNSTATUS'.
+        " 运行状态轮询(TIMEOUT≠已停止; UNKNOWN 需继续查询)
+        DATA: ls_rsts TYPE ty_generic_result,
+              ls_rstv TYPE zcl_ai_report_service=>ty_run_status.
+        CLEAR: ls_rsts, ls_rstv.
+        ls_rstv = zcl_ai_report_service=>get_run_status(
+                    iv_report_run_id = v8_param( it_parameter = it_parameter iv_name = 'ReportRunId' ) ).
+        ls_rsts-success = COND #( WHEN ls_rstv-report_run_id IS NOT INITIAL THEN 'X' ELSE '' ).
+        ls_rsts-message = ls_rstv-message.
+        ls_rsts-result_json = /ui2/cl_json=>serialize(
+                                 data = ls_rstv compress = abap_true
+                                 pretty_name = /ui2/cl_json=>pretty_mode-camel_case ).
+        copy_data_to_ref( EXPORTING is_data  = to_generic_odata( ls_rsts )
+                          CHANGING  cr_data  = er_data ).
+
+      WHEN 'REPORTRESULT'.
+        " 结果读取(READY + AVAILABLE + 归属正确; 过期/失效如实返回)
+        DATA: ls_rres TYPE ty_generic_result,
+              ls_rresv TYPE zcl_ai_report_service=>ty_result.
+        CLEAR: ls_rres, ls_rresv.
+        ls_rresv = zcl_ai_report_service=>get_result(
+                     iv_artifact_id = v8_param( it_parameter = it_parameter iv_name = 'ArtifactId' ) ).
+        ls_rres-success = COND #( WHEN ls_rresv-artifact_id IS NOT INITIAL THEN 'X' ELSE '' ).
+        ls_rres-message = ls_rresv-message.
+        ls_rres-result_json = /ui2/cl_json=>serialize(
+                                 data = ls_rresv compress = abap_true
+                                 pretty_name = /ui2/cl_json=>pretty_mode-camel_case ).
+        copy_data_to_ref( EXPORTING is_data  = to_generic_odata( ls_rres )
+                          CHANGING  cr_data  = er_data ).
+
+      WHEN 'TASKACTION'.
+        " 任务动作白名单: VIEW / PAUSE / RESUME / REANALYZE(重跑必须走
+        " StartReportRun + 新 ClientRequestId, 不在本接口)
+        DATA: ls_tact   TYPE ty_generic_result,
+              lv_tact   TYPE string,
+              lv_ttid   TYPE string,
+              ls_ttask  TYPE zcl_ai_task_service=>ty_task,
+              ls_tctx2  TYPE zcl_ai_task_service=>ty_context.
+        CLEAR: ls_tact, lv_tact, lv_ttid, ls_ttask, ls_tctx2.
+        lv_tact = to_upper( v8_param( it_parameter = it_parameter iv_name = 'Action' ) ).
+        lv_ttid = v8_param( it_parameter = it_parameter iv_name = 'TaskId' ).
+        ls_ttask = zcl_ai_task_service=>get_task_owned(
+                     iv_task_id = lv_ttid iv_session_id = lv_session ).
+
+        IF ls_ttask-task_id IS INITIAL.
+          ls_tact-message = '任务不存在、能力未开启或不属于当前会话'.
+        ELSE.
+          CASE lv_tact.
+            WHEN 'VIEW'.
+              ls_tact-success = 'X'.
+              ls_tctx2 = zcl_ai_task_service=>build_context(
+                           iv_session_id = lv_session iv_task_id = lv_ttid ).
+              ls_tact-result_json = zcl_ai_task_service=>context_json( ls_tctx2 ).
+            WHEN 'PAUSE'.
+              " 活跃态 → PAUSED(草稿与运行保留; 运行中的报表不取消)
+              IF zcl_ai_task_service=>is_active_status( ls_ttask-status ) = abap_true.
+                DATA lv_pause_ok TYPE abap_bool.
+                zcl_ai_task_service=>update_status(
+                  EXPORTING iv_task_id = lv_ttid iv_version = ls_ttask-current_version
+                            iv_status  = zcl_ai_task_service=>gc_st_paused
+                  IMPORTING ev_ok      = lv_pause_ok ).
+                ls_tact-success = COND #( WHEN lv_pause_ok = abap_true THEN 'X' ELSE '' ).
+                IF lv_pause_ok = abap_false.
+                  ls_tact-message = '任务状态已被其他操作更新, 请刷新后重试'.
+                ENDIF.
+              ELSE.
+                ls_tact-message = |任务当前状态 { ls_ttask-status } 不支持暂停|.
+              ENDIF.
+            WHEN 'RESUME'.
+              " PAUSED → OPEN(恢复对话继续)
+              IF ls_ttask-status = zcl_ai_task_service=>gc_st_paused.
+                DATA lv_res_ok TYPE abap_bool.
+                zcl_ai_task_service=>update_status(
+                  EXPORTING iv_task_id = lv_ttid iv_version = ls_ttask-current_version
+                            iv_status  = zcl_ai_task_service=>gc_st_open
+                  IMPORTING ev_ok      = lv_res_ok ).
+                ls_tact-success = COND #( WHEN lv_res_ok = abap_true THEN 'X' ELSE '' ).
+                IF lv_res_ok = abap_false.
+                  ls_tact-message = '任务状态已被其他操作更新, 请刷新后重试'.
+                ENDIF.
+              ELSE.
+                ls_tact-message = |任务当前状态 { ls_ttask-status } 不支持恢复|.
+              ENDIF.
+            WHEN 'REANALYZE'.
+              " 只重试分析, 不重跑报表: 前提 = 任务有可用结果且上次分析失败
+              IF ls_ttask-focus_artifact_id IS NOT INITIAL
+                 AND zcl_ai_report_service=>is_artifact_available( ls_ttask-focus_artifact_id ) = abap_true.
+                DATA lv_rea_ok TYPE abap_bool.
+                zcl_ai_task_service=>update_status(
+                  EXPORTING iv_task_id = lv_ttid iv_version = ls_ttask-current_version
+                            iv_status  = zcl_ai_task_service=>gc_st_analyzing
+                  IMPORTING ev_ok      = lv_rea_ok ).
+                ls_tact-success = COND #( WHEN lv_rea_ok = abap_true THEN 'X' ELSE '' ).
+                IF lv_rea_ok = abap_true.
+                  ls_tact-message = |已置为分析中, 请引用结果 { zcl_ai_task_service=>short_id( ls_ttask-focus_artifact_id ) } 继续提问分析|.
+                ELSE.
+                  ls_tact-message = '任务状态已被其他操作更新, 请刷新后重试'.
+                ENDIF.
+              ELSE.
+                ls_tact-message = '没有可用的报表结果, 不能发起分析重试(重跑请提交新运行)'.
+              ENDIF.
+            WHEN OTHERS.
+              ls_tact-message = |未支持的任务动作: { lv_tact }(白名单: VIEW/PAUSE/RESUME/REANALYZE)|.
+          ENDCASE.
+        ENDIF.
+        copy_data_to_ref( EXPORTING is_data  = to_generic_odata( ls_tact )
                           CHANGING  cr_data  = er_data ).
 
       WHEN OTHERS.
@@ -441,6 +786,42 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
         RETURN.
       ENDIF.
     ENDLOOP.
+  ENDMETHOD.
+
+
+  METHOD to_agent_odata.
+
+    " V15: AgentResult → 无下划线 OData 结构(踩坑清单 §2.3;
+    " SEGW 属性名大写精确匹配, 不容忍下划线 —— 逐字段搬运)
+    CLEAR rs.
+    rs-sessionid         = is_agent-session_id.
+    rs-answer            = is_agent-answer.
+    rs-status            = is_agent-status.
+    rs-modelid           = is_agent-model_id.
+    rs-rounds            = is_agent-rounds.
+    rs-elapsedms         = is_agent-elapsed_ms.
+    rs-tracejson         = is_agent-trace_json.
+    rs-analysisjson      = is_agent-analysis_json.
+    rs-message           = is_agent-message.
+    " V15 任务层可选字段(SEGW 增属性前网关按 metadata 投影忽略)
+    rs-taskid            = is_agent-task_id.
+    rs-taskmodule        = is_agent-task_module.
+    rs-taskstatus        = is_agent-task_status.
+    rs-needsinput        = is_agent-needs_input.
+    rs-pendingparamsjson = is_agent-pending_params_json.
+    rs-artifactrefsjson  = is_agent-artifact_refs_json.
+
+  ENDMETHOD.
+
+
+  METHOD to_generic_odata.
+
+    " V15: GenericResult → 无下划线 OData 结构(踩坑清单 §2.3)
+    CLEAR rs.
+    rs-success    = is_result-success.
+    rs-message    = is_result-message.
+    rs-resultjson = is_result-result_json.
+
   ENDMETHOD.
 
 ENDCLASS.

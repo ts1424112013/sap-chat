@@ -19,6 +19,15 @@
 *   同一方法内两次 DATA(ls_tool) 内联声明("LS_TOOL was already declared")
 *   → DATA 分支 LOOP 改 INTO ls_tool(沿用 INVENTORY 分支声明)
 *   ★ 重贴后核对标记: 本方法内应只有一处 "INTO DATA(ls_tool)"
+* V15 20261007(P1): get_tools_for_domain 改为委托 get_tools_for_module
+*   正向白名单 —— 修复 INVENTORY 排除法误带 SQL 三工具; REPORT 模块
+*   不注入模型侧执行工具(执行只走 StartReportRun 结构化接口)
+*   ★ 重贴后核对标记: get_tools_for_module 为正向清单选取;
+*   INVENTORY 只含 resolve_material/get_stock_snapshot/get_daily_movement/
+*   get_batch_stock, 不得出现 search_tables/describe_table/run_sql
+* V15 20261007 注: gc_tool_resolve_rpt/gc_tool_rpt_params/gc_tool_rpt_result
+*   为报表工具 ID 预留常量(P2 登记/参数/结果只读工具; 白名单在
+*   REPORT_READ_ENABLED 开启时才注入, 且依赖 ZCL_AI_REPORT_SERVICE)
 *         sap_data_analysis  受控查询计划取数(能力目录白名单实体/字段),
 *                            args 直接承载计划 JSON 对象(不走扁平 kv),
 *                            解析/校验见 AGENT_GUARD.parse_analysis_plan,
@@ -36,7 +45,12 @@ CLASS zcl_ai_tool_registry DEFINITION
                " V14: 动态 SQL 工具(《SAP动态SQL业务分析_开发计划》§6)
                gc_tool_search_tables TYPE string VALUE 'search_tables',
                gc_tool_describe_tab  TYPE string VALUE 'describe_table',
-               gc_tool_run_sql       TYPE string VALUE 'run_sql'.
+               gc_tool_run_sql       TYPE string VALUE 'run_sql',
+               " V15(P2): 报表模块工具(登记/参数/已有结果, 只读;
+               " 执行类工具 start_report_run 单独见 P3/REPORT_EXEC_ENABLED)
+               gc_tool_resolve_rpt   TYPE string VALUE 'resolve_report',
+               gc_tool_rpt_params    TYPE string VALUE 'get_report_parameters',
+               gc_tool_rpt_result    TYPE string VALUE 'get_report_result'.
 
     " 参数类型枚举(强类型 Schema, 值格式由 GUARD 逐一校验):
     "   PLANT     工厂 4 位字母数字
@@ -74,8 +88,16 @@ CLASS zcl_ai_tool_registry DEFINITION
     " V13: 按领域返回候选工具 —— 通用 Agent 按问题意图选域:
     " INVENTORY → 库存 4 工具; 其他域 → 空(无工具时由 Agent 继续
     " 文本分析完成回答, 不因没有工具而失败)
+    " V15(P1): 委托 get_tools_for_module 正向白名单(修复 INVENTORY
+    " 排除法误带 SQL 三工具的问题)
     CLASS-METHODS get_tools_for_domain
       IMPORTING iv_domain       TYPE string
+      RETURNING VALUE(rt_tools) TYPE tt_tools.
+
+    " V15(P1): 模块正向白名单(每个模块只拿明确声明的工具;
+    " 工具必须同时满足"已注册 + 当前模块允许"才会返回)
+    CLASS-METHODS get_tools_for_module
+      IMPORTING iv_module       TYPE string
       RETURNING VALUE(rt_tools) TYPE tt_tools.
 
     " 工具是否已注册(白名单校验)
@@ -214,32 +236,56 @@ CLASS zcl_ai_tool_registry IMPLEMENTATION.
 
   METHOD get_tools_for_domain.
 
-    " V13: 按领域返回候选工具; V1.1 新增 DATA 域(数据分析, 计划 §3):
-    " INVENTORY → 库存 4 工具; DATA → sap_data_analysis;
-    " 其他域 → 空(无工具时由 Agent 继续文本分析完成回答, 不因没有工具而失败)
-    CASE to_upper( iv_domain ).
-      WHEN 'INVENTORY'.
-        DATA lt_inv TYPE tt_tools.
-        LOOP AT get_tools( ) INTO DATA(ls_tool).
-          IF ls_tool-tool_id <> gc_tool_data_analysis.
-            APPEND ls_tool TO lt_inv.
-          ENDIF.
-        ENDLOOP.
-        rt_tools = lt_inv.
-      WHEN 'DATA'.
-        " V14: 数据分析域 = 受控查询计划(sap_data_analysis) + 动态 SQL 三工具
-        " V1.1.1: 改 INTO ls_tool 沿用 INVENTORY 分支声明 —— 同一方法内重复 DATA(ls_tool) 内联声明激活报错
-        LOOP AT get_tools( ) INTO ls_tool.
-          IF ls_tool-tool_id = gc_tool_data_analysis
-             OR ls_tool-tool_id = gc_tool_search_tables
-             OR ls_tool-tool_id = gc_tool_describe_tab
-             OR ls_tool-tool_id = gc_tool_run_sql.
-            APPEND ls_tool TO rt_tools.
-          ENDIF.
-        ENDLOOP.
+    " V13: 按领域返回候选工具; V15 改为模块正向白名单委托:
+    " 每个模块只拿到明确声明的工具(INVENTORY 修复: 不再误带 SQL 三工具,
+    " 计划 01 §2; REPORT 只在 REPORT 模块注入, 05 提示词 P1-7)
+    rt_tools = get_tools_for_module( iv_domain ).
+
+  ENDMETHOD.
+
+
+  " V15(P1): 模块正向白名单 —— 只按清单正向选取, 不再用"排除法":
+  "   INVENTORY → 库存 4 工具(修复 V13 排除法把 SQL 三工具带入的问题)
+  "   DATA      → 受控查询计划 + 动态 SQL 三工具
+  "   REPORT    → 报表只读三工具(REPORT_READ_ENABLED 开启时, P2)
+  "   CODE/GENERAL/其他 → 空(无工具由 Agent 直接分析回答, 不虚构执行)
+  METHOD get_tools_for_module.
+
+    CLEAR rt_tools.
+
+    " 各模块允许的工具 ID 正向清单
+    DATA: lt_allow TYPE STANDARD TABLE OF string WITH DEFAULT KEY.
+    CASE to_upper( iv_module ).
+      WHEN zcl_ai_task_service=>gc_mod_inventory.
+        APPEND 'resolve_material'   TO lt_allow.
+        APPEND 'get_stock_snapshot' TO lt_allow.
+        APPEND 'get_daily_movement' TO lt_allow.
+        APPEND 'get_batch_stock'    TO lt_allow.
+      WHEN zcl_ai_task_service=>gc_mod_data.
+        APPEND gc_tool_data_analysis TO lt_allow.
+        APPEND gc_tool_search_tables TO lt_allow.
+        APPEND gc_tool_describe_tab  TO lt_allow.
+        APPEND gc_tool_run_sql       TO lt_allow.
+      WHEN zcl_ai_task_service=>gc_mod_report.
+        " 报表模块工具只在 REPORT_READ_ENABLED 开启时可用(P2 登记/参数;
+        " 执行工具不属于白名单, 走独立的 StartReportRun 结构化接口)
+        IF zcl_ai_report_service=>read_enabled( ) = abap_true.
+          APPEND gc_tool_resolve_rpt TO lt_allow.
+          APPEND gc_tool_rpt_params  TO lt_allow.
+          APPEND gc_tool_rpt_result  TO lt_allow.
+        ENDIF.
       WHEN OTHERS.
-        CLEAR rt_tools.   " 无工具 → 通用 Agent 直接分析回答, 不虚构执行
+        RETURN.   " 无工具 → 通用 Agent 直接分析回答, 不虚构执行
     ENDCASE.
+
+    " 正向选取: 只有在清单内且已注册的工具才返回
+    LOOP AT get_tools( ) INTO DATA(ls_tool).
+      READ TABLE lt_allow TRANSPORTING NO FIELDS
+        WITH KEY table_line = ls_tool-tool_id.
+      IF sy-subrc = 0.
+        APPEND ls_tool TO rt_tools.
+      ENDIF.
+    ENDLOOP.
 
   ENDMETHOD.
 

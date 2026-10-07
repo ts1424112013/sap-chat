@@ -3152,3 +3152,58 @@ body.sapUiBody {
 [data-theme="dark"] .analysisDsError {
         background: rgba(207, 52, 42, 0.16);
 }
+
+/* ==================== V15: 任务区(当前任务/参数表单/运行状态) ==================== */
+.taskStrip {
+        padding: 0.5rem 1.5rem 0.25rem;
+}
+.taskStripHead {
+        gap: 0.5rem;
+}
+.taskBadge {
+        flex-shrink: 0;
+}
+.taskTitle {
+        font-size: 0.8125rem;
+        opacity: 0.85;
+}
+.runStatus {
+        font-size: 0.75rem;
+        opacity: 0.8;
+        padding: 0.25rem 0;
+}
+.paramForm {
+        padding: 0.25rem 0;
+}
+.paramForm .sapMLabel {
+        font-size: 0.75rem;
+}
+.paramError {
+        font-size: 0.75rem;
+        color: #bb0000;
+}
+.taskSubmitBtn {
+        margin-right: 0.5rem;
+}
+.taskSubmitHint {
+        font-size: 0.6875rem;
+        opacity: 0.6;
+}
+[data-theme="dark"] .paramError {
+        color: #ff8a80;
+}
+/* V15: 报表结果样例表(仅渲染后端下发数据, 全部 escapeHtml) */
+.rptResultTable {
+        border-collapse: collapse;
+        margin: 0.25rem 0;
+        font-size: 0.8125rem;
+}
+.rptResultTable th,
+.rptResultTable td {
+        border: 1px solid rgba(128, 128, 128, 0.35);
+        padding: 0.2rem 0.6rem;
+        text-align: left;
+}
+.rptResultTable th {
+        background: rgba(128, 128, 128, 0.12);
+}

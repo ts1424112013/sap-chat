@@ -546,6 +546,244 @@ sap.ui.define([
                         return this._pCaps;
                 },
 
+                // =================================================================
+                // V15：多业务任务与报表（AnalyzeTask 并行接入 + 能力探测回退）
+                // 后端是事实源：权限/白名单/报表存在性/运行结果一律以后端返回为准；
+                // SEGW 未配置新函数导入时（metadata 层 404），自动回退旧 AnalyzeAgent
+                // =================================================================
+
+                /** AnalyzeTask 可用性缓存（null=未探测；false=后端无新接口，走旧链路） */
+                _taskApiAvailable: null,
+
+                /**
+                  * 任务化 Agent 发送。优先 /AnalyzeTask（携带 TaskId/ClientRequestId）；
+                  * 后端无该函数导入时永久回退 /AnalyzeAgent（旧链路），前端无感。
+                  * @param {object} oPayload {sessionId, question, modelId, taskId, clientRequestId, focusedArtifactId}
+                  * @returns {Promise} sendAgent 的返回 + 可选任务字段
+                  *                   {taskId, taskModule, taskStatus, needsInput, pendingParamsJson, artifactRefsJson}
+                  */
+                sendTask: function (oPayload) {
+                        if (this._sConfig.mode === "mock") {
+                                // 演示模式：无任务后端，走旧 mock Agent（任务字段为空）
+                                return this._mockSendAgent(oPayload);
+                        }
+                        if (this._taskApiAvailable === false) {
+                                return this.sendAgent(oPayload);
+                        }
+                        var that = this;
+                        var oModel = this._getModel();
+                        return new Promise(function (fnResolve, fnReject) {
+                                oModel.callFunction("/AnalyzeTask", {
+                                        method: "POST",
+                                        urlParameters: {
+                                                SessionId: oPayload.sessionId,
+                                                Question: oPayload.question,
+                                                ModelId: oPayload.modelId || "",
+                                                TaskId: oPayload.taskId || "",
+                                                ClientRequestId: oPayload.clientRequestId || "",
+                                                FocusedArtifactId: oPayload.focusedArtifactId || ""
+                                        },
+                                        success: function (oData) {
+                                                that._taskApiAvailable = true;
+                                                var res = TraceService.normalizeResult(oData, oPayload.modelId);
+                                                // V1.3 结构化分析（与 sendAgent 一致）
+                                                if (res.analysisJson) {
+                                                        try {
+                                                                res.analysis = Service._sanitizeAnalysis(
+                                                                        JSON.parse(res.analysisJson));
+                                                        } catch (e) {
+                                                                res.analysis = null;  // 仅影响表格/图表渲染
+                                                        }
+                                                }
+                                                delete res.analysisJson;
+                                                // V15 任务字段（SEGW 未加属性时后端投影忽略 → 为空，不影响渲染）
+                                                var oRoot = (oData && (oData.d || oData)) || {};
+                                                var o = (oRoot.AnalyzeTask && typeof oRoot.AnalyzeTask === "object")
+                                                        ? oRoot.AnalyzeTask : oRoot;
+                                                res.taskId = TraceService._field(o, "TaskId") || "";
+                                                res.taskModule = TraceService._field(o, "TaskModule") || "";
+                                                res.taskStatus = TraceService._field(o, "TaskStatus") || "";
+                                                res.needsInput = String(TraceService._field(o, "NeedsInput") || "") === "X";
+                                                res.pendingParamsJson = TraceService._field(o, "PendingParamsJson") || "";
+                                                res.artifactRefsJson = TraceService._field(o, "ArtifactRefsJson") || "";
+                                                fnResolve(res);
+                                        },
+                                        error: function (oError) {
+                                                // 能力探测：新函数导入未配置（404/未知函数导入）→ 永久回退旧链路
+                                                var sMsg = that._fmtError(oError);
+                                                var bNotFound = (oError && oError.statusCode === 404) ||
+                                                        /未知.*函数导入|not found|HTTP 404/i.test(sMsg);
+                                                if (bNotFound && that._taskApiAvailable !== true) {
+                                                        that._taskApiAvailable = false;
+                                                        that.sendAgent(oPayload).then(fnResolve, fnReject);
+                                                        return;
+                                                }
+                                                that._maybeAuthFail(oError);
+                                                fnReject(new Error(sMsg));
+                                        }
+                                });
+                        });
+                },
+
+                /**
+                  * V15：结构化任务/报表接口统一调用（GenericResult 契约：
+                  * {Success, Message, ResultJson}）。返回
+                  * {success, message, result}（result = ResultJson 解析对象，空为 null）。
+                  * 后端未配置新函数导入时 result 为 null 且 success=false（不抛错，
+                  * 由调用方按能力降级）。
+                  */
+                _taskCall: function (sAction, oParams, bPost) {
+                        if (this._sConfig.mode === "mock") {
+                                return Promise.resolve({ success: false, message: "演示模式无任务后端", result: null });
+                        }
+                        var that = this;
+                        var sUrl = this._sConfig.host + this._sConfig.path + sAction;
+                        var sBasic = this._basicHeader();
+                        var fnBuild = function (sToken) {
+                                var oHeaders = { "Accept": "application/json" };
+                                if (sBasic) {
+                                        oHeaders.Authorization = sBasic;
+                                }
+                                var oInit = { method: bPost ? "POST" : "GET", headers: oHeaders, credentials: "same-origin" };
+                                if (bPost) {
+                                        if (sToken) {
+                                                oHeaders["x-csrf-token"] = sToken;
+                                        }
+                                        oHeaders["Content-Type"] = "application/x-www-form-urlencoded";
+                                        var oBody = new URLSearchParams();
+                                        Object.keys(oParams || {}).forEach(function (k) {
+                                                oBody.append(k, oParams[k]);
+                                        });
+                                        oInit.body = oBody.toString();
+                                } else if (oParams && Object.keys(oParams).length) {
+                                        var aQ = Object.keys(oParams).map(function (k) {
+                                                return k + "='" + encodeURIComponent(oParams[k]) + "'";
+                                        });
+                                        sUrl += "?" + aQ.join("&");
+                                }
+                                return oInit;
+                        };
+                        var fnSend = function (oInit) {
+                                return fetch(sUrl, oInit).then(function (oResp) {
+                                        if (!oResp.ok) {
+                                                throw new Error("HTTP " + oResp.status);
+                                        }
+                                        return oResp.json();
+                                }).then(function (oJson) {
+                                        var oRoot = (oJson && oJson.d) || oJson || {};
+                                        var d = (oRoot && typeof oRoot[sAction] === "object" && oRoot[sAction] !== null)
+                                                ? oRoot[sAction] : oRoot;
+                                        var sJson = d.ResultJson || "";
+                                        var oResult = null;
+                                        if (sJson) {
+                                                try {
+                                                        oResult = JSON.parse(sJson);
+                                                } catch (e) {
+                                                        oResult = null;
+                                                }
+                                        }
+                                        return {
+                                                success: d.Success === "X",
+                                                message: d.Message || "",
+                                                result: oResult
+                                        };
+                                });
+                        };
+                        var fnTry = function (sToken) {
+                                return fnSend(fnBuild(sToken)).catch(function (e) {
+                                        if (e.message === "HTTP 403") {
+                                                return that._fetchCsrf(sBasic).then(function (sNew) {
+                                                        that._sCsrfToken = sNew;
+                                                        return fnSend(fnBuild(sNew));
+                                                });
+                                        }
+                                        throw e;
+                                });
+                        };
+                        if (!bPost) {
+                                return fnTry("").catch(function (e) {
+                                        return { success: false, message: Service._fmtError(e), result: null };
+                                });
+                        }
+                        if (this._sCsrfToken) {
+                                return fnTry(this._sCsrfToken).catch(function (e) {
+                                        return { success: false, message: Service._fmtError(e), result: null };
+                                });
+                        }
+                        return this._fetchCsrf(sBasic).then(function (sNew) {
+                                that._sCsrfToken = sNew;
+                                return fnTry(sNew);
+                        }).catch(function (e) {
+                                return { success: false, message: Service._fmtError(e), result: null };
+                        });
+                },
+
+                /** 会话任务列表 → Promise<[TaskItem]>（能力未开/失败 → []） */
+                getTasks: function (sSessionId) {
+                        if (this._sConfig.mode === "mock") {
+                                return Promise.resolve([]);
+                        }
+                        return this._taskCall("Tasks", { SessionId: sSessionId }, false)
+                                .then(function (o) { return (o.success && o.result) || []; });
+                },
+
+                /** 任务上下文（摘要/待办/结果索引）→ Promise<object|null> */
+                getTaskContext: function (sSessionId, sTaskId) {
+                        return this._taskCall("TaskContext", { SessionId: sSessionId, TaskId: sTaskId }, false)
+                                .then(function (o) { return o.result; });
+                },
+
+                /** 登记报表与参数 Schema → Promise<[Definition]>（能力未开 → []） */
+                getReportDefinitions: function () {
+                        if (this._sConfig.mode === "mock") {
+                                return Promise.resolve([]);
+                        }
+                        return this._taskCall("ReportDefinitions", {}, false)
+                                .then(function (o) { return (o.success && o.result) || []; });
+                },
+
+                /**
+                  * 幂等启动报表运行（后端 REPORT_EXEC_ENABLED 默认关闭）。
+                  * @param {object} o {sessionId, taskId, reportId, paramsJson, clientRequestId}
+                  * @returns {Promise<{created, rejected, needsInput, status, reportRunId, shortId, message}>}
+                  */
+                startReportRun: function (o) {
+                        return this._taskCall("StartReportRun", {
+                                SessionId: o.sessionId,
+                                TaskId: o.taskId,
+                                ReportId: o.reportId,
+                                ParamsJson: o.paramsJson || "{}",
+                                ClientRequestId: o.clientRequestId
+                        }, true).then(function (r) {
+                                return (r && r.result) || {
+                                        rejected: true, needsInput: false,
+                                        message: (r && r.message) || "启动失败"
+                                };
+                        });
+                },
+
+                /** 运行状态轮询 → Promise<{status, artifactId, artifactShort, rowCount, message}> */
+                getReportRunStatus: function (sReportRunId) {
+                        return this._taskCall("ReportRunStatus", { ReportRunId: sReportRunId }, false)
+                                .then(function (o) { return o.result; });
+                },
+
+                /** 结果读取 → Promise<{schemaJson, rowsJson, rowCount, summaryJson, label, message}> */
+                getReportResult: function (sArtifactId) {
+                        return this._taskCall("ReportResult", { ArtifactId: sArtifactId }, false)
+                                .then(function (o) { return o.result; });
+                },
+
+                /**
+                  * 任务动作（白名单 VIEW/PAUSE/RESUME/REANALYZE；重跑走 startReportRun）
+                  * @returns {Promise<{success, message, result}>}
+                  */
+                taskAction: function (sSessionId, sTaskId, sAction) {
+                        return this._taskCall("TaskAction", {
+                                SessionId: sSessionId, TaskId: sTaskId, Action: sAction
+                        }, true);
+                },
+
                 /**
                   * V1.3：结构化分析结果白名单复核（防御性，计划 §10）：
                   * - datasets ≤4；columns/rows 归一化
@@ -669,16 +907,20 @@ sap.ui.define([
                 /**
                   * V12：按会话模式统一发送入口 —— 控制器只认这个方法，
                   * 后续新增 Agent 类型时仅在此扩展路由，调用方不改
-                  * @param {object} oPayload {mode:"CHAT"|"AGENT", sessionId, question, modelId}
-                  * @returns {Promise} send/sendAgent 的原生返回结构
+                  * V15：AGENT 模式改走 sendTask（AnalyzeTask 优先 + 能力回退），
+                  * 携带当前 TaskId 与本轮 ClientRequestId
+                  * @param {object} oPayload {mode:"CHAT"|"AGENT", sessionId, question, modelId, taskId, clientRequestId}
+                  * @returns {Promise} send/sendTask 的原生返回结构
                   */
                 sendByMode: function (oPayload) {
                         var o = oPayload || {};
                         if (o.mode === "AGENT") {
-                                return this.sendAgent({
+                                return this.sendTask({
                                         sessionId: o.sessionId,
                                         question: o.question,
-                                        modelId: o.modelId
+                                        modelId: o.modelId,
+                                        taskId: o.taskId || "",
+                                        clientRequestId: o.clientRequestId || ""
                                 });
                         }
                         return this.send({

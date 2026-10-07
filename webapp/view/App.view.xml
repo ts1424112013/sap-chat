@@ -82,6 +82,12 @@
                                                                 <Button id="sideToggle" icon="sap-icon://menu2" type="Transparent" press=".onToggleSide" tooltip="{i18n>toggleSide}" class="topBtn"/>
                                                                 <!-- V12：当前工作模式徽标（对话 / Agent · 类型） -->
                                                                 <Text id="topModeBadge" text="{chat>/modeLabel}" class="topModeBadge"/>
+                                                                <!-- V15：当前业务任务徽标（模块/状态/短标识；后端确认的状态才展示） -->
+                                                                <ObjectStatus id="taskBadge"
+                                                                        text="{chat>/taskBadge}"
+                                                                        state="{chat>/taskBadgeState}"
+                                                                        visible="{= ${chat>/taskBadge} !== '' }"
+                                                                        class="taskBadge"/>
                                                                 <Text text="{session>/title}" class="sessTitle"/>
                                                                 <ToolbarSpacer/>
                                                                 <ComboBox id="modelSelect"
@@ -185,6 +191,29 @@
                                                                         showSeparators="None"
                                                                         backgroundDesign="Transparent"/>
                                                         </ScrollContainer>
+
+                                                        <!-- ============ V15：任务区（当前任务/参数表单/运行状态） ============
+                                                             只展示后端确认的状态；报表后台运行轮询独立于聊天 busy，
+                                                             输入框不被会话级忙碌锁死 -->
+                                                        <VBox id="taskStrip" visible="{chat>/taskStripVisible}" class="taskStrip">
+                                                                <HBox alignItems="Center" wrap="Wrap" class="taskStripHead">
+                                                                        <ObjectStatus text="{chat>/taskBadge}" state="{chat>/taskBadgeState}" class="taskBadge"/>
+                                                                        <Text text="{chat>/taskTitle}" class="taskTitle"/>
+                                                                        <ToolbarSpacer/>
+                                                                        <Button icon="sap-icon://list" type="Transparent"
+                                                                                tooltip="{i18n>taskListTip}" press=".onTaskListPress" class="topBtn"/>
+                                                                </HBox>
+                                                                <!-- 运行状态行（ReportRunId/ArtifactId 短标识 + 状态） -->
+                                                                <Text text="{chat>/runStatus}" visible="{chat>/runVisible}" class="runStatus"/>
+                                                                <!-- 参数表单（按后端下发的参数 Schema 生成；校验错误由服务端返回） -->
+                                                                <VBox id="paramForm" visible="{chat>/paramFormVisible}" class="paramForm"/>
+                                                                <Text text="{chat>/paramError}" visible="{= ${chat>/paramError} !== '' }" class="paramError"/>
+                                                                <HBox visible="{chat>/paramFormVisible}" alignItems="Center">
+                                                                        <Button text="{i18n>taskSubmitRun}" type="Emphasized"
+                                                                                press=".onSubmitReportRun" class="taskSubmitBtn"/>
+                                                                        <Text text="{i18n>taskSubmitHint}" class="taskSubmitHint"/>
+                                                                </HBox>
+                                                        </VBox>
 
                                                         <!-- ============ 对话态：底部输入 ============ -->
                                                         <HBox class="inputDock" justifyContent="Center" visible="{chat>/listVisible}">
