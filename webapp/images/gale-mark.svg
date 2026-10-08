@@ -1,0 +1,22 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="galeG" x1="14" y1="6" x2="50" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#37A5FF"/>
+      <stop offset=".52" stop-color="#2F6BFF"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+  </defs>
+  <!-- G 外环：右上开口 → 逆时针绕行至右下（尾根处收尾） -->
+  <path d="M 40.75 15.8 A 17.5 17.5 0 1 0 46.8 40.3"
+        stroke="url(#galeG)" stroke-width="9.5" stroke-linecap="round" fill="none"/>
+  <!-- 气泡尾巴：右下尖角 -->
+  <path d="M 47.4 39.2 L 39.4 46.9 L 54.5 57.5 Z"
+        fill="url(#galeG)" stroke="url(#galeG)" stroke-width="5" stroke-linejoin="round"/>
+  <!-- G 内钩：自右侧环身向左卷入，收在三点下方 -->
+  <path d="M 46 37.2 Q 38.5 38.4 37.2 33"
+        stroke="url(#galeG)" stroke-width="7.5" stroke-linecap="round" fill="none"/>
+  <!-- 打字三点 -->
+  <circle cx="28" cy="29.5" r="2.7" fill="#38BDF8"/>
+  <circle cx="34.5" cy="29.5" r="2.7" fill="#3B82F6"/>
+  <circle cx="41" cy="29.5" r="2.7" fill="#8B5CF6"/>
+</svg>

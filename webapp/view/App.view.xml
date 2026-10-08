@@ -15,10 +15,9 @@
 
                                                 <!-- ==================== 左侧边栏：品牌 / 工作模式 / 新建 / 历史 ==================== -->
                                                 <VBox id="sideBar" class="sideBar" width="17rem">
+                                                        <!-- V16：Gale-SAP 品牌（疾风标 + 字标） -->
                                                         <HBox class="brandRow" alignItems="Center">
-                                                                <VBox class="logoChipSm" alignItems="Center" justifyContent="Center">
-                                                                        <Image src="images/compass-logo.svg" decorative="true" densityAware="false" class="brandLogoImage"/>
-                                                                </VBox>
+                                                                <Image src="images/gale-mark.svg" width="30px" height="30px" decorative="true" densityAware="false" class="brandLogoImage"/>
                                                                 <Title level="H3" text="{i18n>brandName}" class="brandName"/>
                                                         </HBox>
 
@@ -68,8 +67,14 @@
                                                                 </layoutData>
                                                         </List>
 
-                                                        <HBox class="sideFoot" alignItems="Center" justifyContent="SpaceBetween">
-                                                                <ObjectStatus id="modeBadge" class="modeBadge"/>
+                                                        <!-- V16：底部用户卡（头像 · 姓名 · 连接状态 · 设置） -->
+                                                        <HBox class="sideFoot" alignItems="Center">
+                                                                <Avatar initials="{settings>/userInitials}" displaySize="XS" backgroundColor="Accent6" class="sideAvatar"/>
+                                                                <VBox class="sideUser">
+                                                                        <layoutData><FlexItemData growFactor="1"/></layoutData>
+                                                                        <Text text="{settings>/userName}" class="sideUserName" wrapping="false"/>
+                                                                        <ObjectStatus id="modeBadge" class="modeBadge"/>
+                                                                </VBox>
                                                                 <Button icon="sap-icon://action-settings" type="Transparent" press=".onOpenSettings" tooltip="{i18n>settings}" class="sideSetBtn"/>
                                                         </HBox>
                                                 </VBox>
@@ -82,14 +87,19 @@
                                                                 <Button id="sideToggle" icon="sap-icon://menu2" type="Transparent" press=".onToggleSide" tooltip="{i18n>toggleSide}" class="topBtn"/>
                                                                 <!-- V12：当前工作模式徽标（对话 / Agent · 类型） -->
                                                                 <Text id="topModeBadge" text="{chat>/modeLabel}" class="topModeBadge"/>
-                                                                <!-- V15：当前业务任务徽标（模块/状态/短标识；后端确认的状态才展示） -->
+                                                                <!-- V15/V16：当前业务任务徽标（模块 · 状态；点击查看会话任务） -->
                                                                 <ObjectStatus id="taskBadge"
                                                                         text="{chat>/taskBadge}"
                                                                         state="{chat>/taskBadgeState}"
+                                                                        tooltip="{chat>/taskBadgeTip}"
+                                                                        active="true"
+                                                                        press=".onTaskListPress"
                                                                         visible="{= ${chat>/taskBadge} !== '' }"
                                                                         class="taskBadge"/>
                                                                 <Text text="{session>/title}" class="sessTitle"/>
                                                                 <ToolbarSpacer/>
+                                                                <!-- V16：运行指示（生成中 / Agent 运行中 / 报表后台执行中） -->
+                                                                <Text text="{chat>/activityText}" visible="{= ${chat>/activityText} !== '' }" class="activityPill"/>
                                                                 <ComboBox id="modelSelect"
                                                                         width="13rem"
                                                                         placeholder="{i18n>selectModel}"
@@ -108,9 +118,15 @@
                                                                                 visible="{chat>/agentInfoVisible}" class="topBtn"/>
                                                                         <!-- V6.0：明暗主题切换（持久化见 App.controller onToggleTheme） -->
                                                                         <Button id="themeToggle" icon="sap-icon://night-mode" type="Transparent" press=".onToggleTheme" tooltip="{i18n>themeToggle}" class="topBtn themeToggle"/>
-                                                                        <Button icon="sap-icon://download" tooltip="{i18n>exportMd}" press=".onExportSession" class="topBtn"/>
-                                                                        <Button icon="sap-icon://excel-attachment" tooltip="{i18n>exportCsv}" press=".onExportCsv" class="topBtn"/>
-                                                                        <Button icon="sap-icon://action-settings" tooltip="{i18n>settings}" press=".onOpenSettings" class="sapUiTinyMarginBegin"/>
+                                                                        <!-- V16：导出合并为一个菜单（设置入口统一在侧栏底部） -->
+                                                                        <MenuButton icon="sap-icon://download" type="Transparent" tooltip="{i18n>exportMenu}" class="topBtn topMenuBtn">
+                                                                                <menu>
+                                                                                        <Menu>
+                                                                                                <MenuItem text="{i18n>exportMd}" icon="sap-icon://document-text" press=".onExportSession"/>
+                                                                                                <MenuItem text="{i18n>exportCsv}" icon="sap-icon://excel-attachment" press=".onExportCsv"/>
+                                                                                        </Menu>
+                                                                                </menu>
+                                                                        </MenuButton>
                                                         </Toolbar>
 
                                                         <!-- ============ 空状态：居中大输入框（对话/Agent 两模式复用，文案随模式） ============ -->
@@ -118,16 +134,10 @@
                                                                 <layoutData>
                                                                         <FlexItemData growFactor="1"/>
                                                                 </layoutData>
-                                                                <VBox class="logoChip" alignItems="Center" justifyContent="Center">
-                                                                        <Text text="✦"/>
-                                                                </VBox>
+                                                                <Image src="images/gale-mark.svg" width="52px" height="52px" decorative="true" densityAware="false" class="heroMark"/>
                                                                 <Title level="H2" text="{chat>/heroTitle}" class="heroTitle"/>
                                                                 <!-- V7：hero 副标题；V13：Agent 模式换为 Agent 引导文案 -->
                                                                 <Text text="{chat>/heroSub}" class="heroSub"/>
-                                                                <!-- V5.5：快捷指令「泡泡」（仅对话模式；Agent 空状态不放业务泡泡）
-                                                                     （控制器 _renderHeroBubbles 程序化渲染） -->
-                                                                <VBox id="bubbleField" class="heroBubbleField"
-                                                                        visible="{= ${chat>/workspaceMode} === 'CHAT' }"/>
 
                                                                 <!-- V4.3：输入卡（含内部右下角发送键）保持原结构，仅位于胶囊下方 -->
                                                                 <VBox class="inputCard heroCard" width="100%">
@@ -179,6 +189,9 @@
                                                                                 </HBox>
                                                                         </HBox>
                                                                 </VBox>
+                                                                <!-- V16：建议标签（输入卡下方一行，点击填入输入框；替代原漂浮泡泡，
+                                                                     对话 = 快捷指令，Agent = 示例问题；控制器 _renderHeroBubbles 渲染） -->
+                                                                <HBox id="bubbleField" class="heroChips" wrap="Wrap" justifyContent="Center"/>
                                                         </VBox>
 
                                                         <!-- ============ 对话态：消息列表 ============ -->
@@ -192,31 +205,15 @@
                                                                         backgroundDesign="Transparent"/>
                                                         </ScrollContainer>
 
-                                                        <!-- ============ V15：任务区（当前任务/参数表单/运行状态） ============
-                                                             只展示后端确认的状态；报表后台运行轮询独立于聊天 busy，
-                                                             输入框不被会话级忙碌锁死 -->
-                                                        <VBox id="taskStrip" visible="{chat>/taskStripVisible}" class="taskStrip">
-                                                                <HBox alignItems="Center" wrap="Wrap" class="taskStripHead">
-                                                                        <ObjectStatus text="{chat>/taskBadge}" state="{chat>/taskBadgeState}" class="taskBadge"/>
-                                                                        <Text text="{chat>/taskTitle}" class="taskTitle"/>
-                                                                        <ToolbarSpacer/>
-                                                                        <Button icon="sap-icon://list" type="Transparent"
-                                                                                tooltip="{i18n>taskListTip}" press=".onTaskListPress" class="topBtn"/>
-                                                                </HBox>
-                                                                <!-- 运行状态行（ReportRunId/ArtifactId 短标识 + 状态） -->
-                                                                <Text text="{chat>/runStatus}" visible="{chat>/runVisible}" class="runStatus"/>
-                                                                <!-- 参数表单（按后端下发的参数 Schema 生成；校验错误由服务端返回） -->
-                                                                <VBox id="paramForm" visible="{chat>/paramFormVisible}" class="paramForm"/>
-                                                                <Text text="{chat>/paramError}" visible="{= ${chat>/paramError} !== '' }" class="paramError"/>
-                                                                <HBox visible="{chat>/paramFormVisible}" alignItems="Center">
-                                                                        <Button text="{i18n>taskSubmitRun}" type="Emphasized"
-                                                                                press=".onSubmitReportRun" class="taskSubmitBtn"/>
-                                                                        <Text text="{i18n>taskSubmitHint}" class="taskSubmitHint"/>
-                                                                </HBox>
-                                                        </VBox>
+                                                        <!-- V16：原底部任务区（参数表单/运行状态行）已并入对话：
+                                                             参数 → 回复内联确认卡；运行 → 回复内步骤条 -->
 
                                                         <!-- ============ 对话态：底部输入 ============ -->
                                                         <HBox class="inputDock" justifyContent="Center" visible="{chat>/listVisible}">
+                                                                <!-- V16：回到底部浮钮（离底部较远时出现） -->
+                                                                <Button icon="sap-icon://navigation-down-arrow" type="Transparent"
+                                                                        tooltip="{i18n>jumpBottom}" press=".onJumpBottom"
+                                                                        visible="{chat>/jumpVisible}" class="jumpBtn"/>
                                                                 <VBox class="inputCard" width="100%">
                                                                         <!-- V5.4：对话态不再显示快捷指令行（仅首页泡泡形式保留）
                                                                              V12：占位文案随模式（Agent = 任务输入）；角色/附件仅对话模式可用 -->

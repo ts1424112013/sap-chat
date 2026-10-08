@@ -768,16 +768,32 @@ sap.ui.define([
                         });
                 },
 
-                /** 运行状态轮询 → Promise<{status, artifactId, artifactShort, rowCount, message}> */
+                /**
+                  * 运行状态轮询 → Promise<{status, artifactId, artifactShort, rowCount, message}>
+                  * V16：ResultJson 为空时仍返回 {message}（GenericResult.Message 即后端真实原因），
+                  * 由界面展示，不再笼统显示"运行状态查询失败"
+                  */
                 getReportRunStatus: function (sReportRunId) {
                         return this._taskCall("ReportRunStatus", { ReportRunId: sReportRunId }, false)
-                                .then(function (o) { return o.result; });
+                                .then(function (o) {
+                                        var r = o.result || {};
+                                        if (!r.message && o.message) {
+                                                r.message = o.message;
+                                        }
+                                        return r;
+                                });
                 },
 
-                /** 结果读取 → Promise<{schemaJson, rowsJson, rowCount, summaryJson, label, message}> */
+                /** 结果读取 → Promise<{schemaJson, rowsJson, rowCount, summaryJson, label, message}>（V16：同上透传 message） */
                 getReportResult: function (sArtifactId) {
                         return this._taskCall("ReportResult", { ArtifactId: sArtifactId }, false)
-                                .then(function (o) { return o.result; });
+                                .then(function (o) {
+                                        var r = o.result || {};
+                                        if (!r.message && o.message) {
+                                                r.message = o.message;
+                                        }
+                                        return r;
+                                });
                 },
 
                 /**
@@ -1553,7 +1569,7 @@ sap.ui.define([
                                         ? oRoot.Login : oRoot;
                                 if ((d.Success || "") !== "X") {
                                         // 未开通权限等业务拒绝：透传后端原话给界面
-                                        throw new Error("srv:" + (d.Message || "该账号未开通 SAP Compass 使用权限，请联系管理员"));
+                                        throw new Error("srv:" + (d.Message || "该账号未开通 Gale-SAP 使用权限，请联系管理员"));
                                 }
                                 var oInfo = {};
                                 try { oInfo = JSON.parse(d.Json || "{}"); } catch (e) { oInfo = {}; }

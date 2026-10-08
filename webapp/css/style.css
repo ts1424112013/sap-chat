@@ -3207,3 +3207,455 @@ body.sapUiBody {
 .rptResultTable th {
         background: rgba(128, 128, 128, 0.12);
 }
+
+/* ============================================================
+   V16 · Gale-SAP 视觉层（简约大气）
+   原则：中性灰白画布 + 品牌蓝点缀，少阴影、少描边、圆角统一；
+   本层只覆盖观感，滚动/聚焦/Horizon 修复（上方各版本）原样保留
+   ============================================================ */
+:root {
+        --accent: #2563EB;
+        --accent-deep: #1D4ED8;
+        --accent-lum: #3B82F6;
+        --accent-soft: #EEF3FE;
+        --gale-amber: #F5A524;
+        --bg: #F7F8FA;
+        --bg-gradient: #F7F8FA;
+        --surface: #FFFFFF;
+        --side-bg: #F2F4F7;
+        --side-tint: #F2F4F7;
+        --bubble-user: #EEF2F7;
+        --sess-current: #E6EDFB;
+        --hover: #ECEFF3;
+        --line: #E6E8EC;
+        --line-strong: #D9DDE3;
+        --text: #111827;
+        --text-2: #4B5563;
+        --sub: #8A93A2;
+        --ring: 0 0 0 3px rgba(37, 99, 235, .14);
+        --shadow-1: 0 1px 2px rgba(17, 24, 39, .04);
+        --shadow-2: 0 1px 2px rgba(17, 24, 39, .04), 0 6px 20px rgba(17, 24, 39, .05);
+        --r-card: 14px;
+        --content-max: min(820px, calc(100vw - 22rem));
+}
+[data-theme="dark"] {
+        --accent: #6B9BFF;
+        --accent-deep: #8FB3FF;
+        --accent-lum: #6B9BFF;
+        --accent-soft: rgba(107, 155, 255, .14);
+        --bg: #111317;
+        --bg-gradient: #111317;
+        --surface: #191C21;
+        --surface-solid: #191C21;
+        --side-bg: #15171B;
+        --side-tint: #15171B;
+        --bubble-user: #22262D;
+        --sess-current: rgba(107, 155, 255, .14);
+        --hover: #22262D;
+        --line: #262A31;
+        --line-strong: #30353D;
+        --text: #E8EAED;
+        --text-2: #AEB4BE;
+        --sub: #727B88;
+        --ring: 0 0 0 3px rgba(107, 155, 255, .22);
+}
+
+/* —— 画布：纯色，无渐变晕染 —— */
+body, body.sapUiBody { background: var(--bg) !important; }
+
+/* —— 侧栏：平铺底色 + 发丝分隔，去投影 —— */
+.sideBar {
+        background: var(--side-bg) !important;
+        box-shadow: none !important;
+        border-right: 1px solid var(--line) !important;
+        padding: 1rem .75rem .7rem !important;
+}
+.brandRow { padding: .1rem .35rem .9rem !important; gap: .6rem; }
+.brandLogoImage { width: 30px !important; height: 30px !important; border-radius: 8px; flex: 0 0 30px; }
+.brandName { font-size: 1.06rem !important; font-weight: 700 !important; letter-spacing: -.01em !important; color: var(--text) !important; }
+
+/* 模式切换：浅底分段，选中为白色浮起块 */
+.modeNav {
+        background: var(--hover) !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 3px !important;
+        border-radius: 11px !important;
+        margin: .2rem 0 .7rem !important;
+}
+.modeNav > .sapMFlexItem, .modeNav > .sapMFlexItem > .sapMBtn, .modeNavBtn { height: 2.15rem !important; }
+.modeNavBtn .sapMBtnInner { border-radius: 9px !important; }
+.modeNavBtn .sapMBtnIcon { color: var(--sub) !important; font-size: .82rem !important; }
+.modeNavBtn .sapMBtnText { color: var(--text-2) !important; font-weight: 600; font-size: .82rem !important; }
+.modeNavBtn:hover .sapMBtnInner { background: transparent !important; }
+.modeNavBtn.modeNavActive .sapMBtnInner {
+        background: var(--surface) !important;
+        box-shadow: 0 1px 2px rgba(17, 24, 39, .08) !important;
+}
+.modeNavBtn.modeNavActive .sapMBtnIcon, .modeNavBtn.modeNavActive .sapMBtnText { color: var(--text) !important; }
+
+/* 新建：白底发丝边按钮（主色只留给发送键，避免抢视觉） */
+[id$="newChatBtn"] { margin-top: .1rem !important; height: 2.3rem !important; }
+[id$="newChatBtn"] .sapMBtnInner,
+[id$="newChatBtn"] .sapMBtnHoverable {
+        background: var(--surface) !important;
+        border: 1px solid var(--line-strong) !important;
+        box-shadow: var(--shadow-1) !important;
+        transform: none !important;
+}
+[id$="newChatBtn"] .sapMBtnIcon, [id$="newChatBtn"] .sapMBtnText { color: var(--text) !important; }
+[id$="newChatBtn"]:hover .sapMBtnInner, [id$="newChatBtn"]:hover .sapMBtnHoverable {
+        background: var(--surface) !important;
+        border-color: var(--accent) !important;
+        filter: none;
+        transform: none !important;
+        box-shadow: var(--shadow-1) !important;
+}
+[id$="newChatBtn"]:hover .sapMBtnIcon, [id$="newChatBtn"]:hover .sapMBtnText { color: var(--accent) !important; }
+
+.histLabel { font-size: .7rem !important; letter-spacing: .04em; color: var(--sub) !important; padding: .9rem .55rem .35rem !important; }
+.sessSearch { margin: 0 .2rem .4rem !important; width: calc(100% - .4rem) !important; }
+.sessSearch .sapMSFF { background: var(--surface) !important; border: 1px solid var(--line) !important; border-radius: 10px !important; }
+.sessionList { padding: 0 !important; }
+.sessionList .sessionItem { border-radius: 10px !important; margin: 1px 0 !important; }
+.sessionList .sessionItem .sessItemRow { padding: .5rem .6rem !important; }
+.sessionList .sessionItem .sessItemTitle { font-size: .85rem !important; font-weight: 500 !important; color: var(--text-2) !important; -webkit-line-clamp: 1; }
+.sessionList .sessionItem:hover { background: var(--hover) !important; }
+.sessionList .sessItemCurrent { background: var(--sess-current) !important; }
+.sessionList .sessItemCurrent .sessItemTitle { color: var(--text) !important; font-weight: 600 !important; }
+.sessionList .sessItemCurrent .sessItemTime { color: var(--sub) !important; }
+.sessionItem.sessItemPinned { box-shadow: none !important; background: transparent; }
+.sessionItem.sessItemPinned .sessItemTitle::before { content: "• "; color: var(--accent); }
+
+/* 底部用户卡 */
+.sideFoot { border-top: 1px solid var(--line) !important; padding: .65rem .3rem 0 !important; gap: .55rem; }
+.sideAvatar { flex: 0 0 auto; }
+.sideUser { min-width: 0; }
+.sideUserName { font-size: .82rem !important; font-weight: 600; color: var(--text) !important; }
+.sideUserName:empty { display: none; }
+.modeBadge .sapMObjStatusText { font-size: .7rem !important; color: var(--sub) !important; }
+.modeBadge .sapMObjStatusText::before { background: #22C55E !important; }
+.modeBadge.sapMObjStatusInformation .sapMObjStatusText::before { background: var(--gale-amber) !important; }
+
+/* —— 顶栏：无底色，元素降噪 —— */
+.topBar { border-bottom: 1px solid var(--line) !important; min-height: 3rem !important; padding: 0 .7rem !important; }
+.topModeBadge {
+        background: transparent !important;
+        border: none !important;
+        color: var(--text-2) !important;
+        font-weight: 600 !important;
+        padding: 0 .3rem !important;
+}
+.sessTitle { color: var(--text) !important; font-weight: 500; font-size: .86rem !important; }
+.taskBadge { margin-left: .2rem; }
+.taskBadge .sapMObjStatusText { font-size: .74rem !important; }
+.taskBadge.sapMObjStatusActive { cursor: pointer; }
+.activityPill {
+        display: inline-flex !important;
+        align-items: center;
+        font-size: .74rem !important;
+        color: var(--accent) !important;
+        background: var(--accent-soft);
+        border-radius: 999px;
+        padding: .2rem .7rem .2rem .55rem;
+        margin-right: .5rem;
+        white-space: nowrap;
+}
+.activityPill::before {
+        content: "";
+        width: 6px; height: 6px; border-radius: 50%;
+        background: var(--accent);
+        margin-right: .4rem;
+        animation: galePulse 1.2s ease-in-out infinite;
+}
+@keyframes galePulse { 0%, 100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1); } }
+.topBar .modelSelect { min-width: 9rem !important; }
+.topBar .sapMComboBox { border-color: var(--line) !important; background: var(--surface) !important; }
+.topMenuBtn .sapMBtnInner { border: none !important; background: transparent !important; box-shadow: none !important; }
+.topMenuBtn .sapMBtnIcon { color: var(--text-2) !important; }
+/* MenuButton 内部是嵌套的 internalBtn：拆分箭头/分隔线一并隐藏（V16） */
+.topMenuBtn .sapMMenuBtnArrow,
+.topMenuBtn .sapMMenuBtnSplit,
+.topMenuBtn .sapMMenuBtnSeparator,
+.topMenuBtn .sapMBtnIcon.sapMMenuBtnArrow { display: none !important; }
+
+/* —— 首页：品牌标 + 标题 + 输入卡 + 建议标签 —— */
+.heroArea { justify-content: center !important; padding-bottom: 12vh !important; }
+.heroMark { margin-bottom: 1rem; border-radius: 14px; }
+.heroMark img, img.heroMark { border-radius: 14px; }
+.heroTitle { font-size: 1.85rem !important; font-weight: 700 !important; letter-spacing: -.02em !important; margin: 0 0 .45rem !important; }
+.heroSub { font-size: .9rem !important; color: var(--sub) !important; margin: 0 0 1.7rem !important; }
+.heroBubbleField { display: none !important; }
+.heroChips {
+        width: min(100%, var(--content-max));
+        margin-top: .9rem;
+        gap: .45rem;
+}
+.heroChips > .sapMFlexItem { margin: 0 !important; }
+.heroChip .sapMBtnInner {
+        border: 1px solid var(--line) !important;
+        background: var(--surface) !important;
+        border-radius: 999px !important;
+        box-shadow: none !important;
+        min-height: 2rem !important;
+        height: 2rem !important;
+        padding: 0 .85rem !important;
+        transition: border-color .15s var(--ease), color .15s var(--ease);
+}
+.heroChip .sapMBtnText { font-size: .8rem !important; color: var(--text-2) !important; font-weight: 500; }
+.heroChip:hover .sapMBtnInner { border-color: var(--accent) !important; background: var(--surface) !important; }
+.heroChip:hover .sapMBtnText { color: var(--accent) !important; }
+.heroChipAdd .sapMBtnInner { border-style: dashed !important; padding: 0 .55rem !important; }
+.heroChipAdd .sapMBtnIcon { color: var(--sub) !important; font-size: .8rem !important; }
+
+/* 输入卡：白卡 + 单层发丝边，聚焦主色环 */
+.inputCard, .heroCard {
+        border: 1px solid var(--line-strong) !important;
+        border-radius: 18px !important;
+        background: var(--surface) !important;
+        box-shadow: 0 2px 12px rgba(17, 24, 39, .05) !important;
+        padding: .75rem .8rem .6rem 1.1rem !important;
+}
+.inputCard:focus-within { border-color: var(--accent) !important; box-shadow: var(--ring), 0 2px 12px rgba(17, 24, 39, .05) !important; }
+.inputCard textarea { font-size: .95rem !important; color: var(--text) !important; }
+.inputCard textarea::placeholder { color: var(--sub) !important; font-style: normal !important; }
+.sendBtn, .sendBtn .sapMBtnHoverable, [id$="sendBtn"] .sapMBtnInner, [id$="sendBtnHero"] .sapMBtnInner { background: var(--accent) !important; }
+[id$="sendBtn"]:hover .sapMBtnInner, [id$="sendBtnHero"]:hover .sapMBtnInner { background: var(--accent-deep) !important; }
+.sendBtn.sendBtnStop .sapMBtnHoverable, .sendBtn.sendBtnStop .sapMBtnInner { background: var(--text) !important; }
+.agentModeHint { background: transparent !important; color: var(--sub) !important; padding: 0 !important; font-size: .72rem !important; }
+.inputDock { position: relative; padding: .4rem 1.2rem 1rem !important; }
+
+/* 回到底部浮钮 */
+.inputDock > .sapMFlexItem:has(> .jumpBtn) { position: absolute; left: 50%; top: -2.6rem; transform: translateX(-50%); z-index: 4; }
+.jumpBtn .sapMBtnInner {
+        width: 2.2rem !important; height: 2.2rem !important; min-width: 0 !important;
+        border-radius: 50% !important;
+        background: var(--surface) !important;
+        border: 1px solid var(--line-strong) !important;
+        box-shadow: var(--shadow-2) !important;
+        display: flex; align-items: center; justify-content: center;
+}
+.jumpBtn .sapMBtnIcon { color: var(--text-2) !important; font-size: .85rem !important; margin: 0 !important; }
+
+/* —— 消息 —— */
+.chatAvatar.avatarAI { background: none !important; border-radius: 8px; flex: 0 0 26px; margin: 2px 12px 0 .4rem !important; }
+.chatAvatar.avatarAI img, img.chatAvatar { border-radius: 8px; }
+.bubbleSender { color: var(--text) !important; font-weight: 600 !important; }
+.userBubble { background: var(--bubble-user) !important; border-radius: 16px !important; padding: .6rem 1rem !important; }
+.aiContent .bubbleBody, .userBubble .bubbleBody { font-size: 14.5px; line-height: 1.75; }
+.bubbleBody h1, .bubbleBody h2, .bubbleBody h3, .bubbleBody h4 { font-weight: 650; letter-spacing: -.01em; margin: 1em 0 .4em; }
+.bubbleBody h1 { font-size: 1.25rem; } .bubbleBody h2 { font-size: 1.12rem; } .bubbleBody h3 { font-size: 1rem; }
+.bubbleBody pre { border-radius: 12px !important; }
+.headThinking { font-size: .74rem !important; }
+
+/* Agent 运行中：图标 + 阶段 + 计时 + 流动进度条 */
+.agentThinkingCard {
+        background: transparent !important;
+        border: 1px solid var(--line) !important;
+        border-radius: 12px !important;
+        padding: .55rem .8rem !important;
+        margin: .2rem 0 .6rem !important;
+}
+.agentThinkingLive { border-style: solid !important; background: var(--surface) !important; }
+.agentThinkingHeader { gap: .5rem; }
+.agentThinkingTitle { font-size: .82rem !important; font-weight: 600 !important; color: var(--text-2) !important; }
+.agentThinkingPhase { font-size: .74rem !important; color: var(--sub) !important; font-variant-numeric: tabular-nums; }
+.thinkIcon { font-size: .8rem !important; color: var(--accent) !important; }
+.thinkSpin { animation: spin360 1.6s linear infinite; }
+.thinkBar { height: 2px; margin-top: .55rem; border-radius: 2px; background: var(--hover); overflow: hidden; position: relative; }
+.thinkBar i { position: absolute; top: 0; bottom: 0; width: 35%; border-radius: 2px; background: var(--accent); animation: thinkSlide 1.4s ease-in-out infinite; }
+@keyframes thinkSlide { 0% { left: -35%; } 100% { left: 100%; } }
+/* 完成态：一行摘要，可展开每步耗时 */
+.agentDoneCard { border: none !important; padding: .1rem 0 !important; margin: 0 0 .35rem !important; }
+.agentDoneHead { cursor: pointer; user-select: none; padding: .2rem .45rem .2rem .1rem; border-radius: 8px; width: fit-content; }
+.agentDoneHead:hover { background: var(--hover); }
+.agentDoneCard .thinkIcon { color: var(--sub) !important; }
+.agentDoneCard .agentThinkingTitle { font-weight: 500 !important; color: var(--sub) !important; font-size: .78rem !important; }
+.thinkFold { font-size: .6rem !important; color: var(--sub) !important; }
+.agentThinkingSteps { margin: .35rem 0 .2rem .5rem !important; padding-left: .8rem; border-left: 2px solid var(--line); gap: .1rem; }
+.agentThinkingStep { gap: .55rem !important; font-size: .76rem !important; }
+.agentStepLabel { flex: 1 1 auto !important; }
+.stepBar { width: 72px; height: 4px; border-radius: 4px; background: var(--hover); overflow: hidden; flex: 0 0 72px; }
+.stepBar i { display: block; height: 100%; border-radius: 4px; background: var(--accent); opacity: .55; }
+.agentStepTime { width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* —— 数据：分析块 / 表格 / 工具条 —— */
+.msgExtra { margin-top: .2rem; }
+.analysisBlock { background: transparent !important; border: none !important; padding: 0 !important; margin: .3rem 0 !important; }
+.analysisSummary { font-size: .86rem !important; }
+.mdTableWrap { border-radius: 12px !important; border-color: var(--line) !important; }
+.mdTable thead th { background: var(--hover) !important; font-size: .8rem; color: var(--text-2) !important; font-weight: 600; }
+.mdTable tbody tr:nth-child(even) td { background: transparent !important; }
+.mdTable tbody tr:hover td { background: var(--hover) !important; }
+.mdTable th, .mdTable td { border-right: none !important; }
+.dataTools { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; margin: .45rem 0 .9rem; }
+.dtBtn {
+        font: inherit; font-size: .76rem; line-height: 1;
+        padding: .42rem .75rem; border-radius: 999px;
+        border: 1px solid var(--line-strong); background: var(--surface); color: var(--text-2);
+        cursor: pointer; transition: border-color .15s ease, color .15s ease, background .15s ease;
+}
+.dtBtn:hover { border-color: var(--accent); color: var(--accent); }
+.dtBtn.dtPrimary { background: var(--accent-soft); border-color: transparent; color: var(--accent); font-weight: 600; }
+.dtBtn.dtPrimary:hover { background: var(--accent); color: #fff; }
+.dtBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dtHint { font-size: .72rem; color: var(--sub); margin-left: .2rem; }
+
+/* —— 用户图表卡 —— */
+.chartDeck { display: flex; flex-direction: column; gap: .7rem; margin: .4rem 0 .6rem; }
+.chartCard { border: 1px solid var(--line); border-radius: var(--r-card); background: var(--surface); padding: .65rem .85rem .5rem; }
+.ccHead { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .3rem; }
+.ccTitle { font-size: .84rem; font-weight: 600; color: var(--text); margin-right: auto; }
+.ccTypes { display: inline-flex; background: var(--hover); border-radius: 8px; padding: 2px; }
+.ccType { font: inherit; font-size: .72rem; border: none; background: transparent; color: var(--sub); width: 1.75rem; height: 1.45rem; border-radius: 6px; cursor: pointer; }
+.ccType:hover { color: var(--text); }
+.ccType.on { background: var(--surface); color: var(--accent); font-weight: 700; box-shadow: 0 1px 2px rgba(17, 24, 39, .08); }
+.ccActs { display: inline-flex; gap: .15rem; }
+.ccAct { font: inherit; font-size: .72rem; border: none; background: transparent; color: var(--sub); padding: .25rem .45rem; border-radius: 6px; cursor: pointer; }
+.ccAct:hover { background: var(--hover); color: var(--text); }
+.ccAct.ccDel:hover { color: var(--danger); }
+.ccNote { font-size: .7rem; color: var(--sub); margin-top: .15rem; }
+.gcSvg { display: block; width: 100%; max-width: 720px; height: auto; }
+.gcText { font-size: 11px; fill: var(--text-2); }
+.gcR { text-anchor: end; } .gcC { text-anchor: middle; }
+.gcVal { fill: var(--text); font-weight: 600; }
+.gcTotal { font-size: 18px; font-weight: 700; fill: var(--text); }
+.gcGrid { stroke: var(--line); stroke-width: 1; }
+.gcAxis { stroke: var(--line-strong); stroke-width: 1; }
+.gcHole { fill: var(--surface); }
+.gcSlice, .gcSvg rect, .gcDot { transition: opacity .15s ease; }
+.gcSvg rect:hover, .gcSlice:hover { opacity: .82; }
+.cbEmpty { font-size: .8rem; color: var(--sub); padding: 2.5rem 1rem; text-align: center; }
+
+/* —— 图表配置面板 —— */
+.chartBuilderDlg .sapMDialogSection { padding: 0 !important; }
+.cbBody { align-items: stretch; }
+.cbForm { width: 19rem; flex: 0 0 19rem !important; padding: 1rem 1.1rem; border-right: 1px solid var(--line); gap: .2rem; }
+.cbRow { gap: .6rem; }
+.cbRow > .sapMFlexItem { flex: 1 1 0 !important; min-width: 0 !important; }
+.cbField { margin-bottom: .55rem; width: 100%; }
+.cbLabel { font-size: .74rem !important; color: var(--sub) !important; margin-bottom: .2rem; }
+.cbTypes { gap: .35rem; }
+.cbTypes > .sapMFlexItem { flex: 0 0 calc(33.33% - .24rem) !important; }
+.cbType { width: 100% !important; }
+.cbType .sapMBtnContent { line-height: 1.2; }
+.cbForm > .sapMFlexItem, .cbField > .sapMFlexItem { width: 100%; }
+.cbPreview > .sapMFlexItem { width: 100%; }
+.cbType .sapMBtnInner {
+        width: 100% !important; height: 3.4rem !important;
+        flex-direction: column; justify-content: center; align-items: center;
+        border: 1px solid var(--line) !important; border-radius: 10px !important; background: var(--surface) !important;
+}
+.cbType .sapMBtnIcon { margin: 0 0 .2rem !important; font-size: 1.05rem !important; color: var(--sub) !important; }
+.cbType .sapMBtnText { font-size: .72rem !important; color: var(--text-2) !important; }
+.cbType.cbTypeOn .sapMBtnInner { border-color: var(--accent) !important; background: var(--accent-soft) !important; }
+.cbType.cbTypeOn .sapMBtnIcon, .cbType.cbTypeOn .sapMBtnText { color: var(--accent) !important; }
+.cbPreview { flex: 1 1 auto !important; min-width: 0 !important; padding: 1rem 1.2rem; background: var(--bg); }
+.cbPreviewHead { font-size: .74rem !important; color: var(--sub) !important; margin-bottom: .5rem; }
+.cbPreviewBody { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: .6rem; min-height: 16rem; }
+.cbNote { font-size: .72rem !important; color: var(--sub) !important; margin-top: .4rem; }
+@media (max-width: 900px) {
+        .cbBody { flex-direction: column; }
+        .cbForm { width: auto; flex: none !important; border-right: none; border-bottom: 1px solid var(--line); }
+}
+
+/* —— 内联确认卡（参数 / 意图澄清）—— */
+.askHost { margin: .35rem 0 .5rem; }
+.askCard {
+        border: 1px solid var(--line-strong);
+        border-radius: 16px;
+        background: var(--surface);
+        padding: .85rem .9rem .7rem;
+        box-shadow: var(--shadow-2);
+        max-width: 100%;
+        outline: none;
+        animation: fadeUp .25s var(--ease) both;
+}
+.askCard:focus-visible, .askCard:focus-within { border-color: var(--accent); }
+.askHead { gap: .55rem; margin: 0 .3rem .6rem; }
+.askTitle { font-size: .88rem !important; font-weight: 650 !important; color: var(--text) !important; }
+.askSub { font-size: .74rem !important; color: var(--sub) !important; font-family: ui-monospace, "SF Mono", Consolas, monospace; }
+.askFields { gap: .65rem .9rem; margin: 0 .3rem .7rem; }
+.askFields > .sapMFlexItem { flex: 1 1 14rem !important; min-width: 12rem !important; max-width: 100%; }
+.askField { width: 100%; }
+.askFieldLabel { font-size: .74rem !important; color: var(--text-2) !important; margin-bottom: .2rem; }
+.askFieldHelp { font-size: .7rem !important; color: var(--sub) !important; margin-top: .15rem; }
+.askRange { width: 100%; gap: .35rem; }
+.askRange > .sapMFlexItem { flex: 1 1 0 !important; min-width: 0 !important; }
+.askRange > .sapMFlexItem:has(.askRangeSep) { flex: 0 0 auto !important; }
+.askRangeSep { color: var(--sub) !important; }
+.askFields .sapMInputBaseContentWrapper { border-radius: 9px !important; }
+.askOpts { gap: 2px; }
+.askOpt {
+        padding: .55rem .75rem;
+        border-radius: 10px;
+        cursor: pointer;
+        gap: .85rem;
+        transition: background .12s ease;
+}
+.askOpt:hover { background: var(--hover); }
+.askOpt.askOptOn { background: var(--hover); }
+.askNo { width: 1.2rem; font-size: .84rem !important; color: var(--sub) !important; font-variant-numeric: tabular-nums; }
+.askOptOn .askNo { color: var(--text) !important; font-weight: 600; }
+.askOptLabel { font-size: .86rem !important; font-weight: 600 !important; color: var(--text) !important; white-space: nowrap; }
+.askOptDesc { font-size: .82rem !important; color: var(--sub) !important; }
+.askOptFree > .sapMFlexItem:last-child { flex: 1 1 auto !important; }
+.askFreeInput .sapMInputBaseContentWrapper { border: none !important; background: transparent !important; box-shadow: none !important; padding: 0 !important; }
+.askFreeInput .sapMInputBaseContentWrapper::before, .askFreeInput .sapMInputBaseContentWrapper::after { content: none !important; }
+.askFreeInput input { font-size: .86rem !important; padding-left: 0 !important; }
+.askFreeInput input::placeholder { color: var(--sub) !important; font-style: normal !important; }
+.askError { display: block; font-size: .76rem !important; color: var(--danger) !important; margin: .4rem .3rem 0; }
+.askFoot { margin: .55rem .2rem 0 .3rem; }
+.askHintIcon { font-size: .78rem !important; color: var(--sub) !important; margin-right: .4rem; }
+.askHint { font-size: .74rem !important; color: var(--sub) !important; }
+.askConfirm .sapMBtnInner { border-radius: 10px !important; min-width: 4.6rem; }
+.askCardBusy { opacity: .75; }
+.askCardDone {
+        border: none !important; box-shadow: none !important; background: transparent !important;
+        padding: .25rem .1rem !important; gap: .45rem; animation: none !important;
+}
+.askDoneIcon { font-size: .78rem !important; color: #16A34A !important; }
+.askCard-cancelled .askDoneIcon { color: var(--sub) !important; }
+.askDoneTitle { font-size: .8rem !important; font-weight: 600 !important; color: var(--text-2) !important; }
+.askDoneText { font-size: .8rem !important; color: var(--sub) !important; }
+
+/* —— 报表运行步骤条 —— */
+.runCard { border: 1px solid var(--line); border-radius: var(--r-card); background: var(--surface); padding: .7rem .9rem; margin: .35rem 0 .5rem; }
+.runHead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: .55rem; }
+.runTitle { font-size: .82rem; font-weight: 600; color: var(--text); }
+.runTime { font-size: .74rem; color: var(--sub); font-variant-numeric: tabular-nums; }
+.runSteps { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.runStep { display: inline-flex; align-items: center; gap: .4rem; font-size: .78rem; color: var(--sub); white-space: nowrap; }
+.runStep i { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--line-strong); box-sizing: border-box; }
+.runStep.st-done { color: var(--text-2); }
+.runStep.st-done i { background: #16A34A; border-color: #16A34A; }
+.runStep.st-on { color: var(--accent); font-weight: 600; }
+.runStep.st-on i { border-color: var(--accent); background: var(--accent); animation: galePulse 1.2s ease-in-out infinite; }
+.runStep.st-warn { color: var(--warning); }
+.runStep.st-warn i { border-color: var(--warning); }
+.runStep.st-fail { color: var(--danger); font-weight: 600; }
+.runStep.st-fail i { background: var(--danger); border-color: var(--danger); }
+.runLine { flex: 0 1 2.5rem; min-width: 1rem; height: 2px; border-radius: 2px; background: var(--line); }
+.runLine.on { background: #16A34A; opacity: .5; }
+.runMsg { font-size: .76rem; color: var(--text-2); margin-top: .55rem; line-height: 1.5; }
+.run-failed .runMsg { color: var(--danger); }
+.runActs { display: flex; gap: .35rem; margin-top: .55rem; }
+.runActs:empty { display: none; }
+
+/* —— 对话框 / 登录 —— */
+.sapMDialog { border-radius: 16px !important; }
+.sapLoginDialog .sapMDialogSection { padding-top: 1.4rem !important; }
+.appLoginChip { width: auto !important; height: auto !important; background: none !important; box-shadow: none !important; margin: 0 auto .75rem !important; }
+.appLoginChip img { border-radius: 14px; }
+.appLoginTitle { font-size: 1.3rem !important; letter-spacing: -.01em; }
+.appLoginBtn .sapMBtnInner { background: var(--accent) !important; border-color: var(--accent) !important; }
+.loginInput .sapMInputBaseContentWrapper { background: var(--surface) !important; border-color: var(--line-strong) !important; }
+.loginInput input::placeholder { font-style: normal !important; }
+
+/* —— 窄屏 —— */
+@media (max-width: 900px) { :root { --content-max: calc(100vw - 19rem); } }
+@media (max-width: 599px) {
+        :root { --content-max: calc(100vw - 1.6rem); }
+        .askOptDesc { display: none; }
+        .heroTitle { font-size: 1.45rem !important; }
+}

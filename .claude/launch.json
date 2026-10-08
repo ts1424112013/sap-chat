@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "gale-ui5",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["ui5", "serve", "--port", "8080"],
+      "port": 8080
+    }
+  ]
+}

@@ -119,6 +119,10 @@ sap.ui.define([], function () {
                                                 sHtml += "</tr>";
                                         }
                                         sHtml += "</tbody></table></div>";
+                                        // V16：表格下方数据工具条（生成图表/复制/CSV），事件由控制器在 document 上委托
+                                        if (aTableBuf.length > 2) {
+                                                sHtml += that.dataToolsHtml();
+                                        }
                                         aOut.push(sHtml);
                                 } else {
                                         // 不是合法表格 → 还原为普通段落（竖线转义避免被再次解析）
@@ -251,6 +255,21 @@ sap.ui.define([], function () {
                 },
 
                 /**
+                 * V16：数据工具条（表格下方）。不自动画图 —— 由用户点击"生成图表"选择图形。
+                 * @param {string} [sDsIdx] 数据集下标（分析结果表格携带；Markdown 表格为空，按 DOM 位置定位）
+                 * @returns {string} HTML（全部为常量标签，无动态文本）
+                 */
+                dataToolsHtml: function (sDsIdx, sHint) {
+                        var sDs = sDsIdx === undefined ? "" : ' data-ds="' + String(parseInt(sDsIdx, 10) || 0) + '"';
+                        return '<div class="dataTools"' + sDs + ">" +
+                                '<button type="button" class="dtBtn dtPrimary" data-act="chart">生成图表</button>' +
+                                '<button type="button" class="dtBtn" data-act="copy">复制表格</button>' +
+                                '<button type="button" class="dtBtn" data-act="csv">导出 CSV</button>' +
+                                (sHint ? '<span class="dtHint">' + this.escapeHtml(sHint) + "</span>" : "") +
+                                "</div>";
+                },
+
+                /**
                  * 时间格式化：YYYYMMDDHHMMSS → MM-dd HH:mm
                  * @param {string} sTime ABAP 14 位时间戳或空（空则取当前时间）
                  * @returns {string} 展示文本
@@ -277,13 +296,19 @@ sap.ui.define([], function () {
                         if (!sHtml || typeof sHtml !== "string") {
                                 return "";
                         }
+                        // V16: 补齐 markdownToHtml 自身产出的结构标签(div/pre/button/h1-h6/thead/tbody)，
+                        // 原白名单会剥掉代码块容器、复制按钮、标题与表头，残留裸文本"复制"
                         var oAllowed = {
                                 p: true, br: true, strong: true, em: true, code: true,
                                 a: true, ul: true, ol: true, li: true, blockquote: true, img: true,
-                                table: true, tr: true, th: true, td: true, span: true
+                                table: true, thead: true, tbody: true, tr: true, th: true, td: true, span: true,
+                                div: true, pre: true, button: true,
+                                h1: true, h2: true, h3: true, h4: true, h5: true, h6: true
                         };
+                        // 仅数据/展示属性；任何 on* 事件属性都不在白名单内
                         var oAttrs = {
-                                href: 1, target: 1, rel: 1, src: 1, alt: 1, class: 1, loading: 1, colspan: 1, rowspan: 1
+                                href: 1, target: 1, rel: 1, src: 1, alt: 1, class: 1, loading: 1, colspan: 1, rowspan: 1,
+                                type: 1, title: 1, "data-lang": 1, "data-act": 1
                         };
                         var aOut = [];
                         var rTag = /<(\/?)([a-z][a-z0-9]*)\b([^>]*)>/gi;
@@ -301,7 +326,7 @@ sap.ui.define([], function () {
                                 } else {
                                         var sAttrs = oMatch[3];
                                         var aAttrs = [];
-                                        var rAttr = /\s([a-z][a-z0-9]*)(?:="([^"]*)"|='([^']*)'|=([^\s>]*))?/gi;
+                                        var rAttr = /\s([a-z][a-z0-9-]*)(?:="([^"]*)"|='([^']*)'|=([^\s>]*))?/gi;
                                         var oAttr;
                                         while ((oAttr = rAttr.exec(sAttrs))) {
                                                 if (oAttr[1].toLowerCase() in oAttrs) {

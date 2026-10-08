@@ -16,8 +16,11 @@ sap.ui.define([
         "sap/ui/util/Storage",
         "zai/chat/service/ChatService",
         "zai/chat/service/TraceService",
-        "zai/chat/utils/Formatter"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter) {
+        "zai/chat/utils/Formatter",
+        "zai/chat/utils/ChartRenderer",
+        "zai/chat/utils/ChartBuilder",
+        "zai/chat/utils/AskCard"
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard) {
         "use strict";
 
         /**
@@ -88,16 +91,15 @@ sap.ui.define([
                                 heroSub: "",                    // 空状态副标题（随模式）
                                 heroPh: "",                     // 输入占位文案（随模式）
                                 inputPh: "",
-                                // ---- V15：多业务任务区（只展示后端确认的状态） ----
-                                currentTask: null,              // {taskId,module,status,shortId,needsInput,pending[]}
-                                taskStripVisible: false,        // 任务区显隐（对话态）
-                                taskBadge: "",                  // 任务徽标（模块/状态/短标识）
+                                // ---- V15：多业务任务（只展示后端确认的状态） ----
+                                // V16：参数表单/运行状态改为对话内联卡片（见 AskCard / _trackRun）
+                                currentTask: null,              // {taskId,module,status,shortId,needsInput,reportId,tcode}
+                                taskBadge: "",                  // 顶栏任务徽标（模块 · 状态）
                                 taskBadgeState: "None",         // 徽标状态色
-                                taskTitle: "",                  // 任务标题
-                                runStatus: "",                  // 报表运行状态行
-                                runVisible: false,
-                                paramFormVisible: false,        // 参数表单显隐
-                                paramError: ""                  // 服务端返回的参数校验错误
+                                taskBadgeTip: "",               // 徽标悬浮提示（任务短编号）
+                                // ---- V16：运行状态可视化 ----
+                                activityText: "",               // 顶栏运行指示（生成中 / Agent 运行中 / 报表执行中）
+                                jumpVisible: false              // "回到底部"浮钮
                         });
                         this.getView().setModel(oChatModel, "chat");
 
@@ -378,6 +380,10 @@ sap.ui.define([
                         // V8：权限分流（按钮可见性/设置页编辑能力）
                         this._syncAdminUi();
                         var oUser = ChatService.getAppUser();
+                        // V16：侧栏底部用户信息（头像缩写取账号，SAP 账号均为拉丁字母）
+                        var oSettings = this.getView().getModel("settings");
+                        oSettings.setProperty("/userName", oUser ? (oUser.userName || oUser.userId) : "");
+                        oSettings.setProperty("/userInitials", oUser ? String(oUser.userId || "").substring(0, 2).toUpperCase() : "");
                         if (oUser) {
                                 MessageToast.show(oRB.getText("loginWelcome") + (oUser.userName || oUser.userId));
                         }
@@ -460,8 +466,11 @@ sap.ui.define([
                         oPass.onsapenter = fnSubmit;
 
                         var oVBox = new sap.m.VBox().addStyleClass("appLoginBody")
-                                .addItem(new sap.m.VBox({ alignItems: "Center", justifyContent: "Center" }).addStyleClass("appLoginChip")
-                                        .addItem(new sap.m.Text({ text: "✦" })))
+                                .addItem(new sap.m.HBox({ justifyContent: "Center" }).addStyleClass("appLoginChip")
+                                        .addItem(new sap.m.Image({
+                                                src: sap.ui.require.toUrl("zai/chat/images/gale-mark.svg"),
+                                                width: "56px", height: "56px", decorative: true, densityAware: false
+                                        })))
                                 .addItem(new sap.m.Title({
                                         level: "H2", text: oRB.getText("appLoginTitle"),
                                         textAlign: "Center", width: "100%"
@@ -495,10 +504,9 @@ sap.ui.define([
                                         })));
                         }
 
+                        // V16：不设对话框标题（品牌标题已在卡片内，原先头部与正文重复显示）
                         this._oAppLoginDialog = new sap.m.Dialog({
-                                title: oRB.getText("appLoginTitle"),
-                                contentWidth: "21rem",
-                                modal: true,
+                                contentWidth: "22rem",
                                 content: oVBox,
                                 afterClose: function () { that._oAppLoginDialog.destroy(); that._oAppLoginDialog = null; }
                         }).addStyleClass("sapLoginDialog");
@@ -516,7 +524,6 @@ sap.ui.define([
                         var oDlg = new sap.m.Dialog({
                                 title: oRB.getText("pwdChangeTitle"),
                                 contentWidth: "20rem",
-                                modal: true,
                                 content: new sap.m.VBox().addStyleClass("appLoginBody")
                                         .addItem(new sap.m.Text({ text: oRB.getText("pwdChangeHint"), wrapping: true }).addStyleClass("hintText"))
                                         .addItem(new sap.m.Label({ text: oRB.getText("pwdChangeNew") }).addStyleClass("loginLabel"))
@@ -726,6 +733,7 @@ sap.ui.define([
                         this._bindTopBarScroll();
                         this._bindCodeCopy();
                         this._bindImageActions();
+                        this._bindDataActions();
                 },
 
                 /**
@@ -803,24 +811,41 @@ sap.ui.define([
                         });
                 },
 
-                /** 绑定消息区 scroll → 顶栏 .scrolled（幂等，DOM 就绪才绑定） */
+                /**
+                  * 绑定消息区 scroll → 顶栏 .scrolled + "回到底部"浮钮。
+                  * V16 修复：hero ↔ 对话态切换会重建 chatScroll 的 DOM 节点，
+                  * 旧实现用一次性 flag 绑定，节点重建后监听静默失效（顶栏
+                  * 效果与浮钮双双失灵）；改为记录已绑定节点，节点变化即重绑。
+                  */
                 _bindTopBarScroll: function () {
-                        if (this._bTopScrollBound) {
-                                return;
-                        }
                         var oScroll = this.byId("chatScroll");
                         var oDom = oScroll && oScroll.getDomRef();
-                        if (!oDom) {
+                        if (!oDom || oDom === this._oScrollDom) {
                                 return;
                         }
                         var oBar = this.getView().getDomRef().querySelector(".topBar");
                         if (!oBar) {
                                 return;
                         }
-                        this._bTopScrollBound = true;
+                        this._oScrollDom = oDom;
+                        var oChat = this.getView().getModel("chat");
                         oDom.addEventListener("scroll", function () {
                                 oBar.classList.toggle("scrolled", oDom.scrollTop > 8);
-                        });
+                                // "回到底部"浮钮：离底部超过 320px 时出现（仅状态变化时写模型）
+                                var bJump = oDom.scrollHeight - oDom.scrollTop - oDom.clientHeight > 320;
+                                if (bJump !== oChat.getProperty("/jumpVisible")) {
+                                        oChat.setProperty("/jumpVisible", bJump);
+                                }
+                        }, { passive: true });
+                },
+
+                /** V16：回到底部（平滑滚动） */
+                onJumpBottom: function () {
+                        var oScroll = this.byId("chatScroll");
+                        var oDom = oScroll && oScroll.getDomRef();
+                        if (oDom) {
+                                oDom.scrollTo({ top: oDom.scrollHeight, behavior: "smooth" });
+                        }
                 },
 
                 /** 生成 32 位会话 ID */
@@ -1009,8 +1034,11 @@ sap.ui.define([
                         oChatModel.getProperty("/messages").push(
                                 this._buildEntry("user", sText, "", oCfg.meta)
                         );
-                        oChatModel.setProperty("/input", "");
-                        this._clearAttachment();   // 附件已拼入本次提问（两模式均消费）
+                        // V16：卡片联动的后续消息（选项/自由输入）不清空用户正在写的草稿
+                        if (!oCfg.keepInput) {
+                                oChatModel.setProperty("/input", "");
+                                this._clearAttachment();   // 附件已拼入本次提问（两模式均消费）
+                        }
                         this._refreshMessages();
                         this._scrollToBottom();
 
@@ -1022,6 +1050,8 @@ sap.ui.define([
                         oPending.time = "";
                         oPending.html = "";
                         oPending.streaming = true;
+                        oPending.waiting = true;          // V16：等待计时（两模式通用）
+                        oPending.elapsedText = "";
                         if (bAgent) {
                                 oPending.sender = oRB.getText("agentSender");
                                 oPending.agentThinking = true;
@@ -1033,15 +1063,14 @@ sap.ui.define([
                         this._refreshMessages();
                         this._scrollToBottom();
 
-                        // V13：等待期思考阶段文案轮换（仅视觉状态，不代表已执行；
+                        // V13/V16：等待期计时 + 阶段文案轮换（仅视觉状态，不代表已执行；
                         // 真实过程以后端 TraceJson 为准）
-                        if (bAgent) {
-                                this._startThinkingTicker(iAssistantIdx);
-                        }
+                        this._startThinkingTicker(iAssistantIdx, bAgent);
 
                         // ---------- 调用服务（V12 统一入口，按模式路由） ----------
                         oChatModel.setProperty("/busy", true);
                         this._setSendBtnBusy(true);
+                        this._syncActivity();
 
                         // V5：本轮发送令牌 —— 停止生成时记录到 _sAbortToken，
                         // 迟到的后端响应据此丢弃（后端仍会存库，列表照常刷新）
@@ -1065,11 +1094,13 @@ sap.ui.define([
                                         oChatModel.setProperty(sPath + "/html", oErrorEntry.html);
                                         oChatModel.setProperty(sPath + "/time", oErrorEntry.time);
                                         oChatModel.setProperty(sPath + "/streaming", false);
+                                        oChatModel.setProperty(sPath + "/waiting", false);
                                         that._attachAgentProcess(iAssistantIdx, { status: "ERROR", traceValid: false });
                                         // 正文 HTML 与普通流式渲染一样直接同步到已有控件。
                                         var oBody = that._findMsgBodyCtrl(iAssistantIdx);
                                         if (oBody) {
-                                                oBody.setContent('<div class="bubbleBody">' + oErrorEntry.html + "</div>");
+                                                oBody.setContent('<div class="bubbleBody" data-uid="' + aMsgs[iAssistantIdx].uid + '">' +
+                                                        oErrorEntry.html + "</div>");
                                         }
                                         return;
                                 }
@@ -1088,6 +1119,7 @@ sap.ui.define([
                                 that._stopThinkingTicker();
                                 oChatModel.setProperty("/busy", false);
                                 that._setSendBtnBusy(false);
+                                that._syncActivity();
                                 that._refreshMessages();
                                 that._scrollToBottom();
                                 // 历史重渲染后兜底再做一次代码高亮
@@ -1119,23 +1151,31 @@ sap.ui.define([
                                         return;
                                 }
                                 that._stopThinkingTicker();
+                                oChatModel.setProperty("/messages/" + iAssistantIdx + "/waiting", false);
                                 if (!bAgent && oRes.status === "ERROR") {
                                         fnSetError(oRes.message || "服务返回错误");
                                         fnFinish();
                                 } else {
                                         // V11~V13：Agent 的 TIMEOUT/DENIED/ERROR 已由后端护栏生成
                                         // 可读降级文案（不含原始堆栈），按正常回答渲染并附过程摘要
-                                        var sDoneMeta = bAgent ? that._agentMeta(oRes) : "";
+                                        // V16：对话模式也标注耗时（后端 ElapsedMs）
+                                        var sDoneMeta = bAgent ? that._agentMeta(oRes)
+                                                : (oRes.elapsedMs ? oRB.getText("chatElapsed", [(oRes.elapsedMs / 1000).toFixed(1)]) : "");
                                         if (bAgent) {
                                                 // HTTP 已结束：立即收口，空/坏 Trace 也不能继续显示正在执行。
                                                 that._attachAgentProcess(iAssistantIdx, oRes);
                                                 that._updateAgentSessionStatus(sSessionId, oRes.status);
-                                                // V15：任务状态/参数表单/任务徽标回写（后端确认的状态）
-                                                that._updateTaskState(oRes, sSessionId);
+                                                // V15/V16：任务徽标回写；待填参数挂到本条回复的内联卡片
+                                                that._updateTaskState(oRes, sSessionId, iAssistantIdx);
                                         }
-                                        return that._streamAnswer(iAssistantIdx, oRes.answer || oRes.message || "（空回复）", sDoneMeta, sSendToken)
+                                        var sAnswer = oRes.answer || oRes.message || "（空回复）";
+                                        return that._streamAnswer(iAssistantIdx, sAnswer, sDoneMeta, sSendToken)
                                                 .then(function () {
                                                         fnFinish();
+                                                        // V16：参数卡 / 意图澄清卡（流式完成后出现，与回答联动）
+                                                        if (fnIsCurrent()) {
+                                                                that._attachAskCard(iAssistantIdx, sAnswer, oRes, sSessionId);
+                                                        }
                                                 });
                                 }
                         }).catch(function (oErr) {
@@ -1161,25 +1201,47 @@ sap.ui.define([
                  * 不展示思维链、Prompt 或密钥
                  * ========================================================= */
 
-                /** 等待期思考阶段文案轮换（纯视觉状态；真实过程以 TraceJson 为准） */
-                _startThinkingTicker: function (iIndex) {
+                /**
+                  * 等待期计时（V16：两模式通用，每秒刷新"已用 N 秒"）；
+                  * Agent 额外每 3 秒轮换阶段文案（纯视觉状态；真实过程以 TraceJson 为准）
+                  */
+                _startThinkingTicker: function (iIndex, bAgent) {
                         var that = this;
                         this._stopThinkingTicker();
                         var aPhases = ["agentPhaseUnderstand", "agentPhasePlan", "agentPhaseTools",
                                 "agentPhaseExecute", "agentPhaseCompose"];
-                        var iPos = 0;
+                        var iPos = 0, iTick = 0, iStart = Date.now();
                         var oChatModel = this.getView().getModel("chat");
                         this._iThinkTimer = window.setInterval(function () {
-                                // 会话/条目已切换或已停止 → 静默终止
+                                // 会话/条目已切换、已停止或首帧正文已到 → 静默终止
                                 var aMsgs = oChatModel.getProperty("/messages");
-                                if (!aMsgs || !aMsgs[iIndex] || !aMsgs[iIndex].requestPending) {
+                                var oE = aMsgs && aMsgs[iIndex];
+                                if (!oE || !oE.waiting || (!bAgent && oE.raw)) {
                                         that._stopThinkingTicker();
                                         return;
                                 }
-                                iPos = (iPos + 1) % aPhases.length;
-                                oChatModel.setProperty("/messages/" + iIndex + "/thinkingLabel",
-                                        that._rb().getText(aPhases[iPos]));
-                        }, 2600);
+                                var sPath = "/messages/" + iIndex;
+                                oChatModel.setProperty(sPath + "/elapsedText",
+                                        that._rb().getText("waitElapsed", [Math.round((Date.now() - iStart) / 1000)]));
+                                if (bAgent && ++iTick % 3 === 0) {
+                                        iPos = (iPos + 1) % aPhases.length;
+                                        oChatModel.setProperty(sPath + "/thinkingLabel", that._rb().getText(aPhases[iPos]));
+                                }
+                        }, 1000);
+                },
+
+                /** V16：顶栏运行指示（对话生成 / Agent 运行 / 报表后台执行） */
+                _syncActivity: function () {
+                        var oChat = this.getView().getModel("chat");
+                        var oRB = this._rb();
+                        var s = "";
+                        if (oChat.getProperty("/busy")) {
+                                s = oRB.getText((oChat.getProperty("/currentSession") || {}).mode === "AGENT"
+                                        ? "activityAgent" : "activityChat");
+                        } else if (this._oRun && this._oRun.timer) {
+                                s = oRB.getText("activityReport");
+                        }
+                        oChat.setProperty("/activityText", s);
                 },
 
                 _stopThinkingTicker: function () {
@@ -1207,7 +1269,14 @@ sap.ui.define([
                         var oFinished = TraceService.finish(oRes);
                         oFinished.title = this._agentMeta(oRes, true);
                         oFinished.hasPhases = oFinished.phases.length > 0;
+                        // V16：每步耗时条（相对本轮最长一步的占比）
+                        var iMaxMs = 0;
+                        oFinished.phases.forEach(function (p) { iMaxMs = Math.max(iMaxMs, p.elapsedMs || 0); });
+                        oFinished.phases.forEach(function (p) {
+                                p.pct = iMaxMs > 0 && p.elapsedMs ? Math.max(4, Math.round(p.elapsedMs / iMaxMs * 100)) : 0;
+                        });
                         var sPath = "/messages/" + iIndex;
+                        oChatModel.setProperty(sPath + "/waiting", false);
                         oChatModel.setProperty(sPath + "/agentThinking", false);
                         oChatModel.setProperty(sPath + "/requestPending", false);
                         oChatModel.setProperty(sPath + "/thinkingLabel", "");
@@ -1215,9 +1284,9 @@ sap.ui.define([
                         oChatModel.setProperty(sPath + "/meta", this._agentMeta(oRes));
                         // V1.3：数据分析结果（ChatService._sanitizeAnalysis 已复核，
                         // 无数据分析路径时为 null，不影响普通 Agent 回答）
+                        // V16：只渲染数据表 + 工具条，图表由用户点"生成图表"自行选择
                         oChatModel.setProperty(sPath + "/analysis", oRes.analysis || null);
-                        oChatModel.setProperty(sPath + "/analysisHtml",
-                                oRes.analysis ? this._buildAnalysisHtml(oRes.analysis) : "");
+                        oChatModel.setProperty(sPath + "/extraHtml", this._extraHtml(oOld));
                 },
 
                 /* =========================================================
@@ -1226,13 +1295,6 @@ sap.ui.define([
                  * escapeHtml，所有标签由本文件构造；图表用原生 SVG 生成，
                  * 不引入任何外部图表依赖，不执行模型返回的 HTML/JS（计划 §10/§12）
                  * ========================================================= */
-
-                /** 图表配色（固定序列，明暗主题均可辨识） */
-                _chartColor: function (i) {
-                        var a = ["#4d7cfe", "#22b07d", "#f5a623", "#9b6cf0",
-                                 "#ef6c8f", "#26a4d8", "#8bc34a", "#ff7043"];
-                        return a[i % a.length];
-                },
 
                 /**
                  * 构造数据分析结果 HTML（summary/findings/datasets/charts）
@@ -1276,7 +1338,7 @@ sap.ui.define([
                         }
 
                         // 数据集（表格 / 查询失败 / 空数据提示）
-                        aDs.forEach(function (oDs) {
+                        aDs.forEach(function (oDs, iDs) {
                                 s += '<div class="analysisDs">';
                                 if (oDs.status !== "OK") {
                                         s += '<div class="analysisDsHead"><span class="dsName">' + esc(oDs.name) + "</span></div>" +
@@ -1310,193 +1372,83 @@ sap.ui.define([
                                                         s += "</tr>";
                                                 });
                                                 s += "</tbody></table></div>";
+                                                // V16：不自动画图 —— 工具条由用户选择；后端推荐的图形仅作提示
+                                                var oHint = that._chartHint(oAnalysis, oDs);
+                                                s += Formatter.dataToolsHtml(iDs, oHint ? oRB.getText("chartSuggest",
+                                                        [ChartRenderer.typeText(oHint.type)]) : "");
                                         }
                                 }
                                 s += "</div>";
                         });
 
-                        // 图表（引用无效时展示说明，计划 §10）
-                        if (aCharts.length) {
-                                aCharts.forEach(function (oChart) {
-                                        var oHit = null;
-                                        aDs.forEach(function (d) {
-                                                if (d.name === oChart.dataset) {
-                                                        oHit = d;
-                                                }
-                                        });
-                                        var sSvg = oHit ? that._chartToSvg(oChart, oHit) : "";
-                                        s += '<div class="analysisChart">';
-                                        if (oChart.title) {
-                                                s += '<div class="chartTitle">' + esc(oChart.title) + "</div>";
-                                        }
-                                        if (sSvg) {
-                                                s += sSvg;
-                                        } else {
-                                                s += '<div class="analysisChartSkip">' +
-                                                        esc(oRB.getText("analysisChartSkip")) + "</div>";
-                                        }
-                                        s += "</div>";
-                                });
-                        }
-
                         s += "</div>";
                         return s;
                 },
 
-                /**
-                 * 图表配置 → 内联 SVG（bar/line/pie 白名单，计划 §10）
-                 * @param {object} oChart {type,title,dataset,x,y}
-                 * @param {object} oDs 引用的数据集（columns/rows）
-                 * @returns {string} SVG 字符串；数据不足时返回空串
-                 */
-                _chartToSvg: function (oChart, oDs) {
-                        var iX = -1, iY = -1;
-                        oDs.columns.forEach(function (col, idx) {
-                                if (col.name === oChart.x) { iX = idx; }
-                                if (col.name === oChart.y) { iY = idx; }
-                        });
-                        if (iX < 0 || iY < 0 || !oDs.rows.length) {
-                                return "";
+                /** V16：后端推荐图形 → 图表面板初始配置（列名映射为列下标） */
+                _chartHint: function (oAnalysis, oDs) {
+                        var oC = ((oAnalysis && oAnalysis.charts) || []).filter(function (c) {
+                                return c.dataset === oDs.name;
+                        })[0];
+                        if (!oC) {
+                                return null;
                         }
-                        var aX = [], aY = [];
-                        oDs.rows.forEach(function (row) {
-                                aX.push(String(row[iX] === undefined ? "" : row[iX]));
-                                aY.push(Formatter.toNumber(row[iY]));
-                        });
-                        if (oChart.type === "pie") {
-                                return this._pieSvg(aX, aY);
-                        }
-                        return this._axisChartSvg(aX, aY, oChart.type === "line");
+                        var fnIdx = function (sName) {
+                                for (var i = 0; i < oDs.columns.length; i++) {
+                                        if (oDs.columns[i].name === sName) { return i; }
+                                }
+                                return -1;
+                        };
+                        var iX = fnIdx(oC.x), iY = fnIdx(oC.y);
+                        var oOut = { type: oC.type, title: oC.title || "" };
+                        if (iX >= 0) { oOut.x = iX; }
+                        if (iY >= 0 && iY !== iX) { oOut.y = [iY]; }
+                        return oOut;
                 },
 
                 /**
-                 * 柱状/折线图（共享坐标轴框架；viewBox 640×340，宽度自适应）
-                 */
-                _axisChartSvg: function (aX, aY, bLine) {
-                        var W = 640, H = 340, L = 56, R = 16, T = 20, B = 56;
-                        var pw = W - L - R, ph = H - T - B;
-                        var iMax = Formatter.niceAxisMax(Math.max.apply(null, aY.concat([0])));
-                        var iN = aY.length;
-                        var fmt = function (n) { return Formatter.formatMetricNumber(n); };
-                        var esc = Formatter.escapeHtml;
-                        var s = '<svg class="anSvg" viewBox="0 0 ' + W + " " + H +
-                                '" role="img" preserveAspectRatio="xMidYMid meet">';
-
-                        // 网格与 y 刻度（4 段）
-                        for (var i = 0; i <= 4; i++) {
-                                var iy = T + ph - (ph * i / 4);
-                                var iv = iMax * i / 4;
-                                s += '<line x1="' + L + '" y1="' + iy + '" x2="' + (W - R) + '" y2="' + iy + '" class="anGrid"/>';
-                                s += '<text x="' + (L - 8) + '" y="' + (iy + 4) + '" class="anSvgText anSvgTextR">' + fmt(iv) + "</text>";
-                        }
-
-                        if (!bLine) {
-                                // 柱状：分组居中，柱宽 = 组距 62%（封顶 64px）
-                                var iSlot = pw / iN;
-                                var iBarW = Math.min(iSlot * 0.62, 64);
-                                for (var j = 0; j < iN; j++) {
-                                        var ih = iMax > 0 ? (ph * aY[j] / iMax) : 0;
-                                        var ix = L + iSlot * j + (iSlot - iBarW) / 2;
-                                        s += '<rect x="' + ix.toFixed(1) + '" y="' + (T + ph - ih).toFixed(1) +
-                                                '" width="' + iBarW.toFixed(1) + '" height="' + Math.max(ih, 1).toFixed(1) +
-                                                '" rx="3" fill="' + this._chartColor(j) + '">';
-                                        s += "<title>" + esc(aX[j]) + ": " + fmt(aY[j]) + "</title></rect>";
-                                        if (iN <= 14) {
-                                                s += '<text x="' + (ix + iBarW / 2).toFixed(1) + '" y="' + (T + ph - ih - 6).toFixed(1) +
-                                                        '" class="anSvgText anSvgTextC">' + fmt(aY[j]) + "</text>";
-                                        }
-                                }
-                        } else {
-                                // 折线：点均分横轴
-                                var aPts = [];
-                                for (var k = 0; k < iN; k++) {
-                                        var px = iN === 1 ? L + pw / 2 : L + pw * k / (iN - 1);
-                                        var py = T + ph - (iMax > 0 ? ph * aY[k] / iMax : 0);
-                                        aPts.push(px.toFixed(1) + "," + py.toFixed(1));
-                                        s += '<circle cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) +
-                                                '" r="3.5" fill="' + this._chartColor(0) + '">';
-                                        s += "<title>" + esc(aX[k]) + ": " + fmt(aY[k]) + "</title></circle>";
-                                }
-                                s += '<polyline points="' + aPts.join(" ") + '" class="anLine"/>';
-                        }
-
-                        // x 标签（超量抽稀；超 10 字符截断，title 保留全量）
-                        var iStep = Math.ceil(iN / 12);
-                        var iSlot2 = pw / iN;
-                        for (var m = 0; m < iN; m += iStep) {
-                                var lx = L + iSlot2 * m + iSlot2 / 2;
-                                var sLbl = aX[m].length > 10 ? aX[m].substring(0, 10) + "…" : aX[m];
-                                s += '<text x="' + lx.toFixed(1) + '" y="' + (T + ph + 18) + '" class="anSvgText anSvgTextC">' +
-                                        "<title>" + esc(aX[m]) + "</title>" + esc(sLbl) + "</text>";
-                        }
-
-                        s += "</svg>";
-                        return s;
-                },
-
-                /**
-                 * 饼图（viewBox 640×300；右侧图例含数值与占比；
-                 * 超过 12 片时合并为"其他"）
-                 */
-                _pieSvg: function (aX, aY) {
-                        var fTotal = 0;
-                        aY.forEach(function (v) { fTotal += Math.max(v, 0); });
-                        if (fTotal <= 0) {
+                  * V16：消息附加区 HTML（数据集表格 + 用户生成的图表卡）。
+                  * 根节点带 data-uid，工具条点击经 document 委托定位到消息条目。
+                  */
+                _extraHtml: function (oEntry) {
+                        if (!oEntry) {
                                 return "";
                         }
-                        var sOther = this._rb().getText("analysisOther");
-                        var aPX = [], aPY = [];
-                        for (var i = 0; i < aX.length; i++) {
-                                if (i < 11) {
-                                        aPX.push(aX[i]);
-                                        aPY.push(Math.max(aY[i], 0));
-                                } else {
-                                        if (i === 11) {
-                                                aPX.push(sOther);
-                                                aPY.push(0);
-                                        }
-                                        aPY[11] += Math.max(aY[i], 0);
-                                }
+                        var sAn = oEntry.analysis ? this._buildAnalysisHtml(oEntry.analysis) : "";
+                        var sCharts = this._chartDeckHtml(oEntry);
+                        if (!sAn && !sCharts) {
+                                return "";
                         }
+                        return '<div class="msgExtra" data-uid="' + oEntry.uid + '">' + sAn + sCharts + "</div>";
+                },
 
-                        var W = 640, H = 300, cx = 170, cy = 150, r = 118;
-                        var fmt = function (n) { return Formatter.formatMetricNumber(n); };
+                /** V16：用户图表卡（标题 + 类型快切 + 编辑/下载/删除 + SVG） */
+                _chartDeckHtml: function (oEntry) {
+                        var aCharts = oEntry.userCharts || [];
+                        if (!aCharts.length) {
+                                return "";
+                        }
                         var esc = Formatter.escapeHtml;
-                        var s = '<svg class="anSvg" viewBox="0 0 ' + W + " " + H +
-                                '" role="img" preserveAspectRatio="xMidYMid meet">';
-                        var fAngle = -Math.PI / 2;
-                        for (var j = 0; j < aPY.length; j++) {
-                                var fVal = aPY[j];
-                                if (fVal <= 0) {
-                                        continue;
-                                }
-                                var fSweep = fVal / fTotal * Math.PI * 2;
-                                var fA2 = fAngle + fSweep;
-                                var x1 = cx + r * Math.cos(fAngle), y1 = cy + r * Math.sin(fAngle);
-                                var x2 = cx + r * Math.cos(fA2), y2 = cy + r * Math.sin(fA2);
-                                var iLarge = fSweep > Math.PI ? 1 : 0;
-                                s += '<path d="M ' + cx + " " + cy + " L " + x1.toFixed(2) + " " + y1.toFixed(2) +
-                                        " A " + r + " " + r + " 0 " + iLarge + " 1 " + x2.toFixed(2) + " " + y2.toFixed(2) +
-                                        ' Z" fill="' + this._chartColor(j) + '">';
-                                s += "<title>" + esc(aPX[j]) + ": " + fmt(fVal) +
-                                        " (" + Math.round(fVal / fTotal * 100) + "%)</title></path>";
-                                fAngle = fA2;
-                        }
-                        // 图例（色块 + 名称 + 数值 + 占比）
-                        var ly = 46;
-                        for (var k = 0; k < aPX.length && k < 10; k++) {
-                                var fVal2 = aPY[k];
-                                var iPct = Math.round(fVal2 / fTotal * 100);
-                                var sLbl = aPX[k].length > 12 ? aPX[k].substring(0, 12) + "…" : aPX[k];
-                                s += '<rect x="360" y="' + (ly - 10) + '" width="12" height="12" rx="2" fill="' +
-                                        this._chartColor(k) + '"/>';
-                                s += '<text x="380" y="' + ly + '" class="anSvgText">' +
-                                        "<title>" + esc(aPX[k]) + "</title>" +
-                                        esc(sLbl) + "  " + fmt(fVal2) + " · " + iPct + "%</text>";
-                                ly += 24;
-                        }
-                        s += "</svg>";
-                        return s;
+                        var s = '<div class="chartDeck">';
+                        aCharts.forEach(function (ch) {
+                                var o = ChartRenderer.render(ch.ds, ch.cfg);
+                                var sTypes = ChartRenderer.TYPES.map(function (t) {
+                                        return '<button type="button" class="ccType' + (t.key === ch.cfg.type ? " on" : "") +
+                                                '" data-act="chart-type" data-cid="' + ch.id + '" data-type="' + t.key + '" title="' + t.text + '">' + t.short + "</button>";
+                                }).join("");
+                                s += '<div class="chartCard">' +
+                                        '<div class="ccHead"><span class="ccTitle">' + esc(ch.cfg.title || ch.ds.name || "图表") + "</span>" +
+                                        '<span class="ccTypes">' + sTypes + "</span>" +
+                                        '<span class="ccActs">' +
+                                        '<button type="button" class="ccAct" data-act="chart-edit" data-cid="' + ch.id + '">编辑</button>' +
+                                        '<button type="button" class="ccAct" data-act="chart-svg" data-cid="' + ch.id + '">下载</button>' +
+                                        '<button type="button" class="ccAct ccDel" data-act="chart-del" data-cid="' + ch.id + '">移除</button>' +
+                                        "</span></div>" +
+                                        '<div class="ccBody">' + (o.svg || '<div class="cbEmpty">' + esc(o.note) + "</div>") + "</div>" +
+                                        (o.svg && o.note ? '<div class="ccNote">' + esc(o.note) + "</div>" : "") +
+                                        "</div>";
+                        });
+                        return s + "</div>";
                 },
 
                 /**
@@ -1520,6 +1472,7 @@ sap.ui.define([
                         var oLast = aMsgs && aMsgs[aMsgs.length - 1];
                         if (oLast && oLast.streaming) {
                                 oLast.streaming = false;
+                                oLast.waiting = false;
                                 if (oLast.requestPending) {
                                         this._attachAgentProcess(aMsgs.length - 1, { status: "STOPPED", traceValid: false });
                                 }
@@ -1703,6 +1656,8 @@ sap.ui.define([
                                 sMode === "AGENT" ? oRB.getText("agentInputPh") : oRB.getText("inputPlaceholder"));
                         // V12：附件回显行仅对话模式显示
                         this._syncAttachRowVisibility();
+                        // V16：建议标签随模式切换（对话 = 快捷指令，Agent = 示例问题）
+                        this._renderHeroBubbles();
                 },
 
                 /** 左侧列表只显示当前工作模式的会话（搜索词在模式内过滤） */
@@ -1956,7 +1911,8 @@ sap.ui.define([
                         });
                 },
 
-                /** 按消息下标定位该条目的 HTML 正文控件（用于流式期间直写 DOM） */
+                /** 按消息下标定位该条目的 HTML 正文控件（msgBody=1 标记；V16：行内新增了
+                  * thinkBar/stepBar 等原生 HTML 控件，“第一个 HTML”不再可靠） */
                 _findMsgBodyCtrl: function (iIndex) {
                         var oList = this.byId("msgList");
                         var oItem = oList && oList.getItems()[iIndex];
@@ -1964,7 +1920,7 @@ sap.ui.define([
                                 return null;
                         }
                         var aFound = oItem.findAggregatedObjects(true, function (oObj) {
-                                return oObj instanceof HTML;
+                                return oObj instanceof HTML && oObj.data("msgBody") === "1";
                         });
                         return aFound.length ? aFound[0] : null;
                 },
@@ -2036,11 +1992,13 @@ sap.ui.define([
                         //   getDomRef().innerHTML 直写更新，避免整表重渲染。
                         // sanitizeContent 显式关闭是安全的：所有动态文本在 Formatter
                         // 中已先整体 HTML 转义，输出标签均由代码构造，无注入路径。
+                        // V16：data-uid 供表格工具条（生成图表/复制/CSV）的事件委托定位消息
                         var oBody = new HTML({
-                                content: '<div class="bubbleBody">' + (oEntry.html || "") + "</div>",
+                                content: '<div class="bubbleBody" data-uid="' + (oEntry.uid || "") + '">' + (oEntry.html || "") + "</div>",
                                 preferDOM: false,
                                 sanitizeContent: false
-                        });
+                        }).data("msgBody", "1");   // V16：打标 —— Agent 行内还有 thinkBar/stepBar 等 HTML 控件，
+                                                   // 流式写入必须精确定位正文（见 _findMsgBodyCtrl）
 
                         var oCol = new VBox();
 
@@ -2064,8 +2022,9 @@ sap.ui.define([
                                 var oHeadLeft = new HBox({ alignItems: "Center" }).addStyleClass("bubbleHeadLeft");
                                 oHeadLeft.addItem(new Text({ text: oEntry.sender }).addStyleClass("bubbleSender"));
                                 if (oEntry.streaming && !oEntry.agentThinking && !oEntry.thinking) {
+                                        // V16：等待计时（"思考中 · 3 秒"）
                                         oHeadLeft.addItem(new Text({
-                                                text: "思考中…",
+                                                text: "{= '思考中' + (${chat>elapsedText} ? ' · ' + ${chat>elapsedText} : '…') }",
                                                 visible: "{= ${chat>raw} === '' }"
                                         }).addStyleClass("headThinking"));
                                 }
@@ -2084,18 +2043,24 @@ sap.ui.define([
                                 // 完成后：后端 TraceJson 的真实阶段摘要（✓ 阶段 · 耗时），可折叠。
                                 // 只展示阶段/友好摘要/状态/耗时；SQL 单独折叠，不展示思维链、Prompt 或密钥
                                 if (oEntry.agentThinking || oEntry.thinking) {
+                                        // V16 运行中：图标 + 阶段文案 + 实时计时 + 流动进度条
                                         var oLiveHead = new HBox({ alignItems: "Center" }).addStyleClass("agentThinkingHeader");
-                                        oLiveHead.addItem(new Text({ text: oRB.getText("agentThinking") })
-                                                .addStyleClass("agentThinkingTitle agentThinkingPulse"));
+                                        oLiveHead.addItem(new sap.ui.core.Icon({ src: "sap-icon://synchronize" }).addStyleClass("thinkIcon thinkSpin"));
                                         oLiveHead.addItem(new Text({ text: "{chat>thinkingLabel}" })
+                                                .addStyleClass("agentThinkingTitle"));
+                                        oLiveHead.addItem(new Text({ text: "{chat>elapsedText}" })
                                                 .addStyleClass("agentThinkingPhase"));
                                         var oLiveCard = new VBox({ visible: "{chat>requestPending}" })
                                                 .addStyleClass("agentThinkingCard agentThinkingLive");
                                         oLiveCard.addItem(oLiveHead);
+                                        oLiveCard.addItem(new HTML({ content: '<div class="thinkBar"><i></i></div>', sanitizeContent: false }));
                                         oCol.addItem(oLiveCard);
+                                        // 折叠由外层未绑定容器控制（避免 setVisible 回写绑定属性）
+                                        var oStepsWrap = new VBox({ visible: false });
                                         var oStepsBox = new VBox({
                                                 visible: "{chat>thinking/hasPhases}"
                                         }).addStyleClass("agentThinkingSteps");
+                                        oStepsWrap.addItem(oStepsBox);
                                         oStepsBox.bindAggregation("items", {
                                                 path: "chat>thinking/phases",
                                                 templateShareable: false,
@@ -2111,6 +2076,11 @@ sap.ui.define([
                                                 oStepRow.addItem(new Text({ text: sGlyph }).addStyleClass("agentStepGlyph"));
                                                 oStepRow.addItem(new Text({ text: p.label || p.phase || "", wrapping: true })
                                                         .addStyleClass("agentStepLabel"));
+                                                // V16：耗时条（相对本轮最长一步）
+                                                oStepRow.addItem(new HTML({
+                                                        content: '<div class="stepBar"><i style="width:' + (parseInt(p.pct, 10) || 0) + '%"></i></div>',
+                                                        sanitizeContent: false
+                                                }));
                                                 oStepRow.addItem(new Text({ text: sCost }).addStyleClass("agentStepTime"));
                                                 // 动态 SQL 仅展示后端已校验的语句，默认折叠，避免 Trace 撑满页面。
                                                 var oStepBox = new VBox();
@@ -2131,52 +2101,59 @@ sap.ui.define([
                                                 return oStepBox;
                                                 }
                                         });
-                                        var oDoneHead = new HBox({ alignItems: "Center", justifyContent: "SpaceBetween" })
-                                                .addStyleClass("agentThinkingHeader");
+                                        // V16 完成后：一行摘要（已完成 · 轮数 · 工具 · 耗时），点击展开每步耗时
+                                        var oDoneHead = new HBox({ alignItems: "Center" })
+                                                .addStyleClass("agentThinkingHeader agentDoneHead");
+                                        var oFoldIcon = new sap.ui.core.Icon({ src: "sap-icon://navigation-right-arrow" }).addStyleClass("thinkFold");
+                                        oDoneHead.addItem(new sap.ui.core.Icon({ src: "sap-icon://process" }).addStyleClass("thinkIcon"));
                                         oDoneHead.addItem(new Text({
                                                 text: "{chat>thinking/title}"
                                         }).addStyleClass("agentThinkingTitle"));
-                                        var oFoldLink = new sap.m.Link({
-                                                text: "▴",
-                                                visible: "{chat>thinking/hasPhases}"
-                                        }).addStyleClass("agentThinkingFold");
-                                        oFoldLink.attachPress(function () {
-                                                var bV = oStepsBox.getVisible();
-                                                oStepsBox.setVisible(!bV);
-                                                oFoldLink.setText(bV ? "▾" : "▴");
+                                        oDoneHead.addItem(oFoldIcon);
+                                        oDoneHead.attachBrowserEvent("click", function () {
+                                                if (!oStepsBox.getVisible()) {
+                                                        return;   // 无阶段数据时不可展开
+                                                }
+                                                var bOpen = !oStepsWrap.getVisible();
+                                                oStepsWrap.setVisible(bOpen);
+                                                oFoldIcon.setSrc(bOpen ? "sap-icon://navigation-down-arrow" : "sap-icon://navigation-right-arrow");
                                         });
-                                        oDoneHead.addItem(oFoldLink);
                                         var oDoneCard = new VBox({
                                                 visible: "{= !${chat>requestPending} }"
-                                        }).addStyleClass("agentThinkingCard");
+                                        }).addStyleClass("agentThinkingCard agentDoneCard");
                                         oDoneCard.addItem(oDoneHead);
-                                        oDoneCard.addItem(oStepsBox);
+                                        oDoneCard.addItem(oStepsWrap);
                                         oCol.addItem(oDoneCard);
                                 }
 
                                 oCol.addItem(oBody);
 
-                                // V1.3：数据分析结果区（数据集表格 + 原生 SVG 图表 +
-                                // 发现/错误提示），位于文字回答之下。
-                                // 安全模型与 markdown 正文相同：所有动态文本先 escapeHtml，
-                                // 所有标签由 _buildAnalysisHtml 构造，无注入路径
-                                if (oEntry.agentThinking || oEntry.thinking) {
-                                        oCol.addItem(new HTML({
-                                                content: "{chat>analysisHtml}",
-                                                visible: "{= !!${chat>analysisHtml} }",
-                                                preferDOM: false,
-                                                sanitizeContent: false
-                                        }));
-                                } else if (oEntry.analysis) {
-                                        var sAnalysisHtml = this._buildAnalysisHtml(oEntry.analysis);
-                                        if (sAnalysisHtml) {
-                                                oCol.addItem(new HTML({
-                                                        content: sAnalysisHtml,
-                                                        preferDOM: false,
-                                                        sanitizeContent: false
-                                                }));
-                                        }
+                                // V1.3 → V16：附加区（数据集表格 + 工具条 + 用户生成的图表卡）。
+                                // 不再自动画图；全部条目统一绑定 extraHtml，改动即局部刷新。
+                                // 安全模型与 markdown 正文相同：动态文本先 escapeHtml，标签均由代码构造
+                                oCol.addItem(new HTML({
+                                        content: "{chat>extraHtml}",
+                                        visible: "{= !!${chat>extraHtml} }",
+                                        preferDOM: false,
+                                        sanitizeContent: false
+                                }));
+
+                                // V16：内联确认卡（报表参数 / 意图澄清），宿主按消息 uid 登记
+                                var oAskHost = new VBox({ visible: false }).addStyleClass("askHost");
+                                this._mAskHosts = this._mAskHosts || {};
+                                this._mAskHosts[oEntry.uid] = oAskHost;
+                                if (oEntry.ask) {
+                                        AskCard.render(oAskHost, oEntry.ask, this._onAskAction.bind(this, oEntry.uid));
                                 }
+                                oCol.addItem(oAskHost);
+
+                                // V16：报表运行步骤条（提交 → 执行中 → 结果就绪）
+                                oCol.addItem(new HTML({
+                                        content: "{chat>runHtml}",
+                                        visible: "{= !!${chat>runHtml} }",
+                                        preferDOM: false,
+                                        sanitizeContent: false
+                                }));
 
                                 oCol.addStyleClass("aiContent");
                         }
@@ -2186,8 +2163,11 @@ sap.ui.define([
                                 oRow = new HBox({ justifyContent: "End" });
                                 oRow.addItem(oCol);
                         } else {
-                                // V7：头像对齐 V2 设计图 —— 圆角方块内白色粗体「AI」
-                                var oLogo = new Text({ text: "AI" }).addStyleClass("chatAvatar avatarAI");
+                                // V16：Gale 品牌头像
+                                var oLogo = new sap.m.Image({
+                                        src: sap.ui.require.toUrl("zai/chat/images/gale-mark.svg"),
+                                        width: "26px", height: "26px", decorative: true, densityAware: false
+                                }).addStyleClass("chatAvatar avatarAI");
                                 oRow = new HBox({ alignItems: "Start" });
                                 oRow.addItem(oLogo);
                                 oRow.addItem(oCol);
@@ -2511,10 +2491,8 @@ sap.ui.define([
                         var oChatModel = this.getView().getModel("chat");
                         oChatModel.setProperty("/listVisible", !!bList);
                         oChatModel.setProperty("/heroVisible", !bList);
-                        // V5.4：回到首页（新会话/空会话）→ 重置泡泡消耗记录并重渲染
-                        // （Agent 模式泡泡区隐藏，渲染跳过）
+                        // V16：回到首页（新会话/空会话）→ 重渲染建议标签
                         if (!bList) {
-                                this._mConsumed = {};
                                 this._renderHeroBubbles();
                         }
                 },
@@ -2622,89 +2600,60 @@ sap.ui.define([
                  * - V5.5：泡泡即点即消，移除悬浮 × 删除；＋ 泡泡新增保留，
                  *   数据源仍为 chat>/quickPrompts（localStorage）
                  */
-                _aBubbleSlots: [
-                        { l: "30%", t: "43%" }, { r: "30%", t: "43%" },
-                        { l: "24%", t: "32%" }, { r: "24%", t: "32%" },
-                        { l: "14%", t: "47%" }, { r: "14%", t: "47%" },
-                        { l: "37%", t: "23%" }, { r: "37%", t: "23%" }
-                ],
-
+                /**
+                  * V16：首页建议标签（输入卡下方一行，替代 V5.5 漂浮泡泡 —— 泡泡遮挡标题、
+                  * 矮屏/窄屏整层隐藏）。对话模式 = 快捷指令；Agent 模式 = 示例问题。
+                  * 点击填入输入框并聚焦（不再消耗消失，可反复使用）；管理员保留"＋"新增。
+                  */
                 _renderHeroBubbles: function () {
                         var that = this;
                         var oField = this.byId("bubbleField");
                         if (!oField) {
                                 return;
                         }
-                        // V13：Agent 空状态不放业务泡泡（泡泡区在 Agent 模式隐藏）
-                        if (this.getView().getModel("chat").getProperty("/workspaceMode") === "AGENT") {
-                                oField.destroyItems();
-                                return;
-                        }
                         oField.destroyItems();
-                        var oRB = this.getView().getModel("i18n").getResourceBundle();
-                        var aList = this.getView().getModel("chat").getProperty("/quickPrompts") || [];
-                        this._mConsumed = this._mConsumed || {};
-
-                        var iVisible = 0;
-                        var iSlots = this._aBubbleSlots.length;
-                        aList.forEach(function (oEntry, i) {
-                                if (that._mConsumed[oEntry.prompt]) {
-                                        return; // 已点击用过 → 不再渲染
-                                }
-                                var iSlot = iVisible % iSlots;
-                                var oChip = new Button({
+                        var oRB = this._rb();
+                        var bAgent = this.getView().getModel("chat").getProperty("/workspaceMode") === "AGENT";
+                        var aList = bAgent
+                                ? [1, 2, 3, 4].map(function (i) {
+                                        var s = oRB.getText("agentChip" + i);
+                                        return { title: s, prompt: s };
+                                })
+                                : (this.getView().getModel("chat").getProperty("/quickPrompts") || []);
+                        aList.slice(0, 8).forEach(function (oEntry) {
+                                oField.addItem(new Button({
                                         text: oEntry.title,
                                         type: "Transparent",
+                                        tooltip: oEntry.prompt.length > 40 ? oEntry.prompt.substring(0, 40) + "…" : oEntry.prompt,
                                         press: that._onBubblePress.bind(that, oEntry)
-                                }).addStyleClass("bubbleChip");
-
-                                var oBox = new HBox({ alignItems: "Center" })
-                                        .addStyleClass("heroBubble")
-                                        .addStyleClass("bubSlot" + iSlot)
-                                        .addStyleClass("bubD" + (iSlot % 4)); // 浮动动画错拍
-                                oBox.addItem(oChip);
-                                oField.addItem(oBox);
-                                iVisible++;
+                                }).addStyleClass("heroChip"));
                         });
-
-                        // ＋ 新增泡泡（V8：仅管理员可添加，普通用户只消费管理员配置的泡泡）
-                        if (ChatService.isAdmin()) {
-                                var oAdd = new HBox({ alignItems: "Center" })
-                                        .addStyleClass("heroBubble")
-                                        .addStyleClass("bubAdd")
-                                        .addStyleClass("bubSlot" + (iVisible % iSlots))
-                                        .addStyleClass("bubD" + ((iVisible + 2) % 4));
-                                oAdd.addItem(new Button({
+                        // ＋ 新增（V8：仅管理员可添加快捷指令；Agent 示例为内置）
+                        if (!bAgent && ChatService.isAdmin()) {
+                                oField.addItem(new Button({
                                         icon: "sap-icon://add",
                                         type: "Transparent",
                                         tooltip: oRB.getText("quickAddTitle"),
                                         press: that.onAddQuickPrompt.bind(that)
-                                }).addStyleClass("bubbleChip"));
-                                oField.addItem(oAdd);
+                                }).addStyleClass("heroChip heroChipAdd"));
                         }
                 },
 
-                /** 点击泡泡：填入输入框 → 泡泡淡出消失 → 聚焦输入框 */
-                _onBubblePress: function (oEntry, oEvent) {
+                /** 点击建议标签：填入输入框 → 聚焦（光标置末尾，可继续编辑） */
+                _onBubblePress: function (oEntry) {
                         if (!oEntry || !(oEntry.prompt || "").length) {
                                 return;
                         }
                         this.getView().getModel("chat").setProperty("/input", oEntry.prompt);
-                        this._mConsumed = this._mConsumed || {};
-                        this._mConsumed[oEntry.prompt] = true;
-
-                        var oBox = oEvent.getSource().getParent();
-                        if (oBox && oBox.addStyleClass) {
-                                oBox.addStyleClass("bubOut");
-                                setTimeout(function () {
-                                        if (oBox.destroy) {
-                                                oBox.destroy();
-                                        }
-                                }, 260);
-                        }
                         var oInput = this.byId("heroInput");
                         if (oInput && oInput.focus) {
                                 oInput.focus();
+                                setTimeout(function () {
+                                        var oTa = oInput.getFocusDomRef();
+                                        if (oTa && oTa.setSelectionRange) {
+                                                oTa.setSelectionRange(oTa.value.length, oTa.value.length);
+                                        }
+                                }, 0);
                         }
                 },
 
@@ -2980,6 +2929,13 @@ sap.ui.define([
                         }
                         var sSender = sRole === "user" ? oRB.getText("me") : oRB.getText("ai");
                         return {
+                                // V16：稳定标识（数据工具条/内联卡片/运行步骤条按 uid 定位条目，不依赖下标）
+                                uid: "m" + this._newSessionId().substring(0, 12),
+                                extraHtml: "",
+                                runHtml: "",
+                                ask: null,
+                                waiting: false,
+                                elapsedText: "",
                                 role: sRole,
                                 sender: sSender,
                                 time: Formatter.formatTime(sTime),
@@ -3088,7 +3044,7 @@ sap.ui.define([
                                 if (m.role === "user") {
                                         aLines.push("### 🧑 我");
                                 } else if (m.role === "assistant") {
-                                        aLines.push("### 🤖 SAP Compass");
+                                        aLines.push("### 🤖 Gale-SAP");
                                 } else {
                                         return; // error 提示不导出
                                 }
@@ -3105,7 +3061,7 @@ sap.ui.define([
                         var sUrl = URL.createObjectURL(oBlob);
                         var oLink = document.createElement("a");
                         oLink.href = sUrl;
-                        oLink.download = "AI会话_" + sStamp + ".md";
+                        oLink.download = "Gale-SAP_会话_" + sStamp + ".md";
                         document.body.appendChild(oLink);
                         oLink.click();
                         document.body.removeChild(oLink);
@@ -3147,7 +3103,7 @@ sap.ui.define([
                         var sUrl = URL.createObjectURL(oBlob);
                         var oLink = document.createElement("a");
                         oLink.href = sUrl;
-                        oLink.download = "AI分析结果_" + sStamp + ".csv";
+                        oLink.download = "Gale-SAP_分析结果_" + sStamp + ".csv";
                         document.body.appendChild(oLink);
                         oLink.click();
                         document.body.removeChild(oLink);
@@ -3595,18 +3551,37 @@ sap.ui.define([
                         return aMap[sSts] || "None";
                 },
 
+                /** V16：任务/运行状态 → 中文（徽标与卡片共用） */
+                _taskStatusText: function (sSts) {
+                        var aMap = {
+                                OPEN: "已创建", WAITING_INPUT: "待填参数", QUEUED: "排队中", RUNNING: "运行中",
+                                ANALYZING: "分析中", COMPLETED: "已完成", READY: "结果就绪", PARTIAL: "部分完成",
+                                PAUSED: "已暂停", FAILED: "失败", CANCELLED: "已取消", EXPIRED: "已过期"
+                        };
+                        return aMap[sSts] || sSts || "";
+                },
+
+                /** V16：顶栏任务徽标（模块 · 状态；短编号放悬浮提示） */
+                _setTaskBadge: function (sModule, sStatus, sTaskId) {
+                        var oChat = this.getView().getModel("chat");
+                        oChat.setProperty("/taskBadge", this._taskModuleLabel(sModule) + " · " + this._taskStatusText(sStatus));
+                        oChat.setProperty("/taskBadgeState", this._taskStateColor(sStatus));
+                        oChat.setProperty("/taskBadgeTip", "任务 " + String(sTaskId || "").substring(0, 8) + " · 点击查看会话任务");
+                },
+
                 /**
-                  * Agent 应答后回写任务区（oRes.taskId 为空 = 后端任务层未开启，
-                  * 清空展示，不虚构任务状态）
+                  * Agent 应答后回写任务状态（oRes.taskId 为空 = 后端任务层未开启，
+                  * 清空展示，不虚构任务状态）。
+                  * V16：待填参数不再放底部任务区，而是挂到本条回复的内联确认卡上。
                   * @param {object} oRes sendTask 返回（taskId/taskModule/taskStatus/needsInput/pendingParamsJson）
+                  * @param {string} sSessionId 会话
+                  * @param {int} iAssistantIdx 本轮回复下标
                   */
-                _updateTaskState: function (oRes, sSessionId) {
+                _updateTaskState: function (oRes, sSessionId, iAssistantIdx) {
                         var oChatModel = this.getView().getModel("chat");
                         if (!oRes || !oRes.taskId) {
                                 oChatModel.setProperty("/currentTask", null);
-                                oChatModel.setProperty("/taskStripVisible", false);
                                 oChatModel.setProperty("/taskBadge", "");
-                                oChatModel.setProperty("/paramFormVisible", false);
                                 return;
                         }
                         var aPending = [];
@@ -3637,224 +3612,568 @@ sap.ui.define([
                                 tcode: (oPendingObj && oPendingObj.tcode) || ""
                         };
                         oChatModel.setProperty("/currentTask", oTask);
-                        oChatModel.setProperty("/taskBadge",
-                                this._taskModuleLabel(oTask.module) + " · " + oTask.status + " · " + oTask.shortId);
-                        oChatModel.setProperty("/taskBadgeState", this._taskStateColor(oTask.status));
-                        oChatModel.setProperty("/taskTitle", "");
-                        oChatModel.setProperty("/taskStripVisible",
-                                oChatModel.getProperty("/listVisible") === true);
-                        // 待填参数 → 表单（缺参数 = WAITING_INPUT；执行开关状态由后端在提交时判定）
-                        this._renderParamForm(oTask.needsInput ? aPending : []);
+                        this._setTaskBadge(oTask.module, oTask.status, oTask.taskId);
+                        var oEntry = (oChatModel.getProperty("/messages") || [])[iAssistantIdx];
+                        if (oEntry && oTask.needsInput && aPending.length) {
+                                oEntry.ask = {
+                                        kind: "params",
+                                        state: "open",
+                                        title: "需要填写参数",
+                                        subtitle: [oTask.tcode, oTask.reportId].filter(Boolean).join(" · "),
+                                        params: aPending,
+                                        values: {},
+                                        options: [
+                                                { key: "submit", label: "提交执行", desc: "参数由 SAP 服务端二次校验后再执行" },
+                                                { key: "cancel", label: "先不执行", desc: "保留任务，稍后再填" }
+                                        ],
+                                        freePh: "告诉 Agent 接下来应该怎么做…",
+                                        taskId: oTask.taskId,
+                                        reportId: oTask.reportId,
+                                        module: oTask.module,
+                                        sessionId: sSessionId,
+                                        sel: 0,
+                                        autoFocus: true
+                                };
+                        }
+                },
+
+                /** V16：按 uid 找消息条目（不依赖下标） */
+                _entryByUid: function (sUid) {
+                        var aMsgs = this.getView().getModel("chat").getProperty("/messages") || [];
+                        for (var i = 0; i < aMsgs.length; i++) {
+                                if (aMsgs[i].uid === sUid) {
+                                        return { entry: aMsgs[i], index: i };
+                                }
+                        }
+                        return null;
+                },
+
+                /** V16：重绘某条消息的内联确认卡（状态以条目 ask 为准） */
+                _renderAsk: function (sUid) {
+                        var oHit = this._entryByUid(sUid);
+                        var oHost = this._mAskHosts && this._mAskHosts[sUid];
+                        if (!oHit || !oHost || oHost.isDestroyed()) {
+                                return;
+                        }
+                        AskCard.render(oHost, oHit.entry.ask, this._onAskAction.bind(this, sUid));
+                        if (this._isNearBottom()) {
+                                this._scrollToBottom();
+                        }
                 },
 
                 /**
-                  * 按后端参数 Schema 渲染表单（多值约定：逗号分隔 → 服务端
-                  * 校验；只读展示不允许前端自造参数）
+                  * V16：流式完成后挂载内联确认卡（与回答联动）：
+                  * ① 报表待填参数（_updateTaskState 已写入 ask）
+                  * ② 后端"多个任务需指定"→ 读会话任务列表作为选项
+                  * ③ 回答末尾"提问 + 编号选项"（模型不确定意图时的追问）
                   */
-                _renderParamForm: function (aPending) {
-                        var oBox = this.byId("paramForm");
-                        var oChatModel = this.getView().getModel("chat");
-                        oBox.destroyItems();
-                        oChatModel.setProperty("/paramError", "");
-                        if (!aPending || !aPending.length) {
-                                oChatModel.setProperty("/paramFormVisible", false);
+                _attachAskCard: function (iIndex, sAnswer, oRes, sSessionId) {
+                        var that = this;
+                        var oEntry = (this.getView().getModel("chat").getProperty("/messages") || [])[iIndex];
+                        if (!oEntry || oEntry.role !== "assistant") {
                                 return;
                         }
-                        aPending.slice(0, 20).forEach(function (oP) {
-                                if (!oP || !oP.param_id) {
-                                        return;
-                                }
-                                var sLabel = oP.label || oP.param_id;
-                                if (oP.required === true) {
-                                        sLabel += " *";
-                                }
-                                if (oP.multi_value === true) {
-                                        sLabel += "（多值用英文逗号分隔）";
-                                } else if (oP.range_allowed === true) {
-                                        sLabel += "（范围用 low,high）";
-                                }
-                                oBox.addItem(new HBox({
-                                        alignItems: "Center",
-                                        items: [
-                                                new Text({ text: sLabel, width: "16rem" }),
-                                                new Input({
-                                                        width: "18rem",
-                                                        placeholder: oP.data_type === "DATE" ? "YYYYMMDD" : "",
-                                                        customData: [new sap.ui.core.CustomData({
-                                                                key: "paramId", value: oP.param_id
-                                                        })]
-                                                })
-                                        ]
-                                }).addStyleClass("paramRow"));
-                        });
-                        oChatModel.setProperty("/paramFormVisible", true);
+                        if (oEntry.ask) {
+                                this._renderAsk(oEntry.uid);
+                                return;
+                        }
+                        if (/多个.*任务.*(指定|选择|哪一个)/.test(sAnswer || "")) {
+                                ChatService.getTasks(sSessionId).then(function (aTasks) {
+                                        var aOpts = (aTasks || []).slice(0, 6).map(function (t) {
+                                                return {
+                                                        key: "task", taskId: t.task_id, module: t.module_id, status: t.status,
+                                                        label: t.title || t.task_title || (that._taskModuleLabel(t.module_id) + " " + (t.short_id || String(t.task_id || "").substring(0, 8))),
+                                                        desc: that._taskStatusText(t.status) + " · " + (t.short_id || String(t.task_id || "").substring(0, 8))
+                                                };
+                                        });
+                                        if (aOpts.length < 2) {
+                                                return;
+                                        }
+                                        oEntry.ask = {
+                                                kind: "choice", state: "open", title: "请选择要继续的任务",
+                                                options: aOpts, freePh: "都不是，告诉 Agent 你的意图…",
+                                                resend: that._prevUserText(iIndex), sel: 0, autoFocus: true
+                                        };
+                                        that._renderAsk(oEntry.uid);
+                                });
+                                return;
+                        }
+                        var oDet = AskCard.detectChoices(sAnswer);
+                        if (oDet) {
+                                oEntry.ask = {
+                                        kind: "choice", state: "open", title: oDet.question,
+                                        options: oDet.options, freePh: "其他想法，直接告诉我…", sel: 0, autoFocus: true
+                                };
+                                this._renderAsk(oEntry.uid);
+                        }
                 },
 
-                /** 提交报表执行（每次用户主动提交 = 新 ClientRequestId；幂等由后端保证） */
-                onSubmitReportRun: function () {
-                        var oChatModel = this.getView().getModel("chat");
-                        var oTask = oChatModel.getProperty("/currentTask");
-                        if (!oTask || !oTask.taskId) {
+                /** V16：某条回复之前最近一条用户原文（澄清后按选定任务重发） */
+                _prevUserText: function (iIndex) {
+                        var aMsgs = this.getView().getModel("chat").getProperty("/messages") || [];
+                        for (var i = iIndex - 1; i >= 0; i--) {
+                                if (aMsgs[i].role === "user") {
+                                        return aMsgs[i].raw || "";
+                                }
+                        }
+                        return "";
+                },
+
+                /**
+                  * V16：内联确认卡动作分发（卡片只收集，业务动作在这里执行）
+                  * @param {string} sUid 消息 uid
+                  * @param {object} oPick {key, text, values, missing, option}
+                  */
+                _onAskAction: function (sUid, oPick) {
+                        var oHit = this._entryByUid(sUid);
+                        var oAsk = oHit && oHit.entry.ask;
+                        if (!oAsk) {
                                 return;
                         }
-                        var that = this;
-                        var oParams = {};
-                        this.byId("paramForm").getItems().forEach(function (oRow) {
-                                if (!(oRow instanceof HBox)) {
-                                        return;
-                                }
-                                var aItems = oRow.getItems();
-                                var oInp = null;
-                                aItems.forEach(function (oIt) {
-                                        if (oIt instanceof Input) {
-                                                oInp = oIt;
-                                        }
+                        if (oPick.key === "submit") {
+                                this._submitReportFromCard(sUid, oAsk, oPick);
+                                return;
+                        }
+                        if (oPick.key === "cancel") {
+                                oAsk.state = "cancelled";
+                                oAsk.resultText = "本次不执行，任务已保留";
+                                this._renderAsk(sUid);
+                                return;
+                        }
+                        if (this.getView().getModel("chat").getProperty("/busy")) {
+                                oAsk.error = "上一条请求仍在处理中，请稍候再确认";
+                                this._renderAsk(sUid);
+                                return;
+                        }
+                        var sSend = oPick.text;
+                        var sShow = oPick.text;
+                        if (oPick.key === "task" && oPick.option) {
+                                var o = oPick.option;
+                                this.getView().getModel("chat").setProperty("/currentTask", {
+                                        taskId: o.taskId, shortId: String(o.taskId || "").substring(0, 8),
+                                        module: o.module || "", status: o.status || "", needsInput: false,
+                                        sessionId: (this.getView().getModel("chat").getProperty("/currentSession") || {}).id || ""
                                 });
-                                if (!oInp) {
-                                        return;
-                                }
-                                var sPid = "";
-                                (oInp.getCustomData() || []).forEach(function (oCd) {
-                                        if (oCd.getKey() === "paramId") {
-                                                sPid = oCd.getValue();
-                                        }
-                                });
-                                if (sPid) {
-                                        oParams[sPid] = (oInp.getValue() || "").trim();
-                                }
-                        });
+                                this._setTaskBadge(o.module, o.status, o.taskId);
+                                sShow = "继续任务：" + o.label;
+                                sSend = oAsk.resend || sShow;
+                        }
+                        oAsk.state = "done";
+                        oAsk.error = "";
+                        oAsk.resultText = oPick.key === "free" ? "已告诉 Agent：" + sShow : "已选择：" + sShow;
+                        this._renderAsk(sUid);
+                        this._sendFollowUp(sShow, sSend);
+                },
 
+                /** V16：卡片联动的后续消息（沿用当前会话模式；不覆盖输入框草稿） */
+                _sendFollowUp: function (sDisplay, sQuestion) {
+                        var oCtx = this.getView().getModel("chat").getProperty("/currentSession") || {};
+                        this._executeSend({
+                                mode: oCtx.mode === "AGENT" ? "AGENT" : "CHAT",
+                                agentType: oCtx.agentType || "",
+                                displayText: sDisplay,
+                                meta: "",
+                                question: sQuestion || sDisplay,
+                                keepInput: true
+                        });
+                },
+
+                /** V16：参数卡"提交执行" → StartReportRun（每次提交 = 新 ClientRequestId；幂等由后端保证） */
+                _submitReportFromCard: function (sUid, oAsk, oPick) {
+                        var that = this;
+                        if (oPick.missing && oPick.missing.length) {
+                                oAsk.error = "请先填写必填参数：" + oPick.missing.join("、");
+                                this._renderAsk(sUid);
+                                return;
+                        }
+                        oAsk.state = "busy";
+                        oAsk.error = "";
+                        oAsk.busyText = "正在提交到 SAP，参数由服务端校验…";
+                        this._renderAsk(sUid);
                         ChatService.startReportRun({
-                                sessionId: oTask.sessionId,
-                                taskId: oTask.taskId,
-                                reportId: oTask.module === "REPORT" ? (oTask.reportId || "") : "",
-                                paramsJson: JSON.stringify(oParams),
-                                clientRequestId: that._newSessionId()
+                                sessionId: oAsk.sessionId,
+                                taskId: oAsk.taskId,
+                                reportId: oAsk.module === "REPORT" ? (oAsk.reportId || "") : "",
+                                paramsJson: JSON.stringify(oPick.values || {}),
+                                clientRequestId: this._newSessionId()
                         }).then(function (oRes) {
-                                if (oRes && oRes.needsInput) {
-                                        oChatModel.setProperty("/paramError", oRes.message || "参数未通过服务端校验");
+                                if (!oRes || oRes.needsInput || oRes.rejected || !oRes.reportRunId) {
+                                        oAsk.state = "open";
+                                        oAsk.error = (oRes && oRes.message) ||
+                                                (oRes && oRes.needsInput ? "参数未通过服务端校验" : "提交被拒绝");
+                                        that._renderAsk(sUid);
                                         return;
                                 }
-                                if (oRes && oRes.rejected) {
-                                        oChatModel.setProperty("/paramError", oRes.message || "提交被拒绝");
-                                        return;
-                                }
-                                oChatModel.setProperty("/paramError", "");
-                                // 后台运行：不锁聊天输入；轮询独立进行
-                                that._pollReportRun(oRes.reportRunId, oTask.sessionId, oTask.taskId);
+                                var aSum = (oAsk.params || []).map(function (p) {
+                                        var v = (oPick.values || {})[p.param_id];
+                                        return v ? (p.label || p.param_id) + " " +
+                                                String(v).split(",").map(AskCard.dateDisplay).join(" ~ ") : "";
+                                }).filter(Boolean);
+                                oAsk.state = "done";
+                                oAsk.resultText = "已提交" + (aSum.length ? "：" + aSum.join("，") : "");
+                                that._renderAsk(sUid);
+                                that._trackRun(sUid, oRes.reportRunId, oAsk.sessionId, oRes.shortId);
                         }).catch(function (oErr) {
-                                oChatModel.setProperty("/paramError", (oErr && oErr.message) || String(oErr));
+                                oAsk.state = "open";
+                                oAsk.error = (oErr && oErr.message) || String(oErr);
+                                that._renderAsk(sUid);
                         });
                 },
 
-                /**
-                  * 报表运行轮询（3s 间隔；独立于聊天 busy）。
-                  * 归属守卫：结果只写入发起时的会话/任务 —— 会话已切换时
-                  * 仅静默停止，不把结果写进其他任务。
-                  * TIMEOUT ≠ 作业停止、UNKNOWN 需继续查询（上限 100 次后提示人工核对）
-                  */
-                _pollReportRun: function (sRunId, sSessionId, sTaskId) {
-                        if (!sRunId) {
-                                return;
+                /* ---------------------------------------------------------
+                 * V16：报表运行步骤条（提交 → 执行中 → 结果就绪/失败）
+                 * 轮询独立于聊天 busy；结果只写回发起时的会话；
+                 * TIMEOUT/UNKNOWN 继续查询（不等于作业停止），上限后提示人工核对，不伪造结果
+                 * --------------------------------------------------------- */
+
+                _trackRun: function (sUid, sRunId, sSessionId, sShort) {
+                        if (this._oRun && this._oRun.timer) {
+                                this._stopRun("stopped");   // 同时只跟踪一个运行，旧卡片标记"已停止跟踪"
                         }
-                        var that = this;
-                        var oChatModel = this.getView().getModel("chat");
-                        var iCount = 0;
-                        oChatModel.setProperty("/runVisible", true);
-                        oChatModel.setProperty("/runStatus",
-                                "报表运行 " + (sRunId || "").substring(0, 8) + " · 已提交，后台执行中…");
-
-                        var iTimer = window.setInterval(function () {
-                                iCount += 1;
-                                ChatService.getReportRunStatus(sRunId).then(function (oSts) {
-                                        if (!oSts || !oSts.status) {
-                                                window.clearInterval(iTimer);
-                                                oChatModel.setProperty("/runStatus", "运行状态查询失败，请稍后在任务中查看");
-                                                return;
-                                        }
-                                        var sLine = "报表运行 " + (oSts.shortId || (sRunId || "").substring(0, 8)) +
-                                                " · " + oSts.status +
-                                                (oSts.artifactShort ? " · 结果 " + oSts.artifactShort : "");
-                                        oChatModel.setProperty("/runStatus", sLine);
-
-                                        var bTerminal = oSts.status === "READY" || oSts.status === "FAILED";
-                                        var bGiveUp = iCount >= 100;   // UNKNOWN/TIMEOUT 轮询上限
-                                        if (!bTerminal && !bGiveUp) {
-                                                return;   // 继续轮询（TIMEOUT/UNKNOWN 不等于作业已停止）
-                                        }
-                                        window.clearInterval(iTimer);
-                                        if (bGiveUp) {
-                                                oChatModel.setProperty("/runStatus",
-                                                        sLine + " · 状态长时间未确认，请人工核对（本次不伪造结果）");
-                                                return;
-                                        }
-                                        if (oSts.status === "FAILED") {
-                                                oChatModel.setProperty("/runStatus",
-                                                        sLine + (oSts.errorMessage ? " · " + oSts.errorMessage : ""));
-                                                return;
-                                        }
-                                        // READY：读结果并按归属写入当前会话（其他会话不写）
-                                        var oNow = oChatModel.getProperty("/currentSession") || {};
-                                        if ((oNow.id || "") !== sSessionId) {
-                                                oChatModel.setProperty("/runVisible", false);
-                                                return;
-                                        }
-                                        ChatService.getReportResult(oSts.artifactId).then(function (oRes2) {
-                                                oChatModel.setProperty("/runVisible", false);
-                                                if (!oRes2 || oRes2.message) {
-                                                        oChatModel.setProperty("/runStatus",
-                                                                sLine + " · " + ((oRes2 && oRes2.message) || "结果读取失败"));
-                                                        return;
-                                                }
-                                                that._renderReportResult(oRes2, sRunId);
-                                        }).catch(function () {
-                                                oChatModel.setProperty("/runVisible", false);
-                                        });
-                                }).catch(function () {
-                                        // 单次查询失败不终止轮询（网络抖动），计入次数即可
-                                        if (iCount >= 100) {
-                                                window.clearInterval(iTimer);
-                                                oChatModel.setProperty("/runVisible", false);
-                                        }
-                                });
-                        }, 3000);
+                        this._oRun = {
+                                uid: sUid, runId: sRunId, sessionId: sSessionId,
+                                shortId: sShort || String(sRunId || "").substring(0, 8),
+                                start: Date.now(), count: 0, empty: 0,
+                                status: "SUBMITTED", phase: "active", message: ""
+                        };
+                        this._resumeRun();
                 },
 
-                /** 结果渲染（只渲染后端下发的 schema+样例行；标注 MOCK/来源） */
-                _renderReportResult: function (oRes, sRunId) {
-                        var aCols = [];
-                        var aRows = [];
-                        try {
-                                aCols = (JSON.parse(oRes.schemaJson || "{}").columns) || [];
-                        } catch (e) { /* 坏 schema 不渲染表格 */ }
-                        try {
-                                aRows = JSON.parse(oRes.rowsJson || "[]") || [];
-                        } catch (e) { /* 坏行数据不渲染表格 */ }
-                        var sHtml = "<p><b>报表结果</b>（运行 " + (sRunId || "").substring(0, 8) +
-                                "，共 " + (oRes.rowCount || 0) + " 行，以下为受控样例）</p>";
-                        if (aCols.length && aRows.length) {
-                                sHtml += "<table class=\"rptResultTable\"><thead><tr>";
-                                aCols.forEach(function (c) {
-                                        sHtml += "<th>" + Formatter.escapeHtml(c.label || c.name) + "</th>";
-                                });
-                                sHtml += "</tr></thead><tbody>";
-                                aRows.slice(0, 50).forEach(function (r) {
-                                        sHtml += "<tr>";
-                                        aCols.forEach(function (c) {
-                                                sHtml += "<td>" + Formatter.escapeHtml(String(r[c.name] === undefined ? "" : r[c.name])) + "</td>";
-                                        });
-                                        sHtml += "</tr>";
-                                });
-                                sHtml += "</tbody></table>";
-                        } else if ((oRes.rowCount || 0) === 0) {
-                                sHtml += "<p>0 行结果（有效业务事实，不是失败）</p>";
+                /** 开始 / 恢复轮询（3 秒一次，首轮立即查询） */
+                _resumeRun: function () {
+                        var that = this, o = this._oRun;
+                        if (!o) {
+                                return;
                         }
-                        var oEntry = this._buildEntry("assistant", sHtml, "", "REPORT_RESULT");
-                        oEntry.html = sHtml;   // 已自构 HTML（全部 escapeHtml）
-                        var oChatModel = this.getView().getModel("chat");
-                        oChatModel.getProperty("/messages").push(oEntry);
-                        oChatModel.setProperty("/messages", oChatModel.getProperty("/messages").slice());
+                        if (o.timer) {
+                                window.clearInterval(o.timer);
+                        }
+                        o.phase = "active";
+                        o.count = 0;
+                        o.empty = 0;
+                        o.timer = window.setInterval(function () { that._pollRun(); }, 3000);
+                        this._syncActivity();
+                        this._pollRun();
+                },
+
+                _stopRun: function (sPhase) {
+                        var o = this._oRun;
+                        if (!o) {
+                                return;
+                        }
+                        if (o.timer) {
+                                window.clearInterval(o.timer);
+                                o.timer = null;
+                        }
+                        o.phase = sPhase;
+                        this._renderRun();
+                        this._syncActivity();
+                },
+
+                _pollRun: function () {
+                        var that = this, o = this._oRun;
+                        if (!o || !o.timer || o.inFlight) {
+                                return;
+                        }
+                        o.inFlight = true;
+                        o.count++;
+                        ChatService.getReportRunStatus(o.runId).then(function (oSts) {
+                                o.inFlight = false;
+                                if (that._oRun !== o || !o.timer) {
+                                        return;
+                                }
+                                oSts = oSts || {};
+                                o.message = oSts.message || oSts.errorMessage || "";
+                                if (oSts.shortId) {
+                                        o.shortId = oSts.shortId;
+                                }
+                                if (!oSts.status) {
+                                        // 后端未给状态：展示其 message（真实原因），继续查询，连续 5 次后停下等用户刷新
+                                        o.status = "UNKNOWN";
+                                        if (++o.empty >= 5) {
+                                                that._stopRun("stalled");
+                                                return;
+                                        }
+                                } else {
+                                        o.empty = 0;
+                                        o.status = oSts.status;
+                                }
+                                if (o.status === "FAILED") {
+                                        that._stopRun("failed");
+                                        return;
+                                }
+                                if (o.status === "READY") {
+                                        o.artifactId = oSts.artifactId;
+                                        that._stopRun("ready");
+                                        that._loadRunResult(o);
+                                        return;
+                                }
+                                if (o.count >= 100) {
+                                        that._stopRun("stalled");
+                                        return;
+                                }
+                                that._renderRun();
+                        }).catch(function (e) {
+                                // 单次查询失败（网络抖动）不终止轮询，计入次数
+                                o.inFlight = false;
+                                o.message = (e && e.message) || "";
+                                if (o.count >= 100) {
+                                        that._stopRun("stalled");
+                                } else {
+                                        that._renderRun();
+                                }
+                        });
+                },
+
+                /** READY：读取结果，作为新一条回复插入（仅当仍在发起会话中） */
+                _loadRunResult: function (o) {
+                        var that = this;
+                        ChatService.getReportResult(o.artifactId).then(function (oRes) {
+                                var oNow = that.getView().getModel("chat").getProperty("/currentSession") || {};
+                                if ((oNow.id || "") !== o.sessionId) {
+                                        return;   // 已切换会话：不把结果写进其他会话
+                                }
+                                if (!oRes || (!oRes.rowsJson && !oRes.schemaJson && !oRes.rowCount)) {
+                                        o.phase = "failed";
+                                        o.message = (oRes && oRes.message) || "结果读取失败";
+                                        that._renderRun();
+                                        return;
+                                }
+                                that._pushReportResult(oRes, o.runId);
+                        });
+                },
+
+                /** 步骤条 HTML（写入发起提交那条回复的 runHtml） */
+                _renderRun: function () {
+                        var o = this._oRun;
+                        if (!o) {
+                                return;
+                        }
+                        var oHit = this._entryByUid(o.uid);
+                        if (!oHit) {
+                                return;
+                        }
+                        var esc = Formatter.escapeHtml;
+                        var iSec = Math.round((Date.now() - o.start) / 1000);
+                        var bFail = o.phase === "failed";
+                        var bReady = o.phase === "ready";
+                        var sMid = bReady || bFail ? "done" : (o.phase === "active" ? "on" : "warn");
+                        var aSteps = [
+                                { st: "done", text: "已提交" },
+                                { st: sMid, text: o.phase === "active" ? this._taskStatusText(o.status === "SUBMITTED" ? "QUEUED" : o.status) : "执行" },
+                                { st: bReady ? "done" : (bFail ? "fail" : "todo"), text: bFail ? "失败" : "结果就绪" }
+                        ];
+                        if (o.status === "UNKNOWN" && o.phase === "active") {
+                                aSteps[1].text = "确认状态中";
+                        }
+                        var sMsg = o.message;
+                        if (o.phase === "stalled") {
+                                sMsg = (sMsg ? sMsg + " · " : "") + "状态长时间未确认，可稍后刷新或在 SAP 中核对（不伪造结果）";
+                        } else if (o.phase === "stopped") {
+                                sMsg = "已停止跟踪（SAP 后台作业不受影响）";
+                        } else if (bReady) {
+                                sMsg = sMsg || "结果已生成，见下方回复";
+                        }
+                        var s = '<div class="runCard run-' + o.phase + '" data-uid="' + o.uid + '">' +
+                                '<div class="runHead"><span class="runTitle">报表运行 ' + esc(o.shortId) + "</span>" +
+                                '<span class="runTime">' + iSec + " 秒</span></div>" +
+                                '<div class="runSteps">' + aSteps.map(function (st, i) {
+                                        return (i ? '<span class="runLine' + (st.st !== "todo" ? " on" : "") + '"></span>' : "") +
+                                                '<span class="runStep st-' + st.st + '"><i></i>' + esc(st.text) + "</span>";
+                                }).join("") + "</div>" +
+                                (sMsg ? '<div class="runMsg">' + esc(sMsg) + "</div>" : "") +
+                                '<div class="runActs">' +
+                                (o.phase === "active"
+                                        ? '<button type="button" class="dtBtn" data-act="run-refresh">立即刷新</button>' +
+                                          '<button type="button" class="dtBtn" data-act="run-stop">停止跟踪</button>'
+                                        : (o.phase === "stalled" || o.phase === "stopped"
+                                                ? '<button type="button" class="dtBtn dtPrimary" data-act="run-refresh">刷新状态</button>' : "")) +
+                                "</div></div>";
+                        this.getView().getModel("chat").setProperty("/messages/" + oHit.index + "/runHtml", s);
+                },
+
+                /** READY 结果 → 新一条回复（数据表 + 工具条；用户可自行生成图表） */
+                _pushReportResult: function (oRes, sRunId) {
+                        var aCols = [], aRaw = [];
+                        try { aCols = (JSON.parse(oRes.schemaJson || "{}").columns) || []; } catch (e) { aCols = []; }
+                        try { aRaw = JSON.parse(oRes.rowsJson || "[]") || []; } catch (e) { aRaw = []; }
+                        if (!aCols.length && aRaw.length && !Array.isArray(aRaw[0])) {
+                                aCols = Object.keys(aRaw[0]).map(function (k) { return { name: k, label: k }; });
+                        }
+                        var oDs = {
+                                name: oRes.label || ("报表结果 " + String(sRunId || "").substring(0, 8)),
+                                status: "OK", error: "", truncated: false, elapsedMs: 0,
+                                columns: aCols.map(function (c) {
+                                        return { name: c.name, label: c.label || c.name, numeric: c.numeric === true ? true : undefined };
+                                }),
+                                rows: aRaw.slice(0, 2000).map(function (r) {
+                                        return Array.isArray(r) ? r : aCols.map(function (c) {
+                                                return r[c.name] === undefined || r[c.name] === null ? "" : r[c.name];
+                                        });
+                                })
+                        };
+                        var iTotal = parseInt(oRes.rowCount, 10) || oDs.rows.length;
+                        oDs.truncated = iTotal > oDs.rows.length;
+                        var sText = "**报表结果**（运行 " + String(sRunId || "").substring(0, 8) + "，共 " + iTotal + " 行" +
+                                (oDs.truncated ? "，以下为受控样例 " + oDs.rows.length + " 行" : "") + "）" +
+                                (iTotal === 0 ? "\n\n0 行结果是有效的业务事实，不是失败。" : "");
+                        var oEntry = this._buildEntry("assistant", sText, "", "");
+                        if ((this.getView().getModel("chat").getProperty("/currentSession") || {}).mode === "AGENT") {
+                                oEntry.sender = this._rb().getText("agentSender");
+                        }
+                        if (aCols.length && oDs.rows.length) {
+                                oEntry.analysis = { summary: "", findings: [], charts: [], datasets: [oDs] };
+                                oEntry.extraHtml = this._extraHtml(oEntry);
+                        }
+                        var oChat = this.getView().getModel("chat");
+                        oChat.getProperty("/messages").push(oEntry);
+                        oChat.setProperty("/messages", oChat.getProperty("/messages").slice());
                         this._scrollToBottom();
+                },
+
+                /* ---------------------------------------------------------
+                 * V16：表格工具条 / 图表卡 / 步骤条按钮 —— document 级事件委托
+                 * （innerHTML 流式重建，逐个挂监听不可行）
+                 * --------------------------------------------------------- */
+
+                _bindDataActions: function () {
+                        if (this._bDataActBound) {
+                                return;
+                        }
+                        this._bDataActBound = true;
+                        var that = this;
+                        document.body.addEventListener("click", function (oEv) {
+                                var oBtn = oEv.target && oEv.target.closest ? oEv.target.closest("button[data-act]") : null;
+                                if (!oBtn) {
+                                        return;
+                                }
+                                var oHost = oBtn.closest("[data-uid]");
+                                if (oHost) {
+                                        that._onDataAction(oBtn, oHost.getAttribute("data-uid"));
+                                }
+                        });
+                },
+
+                _onDataAction: function (oBtn, sUid) {
+                        var that = this;
+                        var sAct = oBtn.getAttribute("data-act");
+                        var oHit = this._entryByUid(sUid);
+                        if (!oHit) {
+                                return;
+                        }
+                        var oEntry = oHit.entry;
+                        if (sAct === "run-refresh" || sAct === "run-stop") {
+                                if (!this._oRun || this._oRun.uid !== sUid) {
+                                        MessageToast.show("该运行已不在跟踪中，请重新提交或在任务中查看");
+                                        return;
+                                }
+                                if (sAct === "run-stop") {
+                                        this._stopRun("stopped");
+                                } else if (this._oRun.timer) {
+                                        this._pollRun();
+                                } else {
+                                        this._resumeRun();
+                                }
+                                return;
+                        }
+                        if (/^chart-/.test(sAct)) {
+                                var sCid = oBtn.getAttribute("data-cid");
+                                var aCharts = oEntry.userCharts || [];
+                                var oCh = aCharts.filter(function (c) { return c.id === sCid; })[0];
+                                if (!oCh) {
+                                        return;
+                                }
+                                if (sAct === "chart-type") {
+                                        oCh.cfg.type = oBtn.getAttribute("data-type");
+                                        this._refreshExtra(oEntry);
+                                } else if (sAct === "chart-edit") {
+                                        ChartBuilder.open(oCh.ds, oCh.cfg, function (oCfg) {
+                                                oCh.cfg = oCfg;
+                                                that._refreshExtra(oEntry);
+                                        }, { edit: true });
+                                } else if (sAct === "chart-del") {
+                                        oEntry.userCharts = aCharts.filter(function (c) { return c !== oCh; });
+                                        this._refreshExtra(oEntry);
+                                } else if (sAct === "chart-svg") {
+                                        var oR = ChartRenderer.render(oCh.ds, oCh.cfg);
+                                        if (oR.svg) {
+                                                this._download(ChartRenderer.standalone(oR.svg), (oCh.cfg.title || oCh.ds.name || "图表") + ".svg", "image/svg+xml");
+                                        }
+                                }
+                                return;
+                        }
+                        // —— 表格工具条：分析结果带 data-ds；Markdown 表格读相邻 DOM ——
+                        var oTools = oBtn.closest(".dataTools");
+                        if (!oTools) {
+                                return;
+                        }
+                        var oDs = null, oHint = null;
+                        var sDs = oTools.getAttribute("data-ds");
+                        if (sDs !== null && oEntry.analysis) {
+                                oDs = (oEntry.analysis.datasets || [])[parseInt(sDs, 10)];
+                                oHint = oDs ? this._chartHint(oEntry.analysis, oDs) : null;
+                        } else {
+                                var oPrev = oTools.previousElementSibling;
+                                oDs = ChartRenderer.fromTable(oPrev && oPrev.querySelector("table"));
+                        }
+                        if (!oDs) {
+                                return;
+                        }
+                        if (sAct === "copy") {
+                                this._copyText(ChartRenderer.toDelimited(oDs, "\t"), "已复制，可直接粘贴到 Excel");
+                        } else if (sAct === "csv") {
+                                this._download("\uFEFF" + ChartRenderer.toDelimited(oDs, ","), (oDs.name || "数据") + ".csv", "text/csv;charset=utf-8");
+                        } else if (sAct === "chart") {
+                                this._openChartFor(oEntry, oDs, oHint);
+                        }
+                },
+
+                /** 打开图表面板；不适合出图时说明原因（不硬画） */
+                _openChartFor: function (oEntry, oDs, oHint) {
+                        var that = this;
+                        var oA = ChartRenderer.analyze(oDs);
+                        if (!oA.chartable) {
+                                MessageToast.show("这份数据不适合生成图表：" + oA.reason);
+                                return;
+                        }
+                        ChartBuilder.open(oDs, oHint, function (oCfg) {
+                                oEntry.userCharts = (oEntry.userCharts || []).concat([{
+                                        id: "c" + that._newSessionId().substring(0, 8), ds: oDs, cfg: oCfg
+                                }]);
+                                that._refreshExtra(oEntry);
+                        });
+                },
+
+                /** 附加区局部刷新（extraHtml 绑定 → HTML 控件重绘） */
+                _refreshExtra: function (oEntry) {
+                        var oHit = this._entryByUid(oEntry.uid);
+                        if (oHit) {
+                                this.getView().getModel("chat").setProperty("/messages/" + oHit.index + "/extraHtml", this._extraHtml(oEntry));
+                        }
+                },
+
+                _copyText: function (sText, sOkMsg) {
+                        var that = this;
+                        var fnOk = function () { MessageToast.show(sOkMsg || that._rb().getText("toastCopied")); };
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                                navigator.clipboard.writeText(sText).then(fnOk).catch(function () {
+                                        that._copyFallback(sText, that._rb());
+                                });
+                        } else {
+                                this._copyFallback(sText, this._rb());
+                        }
+                },
+
+                _download: function (sContent, sName, sMime) {
+                        var oBlob = new Blob([sContent], { type: sMime });
+                        var sUrl = URL.createObjectURL(oBlob);
+                        var oLink = document.createElement("a");
+                        oLink.href = sUrl;
+                        oLink.download = String(sName).replace(/[\\/:*?"<>|]+/g, "_");
+                        document.body.appendChild(oLink);
+                        oLink.click();
+                        document.body.removeChild(oLink);
+                        setTimeout(function () { URL.revokeObjectURL(sUrl); }, 1000);
                 },
 
                 /** 会话任务列表（切换/恢复：展示后端返回的任务，点击置为当前任务） */
@@ -3873,7 +4192,7 @@ sap.ui.define([
                                                 }
                                                 (aTasks || []).slice(0, 20).forEach(function (oT) {
                                                         oVBox.addItem(new Button({
-                                                                text: that._taskModuleLabel(oT.module_id) + " · " + oT.status +
+                                                                text: that._taskModuleLabel(oT.module_id) + " · " + that._taskStatusText(oT.status) +
                                                                         " · " + (oT.short_id || (oT.task_id || "").substring(0, 8)) +
                                                                         (oT.title ? " · " + oT.title : ""),
                                                                 type: "Transparent",
@@ -3887,11 +4206,7 @@ sap.ui.define([
                                                                                         needsInput: false,
                                                                                         sessionId: oCtx.id || ""
                                                                                 });
-                                                                                oChatModel.setProperty("/taskBadge",
-                                                                                        that._taskModuleLabel(oTask.module_id) + " · " + oTask.status + " · " +
-                                                                                        (oTask.task_id || "").substring(0, 8));
-                                                                                oChatModel.setProperty("/taskBadgeState", that._taskStateColor(oTask.status));
-                                                                                oChatModel.setProperty("/taskStripVisible", true);
+                                                                                that._setTaskBadge(oTask.module_id, oTask.status, oTask.task_id);
                                                                                 oPop.close();
                                                                         };
                                                                 })(oT)
