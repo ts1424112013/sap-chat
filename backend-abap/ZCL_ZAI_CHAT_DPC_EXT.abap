@@ -396,7 +396,7 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
                           short_id = zcl_ai_task_service=>short_id( ls_t1-task_id )
                           module_id = ls_t1-module_id
                           intent_code = ls_t1-intent_code
-                          title = ls_t1-title
+                          title = ls_t1-task_title  " 20261008: ZAI_TASK.TITLE→TASK_TITLE 保留字修复, 视图键 title 不变
                           status = ls_t1-status
                           focus_artifact = COND #( WHEN ls_t1-focus_artifact_id IS NOT INITIAL
                             THEN zcl_ai_task_service=>short_id( ls_t1-focus_artifact_id ) ELSE '' )

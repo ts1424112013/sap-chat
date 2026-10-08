@@ -3610,9 +3610,18 @@ sap.ui.define([
                                 return;
                         }
                         var aPending = [];
+                        var oPendingObj = null;
                         if (oRes.pendingParamsJson) {
                                 try {
-                                        aPending = JSON.parse(oRes.pendingParamsJson) || [];
+                                        // V15.0.2 20261008: 兼容对象 {report_id,tcode,params:[...]}
+                                        // 与旧数组格式; 提交 StartReportRun 需要 report_id
+                                        var oParsed = JSON.parse(oRes.pendingParamsJson) || null;
+                                        if (oParsed && !Array.isArray(oParsed)) {
+                                                oPendingObj = oParsed;
+                                                aPending = oParsed.params || [];
+                                        } else {
+                                                aPending = oParsed || [];
+                                        }
                                 } catch (e) {
                                         aPending = [];
                                 }
@@ -3623,7 +3632,9 @@ sap.ui.define([
                                 module: oRes.taskModule || "",
                                 status: oRes.taskStatus || "",
                                 needsInput: oRes.needsInput === true,
-                                sessionId: sSessionId
+                                sessionId: sSessionId,
+                                reportId: (oPendingObj && oPendingObj.report_id) || "",
+                                tcode: (oPendingObj && oPendingObj.tcode) || ""
                         };
                         oChatModel.setProperty("/currentTask", oTask);
                         oChatModel.setProperty("/taskBadge",

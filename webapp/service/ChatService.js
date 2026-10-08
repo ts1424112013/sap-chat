@@ -332,7 +332,8 @@ sap.ui.define([
 
                 /** 统一错误信息提取 */
                 _fmtError: function (oError) {
-                        var sMsg = "未知错误";
+                        // V15.0.1: 原 !sMsg 恒 false 吞掉真实错误(HTTP 400 只显示"未知错误")
+                        var sMsg = "";
                         try {
                                 if (oError && oError.responseText) {
                                         var oBody = JSON.parse(oError.responseText);
@@ -646,15 +647,15 @@ sap.ui.define([
                                 }
                                 var oInit = { method: bPost ? "POST" : "GET", headers: oHeaders, credentials: "same-origin" };
                                 if (bPost) {
-                                        if (sToken) {
-                                                oHeaders["x-csrf-token"] = sToken;
-                                        }
-                                        oHeaders["Content-Type"] = "application/x-www-form-urlencoded";
-                                        var oBody = new URLSearchParams();
-                                        Object.keys(oParams || {}).forEach(function (k) {
-                                                oBody.append(k, oParams[k]);
-                                        });
-                                        oInit.body = oBody.toString();
+                                	if (sToken) {
+                                		oHeaders["x-csrf-token"] = sToken;
+                                	}
+                                	// V15.0.1 20261008: GW 的 OData V2 FI POST 参数必须放 URL query
+                                	// string(form body GW 不解析 → 参数全空 → 400 → 前端只见"未知错误")
+                                	var aQ0 = Object.keys(oParams || {}).map(function (k) {
+                                		return k + "='" + encodeURIComponent(oParams[k]) + "'";
+                                	});
+                                	if (aQ0.length) { sUrl += "?" + aQ0.join("&"); }
                                 } else if (oParams && Object.keys(oParams).length) {
                                         var aQ = Object.keys(oParams).map(function (k) {
                                                 return k + "='" + encodeURIComponent(oParams[k]) + "'";
@@ -666,7 +667,12 @@ sap.ui.define([
                         var fnSend = function (oInit) {
                                 return fetch(sUrl, oInit).then(function (oResp) {
                                         if (!oResp.ok) {
-                                                throw new Error("HTTP " + oResp.status);
+                                        	// V15.0.1: 带回响应体, GW 错误原因(XML)可解析展示
+                                        	return oResp.text().then(function (t) {
+                                        		var e = new Error("HTTP " + oResp.status + (t ? " - " + t.substring(0, 300) : ""));
+                                        		e.statusCode = oResp.status; e.responseText = t;
+                                        		throw e;
+                                        	});
                                         }
                                         return oResp.json();
                                 }).then(function (oJson) {

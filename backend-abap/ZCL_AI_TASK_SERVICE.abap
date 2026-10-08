@@ -27,6 +27,31 @@
 *         (字段名列名不变, JS/模型消费方无感)
 * ★ 重贴后核对标记: task_enabled 应读取 ZAI_CHAT_CFG 的
 *   TASK_CONTEXT_ENABLED(缺省关闭); 全文不得出现 name_values/low_case
+* V1.0.2  20261008: DDIC 保留字修复 —— TITLE/LABEL 是 ABAP 词典保留字,
+*   SE11 建表会拒(ZAI_TASK.TITLE/ZAI_ARTIFACT.LABEL 已实测报错):
+*   ZAI_TASK.TITLE→TASK_TITLE, ZAI_ARTIFACT.LABEL→DISPLAY_LABEL,
+*   代码内 DB 映射结构组件同步改名(row_to_task/INSERT/SELECT);
+*   ty_candidate.title 与方法参数 iv_title/iv_label 为内部视图名, 不变
+* V1.0.3  20261008: 补漏声明 TYPES tt_msg_ref(行结构 ty_msg_ref L158 后)
+*   —— L231 attach_messages 参数 it_msgs TYPE tt_msg_ref 引用了未定义
+*   表类型, SE24 激活报 "TT_MSG_REF unknown (TY_MSG_REF similar)";
+*   V1.0.1 源码自带缺陷, 非贴贴问题。AGENT_SERVICE 两处调用均为
+*   VALUE#() 内联构造(msg_seq+role), 结构兼容无需改动
+* V1.0.4  20261008: strict mode 三连修复(SE24 激活 5 错: 2+2+1 连锁) ——
+*   ① update_status 两处 @iv_version + 1 挪 ABAP 侧(lv_next_ver),
+*     SE24 对 UPDATE SET/WHERE 宿主变量算术报 «+» not allowed;
+*   ② list_artifacts SELECT 清单加逗号(strict mode 强制);
+*   ③ build_context 消息段重写: ZAI_TASK_MSG.MSG_SEQ(INT4) 与
+*     ZAI_CHAT_MSG.MSG_SEQ(NUMC6) 跨类型 JOIN 报 not compatible,
+*     拆两次单表查询+老语法(无@), 类型转换放 ABAP 侧(i→NUMC6 补零)
+*   连锁错误: 内联声明失败→LT_HIST unknown, 随③消除
+* V1.0.5  20261008: 必选参数误报修复 —— update_status 的 iv_summary/
+*   iv_pending 与 register_artifact 的 iv_row_count/iv_summary_json/
+*   iv_dataset_id 注释写"可选"但未标 OPTIONAL, SE24 按必选检查,
+*   所有未传全参的调用点报 "No value passed to mandatory parameter"
+*   (调用方: REPORT_SERVICE update_status / AGENT_SERVICE
+*   register_artifact / DPC_EXT update_status×3); 补 OPTIONAL 关键字,
+*   方法体按空串=不覆盖的语义不变
 *=======================================================================
 CLASS zcl_ai_task_service DEFINITION
   PUBLIC
@@ -80,7 +105,7 @@ CLASS zcl_ai_task_service DEFINITION
              parent_task_id    TYPE string,
              module_id         TYPE string,
              intent_code       TYPE string,
-             title             TYPE string,
+             task_title        TYPE string,  " V1.0.2: TITLE 是 DDIC 保留字
              status            TYPE string,
              owner             TYPE string,
              focus_artifact_id TYPE string,
@@ -102,7 +127,7 @@ CLASS zcl_ai_task_service DEFINITION
              source_ref    TYPE string,
              report_run_id TYPE string,
              dataset_id    TYPE string,
-             label         TYPE string,
+             display_label TYPE string,  " V1.0.2: LABEL 是 DDIC 保留字
              status        TYPE string,
              row_count     TYPE i,
              summary_json  TYPE string,
@@ -154,6 +179,7 @@ CLASS zcl_ai_task_service DEFINITION
              msg_seq   TYPE i,
              role      TYPE string,
            END OF ty_msg_ref.
+    TYPES tt_msg_ref TYPE STANDARD TABLE OF ty_msg_ref WITH DEFAULT KEY. " V1.0.3 补: L231 参数用了 tt_msg_ref, V1.0.1 漏声明表类型
 
     " ---- 开关与配置(复用 ZAI_CHAT_CFG) ----
 
@@ -214,8 +240,8 @@ CLASS zcl_ai_task_service DEFINITION
       IMPORTING iv_task_id  TYPE string
                 iv_version  TYPE i
                 iv_status   TYPE string
-                iv_summary  TYPE string        " 可选
-                iv_pending  TYPE string        " 可选: 待办参数 JSON
+                iv_summary  TYPE string OPTIONAL " V1.0.5: 注释可选≠编译可选, 不传即空串不覆盖
+                iv_pending  TYPE string OPTIONAL " V1.0.5: 待办参数 JSON
       EXPORTING ev_ok       TYPE abap_bool
                 ev_reason   TYPE string.
 
@@ -235,9 +261,9 @@ CLASS zcl_ai_task_service DEFINITION
                 iv_source_type   TYPE string
                 iv_source_ref    TYPE string
                 iv_label         TYPE string
-                iv_row_count     TYPE i
-                iv_summary_json  TYPE string    " 受控摘要(非明细)
-                iv_dataset_id    TYPE string    " 可空
+                iv_row_count     TYPE i OPTIONAL " V1.0.5
+                iv_summary_json  TYPE string OPTIONAL " V1.0.5: 受控摘要(非明细)
+                iv_dataset_id    TYPE string OPTIONAL " V1.0.5: 可空
       RETURNING VALUE(rv_art_id) TYPE string.
 
     " 任务的结果列表(前端"已有结果"引用)
@@ -443,7 +469,7 @@ CLASS zcl_ai_task_service IMPLEMENTATION.
                session_id       = iv_session_id
                module_id        = iv_module_id
                intent_code      = iv_intent
-               title            = lv_title
+               task_title       = lv_title
                status           = gc_st_open
                owner            = sy-uname
                current_version  = 1
@@ -467,10 +493,14 @@ CLASS zcl_ai_task_service IMPLEMENTATION.
 
     " 乐观锁: 只在版本匹配时更新, 并把版本 +1
     " (两个页面并发提交时后到者被拒绝, 不会覆盖新焦点/新状态)
+    " V1.0.4: @iv_version + 1 算术挪到 ABAP 侧 —— SE24 旧解析器对
+    " UPDATE SET/WHERE 里的宿主变量算术报 «+» not allowed
     DATA(lv_now) = now14( ).
+    DATA lv_next_ver TYPE i.
+    lv_next_ver = iv_version + 1.
     UPDATE zai_task
       SET status          = @iv_status,
-          current_version = @iv_version + 1,
+          current_version = @lv_next_ver,
           changed_at      = @lv_now
       WHERE task_id         = @iv_task_id
         AND owner           = @sy-uname
@@ -482,14 +512,14 @@ CLASS zcl_ai_task_service IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    " 可选字段单独更新(空串不覆盖)
+    " 可选字段单独更新(空串不覆盖); 版本此时已是 next_ver
     IF iv_summary IS NOT INITIAL OR iv_pending IS NOT INITIAL.
       UPDATE zai_task
         SET summary_text = @iv_summary,
             pending_json = @iv_pending
           WHERE task_id  = @iv_task_id
             AND owner    = @sy-uname
-            AND current_version = @iv_version + 1.
+            AND current_version = @lv_next_ver.
     ENDIF.
 
     COMMIT WORK.
@@ -563,7 +593,7 @@ CLASS zcl_ai_task_service IMPLEMENTATION.
                source_type    = iv_source_type
                source_ref     = iv_source_ref
                dataset_id     = iv_dataset_id
-               label          = lv_label
+               display_label  = lv_label
                status         = 'AVAILABLE'
                row_count      = iv_row_count
                summary_json   = iv_summary_json
@@ -593,9 +623,10 @@ CLASS zcl_ai_task_service IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    SELECT artifact_id task_id session_id artifact_type source_type
-           source_ref  report_run_id dataset_id label status
-           row_count   summary_json created_at owner
+    " V1.0.4: strict mode(含 @宿主变量)要求 SELECT 清单逗号分隔
+    SELECT artifact_id, task_id, session_id, artifact_type, source_type,
+           source_ref,  report_run_id, dataset_id, display_label, status,
+           row_count,   summary_json, created_at, owner
       FROM zai_artifact
       WHERE task_id = @iv_task_id
         AND owner   = @sy-uname
@@ -641,7 +672,7 @@ CLASS zcl_ai_task_service IMPLEMENTATION.
       APPEND VALUE #( task_id  = ls_t-task_id
                       short_id = short_id( ls_t-task_id )
                       module_id = ls_t-module_id
-                      title    = ls_t-title
+                      title    = ls_t-task_title
                       status   = ls_t-status ) TO lt_rel.
     ENDLOOP.
     IF lt_rel IS NOT INITIAL.
@@ -652,34 +683,72 @@ CLASS zcl_ai_task_service IMPLEMENTATION.
     " ---- 有限相关消息: 只取与本任务关联的最新 N 条, 单条截断 ----
     " (旧链路的 get_recent_ctx 取会话最近 2 轮; 任务链路按任务过滤,
     "  防止其他业务的长历史把上下文挤爆)
-    SELECT tm~msg_seq tm~role m~content
+    " V1.0.4 重写: 原 JOIN 写法两大硬伤 ——
+    " ① ZAI_TASK_MSG.MSG_SEQ(INT4) 与 ZAI_CHAT_MSG.MSG_SEQ(NUMC6)
+    "   类型不同, JOIN ON 跨类型比较报 not compatible, 内联 @DATA
+    "   声明失败连锁 LT_HIST unknown;
+    " ② @宿主变量+UP TO @(表达式) 触发 strict mode, SE24 旧解析器过敏。
+    " 改两次单表查询+老语法(无@), 类型转换全在 ABAP 侧:
+    DATA: lt_ref      TYPE tt_msg_ref,
+          ls_ref      TYPE ty_msg_ref,
+          lt_tmp      TYPE tt_ctx_msg,
+          ls_msg      TYPE ty_ctx_msg,
+          lv_task_key TYPE c LENGTH 32,
+          lv_sess_key TYPE c LENGTH 32,
+          lv_seq_key  TYPE n LENGTH 6,
+          lv_limit    TYPE i,
+          lv_cnt      TYPE i,
+          lv_i        TYPE i,
+          lv_content  TYPE string.
+    lv_task_key = ls_task-task_id.
+    lv_sess_key = iv_session_id.
+    REFRESH: lt_ref, lt_tmp.
+
+    " 第一步: 任务消息指针(最新在前; tm~msg_seq INT4 → ty_msg_ref.i 同型)
+    SELECT tm~msg_seq tm~role
       FROM zai_task_msg AS tm
-      INNER JOIN zai_chat_msg AS m
-        ON m~session_id = tm~session_id
-       AND m~msg_seq    = tm~msg_seq
-      WHERE tm~task_id   = @ls_task-task_id
-        AND tm~session_id = @iv_session_id
-        AND tm~role      IN ( 'user', 'assistant' )
-        AND m~status      = 'OK'
-      ORDER BY tm~msg_seq DESCENDING
-      INTO TABLE @DATA(lt_hist)
-      UP TO @( iv_ctx_pairs * 2 ) ROWS.
-    IF sy-subrc = 0.
-      " 时间正序回填
-      DATA(lv_n) = lines( lt_hist ).
-      DO lv_n TIMES.
-        READ TABLE lt_hist INTO DATA(ls_hist) INDEX lv_n - sy-index + 1.
-        IF sy-subrc <> 0.
-          EXIT.
-        ENDIF.
-        DATA(lv_content) = ls_hist-content.
-        IF strlen( lv_content ) > iv_ctx_chars.
-          lv_content = lv_content(iv_ctx_chars) && '…'.
-        ENDIF.
-        APPEND VALUE #( role = ls_hist-role content = lv_content )
-          TO rs-messages.
-      ENDDO.
-    ENDIF.
+      INTO TABLE lt_ref
+      WHERE tm~task_id    = lv_task_key
+        AND tm~session_id = lv_sess_key
+        AND tm~role       IN ('user', 'assistant')
+      ORDER BY tm~msg_seq DESCENDING.
+
+    " 第二步: 按指针逐条取正文(单表; i → NUMC6 赋值自动补零)
+    lv_limit = iv_ctx_pairs * 2.
+    lv_cnt   = 0.
+    LOOP AT lt_ref INTO ls_ref.
+      lv_cnt = lv_cnt + 1.
+      IF lv_cnt > lv_limit.
+        EXIT.
+      ENDIF.
+      lv_seq_key = ls_ref-msg_seq.
+      CLEAR lv_content.
+      SELECT SINGLE content FROM zai_chat_msg
+        INTO lv_content
+        WHERE session_id = lv_sess_key
+          AND msg_seq    = lv_seq_key
+          AND status     = 'OK'.
+      IF sy-subrc <> 0.
+        CONTINUE.
+      ENDIF.
+      IF strlen( lv_content ) > iv_ctx_chars.
+        lv_content = lv_content(iv_ctx_chars) && '…'.
+      ENDIF.
+      CLEAR ls_msg.
+      ls_msg-role    = ls_ref-role.
+      ls_msg-content = lv_content.
+      APPEND ls_msg TO lt_tmp.
+    ENDLOOP.
+
+    " 时间正序回填(取时 DESCENDING, 倒序 APPEND)
+    lv_i = lines( lt_tmp ).
+    WHILE lv_i >= 1.
+      READ TABLE lt_tmp INTO ls_msg INDEX lv_i.
+      IF sy-subrc = 0.
+        APPEND ls_msg TO rs-messages.
+      ENDIF.
+      lv_i = lv_i - 1.
+    ENDWHILE.
 
   ENDMETHOD.
 
@@ -759,7 +828,7 @@ CLASS zcl_ai_task_service IMPLEMENTATION.
     rs-parent_task_id    = is_row-parent_task_id.
     rs-module_id         = is_row-module_id.
     rs-intent_code       = is_row-intent_code.
-    rs-title             = is_row-title.
+    rs-task_title        = is_row-task_title.
     rs-status            = is_row-status.
     rs-owner             = is_row-owner.
     rs-focus_artifact_id = is_row-focus_artifact_id.

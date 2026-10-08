@@ -58,7 +58,10 @@ sap.ui.define([], function () {
                 /** OData V2 可返回直接 ComplexType、函数名包装，或原始 d 包装。 */
                 normalizeResult: function (oData, sModelId) {
                         var o = oData && (oData.d || oData) || {};
-                        o = o.AnalyzeAgent || o.AgentResult || o;
+                        // V1.0.1 20261008: 补 AnalyzeTask 包装剥离 —— 新链路响应包装在
+                // d.AnalyzeTask 下, 未剥导致 answer/message/status/trace 全空
+                // (TaskId 有值是因 ChatService 单独补剥了任务字段)
+                o = o.AnalyzeAgent || o.AnalyzeTask || o.AgentResult || o;
                         var oTrace = this.parseTrace(this._field(o, "TraceJson"));
                         return {
                                 sessionId: this._field(o, "SessionId") || "",

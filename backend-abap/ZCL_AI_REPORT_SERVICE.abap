@@ -35,6 +35,48 @@
 * ★ 重贴后核对标记: parse_flat_kv 正则应与 AGENT_GUARD.parse_flat_json
 *   同款; 全文不得出现 name_values/low_case/CONV x1; validate_params
 *   的 norm_json 为扁平对象拼装(json_escape 转义)
+* V1.0.2  20261008: DDIC 保留字修复 —— LABEL/PROGRAM 是 ABAP 词典保留字,
+*   SE11 建表实测报错"是保留字"; 预防性一并改 TITLE/LENGTH/DECIMALS 同族:
+*   ZAI_RPT_DEF.PROGRAM→PROGNAME, ZAI_RPT_RUN.PROGRAM→PROGNAME,
+*   ZAI_RPT_PARAM.LABEL→DISPLAY_LABEL / LENGTH→TYPE_LENGTH
+*   / DECIMALS→TYPE_DECIMALS; 代码内 DB 映射结构同步
+*   (ty_def.progname/ty_param 三组件/row_to_def/INSERT/SELECT 清单);
+*   ty_result.label 为内部视图名(JSON 键 label), 不变
+* V1.0.3  20261008: strict mode 修复 —— 含 @宿主变量的 SELECT 清单必须
+*   逗号分隔(SE24 报 "elements must be separated using commas"):
+*   get_params 17 列清单、get_result 的 SELECT SINGLE status, report_id
+*   两处加逗号; 其余 SELECT 均为单列/SELECT * 无此问题
+* V1.0.4  20261008: SE24 激活 10 错修复 ——
+*   ① start_run 幂等检查 SELECT SINGLE report_run_id status 两列加逗号
+*     (连锁: 内联声明失败→LV_RUN_ID/LV_RUN_STS unknown);
+*   ② CHAR32 实参直传 TYPE string 形参一律 CONV(§2.1 模式7, 9 处):
+*     lv_id/lv_run_id→short_id, add_step/submit/read_result 的
+*     iv_report_run_id, ls_run-task_id→get_task_owned/add_step,
+*     ls_run-report_run_id→short_id, ls_art-report_run_id→read_result,
+*     lv_rid→get_def; ("No value passed to IV_SUMMARY" 为参数表
+*     解析中断的连锁误报, 随②消除)
+*   ③ ZCL_AI_REPORT_MOCK unknown = 依赖类未建, 非源码错误:
+*     MOCK 与本类互相引用(常量 gc_run_*/parse_flat_kv), 操作法 =
+*     两类都贴好(全 inactive)后一起激活
+* V1.0.5  20261008: GET_RUN_STATUS 报 Unknown column "ARTIFACT_ID" ——
+*   ZAI_RPT_RUN 表无此列(它是 ZAI_ARTIFACT 主键): 拆两条 SELECT,
+*   error_code/error_message 取 run 表; artifact_id/row_count 从
+*   ZAI_ARTIFACT 按 report_run_id+owner 反查(登记时写入, run 表
+*   row_count 不回填恒空); IV_SUMMARY 误报=MOCK 未建时参数表
+*   解析中断连锁, 贴好 MOCK 即消
+* V1.0.6  20261008: submit 的 iv_user = sy-uname(CHAR12) 直传 string
+*   形参报 not compatible(§2.1 模式7 第 10 处) → CONV string;
+*   另一错 IV_SUMMARY 缺参 = TASK_SERVICE.update_status 签名
+*   iv_summary/iv_pending 未标 OPTIONAL(V1.0.5 已修, 重贴 TASK_SERVICE)
+* V1.0.7  20261008: 链路断裂修复 —— 报表链路无人登记结果索引:
+*   get_run_status 状态推进到 READY 时补 register_artifact(幂等:
+*   先查 zai_artifact 有无, 0 条才登记), 行数/摘要从 mock read_result
+*   取(MAX_ROWS 按登记定义), 来源=GC_SRC_SNAPSHOT, dataset_id=运行 ID;
+*   此前 zai_artifact 恒空 → ReportResult 永远查空(06 文档链路第4步)
+* V1.0.8  20261008: register_artifact 的 iv_source_ref = ls_run-report_id
+*   (CHAR 列)直传 string 形参报 not compatible → CONV string(模式7 第11处;
+*   同段其余实参均已核对: task_id 已 CONV/session_id 为 string 组件/
+*   label 为模板内插/dataset_id 为方法入参 string)
 *=======================================================================
 CLASS zcl_ai_report_service DEFINITION
   PUBLIC
@@ -56,7 +98,7 @@ CLASS zcl_ai_report_service DEFINITION
     TYPES: BEGIN OF ty_def,
              report_id      TYPE string,
              tcode          TYPE string,
-             program        TYPE string,
+             progname       TYPE string,  " V1.0.2: PROGRAM 是 DDIC 保留字
              report_name    TYPE string,
              description    TYPE string,
              report_kind    TYPE string,
@@ -76,10 +118,10 @@ CLASS zcl_ai_report_service DEFINITION
     TYPES: BEGIN OF ty_param,
              param_id       TYPE string,
              abap_name      TYPE string,
-             label          TYPE string,
+             display_label  TYPE string,  " V1.0.2: LABEL 是 DDIC 保留字
              data_type      TYPE string,
-             length         TYPE i,
-             decimals       TYPE i,
+             type_length    TYPE i,       " V1.0.2: LENGTH 是 ABAP 保留词
+             type_decimals  TYPE i,       " V1.0.2: DECIMALS 是 ABAP 保留词
              required       TYPE abap_bool,
              multi_value    TYPE abap_bool,
              range_allowed  TYPE abap_bool,
@@ -353,10 +395,11 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    SELECT param_id  abap_name  label      data_type  length
-           decimals  required   multi_value range_allowed
-           default_type default_value allowed_ops value_source
-           validation_rule help_text sort_no active
+    " V1.0.3: strict mode(含 @宿主变量)要求 SELECT 清单逗号分隔
+    SELECT param_id, abap_name, display_label, data_type, type_length,
+           type_decimals, required, multi_value, range_allowed,
+           default_type, default_value, allowed_ops, value_source,
+           validation_rule, help_text, sort_no, active
       FROM zai_rpt_param
       WHERE report_id = @iv_report_id
         AND config_version = @lv_ver
@@ -412,19 +455,19 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
           WHEN 'STATIC'.
             lv_val = ls_p-default_value.
             APPEND VALUE #( param_id = ls_p-param_id code = 'DEFAULTED'
-                            message = |{ ls_p-label } 已按默认值 { lv_val } 补齐| )
+                            message = |{ ls_p-display_label } 已按默认值 { lv_val } 补齐| )
               TO rs-defaulted.
           WHEN 'USER'.
             lv_val = sy-uname.
             APPEND VALUE #( param_id = ls_p-param_id code = 'DEFAULTED'
-                            message = |{ ls_p-label } 已按当前用户补齐| )
+                            message = |{ ls_p-display_label } 已按当前用户补齐| )
               TO rs-defaulted.
           WHEN OTHERS.
             IF ls_p-required = abap_true.
               rs-ok = abap_false.
               rs-needs_input = abap_true.
               APPEND VALUE #( param_id = ls_p-param_id code = 'REQUIRED'
-                              message = |{ ls_p-label } 为必填项, 请填写后重试| )
+                              message = |{ ls_p-display_label } 为必填项, 请填写后重试| )
                 TO rs-errors.
             ENDIF.
             CONTINUE.
@@ -442,7 +485,7 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
         rs-ok = abap_false.
         APPEND VALUE #( param_id = ls_p-param_id
                         code     = lv_err
-                        message  = |{ ls_p-label }: 值 "{ lv_val }" 校验未通过({ lv_err })| )
+                        message  = |{ ls_p-display_label }: 值 "{ lv_val }" 校验未通过({ lv_err })| )
           TO rs-errors.
         CONTINUE.
       ENDIF.
@@ -508,7 +551,7 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
         IF lv_bad = abap_true.
           rs-ok = abap_false.
           APPEND VALUE #( param_id = ls_rule-param_id code = 'RANGE'
-                          message = |{ ls_rule-label } 与基准参数 { lv_ref } 违反 { lv_op } 关系| )
+                          message = |{ ls_rule-display_label } 与基准参数 { lv_ref } 违反 { lv_op } 关系| )
             TO rs-errors.
         ENDIF.
       ENDLOOP.
@@ -580,12 +623,13 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
       rs-message  = '缺少 ClientRequestId, 已拒绝提交'.
       RETURN.
     ENDIF.
-    SELECT SINGLE report_run_id status FROM zai_rpt_run
+    " V1.0.4: 两列清单加逗号(strict mode)
+    SELECT SINGLE report_run_id, status FROM zai_rpt_run
       WHERE request_id = @iv_request_id AND created_by = @sy-uname
       INTO ( @DATA(lv_run_id), @DATA(lv_run_sts) ).
     IF sy-subrc = 0.
       rs-report_run_id = lv_run_id.
-      rs-short_id      = zcl_ai_task_service=>short_id( lv_run_id ).
+      rs-short_id      = zcl_ai_task_service=>short_id( CONV string( lv_run_id ) ).
       rs-status        = lv_run_sts.
       rs-created       = abap_false.
       rs-message       = '请求已存在, 返回原有运行(幂等)'.
@@ -618,7 +662,7 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
                report_id      = ls_def-report_id
                config_version = ls_def-config_version
                tcode          = ls_def-tcode
-               program        = ls_def-program
+               progname       = ls_def-progname
                params_json    = ls_pv-norm_json
                params_hash    = ls_pv-hash
                status         = gc_run_created
@@ -627,8 +671,9 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
     COMMIT WORK.
 
     " 步骤审计: VALIDATE OK(脱敏摘要, 不写完整参数)
+    " V1.0.4: CHAR32 实参直传 TYPE string 形参一律 CONV(§2.1 模式7)
     zcl_ai_report_mock=>add_step(
-      iv_report_run_id = lv_id iv_task_id = iv_task_id
+      iv_report_run_id = CONV string( lv_id ) iv_task_id = iv_task_id
       iv_phase = 'VALIDATE' iv_status = 'OK'
       iv_summary = |参数校验通过(哈希 { ls_pv-hash })| ).
 
@@ -636,10 +681,10 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
     " 适配器只拿规范化参数快照与运行 ID, 不做任何字符串拼接执行
     DATA: lv_sub_sts TYPE string, lv_sub_msg TYPE string.
     zcl_ai_report_mock=>submit(
-      EXPORTING iv_report_run_id = lv_id
-                iv_program       = ls_def-program
+      EXPORTING iv_report_run_id = CONV string( lv_id )
+                iv_program       = ls_def-progname
                 iv_params_json   = ls_pv-norm_json
-                iv_user          = sy-uname
+                iv_user          = CONV string( sy-uname )  " V1.0.6: CHAR12→string 形参(§2.1 模式7)
       IMPORTING ev_status        = lv_sub_sts
                 ev_message       = lv_sub_msg ).
 
@@ -650,13 +695,13 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
     COMMIT WORK.
 
     zcl_ai_report_mock=>add_step(
-      iv_report_run_id = lv_id iv_task_id = iv_task_id
+      iv_report_run_id = CONV string( lv_id ) iv_task_id = iv_task_id
       iv_phase = 'SUBMIT' iv_status = COND #( WHEN lv_sub_sts = gc_run_submitted
                                               THEN 'OK' ELSE 'ERROR' )
       iv_summary = lv_sub_msg ).
 
     rs-report_run_id = lv_id.
-    rs-short_id      = zcl_ai_task_service=>short_id( lv_id ).
+    rs-short_id      = zcl_ai_task_service=>short_id( CONV string( lv_id ) ).
     rs-status        = lv_sub_sts.
     rs-created       = abap_true.
     rs-message       = lv_sub_msg.
@@ -688,7 +733,7 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
 
     " 归属链: 运行 → 任务(任务 owner 已由 WHERE 过滤当前用户)
     DATA(ls_task) = zcl_ai_task_service=>get_task_owned(
-                      iv_task_id = ls_run-task_id iv_session_id = '' ).
+                      iv_task_id = CONV string( ls_run-task_id ) iv_session_id = '' ).
     IF ls_task-task_id IS INITIAL.
       rs-message = '运行所属任务不可访问'.
       RETURN.
@@ -707,7 +752,41 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
       IF lv_new_sts IS NOT INITIAL AND lv_new_sts <> ls_run-status.
         DATA(lv_now) = now14( ).
         CASE lv_new_sts.
-          WHEN gc_run_ready OR gc_run_failed OR gc_run_timeout OR gc_run_unknown.
+          WHEN gc_run_ready.
+            UPDATE zai_rpt_run SET status = @lv_new_sts, finished_at = @lv_now
+              WHERE report_run_id = @iv_report_run_id.
+            " V1.0.7: 首次到达 READY 登记结果索引 —— 修复链路断裂:
+            " 报表链路此前无人调用 register_artifact, zai_artifact 恒空,
+            " ReportResult 永远查空(数据分析链路有登记, 报表链路漏了)
+            SELECT COUNT(*) FROM zai_artifact
+              WHERE report_run_id = @iv_report_run_id.
+            IF sy-dbcnt = 0.
+              DATA(ls_def_r) = get_def( CONV string( ls_run-report_id ) ).
+              DATA: lv_rc  TYPE i,
+                    lv_sj  TYPE string.
+              CLEAR: lv_rc, lv_sj.
+              zcl_ai_report_mock=>read_result(
+                EXPORTING iv_report_run_id = iv_report_run_id
+                          iv_max_rows      = ls_def_r-max_rows
+                IMPORTING ev_row_count     = lv_rc
+                          ev_summary_json  = lv_sj ).
+              zcl_ai_task_service=>register_artifact(
+                iv_task_id      = CONV string( ls_run-task_id )
+                iv_session_id   = ls_task-session_id
+                iv_type         = zcl_ai_task_service=>gc_art_report_res
+                iv_source_type  = zcl_ai_task_service=>gc_src_snapshot
+                iv_source_ref   = CONV string( ls_run-report_id )  " V1.0.8: CHAR 列→string 形参
+                iv_label        = |{ ls_run-tcode } 运行结果|
+                iv_row_count    = lv_rc
+                iv_summary_json = lv_sj
+                iv_dataset_id   = iv_report_run_id ).
+              zcl_ai_report_mock=>add_step(
+                iv_report_run_id = iv_report_run_id
+                iv_task_id       = CONV string( ls_run-task_id )
+                iv_phase         = 'ARTIFACT' iv_status = 'OK'
+                iv_summary       = |结果索引已登记(行数 { lv_rc })| ).
+            ENDIF.
+          WHEN gc_run_failed OR gc_run_timeout OR gc_run_unknown.
             UPDATE zai_rpt_run SET status = @lv_new_sts, finished_at = @lv_now
               WHERE report_run_id = @iv_report_run_id.
           WHEN OTHERS.
@@ -716,7 +795,7 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
         ENDCASE.
         COMMIT WORK.
         zcl_ai_report_mock=>add_step(
-          iv_report_run_id = iv_report_run_id iv_task_id = ls_run-task_id
+          iv_report_run_id = iv_report_run_id iv_task_id = CONV string( ls_run-task_id )
           iv_phase = 'POLL' iv_status = 'OK'
           iv_summary = |状态推进 { ls_run-status } -> { lv_new_sts }| ).
         ls_run-status = lv_new_sts.
@@ -724,13 +803,22 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
     ENDIF.
 
     " 结果绑定状态(READY 时应已有 Artifact; 没有则为结果错误, 拒绝分析)
-    SELECT SINGLE artifact_id row_count error_code error_message
+    " V1.0.5: ZAI_RPT_RUN 无 ARTIFACT_ID 列(SE24 报 Unknown column) ——
+    " 结果绑定从 ZAI_ARTIFACT 反查(登记时写入 report_run_id+owner);
+    " row_count 以登记值为准(run 表该列运行时不回填, 恒空);
+    " 错误摘要仍在 run 表
+    SELECT SINGLE error_code, error_message
       FROM zai_rpt_run
       WHERE report_run_id = @iv_report_run_id
-      INTO ( @rs-artifact_id, @rs-row_count, @rs-error_code, @rs-error_message ).
+      INTO ( @rs-error_code, @rs-error_message ).
+    CLEAR: rs-artifact_id, rs-row_count.
+    SELECT SINGLE artifact_id, row_count
+      FROM zai_artifact
+      WHERE report_run_id = @iv_report_run_id AND owner = @sy-uname
+      INTO ( @rs-artifact_id, @rs-row_count ).
 
     rs-report_run_id = ls_run-report_run_id.
-    rs-short_id      = zcl_ai_task_service=>short_id( ls_run-report_run_id ).
+    rs-short_id      = zcl_ai_task_service=>short_id( CONV string( ls_run-report_run_id ) ).
     rs-task_id       = ls_run-task_id.
     rs-report_id     = ls_run-report_id.
     rs-status        = ls_run-status.
@@ -766,7 +854,7 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
     ENDIF.
 
     " 运行必须 READY(结果来源可确认才允许分析; 不按"最新数据"猜)
-    SELECT SINGLE status report_id FROM zai_rpt_run
+    SELECT SINGLE status, report_id FROM zai_rpt_run
       WHERE report_run_id = @ls_art-report_run_id AND created_by = @sy-uname
       INTO ( @DATA(lv_sts), @DATA(lv_rid) ).
     IF sy-subrc <> 0.
@@ -783,9 +871,9 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
           lv_schema TYPE string, lv_summary TYPE string, lv_rows TYPE string,
           lv_cnt TYPE i, lv_msg TYPE string.
     CLEAR: lv_schema, lv_summary, lv_rows, lv_cnt, lv_msg.
-    lv_def = get_def( lv_rid ).
+    lv_def = get_def( CONV string( lv_rid ) ).
     zcl_ai_report_mock=>read_result(
-      EXPORTING iv_report_run_id = ls_art-report_run_id
+      EXPORTING iv_report_run_id = CONV string( ls_art-report_run_id )
                 iv_max_rows      = lv_def-max_rows
       IMPORTING ev_schema_json   = lv_schema
                 ev_summary_json  = lv_summary
@@ -801,7 +889,7 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
     rs-artifact_id   = ls_art-artifact_id.
     rs-report_run_id = ls_art-report_run_id.
     rs-report_id     = lv_rid.
-    rs-label         = ls_art-label.
+    rs-label         = ls_art-display_label.
     rs-status        = 'AVAILABLE'.
     rs-schema_json   = lv_schema.
     rs-summary_json  = lv_summary.
@@ -829,7 +917,7 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
 
     rs-report_id       = is_row-report_id.
     rs-tcode           = is_row-tcode.
-    rs-program         = is_row-program.
+    rs-progname         = is_row-progname.
     rs-report_name     = is_row-report_name.
     rs-description     = is_row-description.
     rs-report_kind     = is_row-report_kind.
@@ -889,7 +977,7 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
         RETURN.
       ENDIF.
       DATA(lv_v) = condense( val = iv_val ).
-      IF is_p-length > 0 AND strlen( lv_v ) > is_p-length.
+      IF is_p-type_length > 0 AND strlen( lv_v ) > is_p-type_length.
         ev_err = 'TYPE'.
         RETURN.
       ENDIF.
@@ -920,7 +1008,7 @@ CLASS zcl_ai_report_service IMPLEMENTATION.
     ENDIF.
 
     " ---- CHAR(默认): 长度上限 ----
-    IF is_p-length > 0 AND strlen( iv_val ) > is_p-length.
+    IF is_p-type_length > 0 AND strlen( iv_val ) > is_p-type_length.
       ev_err = 'TYPE'.
       RETURN.
     ENDIF.

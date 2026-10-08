@@ -18,6 +18,11 @@
 * 依赖:   ZCL_AI_TASK_SERVICE(任务候选/归属), ZCL_AI_DOMAIN_CARDS(词表兜底)
 * 安装:   SE24 -> 创建类 -> 源代码粘帖 (ABAP 7.50)
 * V1.0    20261007: 首版(结构化意图协议校验 + 确定性快捷规则)
+* V1.0.1  20261008: validate_plan 内 IF 闭合笔误 ENDCASE→ENDIF(源码
+*   自带缺陷, SE24 报 Incorrect nesting CASE/ENDCASE; 无逻辑变更)
+* V1.0.2  20261008: 保留字修复连锁 —— resolve_task_by_object 引用
+*   ty_task.title 已随 V1.0.2(TASK_SERVICE) 改名 task_title, 同步 2 处;
+*   ty_candidate.title 视图键不变(模型/前端无感)
 * ★ 重贴后核对标记: quick_route 中 "表+表名" 规则必须在执行/继续规则
 *   之前(防 "分析表 ZTEST_DATA" 因 Z 开头误判 REPORT); 偏移/长度
 *   已全部先落中间变量(§2.1-2)
@@ -291,7 +296,7 @@ CLASS zcl_ai_intent_router IMPLEMENTATION.
     IF lv_module <> lv_expect_mod.
       ev_reason = |意图 { lv_intent } 只能属于模块 { lv_expect_mod }|.
       RETURN.
-    ENDCASE.
+    ENDIF.
 
     " 对象格式: TCODE 必须 TCode 形; 其他 kind 暂只允许 NONE/TABLE
     CASE to_upper( iv_object_kind ).
@@ -366,11 +371,12 @@ CLASS zcl_ai_intent_router IMPLEMENTATION.
         CONTINUE.
       ENDIF.
       " 标题含 TCode 或意图对象匹配(标题由后端生成时写入对象值)
-      IF ls_t-title CS iv_object OR ls_t-intent_code CS iv_object.
+      " V1.0.2: ty_task.title→task_title(DDIC 保留字修复连锁), 视图键 title 不变
+      IF ls_t-task_title CS iv_object OR ls_t-intent_code CS iv_object.
         APPEND VALUE #( task_id  = ls_t-task_id
                         short_id = zcl_ai_task_service=>short_id( ls_t-task_id )
                         module_id = ls_t-module_id
-                        title    = ls_t-title
+                        title    = ls_t-task_title
                         status   = ls_t-status ) TO et_candidates.
       ENDIF.
     ENDLOOP.

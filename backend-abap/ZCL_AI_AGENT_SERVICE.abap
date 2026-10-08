@@ -1511,7 +1511,10 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     " 待填参数清单(必填标注; 多值/日期范围标注; 帮助文本透出)
     DATA: lv_form TYPE string,
           lv_pj   TYPE string.
-    lv_pj = '['.
+    " V15.0.1 20261008: pending 由纯数组升级为对象(带报表标识) ——
+    " 任务卡提交 StartReportRun 需要 report_id, 纯数组前端拿不到
+    lv_pj = '{"report_id":"' && ls_def-report_id &&
+            '","tcode":"' && ls_def-tcode && '","params":['.
     DATA lv_first TYPE abap_bool VALUE abap_true.
     LOOP AT lt_p INTO DATA(ls_p).
       DATA(lv_req) = COND string( WHEN ls_p-required = abap_true THEN '必填' ELSE '可选' ).
@@ -1519,20 +1522,20 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         WHEN ls_p-multi_value = abap_true THEN ', 支持多值'
         WHEN ls_p-range_allowed = abap_true THEN ', 支持范围'
         ELSE '' ).
-      lv_form = |{ lv_form }- { ls_p-label }({ lv_req }{ lv_kind }| &&
+      lv_form = |{ lv_form }- { ls_p-display_label }({ lv_req }{ lv_kind }| &&
                 COND string( WHEN ls_p-help_text IS NOT INITIAL
                              THEN |, { ls_p-help_text }| ELSE `` ) && |)\n|.
       IF lv_first = abap_false.
         lv_pj = lv_pj && ','.
       ENDIF.
       lv_first = abap_false.
-      lv_pj = |{ lv_pj }\{"param_id":"{ ls_p-param_id }","label":"{ ls_p-label }",| &&
+      lv_pj = |{ lv_pj }\{"param_id":"{ ls_p-param_id }","label":"{ ls_p-display_label }",| &&
               |"required":{ COND string( WHEN ls_p-required = abap_true THEN 'true' ELSE 'false' ) },| &&
               |"data_type":"{ ls_p-data_type }",| &&
               |"multi_value":{ COND string( WHEN ls_p-multi_value = abap_true THEN 'true' ELSE 'false' ) },| &&
               |"range_allowed":{ COND string( WHEN ls_p-range_allowed = abap_true THEN 'true' ELSE 'false' ) }\}|.
     ENDLOOP.
-    lv_pj = lv_pj && ']'.
+    lv_pj = lv_pj && ']}'.
 
     ev_answer =
       |{ ev_answer }\n【需要填写参数】(在任务卡表单中填写后提交执行;\n| &&

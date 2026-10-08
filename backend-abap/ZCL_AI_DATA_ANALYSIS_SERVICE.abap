@@ -20,6 +20,10 @@
 * 依赖:   无 ABAP 类依赖(纯本地查询), 被 ZCL_AI_AGENT_SERVICE /
 *         ZCL_AI_AGENT_GUARD / ZCL_ZAI_CHAT_DPC_EXT 消费
 * 安装:   SE24 -> 创建类 -> 源代码粘帖 (适用 S/4HANA 760, ABAP 7.5x)
+* V13.3  20261008: 白名单 +ZIDPMM455(MIH 参数维护表, ZDPMM702 主表)
+*   ★ 重贴后核对标记: grep ZIDPMM455 应有 2 处(常量+注释); 原
+*   ZIDPPP099 能力不变; 本类重贴激活后 AGENT_GUARD/AGENT_SERVICE
+*   若显示 inactive 重激活即可(签名未变, 只改常量值)
 * 激活顺序: 本类 -> ZCL_AI_TOOL_REGISTRY -> ZCL_AI_AGENT_GUARD
 *           -> ZCL_AI_AGENT_SERVICE -> ZCL_ZAI_CHAT_DPC_EXT
 *=======================================================================
@@ -132,9 +136,22 @@ CLASS zcl_ai_data_analysis_service DEFINITION
                gc_model_chars TYPE i VALUE 120000, " 回填模型总字符预算(计划 §8)
                gc_source      TYPE string VALUE 'SAP ABAP Service'.
 
-    " 能力目录(P0 固定注册; P2 迁配置表)
+    " V13.2: 表级白名单(人工审核, '| '分隔; 加新表只需在此追加表名),
+    " 字段清单由 DDIC 自动生成(build_cap_from_ddic), 免逐字段手工注册
+    CONSTANTS gc_allow_tables TYPE string VALUE 'ZIDPPP099|ZIDPMM455'. " V13.3 20261008: +ZIDPMM455(MIH 参数维护表, ZDPMM702 主表)
+
+    " V13.2: 敏感列 pattern(逗号分隔, 命中 CP 匹配则该列不进目录/不出现在结果;
+    " 空 = 不过滤)。示例: '*BANK*,*PASSW*,*SALARY*'
+    CONSTANTS gc_sens_fields TYPE string VALUE ''.
+
+    " 能力目录(P0 固定注册; V13.2 表级白名单+DDIC 自动字段)
     CLASS-METHODS get_capabilities
       RETURNING VALUE(rt_caps) TYPE tt_capability.
+
+    " V13.2: 按 DDIC 元数据生成单表能力(字段=白名单列投影+可过滤+可分组)
+    CLASS-METHODS build_cap_from_ddic
+      IMPORTING iv_tab        TYPE string
+      RETURNING VALUE(rs_cap) TYPE ty_capability.
 
     " 计划白名单校验: 实体/字段/维度/指标/操作/操作符/过滤值全量核对
     " (通过返回空, 否则返回用户可读错误; 不修改计划)
@@ -251,6 +268,129 @@ CLASS zcl_ai_data_analysis_service IMPLEMENTATION.
                     dimension = abap_true ) TO ls_cap-fields.
 
     APPEND ls_cap TO rt_caps.
+
+    " ---- V13.2: 表级白名单 → DDIC 自动生成能力(加表只改 gc_allow_tables) ----
+    SPLIT gc_allow_tables AT '|' INTO TABLE DATA(lt_tabs).
+    LOOP AT lt_tabs INTO DATA(lv_allow).
+      DATA(lv_name) = to_upper( condense( lv_allow ) ).
+      IF lv_name IS INITIAL.
+        CONTINUE.
+      ENDIF.
+      DATA(ls_zcap) = build_cap_from_ddic( iv_tab = lv_name ).
+      IF ls_zcap-entity IS NOT INITIAL.
+        APPEND ls_zcap TO rt_caps.
+      ENDIF.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+  " V13.2: 按 DDIC 元数据生成单表能力。
+  " - 字段清单/类型/长度/描述全部来自 DDIF_FIELDINFO_GET(与查表结构工具同一 FM)
+  " - ftype: DATS→D; QUAN/CURR/DEC/INT*/FLTP→N(JSON 数值输出); 其余→C
+  " - dimension 全部 X(可分组); 高基数主键分组受 max_rows 兜底
+  " - MANDT 跳过(Open SQL 自动带客户端处理); 敏感列按 gc_sens_fields 过滤
+  METHOD build_cap_from_ddic.
+
+    CLEAR rs_cap.
+
+    " 1) 表存在性(透明表/视图)
+    SELECT SINGLE tabname FROM dd02l
+      WHERE tabname  = @iv_tab
+        AND tabclass IN ( 'TRANSP', 'VIEW' )
+      INTO @DATA(lv_tab).
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+
+    " 2) 字段信息(标准 FM, 与 Agent 查表结构工具同源)
+    DATA: lt_dfies TYPE STANDARD TABLE OF dfies WITH DEFAULT KEY.
+    CALL FUNCTION 'DDIF_FIELDINFO_GET'
+      EXPORTING
+        tabname        = CONV ddobjname( iv_tab )
+        langu          = sy-langu
+      TABLES
+        dfies_tab      = lt_dfies
+      EXCEPTIONS
+        not_found      = 1
+        internal_error = 2
+        OTHERS         = 3.
+    IF sy-subrc <> 0 OR lines( lt_dfies ) = 0.
+      RETURN.
+    ENDIF.
+
+    " 3) 表描述
+    SELECT SINGLE ddtext FROM dd02t
+      WHERE tabname = @iv_tab AND ddlanguage = @sy-langu
+      INTO @DATA(lv_ddtext).
+
+    rs_cap-entity      = iv_tab.
+    rs_cap-label       = COND string( WHEN lv_ddtext IS INITIAL THEN iv_tab
+                                      ELSE CONV string( lv_ddtext ) ).
+    rs_cap-operations  = 'detail,group,trend'.
+    rs_cap-metrics     = 'count'.
+    rs_cap-max_rows    = 1000.
+    rs_cap-timeout_sec = 30.
+    rs_cap-permission  = 'S_TABU_DIS/S_TABU_NAM(需SAP端确认)'.
+    CLEAR rs_cap-sensitive_fields.
+
+    " 4) 敏感列 pattern 预解析(空常量 = 不过滤)
+    DATA: lt_sens TYPE STANDARD TABLE OF string WITH DEFAULT KEY.
+    IF gc_sens_fields IS NOT INITIAL.
+      SPLIT gc_sens_fields AT ',' INTO TABLE lt_sens.
+    ENDIF.
+
+    " 5) 逐字段映射
+    LOOP AT lt_dfies INTO DATA(ls_f).
+      " 客户端字段跳过(Open SQL 自动处理)
+      IF ls_f-fieldname = 'MANDT'.
+        CONTINUE.
+      ENDIF.
+      " 敏感列过滤(CP 模式匹配; LOOP 不设 sy-subrc, 用布尔标志判命中)
+      DATA lv_sens_hit TYPE abap_bool.
+      CLEAR lv_sens_hit.
+      LOOP AT lt_sens INTO DATA(lv_p).
+        DATA(lv_pat) = to_upper( condense( lv_p ) ).
+        IF lv_pat IS INITIAL.
+          CONTINUE.
+        ENDIF.
+        IF ls_f-fieldname CP lv_pat.
+          lv_sens_hit = abap_true.
+          EXIT.
+        ENDIF.
+      ENDLOOP.
+      IF lv_sens_hit = abap_true.
+        CONTINUE.
+      ENDIF.
+      " 类型映射
+      DATA lv_ftype TYPE c LENGTH 1.
+      lv_ftype = COND #( WHEN ls_f-datatype = 'DATS' THEN 'D'
+                         WHEN ls_f-datatype = 'QUAN' OR ls_f-datatype = 'CURR'
+                           OR ls_f-datatype = 'DEC'  OR ls_f-datatype = 'FLTP'
+                           OR ls_f-datatype = 'INT1' OR ls_f-datatype = 'INT2'
+                           OR ls_f-datatype = 'INT4' OR ls_f-datatype = 'INT8'
+                           OR ls_f-datatype = 'DF16_DEC' OR ls_f-datatype = 'DF34_DEC'
+                           THEN 'N'
+                         ELSE 'C' ).
+      DATA lv_num TYPE abap_bool.
+      lv_num = xsdbool( lv_ftype = 'N' ).
+      APPEND VALUE #(
+        name      = CONV string( ls_f-fieldname )
+        label     = CONV string( COND #( WHEN ls_f-scrtext_m IS NOT INITIAL
+                                         THEN ls_f-scrtext_m ELSE ls_f-fieldtext ) )
+        ftype     = lv_ftype
+        length    = ls_f-leng
+        dimension = abap_true
+        numeric   = lv_num ) TO rs_cap-fields.
+      " date_field 取第一个日期字段(趋势操作基准)
+      IF lv_ftype = 'D' AND rs_cap-date_field IS INITIAL.
+        rs_cap-date_field = CONV string( ls_f-fieldname ).
+      ENDIF.
+    ENDLOOP.
+
+    IF lines( rs_cap-fields ) = 0.
+      CLEAR rs_cap.
+    ENDIF.
 
   ENDMETHOD.
 
