@@ -573,17 +573,23 @@ sap.ui.define([
                         }
                         var that = this;
                         var oModel = this._getModel();
+                        var mParams = {
+                                SessionId: oPayload.sessionId,
+                                Question: oPayload.question,
+                                ModelId: oPayload.modelId || "",
+                                TaskId: oPayload.taskId || "",
+                                ClientRequestId: oPayload.clientRequestId || "",
+                                FocusedArtifactId: oPayload.focusedArtifactId || ""
+                        };
+                        // 20261011：会话场景（SEGW 给 AnalyzeTask 加了 Scene 参数后才发送；
+                        // 未加时不发，后端按"自动"处理，不会因多余参数报错）
+                        if (oPayload.scene && this._fiHasParam("AnalyzeTask", "Scene")) {
+                                mParams.Scene = oPayload.scene;
+                        }
                         return new Promise(function (fnResolve, fnReject) {
                                 oModel.callFunction("/AnalyzeTask", {
                                         method: "POST",
-                                        urlParameters: {
-                                                SessionId: oPayload.sessionId,
-                                                Question: oPayload.question,
-                                                ModelId: oPayload.modelId || "",
-                                                TaskId: oPayload.taskId || "",
-                                                ClientRequestId: oPayload.clientRequestId || "",
-                                                FocusedArtifactId: oPayload.focusedArtifactId || ""
-                                        },
+                                        urlParameters: mParams,
                                         success: function (oData) {
                                                 that._taskApiAvailable = true;
                                                 var res = TraceService.normalizeResult(oData, oPayload.modelId);
@@ -946,7 +952,9 @@ sap.ui.define([
                                         taskId: o.taskId || "",
                                         clientRequestId: o.clientRequestId || "",
                                         // 20261011：会话中正在看的报表结果（"分析一下这个结果"），后端校验归属
-                                        focusedArtifactId: o.focusedArtifactId || ""
+                                        focusedArtifactId: o.focusedArtifactId || "",
+                                        // 20261011：会话场景（仅新会话首条消息生效，后端以库内为准）
+                                        scene: o.scene || ""
                                 });
                         }
                         return this.send({
@@ -1076,6 +1084,38 @@ sap.ui.define([
                 },
 
                 /**
+                  * 20261011：Agent 可用模型白名单（ZAI_CHAT_CFG；后端同口径强制校验）
+                  * 键：ALL=AGENT_MODELS（全部场景）/ REPORT / DATA / INVENTORY / CODE（场景专属，优先）
+                  * @returns {Promise<object>} {ALL:[ids], REPORT:[ids], ...}；空数组 = 不限制
+                  */
+                AGENT_MODEL_KEYS: {
+                        ALL: "AGENT_MODELS", REPORT: "AGENT_MODELS_RPT", DATA: "AGENT_MODELS_DATA",
+                        INVENTORY: "AGENT_MODELS_INV", CODE: "AGENT_MODELS_CODE"
+                },
+
+                getAgentModelRules: function () {
+                        var that = this;
+                        var aScenes = Object.keys(this.AGENT_MODEL_KEYS);
+                        return Promise.all(aScenes.map(function (k) {
+                                return that.getConfigValue(that.AGENT_MODEL_KEYS[k]).catch(function () { return ""; });
+                        })).then(function (aVals) {
+                                var mOut = {};
+                                aScenes.forEach(function (k, i) {
+                                        mOut[k] = String(aVals[i] || "").toUpperCase().split(/[\s,|;，、]+/).filter(Boolean);
+                                });
+                                return mOut;
+                        });
+                },
+
+                /** 保存白名单（管理员；空数组 = 清空该键 = 不限制） */
+                saveAgentModelRules: function (mRules) {
+                        var that = this;
+                        return Promise.all(Object.keys(this.AGENT_MODEL_KEYS).map(function (k) {
+                                return that.saveConfigValue(that.AGENT_MODEL_KEYS[k], ((mRules || {})[k] || []).join(","));
+                        }));
+                },
+
+                /**
                  * V10：更新会话（重命名 / 置顶切换，后端仅限本人会话）
                  * @param {object} oUpd {sessionId, title, pinned} title/pinned 可选
                  * @returns {Promise<string>} 后端 Message
@@ -1178,7 +1218,7 @@ sap.ui.define([
                                                         "2. 按《ABAP 后端实施文档》在 SAP 端创建 ZAI_CHAT_SRV 服务",
                                                         "3. 在 **设置 → 模型管理** 中维护你的本地私有化大模型",
                                                         "",
-                                                        "连接后提问中带上 Z/Y 开头的对象名（如 `ZAPP_IDP_0018`），后端会自动提取源码交给大模型分析，回复中的代码块可一键复制：",
+                                                        "对话模式是纯 AI 问答，不读取 SAP 系统数据；要解读系统里的程序 / 查表 / 跑报表，请切到 Agent 选择对应场景。回复中的代码块可一键复制：",
                                                         "",
                                                         "```abap",
                                                         "\" 连接真实后端后的典型分析回复示例",
@@ -1345,7 +1385,7 @@ sap.ui.define([
                                                 ].join("\n");
                                         }
 
-                                        // 与 _mockSend 相同的本地持久化（通用 Agent 会话，AgentType=GENERAL）
+                                        // 与 _mockSend 相同的本地持久化（20261011：与后端一致 —— 新会话写入场景，之后固定）
                                         var oStore = Service._mockStore();
                                         var aHist = oStore.messages[oPayload.sessionId] = oStore.messages[oPayload.sessionId] || [];
                                         var sNow = Service._mockTime();
@@ -1361,14 +1401,15 @@ sap.ui.define([
                                                         CreatedAt: sNow,
                                                         ChangedAt: sNow,
                                                         Mode: "AGENT",                    // V13：通用 Agent 会话
-                                                        AgentType: "GENERAL",
+                                                        AgentType: /^(REPORT|DATA|INVENTORY|CODE)$/.test(String(oPayload.scene || "").toUpperCase())
+                                                                ? String(oPayload.scene).toUpperCase() : "GENERAL",
                                                         Status: "COMPLETED"
                                                 });
                                         } else {
                                                 oSess.ChangedAt = sNow;
                                                 oSess.MsgCount = String((parseInt(oSess.MsgCount || "0", 10) || 0) + 2);
                                                 oSess.Mode = "AGENT";
-                                                oSess.AgentType = "GENERAL";
+                                                oSess.AgentType = oSess.AgentType || "GENERAL";   // 场景固定，不改写
                                                 oSess.Status = "COMPLETED";
                                         }
                                         Service._mockSave(oStore);
@@ -1457,6 +1498,25 @@ sap.ui.define([
                                 }
                                 return oResp.headers.get("x-csrf-token") || "";
                         });
+                },
+
+                /** 20261011：服务 metadata 里某函数导入是否声明了某参数（SEGW 未改时不发新参数） */
+                _fiHasParam: function (sFi, sParam) {
+                        var oMeta = null;
+                        try { oMeta = this._getModel().getServiceMetadata(); } catch (e) { oMeta = null; }
+                        var bHit = false;
+                        ((oMeta && oMeta.dataServices && oMeta.dataServices.schema) || []).forEach(function (oSchema) {
+                                (oSchema.entityContainer || []).forEach(function (oEc) {
+                                        (oEc.functionImport || []).forEach(function (oFi) {
+                                                if (oFi.name === sFi) {
+                                                        (oFi.parameter || []).forEach(function (p) {
+                                                                if (p.name === sParam) { bHit = true; }
+                                                        });
+                                                }
+                                        });
+                                });
+                        });
+                        return bHit;
                 },
 
                 /** 20261011：是否 403（CSRF 失效）—— 兼容 "HTTP 403" 与 "HTTP 403 - <响应体>" 两种错误格式 */

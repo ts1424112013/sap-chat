@@ -35,9 +35,18 @@
 *   ③ 规则 1 表名匹配前先屏蔽 报表/图表/列表/表格/表单 —— 防 "执行报表
 *     ZDPMM702" 被当成表分析、"ALV表格" 被当成表 ALV;
 *   ④ validate_plan 允许 object_kind = ARTIFACT
+* V1.0.5  20261011: 会话场景(一个 Agent 入口 + 会话级场景, AGENT_TYPE) ——
+*   quick_route 新增可选 iv_scene: AUTO(缺省/旧会话) = 原混合路由不变;
+*   REPORT/DATA/INVENTORY/CODE = 先按原规则判, 再按场景约束(apply_scene):
+*   报表场景只出报表意图(点名 Z 对象 = 报表卡, 其余 = 追问本会话报表结果),
+*   数据分析场景永不触发报表(Z 词元按表名), 库存场景只走库存, 代码场景只
+*   走代码; 场景外的诉求置 out_of_scene(由 AGENT_SERVICE 如实提示换场景);
+*   原 quick_route 主体原样改名为私有 route_auto; ty_intent 末尾加 out_of_scene;
+*   validate_plan 允许 object_kind = PROGRAM
 * ★ 重贴后核对标记: quick_route 中 "表+表名" 规则必须在执行/继续规则
 *   之前(防 "分析表 ZTEST_DATA" 因 Z 开头误判 REPORT); 偏移/长度
-*   已全部先落中间变量(§2.1-2); 规则 4b 在 TCode 块之后、规则 5 之前
+*   已全部先落中间变量(§2.1-2); 规则 4b 在 TCode 块之后、规则 5 之前;
+*   V1.0.5: 规则主体在 route_auto, quick_route 只做 route_auto + apply_scene
 *=======================================================================
 CLASS zcl_ai_intent_router DEFINITION
   PUBLIC
@@ -56,6 +65,13 @@ CLASS zcl_ai_intent_router DEFINITION
                gc_int_code          TYPE string VALUE 'CODE_ANALYSIS'.
 
     " ---- 任务动作(02 设计 §4.3 TaskAction 白名单来源) ----
+    " ---- V1.0.5: 会话场景(存 ZAI_CHAT_SESS.AGENT_TYPE; 空/GENERAL = AUTO) ----
+    CONSTANTS: gc_scene_auto      TYPE string VALUE 'AUTO',
+               gc_scene_report    TYPE string VALUE 'REPORT',
+               gc_scene_data      TYPE string VALUE 'DATA',
+               gc_scene_inventory TYPE string VALUE 'INVENTORY',
+               gc_scene_code      TYPE string VALUE 'CODE'.
+
     CONSTANTS: gc_act_create  TYPE string VALUE 'CREATE_TASK',
                gc_act_resume  TYPE string VALUE 'RESUME_TASK',
                gc_act_supply  TYPE string VALUE 'SUPPLY_PARAM',
@@ -72,14 +88,27 @@ CLASS zcl_ai_intent_router DEFINITION
              task_id       TYPE string,       " 候选任务(未核验!)
              needs_clarify TYPE abap_bool,
              reason        TYPE string,
+             out_of_scene  TYPE abap_bool,    " V1.0.5: 诉求不属于当前会话场景
            END OF ty_intent.
 
     " 确定性快捷路由(供 AGENT_SERVICE 在 match_domain 之后调用):
     " 命中无歧义规则时返回意图与对象; 未命中返回 general(调用方降级旧链路)
+    " V1.0.5: iv_scene 非 AUTO 时按会话场景约束结果(见 apply_scene)
     CLASS-METHODS quick_route
       IMPORTING iv_question   TYPE string
                 iv_session_id TYPE string
+                iv_scene      TYPE string OPTIONAL
       RETURNING VALUE(rs)     TYPE ty_intent.
+
+    " V1.0.5: AGENT_TYPE → 场景(空/GENERAL/未知 = AUTO; 旧 INVENTORY 会话 = 库存)
+    CLASS-METHODS normalize_scene
+      IMPORTING iv_agent_type TYPE string
+      RETURNING VALUE(rv)     TYPE string.
+
+    " V1.0.5: 场景中文名(提示文案用)
+    CLASS-METHODS scene_label
+      IMPORTING iv_scene  TYPE string
+      RETURNING VALUE(rv) TYPE string.
 
     " 校验模型输出的结构化意图(02 设计 §4.1):
     " intent 是否注册 / module 与 intent 匹配 / 对象格式合法;
@@ -98,6 +127,19 @@ CLASS zcl_ai_intent_router DEFINITION
       RETURNING VALUE(rv)   TYPE abap_bool.
 
   PRIVATE SECTION.
+
+    " V1.0.5: 原 quick_route 主体(混合路由规则 1~5, 逻辑未改)
+    CLASS-METHODS route_auto
+      IMPORTING iv_question   TYPE string
+                iv_session_id TYPE string
+      RETURNING VALUE(rs)     TYPE ty_intent.
+
+    " V1.0.5: 会话场景约束(只收窄, 不新增能力; 场景外置 out_of_scene)
+    CLASS-METHODS apply_scene
+      IMPORTING iv_question   TYPE string
+                iv_session_id TYPE string
+                iv_scene      TYPE string
+      CHANGING  cs_intent     TYPE ty_intent.
 
     " 从问题里提取 TCode 形词元(Z 开头, 去掉标点)
     CLASS-METHODS extract_tcode_token
@@ -121,6 +163,185 @@ CLASS zcl_ai_intent_router IMPLEMENTATION.
 
 
   METHOD quick_route.
+
+    " V1.0.5: 先按原混合规则判, 再按会话场景收窄
+    rs = route_auto( iv_question = iv_question iv_session_id = iv_session_id ).
+    DATA(lv_scene) = normalize_scene( iv_scene ).
+    IF lv_scene <> gc_scene_auto.
+      apply_scene( EXPORTING iv_question   = iv_question
+                             iv_session_id = iv_session_id
+                             iv_scene      = lv_scene
+                   CHANGING  cs_intent     = rs ).
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD normalize_scene.
+
+    rv = to_upper( iv_agent_type ).
+    CONDENSE rv NO-GAPS.
+    CASE rv.
+      WHEN gc_scene_report OR gc_scene_data OR gc_scene_inventory OR gc_scene_code.
+        " 显式场景
+      WHEN OTHERS.
+        rv = gc_scene_auto.   " 空 / GENERAL / AUTO / 未知 → 原混合路由
+    ENDCASE.
+
+  ENDMETHOD.
+
+
+  METHOD scene_label.
+
+    DATA(lv_scene) = normalize_scene( iv_scene ).
+    CASE lv_scene.
+      WHEN gc_scene_report.
+        rv = '报表执行'.
+      WHEN gc_scene_data.
+        rv = '数据分析'.
+      WHEN gc_scene_inventory.
+        rv = '库存查询'.
+      WHEN gc_scene_code.
+        rv = '代码分析'.
+      WHEN OTHERS.
+        rv = '自动'.
+    ENDCASE.
+
+  ENDMETHOD.
+
+
+  METHOD apply_scene.
+
+    DATA(lv_up) = to_upper( iv_question ).
+    DATA(lv_tc) = extract_tcode_token( iv_question ).
+    " "要执行报表"的明确动作(不含"提交": 数据问题里常见"提交日期"等字样)
+    FIND REGEX '执行|运行|跑一下|跑一次|重跑' IN lv_up.
+    DATA(lv_exec) = xsdbool( sy-subrc = 0 AND lv_tc IS NOT INITIAL ).
+
+    CASE iv_scene.
+
+      WHEN gc_scene_report.
+        " ---- 报表执行: 只出报表意图; 结果分析不调工具 ----
+        IF cs_intent-module_id = zcl_ai_task_service=>gc_mod_report.
+          RETURN.   " 执行 / 查看 / 分析结果, 原样
+        ENDIF.
+        IF cs_intent-object_kind = 'TABLE'
+           OR cs_intent-module_id = zcl_ai_task_service=>gc_mod_inventory.
+          cs_intent-out_of_scene = abap_true.
+          cs_intent-reason = COND #( WHEN cs_intent-object_kind = 'TABLE'
+                                     THEN |查表/统计表数据属于「数据分析」场景|
+                                     ELSE |库存查询属于「库存查询」场景| ).
+          RETURN.
+        ENDIF.
+        IF lv_tc IS NOT INITIAL.
+          " 点名 Z 对象 = 报表(登记卡/参数; 未登记由报表服务如实拒绝)
+          CLEAR cs_intent.
+          cs_intent-module_id    = zcl_ai_task_service=>gc_mod_report.
+          cs_intent-intent_code  = COND #( WHEN lv_exec = abap_true
+                                           THEN gc_int_run_analyze ELSE gc_int_view_report ).
+          cs_intent-action       = COND #( WHEN lv_exec = abap_true
+                                           THEN gc_act_execute ELSE gc_act_create ).
+          cs_intent-object_kind  = 'TCODE'.
+          cs_intent-object_value = lv_tc.
+          resolve_task_by_object(
+            EXPORTING iv_session_id = iv_session_id
+                      iv_object     = lv_tc
+                      iv_module_id  = zcl_ai_task_service=>gc_mod_report
+            IMPORTING ev_task_id    = cs_intent-task_id ).
+          cs_intent-reason = |报表场景: 按报表 { lv_tc } 处理|.
+          RETURN.
+        ENDIF.
+        " 其余问题 = 对本会话报表结果的追问(AGENT_SERVICE 定位结果/无结果给场景说明)
+        CLEAR cs_intent.
+        cs_intent-module_id   = zcl_ai_task_service=>gc_mod_report.
+        cs_intent-intent_code = gc_int_analyze_art.
+        cs_intent-action      = gc_act_analyze.
+        cs_intent-object_kind = 'ARTIFACT'.
+        cs_intent-reason      = |报表场景: 追问本会话的报表结果|.
+
+      WHEN gc_scene_data.
+        " ---- 数据分析: 永不触发报表; Z 词元按表名 ----
+        IF cs_intent-module_id = zcl_ai_task_service=>gc_mod_report.
+          IF cs_intent-intent_code = gc_int_run_analyze AND lv_exec = abap_true.
+            cs_intent-out_of_scene = abap_true.
+            cs_intent-reason = |执行报表属于「报表执行」场景|.
+            RETURN.
+          ENDIF.
+          DATA(lv_kind) = cs_intent-object_kind.
+          CLEAR cs_intent.
+          cs_intent-module_id   = zcl_ai_task_service=>gc_mod_data.
+          cs_intent-intent_code = gc_int_table_data.
+          cs_intent-action      = gc_act_create.
+          IF lv_kind = 'TCODE' AND lv_tc IS NOT INITIAL.
+            cs_intent-object_kind  = 'TABLE'.
+            cs_intent-object_value = lv_tc.
+            cs_intent-reason       = |数据分析场景: { lv_tc } 按表名处理|.
+          ELSE.
+            cs_intent-object_kind = 'NONE'.
+            cs_intent-reason      = |数据分析场景: 追问已有数据结果|.
+          ENDIF.
+          RETURN.
+        ENDIF.
+        IF cs_intent-module_id <> zcl_ai_task_service=>gc_mod_data.
+          " 库存/通用问题在本场景统一用数据分析工具回答
+          cs_intent-module_id   = zcl_ai_task_service=>gc_mod_data.
+          cs_intent-intent_code = gc_int_table_data.
+          cs_intent-action      = gc_act_create.
+          cs_intent-object_kind = 'NONE'.
+          cs_intent-reason      = |数据分析场景|.
+        ENDIF.
+
+      WHEN gc_scene_inventory.
+        " ---- 库存查询: 只走库存工具 ----
+        IF cs_intent-module_id = zcl_ai_task_service=>gc_mod_report
+           AND cs_intent-intent_code = gc_int_run_analyze AND lv_exec = abap_true.
+          cs_intent-out_of_scene = abap_true.
+          cs_intent-reason = |执行报表属于「报表执行」场景|.
+          RETURN.
+        ENDIF.
+        IF cs_intent-object_kind = 'TABLE'.
+          cs_intent-out_of_scene = abap_true.
+          cs_intent-reason = |查表/写 SQL 属于「数据分析」场景|.
+          RETURN.
+        ENDIF.
+        CLEAR cs_intent.
+        cs_intent-module_id   = zcl_ai_task_service=>gc_mod_inventory.
+        cs_intent-intent_code = gc_int_inventory.
+        cs_intent-action      = gc_act_create.
+        cs_intent-object_kind = 'MATERIAL'.
+        cs_intent-reason      = |库存查询场景|.
+
+      WHEN gc_scene_code.
+        " ---- 代码分析: 只读源码/表结构, 不执行报表 ----
+        IF cs_intent-module_id = zcl_ai_task_service=>gc_mod_report
+           AND cs_intent-intent_code = gc_int_run_analyze AND lv_exec = abap_true.
+          cs_intent-out_of_scene = abap_true.
+          cs_intent-reason = |执行报表属于「报表执行」场景(这里可以解读该报表的程序逻辑)|.
+          RETURN.
+        ENDIF.
+        DATA(lv_tab_kind) = xsdbool( cs_intent-object_kind = 'TABLE' ).
+        DATA(lv_obj) = cs_intent-object_value.
+        CLEAR cs_intent.
+        cs_intent-module_id   = zcl_ai_task_service=>gc_mod_code.
+        cs_intent-intent_code = gc_int_code.
+        cs_intent-action      = gc_act_create.
+        IF lv_tab_kind = abap_true.
+          cs_intent-object_kind  = 'TABLE'.
+          cs_intent-object_value = lv_obj.
+        ELSEIF lv_tc IS NOT INITIAL.
+          cs_intent-object_kind  = 'PROGRAM'.
+          cs_intent-object_value = lv_tc.
+        ELSE.
+          cs_intent-object_kind = 'NONE'.
+        ENDIF.
+        cs_intent-reason = |代码分析场景|.
+
+    ENDCASE.
+
+  ENDMETHOD.
+
+
+  METHOD route_auto.
 
     CLEAR rs.
     " 缺省: 通用(调用方继续走旧 match_domain 链路, 不受影响)
@@ -371,7 +592,7 @@ CLASS zcl_ai_intent_router IMPLEMENTATION.
           ev_reason = |对象值 { iv_object_val } 不是合法的表名形式|.
           RETURN.
         ENDIF.
-      WHEN 'MATERIAL' OR 'NONE' OR '' OR 'ARTIFACT'.   " V1.0.4: ARTIFACT = 会话内报表结果
+      WHEN 'MATERIAL' OR 'NONE' OR '' OR 'ARTIFACT' OR 'PROGRAM'.   " V1.0.4: ARTIFACT = 会话内报表结果; V1.0.5: PROGRAM = 代码对象
         " 通过(具体校验由各模块工具参数 Schema 承担)
       WHEN OTHERS.
         ev_reason = |未注册的对象类型: { iv_object_kind }|.

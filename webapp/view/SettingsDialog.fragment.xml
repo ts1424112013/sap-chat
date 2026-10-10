@@ -101,6 +101,39 @@
                                                                 <Text text="{i18n>codeAclReadonly}" class="codeAclHint" wrapping="true"
                                                                         visible="{= !${settings>/isAdmin} }"/>
                                                         </VBox>
+                                                        <!-- 20261011：Agent 可用模型（ZAI_CHAT_CFG AGENT_MODELS[_场景]；空 = 不限制；后端强制校验） -->
+                                                        <VBox id="agentModelCard" class="codeAclCard" visible="{settings>/isAdmin}">
+                                                                <HBox alignItems="Center" justifyContent="SpaceBetween">
+                                                                        <Title level="H5" text="{i18n>agentModelsTitle}" class="codeAclTitle"/>
+                                                                        <Button text="{i18n>agentModelsSave}" type="Emphasized" press=".onSaveAgentModelRules"/>
+                                                                </HBox>
+                                                                <Text text="{i18n>agentModelsHint}" class="codeAclHint" wrapping="true"/>
+                                                                <Label text="{i18n>agentModelsAll}" class="agentModelLbl"/>
+                                                                <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/ALL}"
+                                                                        items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsAny}">
+                                                                        <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
+                                                                </MultiComboBox>
+                                                                <Label text="{i18n>agentModelsReport}" class="agentModelLbl"/>
+                                                                <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/REPORT}"
+                                                                        items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
+                                                                        <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
+                                                                </MultiComboBox>
+                                                                <Label text="{i18n>agentModelsData}" class="agentModelLbl"/>
+                                                                <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/DATA}"
+                                                                        items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
+                                                                        <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
+                                                                </MultiComboBox>
+                                                                <Label text="{i18n>agentModelsInventory}" class="agentModelLbl"/>
+                                                                <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/INVENTORY}"
+                                                                        items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
+                                                                        <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
+                                                                </MultiComboBox>
+                                                                <Label text="{i18n>agentModelsCode}" class="agentModelLbl"/>
+                                                                <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/CODE}"
+                                                                        items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
+                                                                        <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
+                                                                </MultiComboBox>
+                                                        </VBox>
                                                         <Table id="modelTable"
                                                                 items="{settings>/modelList}"
                                                                 noDataText="{i18n>noModels}"

@@ -453,6 +453,55 @@ function scenario11() {
   check('多值单项超长被拒(TYPE)', pv.errors.some(e => e.param_id === 'P_MULTI' && e.code === 'TYPE'));
 }
 
+/* =============== 场景 12: 会话场景约束(路由 V1.0.5) =============== */
+function scenario12() {
+  section('场景 12: 会话场景 —— 报表只执行报表 / 数据分析不调报表 / 场景外如实提示');
+  const r = (q, scene) => quickRoute(q, { scene });
+  let x = r('执行 ZDPMM702', 'REPORT');
+  check('报表场景: "执行 ZDPMM702" → 报表执行', x.module_id === 'REPORT' && x.intent_code === 'RUN_AND_ANALYZE_REPORT');
+  x = r('ZDPMM702', 'REPORT');
+  check('报表场景: 只说 "ZDPMM702" → 报表卡(查看)', x.module_id === 'REPORT' && x.object_kind === 'TCODE' && x.intent_code === 'VIEW_REPORT_RESULT',
+    `${x.module_id}/${x.intent_code}/${x.object_kind}`);
+  x = r('哪个工厂 MIH 需求最大', 'REPORT');
+  check('报表场景: 普通追问 → 分析本会话报表结果', x.intent_code === 'ANALYZE_ARTIFACT' && x.object_kind === 'ARTIFACT');
+  x = r('统计一下各工厂的数量', 'REPORT');
+  check('报表场景: "统计…"不再跑去数据分析', x.module_id === 'REPORT' && !x.out_of_scene, `${x.module_id}`);
+  x = r('分析表 ZIDPMM455 的数据', 'REPORT');
+  check('报表场景: 查表 → 场景外提示', x.out_of_scene === true && /数据分析/.test(x.reason));
+  x = r('物料 A001 的库存', 'REPORT');
+  check('报表场景: 库存 → 场景外提示', x.out_of_scene === true);
+
+  x = r('分析 ZIDPMM455 的数据分布', 'DATA');
+  check('数据分析场景: Z 词元按表名(不再当 TCode)', x.module_id === 'DATA' && x.object_kind === 'TABLE' && x.object_value === 'ZIDPMM455',
+    `${x.module_id}/${x.object_kind}/${x.object_value}`);
+  x = r('执行 ZDPMM702', 'DATA');
+  check('数据分析场景: 执行报表 → 场景外提示(不触发报表)', x.out_of_scene === true && /报表执行/.test(x.reason));
+  x = r('统计 ZIDPMM455 中提交日期的分布', 'DATA');
+  check('数据分析场景: 含"提交"字样不误判报表执行', x.out_of_scene === false && x.module_id === 'DATA');
+  x = r('分析一下这个结果', 'DATA');
+  check('数据分析场景: "分析这个结果" → 追问已有数据(DATA)', x.module_id === 'DATA' && x.object_kind === 'NONE');
+  x = r('物料 A001 在 0001 工厂的库存', 'DATA');
+  check('数据分析场景: 库存问题用数据分析工具', x.module_id === 'DATA');
+
+  x = r('A001 在 0001 工厂的库存', 'INVENTORY');
+  check('库存场景: 库存问题 → INVENTORY', x.module_id === 'INVENTORY');
+  x = r('表 MARD 的字段', 'INVENTORY');
+  check('库存场景: 查表 → 场景外提示', x.out_of_scene === true);
+
+  x = r('解释一下 ZDPMM702 的程序逻辑', 'CODE');
+  check('代码场景: 点名对象 → CODE/PROGRAM', x.module_id === 'CODE' && x.object_kind === 'PROGRAM' && x.object_value === 'ZDPMM702',
+    `${x.module_id}/${x.object_kind}/${x.object_value}`);
+  x = r('执行 ZDPMM702', 'CODE');
+  check('代码场景: 执行报表 → 场景外提示', x.out_of_scene === true);
+  x = r('表 ZIDPMM455 的结构', 'CODE');
+  check('代码场景: 表结构问题留在本场景', x.module_id === 'CODE' && x.object_kind === 'TABLE');
+
+  x = r('分析一下这个结果', '');
+  check('自动场景(旧会话/空): 与 V1.0.4 行为一致', x.intent_code === 'ANALYZE_ARTIFACT' && x.out_of_scene === false);
+  x = r('分析一下这个结果', 'GENERAL');
+  check('旧值 GENERAL 视为自动', x.intent_code === 'ANALYZE_ARTIFACT');
+}
+
 /* =============== 主流程 =============== */
 function main() {
   console.log('╔══════════════════════════════════════════╗');
@@ -470,6 +519,7 @@ function main() {
   scenario10();
   scenarioExtra();
   scenario11();
+  scenario12();
 
   console.log(`\n${'='.repeat(50)}`);
   console.log(`总计: ${passed} 通过, ${failed} 失败`);

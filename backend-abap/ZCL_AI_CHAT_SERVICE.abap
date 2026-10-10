@@ -57,6 +57,14 @@
 *   ①形参 view→view_name(本系统 FM 已改名) ②string 实参→CHAR30 引用形参 ILLEGAL_TYPE,
 *   显式中转变量 lv_vname(dd02v-tabname) ③异常名对齐标准全名 no_clientindep_authority
 *   ★ 重贴后核对标记: 本类内应有 lv_vname 中转与 no_clientindep_authority
+* V2.3 20261011: 对话页纯对话(用户确认) —— analyze 默认不再识别/读取任何
+*   SAP 对象(程序源码/表结构/表样例), 也不再为此做 TADIR/TSTC 词元查询;
+*   读 SAP 统一在 Agent 场景完成(代码分析 / 数据分析 / 报表执行)。
+*   回退开关: ZAI_CHAT_CFG.CHAT_SAP_ACCESS='X' 恢复旧行为。
+*   另: v8_get_role / read_program_meta 移到 PUBLIC, 供 AGENT_SERVICE 的
+*   read_program_source 复用同一套 USER_HIDE_SRC 规则
+*   ★ 重贴后核对标记: analyze 内有 is_cfg_on( 'CHAT_SAP_ACCESS' );
+*   PUBLIC SECTION 内有 v8_get_role 与 read_program_meta 声明
 *         read_program_meta: TRDIRT 的程序名字段是 NAME 而非 PROGNAME
 *         (PROGNAME 是 REPOSRC 的字段, 原代码两处混用导致
 *         "Unknown column name PROGNAME", 并连带 LV_T 内联声明失败报
@@ -265,6 +273,18 @@ CLASS zcl_ai_chat_service DEFINITION
     CLASS-METHODS v8_require_admin
       RAISING cx_static_check.
 
+    " V2.2: 当前登录用户的业务角色(ZAI_CHAT_USER.ROLE), 未登记返回空
+    " V2.3: 改为 PUBLIC(AGENT_SERVICE 读源码工具复用 USER_HIDE_SRC 规则)
+    CLASS-METHODS v8_get_role
+      RETURNING VALUE(rv_role) TYPE string.
+
+    " V2.2: 程序元信息(名称/类型/标题/修改人), 模型开启 USER_HIDE_SRC 时对
+    "       普通用户替代源码注入, 让模型讲解程式用途而不展示代码。
+    " V2.3: 改为 PUBLIC(同上)
+    CLASS-METHODS read_program_meta
+      IMPORTING iv_prog        TYPE string
+      RETURNING VALUE(rv_meta) TYPE string.
+
   PRIVATE SECTION.
 
     TYPES: BEGIN OF ty_dbmsg,
@@ -352,16 +372,6 @@ CLASS zcl_ai_chat_service DEFINITION
     CLASS-METHODS is_cfg_on
       IMPORTING iv_key        TYPE string
       RETURNING VALUE(rv_on)  TYPE abap_bool.
-
-    " V2.2: 当前登录用户的业务角色(ZAI_CHAT_USER.ROLE), 未登记返回空
-    CLASS-METHODS v8_get_role
-      RETURNING VALUE(rv_role) TYPE string.
-
-    " V2.2: 程序元信息(名称/类型/标题/修改人), 模型开启 USER_HIDE_SRC 时对
-    "       普通用户替代源码注入, 让模型讲解程式用途而不展示代码。
-    CLASS-METHODS read_program_meta
-      IMPORTING iv_prog        TYPE string
-      RETURNING VALUE(rv_meta) TYPE string.
 
     " V2.2: 超长源码分块摘要(LONG_SRC_CHUNK 开启且源码>6000 行时调用):
     "   按 gc_chunk_lines 行/块逐块调 LLM 生成要点摘要, 最多 gc_chunk_max 块,
@@ -473,9 +483,14 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
           lt_fields TYPE tt_fields,
           lv_obj_note TYPE string.
 
+    " V2.3: 对话页纯对话 —— 默认不识别/不读取 SAP 对象(源码/表结构/表数据);
+    " CHAT_SAP_ACCESS='X' 才恢复旧行为(回退开关)
+    DATA(lv_sap_read) = is_cfg_on( 'CHAT_SAP_ACCESS' ).
     lv_prog = to_upper( iv_program_name ).
     CONDENSE lv_prog.
-    IF lv_prog IS INITIAL.
+    IF lv_sap_read = abap_false.
+      CLEAR lv_prog.
+    ELSEIF lv_prog IS INITIAL.
       lv_prog = detect_program( EXPORTING iv_question = iv_question
                                 IMPORTING ev_tcode    = lv_tcode ).
     ENDIF.
@@ -597,6 +612,19 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
     ls_msg-role    = 'system'.
     ls_msg-content = build_system_prompt( ).
     APPEND ls_msg TO lt_messages.
+
+    " V2.3: 纯对话模式能力边界(防模型假装读过系统数据)
+    IF lv_sap_read = abap_false.
+      CLEAR ls_msg.
+      ls_msg-role    = 'system'.
+      ls_msg-content =
+        |【对话模式说明】本模式只做 AI 问答, 不连接 SAP 系统数据: 不会读取程序源码、| &&
+        |表结构或表数据, 也不会执行报表。用户粘贴的代码/数据可以正常分析; 若用户| &&
+        |要求分析系统中某个具体程序、事务码、表或报表结果, 请说明对话模式无法读取, | &&
+        |并建议切换到 Agent 的「代码分析」「数据分析」或「报表执行」场景; | &&
+        |绝不能假装已经查看过系统中的对象。|.
+      APPEND ls_msg TO lt_messages.
+    ENDIF.
 
     IF lv_obj_note IS NOT INITIAL.
       CLEAR ls_msg.

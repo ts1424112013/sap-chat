@@ -28,6 +28,11 @@
 * V15 20261007 注: gc_tool_resolve_rpt/gc_tool_rpt_params/gc_tool_rpt_result
 *   为报表工具 ID 预留常量(P2 登记/参数/结果只读工具; 白名单在
 *   REPORT_READ_ENABLED 开启时才注入, 且依赖 ZCL_AI_REPORT_SERVICE)
+* V15.1 20261011: 代码分析场景(对话页不再读 SAP, 读源码迁入 Agent) ——
+*   新增只读工具 read_program_source(程序/类/函数组源码, 事务码自动解析
+*   主程序, start_line 翻页; 执行见 AGENT_SERVICE.exec_read_source);
+*   CODE 模块白名单 = read_program_source + describe_table
+*   ★ 重贴后核对标记: get_tools_for_module 有 WHEN ...gc_mod_code 分支
 *         sap_data_analysis  受控查询计划取数(能力目录白名单实体/字段),
 *                            args 直接承载计划 JSON 对象(不走扁平 kv),
 *                            解析/校验见 AGENT_GUARD.parse_analysis_plan,
@@ -50,7 +55,9 @@ CLASS zcl_ai_tool_registry DEFINITION
                " 执行类工具 start_report_run 单独见 P3/REPORT_EXEC_ENABLED)
                gc_tool_resolve_rpt   TYPE string VALUE 'resolve_report',
                gc_tool_rpt_params    TYPE string VALUE 'get_report_parameters',
-               gc_tool_rpt_result    TYPE string VALUE 'get_report_result'.
+               gc_tool_rpt_result    TYPE string VALUE 'get_report_result',
+               " V15.1: 代码分析场景只读工具
+               gc_tool_read_source   TYPE string VALUE 'read_program_source'.
 
     " 参数类型枚举(强类型 Schema, 值格式由 GUARD 逐一校验):
     "   PLANT     工厂 4 位字母数字
@@ -231,6 +238,22 @@ CLASS zcl_ai_tool_registry IMPLEMENTATION.
       params      = lt_p
       read_only   = abap_true ) TO rt_tools.
 
+    " V15.1: read_program_source —— 只读源码(仅 Z/Y/命名空间对象; 模型级
+    " USER_HIDE_SRC 对普通用户只给元信息; 执行见 AGENT_SERVICE.exec_read_source)
+    CLEAR lt_p.
+    APPEND VALUE #( name = 'name' ptype = gc_pt_text required = abap_true )
+      TO lt_p.
+    APPEND VALUE #( name = 'start_line' ptype = gc_pt_text required = abap_false )
+      TO lt_p.
+    APPEND VALUE #(
+      tool_id     = gc_tool_read_source
+      description = '读取自开发 ABAP 对象的源码(程序/类/函数组, 每行带行号; 事务码会自动解析到主程序)。'
+                    && '每次最多返回约 400 行, more=true 时用 start_line=上次 end_line+1 继续读; '
+                    && '只读需要的部分, 不要一次性把整个大程序全部读完。'
+                    && 'args: {"name":"<程序名/事务码/类名, 如 ZRMM_IDP_0702 或 ZDPMM702>","start_line":"<可选, 起始行号, 默认 1>"}'
+      params      = lt_p
+      read_only   = abap_true ) TO rt_tools.
+
   ENDMETHOD.
 
 
@@ -248,7 +271,8 @@ CLASS zcl_ai_tool_registry IMPLEMENTATION.
   "   INVENTORY → 库存 4 工具(修复 V13 排除法把 SQL 三工具带入的问题)
   "   DATA      → 受控查询计划 + 动态 SQL 三工具
   "   REPORT    → 报表只读三工具(REPORT_READ_ENABLED 开启时, P2)
-  "   CODE/GENERAL/其他 → 空(无工具由 Agent 直接分析回答, 不虚构执行)
+  "   CODE      → 读源码 + 读表结构(V15.1)
+  "   GENERAL/其他 → 空(无工具由 Agent 直接分析回答, 不虚构执行)
   METHOD get_tools_for_module.
 
     CLEAR rt_tools.
@@ -266,6 +290,10 @@ CLASS zcl_ai_tool_registry IMPLEMENTATION.
         APPEND gc_tool_search_tables TO lt_allow.
         APPEND gc_tool_describe_tab  TO lt_allow.
         APPEND gc_tool_run_sql       TO lt_allow.
+      WHEN zcl_ai_task_service=>gc_mod_code.
+        " V15.1: 代码分析 = 读源码 + 读表结构(不取表数据, 不写 SQL)
+        APPEND gc_tool_read_source  TO lt_allow.
+        APPEND gc_tool_describe_tab TO lt_allow.
       WHEN zcl_ai_task_service=>gc_mod_report.
         " 报表模块工具只在 REPORT_READ_ENABLED 开启时可用(P2 登记/参数;
         " 执行工具不属于白名单, 走独立的 StartReportRun 结构化接口)

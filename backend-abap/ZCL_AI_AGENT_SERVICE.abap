@@ -76,6 +76,22 @@
 *   依赖: REPORT_SERVICE V1.0.11(find_latest_artifact) / INTENT_ROUTER V1.0.4
 * ★ 重贴后核对标记: analyze_agent 签名含 iv_focus_artifact_id OPTIONAL;
 *   全文有 build_artifact_ctx; REPORT 分支条件含 lv_art_mode = abap_false
+* V15.2 20261011: 会话场景 + 代码分析 + Agent 模型白名单(用户确认方案) ——
+*   ① 场景 = ZAI_CHAT_SESS.AGENT_TYPE(新会话由 DPC 透传 Scene 写入, 之后
+*     固定; 空/GENERAL = AUTO 原混合路由): quick_route 传 iv_scene 收窄意图;
+*     out_of_scene → 确定性提示换场景; 工具域按场景固定(REPORT=无工具 /
+*     DATA / INVENTORY / CODE), 不再靠关键词猜;
+*   ② 报表场景无可分析结果时给场景说明(已登记报表清单), 不回落数据分析;
+*   ③ 新工具 read_program_source(exec_read_source): 仅 Z/Y/命名空间对象,
+*     事务码自动解析主程序, 400 行/页, 模型级 USER_HIDE_SRC 对普通用户只给
+*     元信息(复用 ZCL_AI_CHAT_SERVICE 的 v8_get_role/read_program_meta);
+*   ④ 模型白名单 ZAI_CHAT_CFG: AGENT_MODELS(全部场景) / AGENT_MODELS_RPT /
+*     _DATA / _INV / _CODE(按场景覆盖), 逗号/竖线分隔, 空 = 不限制;
+*     手动选了不在白名单的模型 → 明确拒绝; 智能路由只在白名单内选
+*   依赖: INTENT_ROUTER V1.0.5 / TOOL_REGISTRY V15.1 / DOMAIN_CARDS V1.2 /
+*         CHAT_SERVICE V2.3(两个方法改 PUBLIC)
+* ★ 重贴后核对标记: analyze_agent 签名含 iv_scene OPTIONAL; 全文有
+*   exec_read_source / agent_model_allowed / build_scene_help
 *=======================================================================
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
@@ -129,7 +145,10 @@ CLASS zcl_ai_agent_service DEFINITION
                gc_budget_ms      TYPE i VALUE 180000, " 默认总预算 180s(V14; 需 ICM PROCTIMEOUT≥200s, 计划 §5.2)
                gc_ctx_pairs      TYPE i VALUE 2,   " 携带的近期对话轮数
                gc_ctx_chars      TYPE i VALUE 500, " 单条上下文截断
-               gc_art_chars      TYPE i VALUE 8000. " V15.1: 注入的报表结果明细截断
+               gc_art_chars      TYPE i VALUE 8000, " V15.1: 注入的报表结果明细截断
+               gc_src_page       TYPE i VALUE 400,   " V15.2: read_program_source 每页行数
+               gc_src_chars      TYPE i VALUE 18000, " V15.2: 每页源码字符上限(整行截断)
+               gc_src_feed       TYPE i VALUE 24000. " V15.2: 源码工具结果回填上限
 
     " Agent 入口(读请求; 工具全部只读, 不创建/修改/过账任何业务数据)
     CLASS-METHODS analyze_agent
@@ -137,14 +156,43 @@ CLASS zcl_ai_agent_service DEFINITION
                 iv_question   TYPE string
                 iv_model_id   TYPE string
                 iv_focus_artifact_id TYPE string OPTIONAL  " V15.1: 前端聚焦的报表结果(候选值)
+                iv_scene      TYPE string OPTIONAL  " V15.2: 新会话场景(已有会话以库内为准)
       EXPORTING es_result     TYPE ty_agent_result.
 
   PRIVATE SECTION.
 
     " 读 Agent 模型配置: AGENT_MODEL 指定 → 该模型; 否则第一条启用模型
+    " V15.2: 增加场景白名单(AGENT_MODELS[_<场景>]); 不允许时 ev_error 给原因
     CLASS-METHODS read_agent_model
       IMPORTING iv_model_id    TYPE string
-      RETURNING VALUE(rs_cfg)  TYPE zai_model_cfg.
+                iv_scene       TYPE string
+      EXPORTING es_cfg         TYPE zai_model_cfg
+                ev_error       TYPE string.
+
+    " V15.2: 模型是否允许用于该场景的 Agent(白名单为空 = 不限制)
+    CLASS-METHODS agent_model_allowed
+      IMPORTING iv_model_id    TYPE string
+                iv_scene       TYPE string
+      RETURNING VALUE(rv_ok)   TYPE abap_bool.
+
+    " V15.2: read_program_source 执行(只读; 返回给模型的 JSON)
+    CLASS-METHODS exec_read_source
+      IMPORTING iv_name        TYPE string
+                iv_start       TYPE string
+                is_cfg         TYPE zai_model_cfg
+      EXPORTING ev_json        TYPE string
+                ev_label       TYPE string
+                ev_ok          TYPE abap_bool.
+
+    " V15.2: JSON 字符串值转义(保留换行为 \n, 供源码回填)
+    CLASS-METHODS json_text
+      IMPORTING iv_text        TYPE string
+      RETURNING VALUE(rv)      TYPE string.
+
+    " V15.2: 场景使用说明(报表场景无结果可分析时的确定性回答)
+    CLASS-METHODS build_scene_help
+      IMPORTING iv_scene       TYPE string
+      RETURNING VALUE(rv)      TYPE string.
 
     " 读 ZAI_CHAT_CFG 数值配置(带上下限钳制), 缺省用 iv_default
     CLASS-METHODS read_cfg_int
@@ -171,6 +219,7 @@ CLASS zcl_ai_agent_service DEFINITION
       IMPORTING iv_session_id TYPE string
                 iv_question   TYPE string
                 iv_model_id   TYPE string
+                iv_scene      TYPE string OPTIONAL   " V15.2: 新会话写入 AGENT_TYPE
       EXPORTING ev_error      TYPE string.
 
     " 降级回答(超时/异常/轮数耗尽): 由 ABAP 生成, 不含编造数字
@@ -284,10 +333,15 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
     " 会话隔离：已有会话只能由创建者继续读取/写入。新会话尚未落
     " ZAI_CHAT_SESS 时允许继续，最终由 save_chat 以当前用户创建。
-    SELECT SINGLE created_by FROM zai_chat_sess
+    " V15.2: 同时取会话场景(AGENT_TYPE); 新会话以本次传入的 iv_scene 为准
+    SELECT SINGLE created_by, agent_type FROM zai_chat_sess
       WHERE session_id = @iv_session_id
-      INTO @DATA(lv_session_owner).
-    IF sy-subrc = 0 AND lv_session_owner <> sy-uname.
+      INTO ( @DATA(lv_session_owner), @DATA(lv_sess_atype) ).
+    DATA(lv_sess_found) = xsdbool( sy-subrc = 0 ).
+    DATA(lv_scene) = zcl_ai_intent_router=>normalize_scene(
+                       COND string( WHEN lv_sess_found = abap_true
+                                    THEN CONV string( lv_sess_atype ) ELSE iv_scene ) ).
+    IF lv_sess_found = abap_true AND lv_session_owner <> sy-uname.
       es_result-status  = 'DENIED'.
       es_result-answer  = '该会话不属于当前用户，无法读取或写入其中的分析记录。请新建会话后重试。'.
       es_result-message = '会话归属校验失败'.
@@ -299,8 +353,29 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
     " ---------------- 0. 领域路由 + 模型 + 预算 ----------------
     DATA(lv_domain) = zcl_ai_domain_cards=>match_domain( iv_question ).
+    " V15.2: 显式场景固定工具域(不再按关键词猜); AUTO 保持 match_domain
+    CASE lv_scene.
+      WHEN zcl_ai_intent_router=>gc_scene_report.
+        lv_domain = zcl_ai_domain_cards=>gc_dom_general.   " 报表走确定性流程, 结果分析不用工具
+      WHEN zcl_ai_intent_router=>gc_scene_data.
+        lv_domain = zcl_ai_domain_cards=>gc_dom_data.
+      WHEN zcl_ai_intent_router=>gc_scene_inventory.
+        lv_domain = zcl_ai_domain_cards=>gc_dom_inventory.
+      WHEN zcl_ai_intent_router=>gc_scene_code.
+        lv_domain = zcl_ai_domain_cards=>gc_dom_code.
+    ENDCASE.
 
-    ls_cfg = read_agent_model( iv_model_id ).
+    " V15.2: 模型按场景白名单选取(手动选了不允许的模型 → 明确拒绝)
+    DATA lv_model_err TYPE string.
+    CLEAR lv_model_err.
+    read_agent_model( EXPORTING iv_model_id = iv_model_id
+                                iv_scene    = lv_scene
+                      IMPORTING es_cfg      = ls_cfg
+                                ev_error    = lv_model_err ).
+    IF lv_model_err IS NOT INITIAL.
+      es_result-message = lv_model_err.
+      RETURN.
+    ENDIF.
     IF ls_cfg-model_id IS INITIAL OR ls_cfg-is_active <> 'X'.
       es_result-message = |没有可用的启用模型({ COND #( WHEN iv_model_id IS NOT INITIAL THEN iv_model_id ELSE 'AUTO' ) }), | &&
                           |请在模型管理中维护 ZAI_MODEL_CFG 或配置 AGENT_MODEL|.
@@ -317,6 +392,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       EXPORTING iv_session_id = iv_session_id
                 iv_question   = iv_question
                 iv_model_id   = CONV string( ls_cfg-model_id )  " V1.2.3: CHAR→string 需显式转换
+                iv_scene      = lv_scene                        " V15.2: 新会话写入场景
       IMPORTING ev_error      = lv_ens_err ).
     IF lv_ens_err IS NOT INITIAL.
       es_result-status  = 'ERROR'.
@@ -344,7 +420,26 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     IF lv_task_on = abap_true.
       ls_route = zcl_ai_intent_router=>quick_route(
                      iv_question   = iv_question
-                     iv_session_id = iv_session_id ).
+                     iv_session_id = iv_session_id
+                     iv_scene      = lv_scene ).   " V15.2: 按会话场景收窄
+
+      " ---- V15.2: 诉求不属于当前场景 → 确定性提示换场景(不猜、不越界执行) ----
+      IF ls_route-out_of_scene = abap_true.
+        finish_det(
+          EXPORTING iv_session_id = iv_session_id
+                    iv_question   = iv_question
+                    iv_answer     = |当前会话是「{ zcl_ai_intent_router=>scene_label( lv_scene ) }」场景, | &&
+                                    |{ ls_route-reason }。请点左侧"新建任务"选择对应场景后再提问, | &&
+                                    |这样工具更聚焦, 回答也更快更准。|
+                    iv_model_id   = CONV string( ls_cfg-model_id )
+                    iv_task_id    = ''
+                    iv_module     = ls_route-module_id
+                    iv_task_sts   = ''
+                    iv_summary    = |场景外诉求: { ls_route-reason }|
+                    iv_label      = '场景边界'
+          IMPORTING es_result     = es_result ).
+        RETURN.
+      ENDIF.
 
       " ---- V15.1: 对话式结果分析(ANALYZE_ARTIFACT) ----
       " 结果定位: 前端聚焦结果(候选值) > 会话最近一份可用报表结果(点名 TCode
@@ -406,6 +501,20 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                       iv_task_sts   = ''
                       iv_summary    = |报表结果不可读取|
                       iv_label      = '定位报表结果'
+            IMPORTING es_result     = es_result ).
+          RETURN.
+        ELSEIF lv_scene = zcl_ai_intent_router=>gc_scene_report.
+          " V15.2: 报表场景还没有结果 → 场景说明(可执行报表清单), 不回落数据分析
+          finish_det(
+            EXPORTING iv_session_id = iv_session_id
+                      iv_question   = iv_question
+                      iv_answer     = build_scene_help( lv_scene )
+                      iv_model_id   = CONV string( ls_cfg-model_id )
+                      iv_task_id    = ''
+                      iv_module     = zcl_ai_task_service=>gc_mod_report
+                      iv_task_sts   = ''
+                      iv_summary    = '报表场景说明'
+                      iv_label      = '报表场景说明'
             IMPORTING es_result     = es_result ).
           RETURN.
         ELSE.
@@ -866,6 +975,40 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         CONTINUE.
       ENDIF.
 
+      " ---- V15.2: 代码分析 read_program_source(只读源码; 对象/权限校验在 exec_read_source) ----
+      IF ls_out-tool = zcl_ai_tool_registry=>gc_tool_read_source.
+        DATA: lv_src_json  TYPE string,
+              lv_src_label TYPE string,
+              lv_src_ok    TYPE abap_bool.
+        CLEAR: lv_src_json, lv_src_label, lv_src_ok.
+        exec_read_source(
+          EXPORTING iv_name  = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'name' )
+                    iv_start = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'start_line' )
+                    is_cfg   = ls_cfg
+          IMPORTING ev_json  = lv_src_json
+                    ev_label = lv_src_label
+                    ev_ok    = lv_src_ok ).
+        APPEND VALUE #( phase  = 'EXECUTING'
+                        tool   = ls_out-tool
+                        label  = lv_src_label
+                        status = COND #( WHEN lv_src_ok = abap_true THEN 'OK' ELSE 'ERROR' ) ) TO lt_trace.
+
+        CLEAR ls_msg.
+        ls_msg-role    = 'assistant'.
+        ls_msg-content = lv_content.
+        APPEND ls_msg TO lt_messages.
+
+        CLEAR ls_msg.
+        ls_msg-role    = 'user'.
+        ls_msg-content = zcl_ai_agent_guard=>wrap_tool_result(
+                           iv_tool = ls_out-tool
+                           iv_json = zcl_ai_agent_guard=>trim_result(
+                                       iv_text = lv_src_json
+                                       iv_max  = gc_src_feed ) ).
+        APPEND ls_msg TO lt_messages.
+        CONTINUE.
+      ENDIF.
+
       " ---- V14: 动态 SQL 三工具(只读; 开关/词法/表权限在 SQL_GUARD 内统一校验) ----
       " search_tables / describe_table / run_sql 与库存工具同走
       " wrap_tool_result 回填通道; run_sql 的数据集同时进 lt_datasets,
@@ -1230,39 +1373,223 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
   METHOD read_agent_model.
 
-    CLEAR rs_cfg.
+    CLEAR: es_cfg, ev_error.
+    DATA(lv_scene_txt) = zcl_ai_intent_router=>scene_label( iv_scene ).
 
-    " 手动指定模型 ID(前端模型下拉) → 完全按手动
+    " 手动指定模型 ID(前端模型下拉) → 按手动, 但必须在该场景白名单内
     DATA(lv_id) = to_upper( iv_model_id ).
     CONDENSE lv_id.
     IF lv_id IS NOT INITIAL AND lv_id <> 'AUTO'.
       SELECT SINGLE * FROM zai_model_cfg
         WHERE model_id = @lv_id
-        INTO @rs_cfg.
+        INTO @es_cfg.
+      IF sy-subrc = 0 AND agent_model_allowed( iv_model_id = lv_id iv_scene = iv_scene ) = abap_false.
+        CLEAR es_cfg.
+        ev_error = |模型 { lv_id } 未开放用于 Agent「{ lv_scene_txt }」场景, | &&
+                   |请在模型下拉中选择「智能路由」或其他已开放的模型(管理员可在设置-模型管理中调整)|.
+      ENDIF.
       RETURN.
     ENDIF.
 
-    " ZAI_CHAT_CFG.AGENT_MODEL: 为 Agent 单列的模型(计划书 §三)
+    " ZAI_CHAT_CFG.AGENT_MODEL: 为 Agent 单列的模型(计划书 §三); V15.2 须在白名单内
     SELECT SINGLE cfgvalue FROM zai_chat_cfg
       WHERE cfgkey = 'AGENT_MODEL'
       INTO @DATA(lv_cfg_model).
     IF sy-subrc = 0 AND lv_cfg_model IS NOT INITIAL.
       SELECT SINGLE * FROM zai_model_cfg
         WHERE model_id = @lv_cfg_model AND is_active = 'X'
-        INTO @rs_cfg.
-      IF sy-subrc = 0.
+        INTO @es_cfg.
+      IF sy-subrc = 0 AND agent_model_allowed( iv_model_id = CONV string( es_cfg-model_id )
+                                               iv_scene    = iv_scene ) = abap_true.
         RETURN.
       ENDIF.
+      CLEAR es_cfg.
     ENDIF.
 
-    " 兜底: 第一条启用模型
+    " 兜底: 白名单内的第一条启用模型
     SELECT * FROM zai_model_cfg
       WHERE is_active = @abap_true
       ORDER BY PRIMARY KEY
       INTO TABLE @DATA(lt_cfg).
-    IF sy-subrc = 0.
-      READ TABLE lt_cfg INTO rs_cfg INDEX 1.
+    LOOP AT lt_cfg INTO DATA(ls_c).
+      IF agent_model_allowed( iv_model_id = CONV string( ls_c-model_id ) iv_scene = iv_scene ) = abap_true.
+        es_cfg = ls_c.
+        RETURN.
+      ENDIF.
+    ENDLOOP.
+    IF lt_cfg IS NOT INITIAL.
+      ev_error = |没有已启用且开放给 Agent「{ lv_scene_txt }」场景的模型, | &&
+                 |请管理员在设置-模型管理的"Agent 可用模型"中配置|.
     ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD agent_model_allowed.
+
+    " 白名单: 场景专属键(AGENT_MODELS_RPT/_DATA/_INV/_CODE)优先, 否则全局
+    " AGENT_MODELS; 值为模型 ID 列表(逗号/竖线/分号/空格分隔); 都为空 = 不限制
+    rv_ok = abap_true.
+    DATA(lv_scene) = zcl_ai_intent_router=>normalize_scene( iv_scene ).
+    DATA(lv_key) = COND string(
+      WHEN lv_scene = zcl_ai_intent_router=>gc_scene_report    THEN 'AGENT_MODELS_RPT'
+      WHEN lv_scene = zcl_ai_intent_router=>gc_scene_data      THEN 'AGENT_MODELS_DATA'
+      WHEN lv_scene = zcl_ai_intent_router=>gc_scene_inventory THEN 'AGENT_MODELS_INV'
+      WHEN lv_scene = zcl_ai_intent_router=>gc_scene_code      THEN 'AGENT_MODELS_CODE'
+      ELSE `` ).
+    DATA lv_list TYPE string.
+    CLEAR lv_list.
+    IF lv_key IS NOT INITIAL.
+      lv_list = zcl_ai_task_service=>read_cfg_str( lv_key ).
+    ENDIF.
+    IF lv_list IS INITIAL.
+      lv_list = zcl_ai_task_service=>read_cfg_str( 'AGENT_MODELS' ).
+    ENDIF.
+    IF lv_list IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    lv_list = to_upper( lv_list ).
+    REPLACE ALL OCCURRENCES OF REGEX '[|;，、\s]+' IN lv_list WITH ','.
+    SPLIT lv_list AT ',' INTO TABLE DATA(lt_allow).
+    DATA(lv_id) = to_upper( iv_model_id ).
+    CONDENSE lv_id NO-GAPS.
+    READ TABLE lt_allow TRANSPORTING NO FIELDS WITH KEY table_line = lv_id.
+    rv_ok = xsdbool( sy-subrc = 0 ).
+
+  ENDMETHOD.
+
+
+  METHOD exec_read_source.
+
+    DATA: lv_name   TYPE string,
+          lv_prog   TYPE string,
+          lv_tcprog TYPE string,
+          lv_note   TYPE string,
+          lv_start  TYPE i,
+          lv_end    TYPE i,
+          lv_total  TYPE i,
+          lv_chars  TYPE i,
+          lv_line   TYPE string,
+          lv_body   TYPE string,
+          lt_lines  TYPE STANDARD TABLE OF string WITH DEFAULT KEY.
+    CLEAR: ev_json, ev_label, ev_ok.
+
+    lv_name = to_upper( iv_name ).
+    CONDENSE lv_name NO-GAPS.
+    ev_label = |读取源码: { lv_name }|.
+
+    " 只读自开发对象(Z/Y 开头或 /命名空间/), 与对话页旧口径一致
+    IF lv_name IS INITIAL OR strlen( lv_name ) > 40
+       OR lv_name CN 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_/'.
+      ev_json = '{"ok":false,"error":"对象名不合法(只能是程序名/事务码/类名)"}'.
+      RETURN.
+    ENDIF.
+    DATA(lv_first) = substring( val = lv_name len = 1 ).
+    IF lv_first <> 'Z' AND lv_first <> 'Y' AND lv_first <> '/'.
+      ev_json = '{"ok":false,"error":"只能读取自开发对象(Z/Y 开头或 /命名空间/)的源码"}'.
+      RETURN.
+    ENDIF.
+
+    " 事务码 → 主程序(TSTC); 不是事务码则按对象名原样读取
+    lv_prog = lv_name.
+    zcl_ai_code_provider=>resolve_tcode( EXPORTING iv_tcode = lv_name
+                                         IMPORTING ev_prog  = lv_tcprog ).
+    IF lv_tcprog IS NOT INITIAL AND lv_tcprog <> lv_name.
+      lv_note = |事务码 { lv_name } 对应主程序 { lv_tcprog }|.
+      lv_prog = lv_tcprog.
+    ENDIF.
+
+    " 模型级 USER_HIDE_SRC: 普通用户只给元信息(与对话页同一规则, ADMIN 不受限)
+    IF is_cfg-user_hide_src = 'X' AND zcl_ai_chat_service=>v8_get_role( ) <> 'ADMIN'.
+      ev_json = |\{"ok":true,"source_hidden":true,"object":"{ lv_prog }",| &&
+                |"meta":"{ json_text( zcl_ai_chat_service=>read_program_meta( lv_prog ) ) }",| &&
+                |"note":"当前模型对普通用户隐藏源码: 只能基于元信息说明用途, 禁止编造代码细节"\}|.
+      ev_label = |读取源码: { lv_prog }(当前账号仅可看元信息)|.
+      ev_ok = abap_true.
+      RETURN.
+    ENDIF.
+
+    DATA(ls_src) = zcl_ai_code_provider=>get_source( iv_name = lv_prog ).
+    IF ls_src-error IS NOT INITIAL.
+      DATA(lv_err_txt) = |{ lv_prog } 不存在或无法读取: { ls_src-error }|.
+      ev_json = |\{"ok":false,"error":"{ json_text( lv_err_txt ) }"\}|.
+      ev_label = |读取源码失败: { lv_prog }|.
+      RETURN.
+    ENDIF.
+
+    SPLIT ls_src-source AT cl_abap_char_utilities=>newline INTO TABLE lt_lines.
+    lv_total = lines( lt_lines ).
+
+    " 翻页起点(默认 1; 只接受 1~6 位数字)
+    lv_start = 1.
+    IF iv_start IS NOT INITIAL AND iv_start CO '0123456789' AND strlen( iv_start ) <= 6.
+      lv_start = iv_start.
+    ENDIF.
+    IF lv_start < 1.
+      lv_start = 1.
+    ENDIF.
+    IF lv_start > lv_total.
+      ev_json = |\{"ok":false,"error":"start_line { lv_start } 超出总行数 { lv_total }"\}|.
+      RETURN.
+    ENDIF.
+
+    " 每页最多 gc_src_page 行 / gc_src_chars 字符, 按整行截断
+    lv_end = lv_start - 1.
+    LOOP AT lt_lines INTO lv_line FROM lv_start.
+      IF lv_end - lv_start + 1 >= gc_src_page
+         OR lv_chars + strlen( lv_line ) + 1 > gc_src_chars.
+        EXIT.
+      ENDIF.
+      lv_body  = lv_body && lv_line && cl_abap_char_utilities=>newline.
+      lv_chars = lv_chars + strlen( lv_line ) + 1.
+      lv_end   = sy-tabix.
+    ENDLOOP.
+
+    ev_json = |\{"ok":true,"object":"{ lv_prog }","type":"{ ls_src-objtype }",| &&
+              |"total_lines":{ lv_total },"start_line":{ lv_start },"end_line":{ lv_end },| &&
+              |"more":{ COND string( WHEN lv_end < lv_total THEN 'true' ELSE 'false' ) },| &&
+              |"source_truncated":{ COND string( WHEN ls_src-truncated = abap_true THEN 'true' ELSE 'false' ) },| &&
+              |"note":"{ json_text( lv_note ) }",| &&
+              |"source":"{ json_text( lv_body ) }"\}|.
+    ev_label = |读取源码: { lv_prog } 第 { lv_start }-{ lv_end } 行(共 { lv_total } 行)|.
+    ev_ok = abap_true.
+
+  ENDMETHOD.
+
+
+  METHOD json_text.
+
+    rv = iv_text.
+    REPLACE ALL OCCURRENCES OF '\' IN rv WITH '\\'.
+    REPLACE ALL OCCURRENCES OF '"' IN rv WITH '\"'.
+    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf IN rv WITH '\n'.
+    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>newline IN rv WITH '\n'.
+    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>horizontal_tab IN rv WITH '\t'.
+
+  ENDMETHOD.
+
+
+  METHOD build_scene_help.
+
+    " 报表场景: 列出已登记报表(REPORT_READ_ENABLED 未开时如实说明)
+    DATA(lt_defs) = zcl_ai_report_service=>list_defs( ).
+    DATA lv_list TYPE string.
+    CLEAR lv_list.
+    LOOP AT lt_defs INTO DATA(ls_d).
+      lv_list = |{ lv_list }\n- { ls_d-tcode }: { ls_d-report_name }| &&
+                COND string( WHEN ls_d-exec_enabled = abap_true THEN `` ELSE `(暂未开放执行)` ).
+    ENDLOOP.
+    IF lv_list IS INITIAL.
+      lv_list = |\n(暂无已登记的报表, 或报表读取能力未开启 REPORT_READ_ENABLED)|.
+    ENDIF.
+
+    rv = |当前是「{ zcl_ai_intent_router=>scene_label( iv_scene ) }」场景, 本会话还没有可分析的报表结果。\n| &&
+         |可以这样用:\n| &&
+         |1. 说"执行 <报表事务码>", 在对话里填写参数后提交后台运行;\n| &&
+         |2. 结果出来后直接追问, 例如"分析一下这个结果""哪个工厂需求最大"。\n| &&
+         |\n已登记的报表:{ lv_list }\n| &&
+         |\n查表 / 写 SQL 分析请新建「数据分析」场景, 解读程序源码请新建「代码分析」场景。|.
 
   ENDMETHOD.
 
@@ -1425,7 +1752,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    " 新会话头: SESSION_MODE=AGENT / AGENT_TYPE=GENERAL / STATUS=RUNNING
+    " 新会话头: SESSION_MODE=AGENT / AGENT_TYPE=场景(AUTO→GENERAL) / STATUS=RUNNING
     " (提前落库并提交, 运行中途异常仍可在历史中追溯)
     DATA(lv_title) = iv_question.
     IF strlen( lv_title ) > 60.
@@ -1439,7 +1766,12 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                model_id   = iv_model_id
                msg_count  = 0
                session_mode = 'AGENT'   " V1.2.1: MODE→SESSION_MODE(DDIC 保留字)
-               agent_type = 'GENERAL'
+               " V15.2: 新会话写入场景(AUTO 仍写 GENERAL, 与旧前端/旧数据一致)
+               agent_type = COND #( WHEN iv_scene IS INITIAL
+                                         OR zcl_ai_intent_router=>normalize_scene( iv_scene )
+                                            = zcl_ai_intent_router=>gc_scene_auto
+                                    THEN 'GENERAL'
+                                    ELSE zcl_ai_intent_router=>normalize_scene( iv_scene ) )
                status     = 'RUNNING'
                created_by = sy-uname
                created_at = |{ sy-datum }{ sy-uzeit }|

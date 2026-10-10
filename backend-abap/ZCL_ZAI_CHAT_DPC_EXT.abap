@@ -65,6 +65,11 @@
 *   "分析一下这个结果" 拿不到前端正在看的报表结果(10.09 遗留问题 1);
 *   需同时重贴 AGENT_SERVICE V15.1(新增可选参数), SEGW 无需改动
 *   ★ 重贴后核对标记: ANALYZETASK 分支调用含 iv_focus_artifact_id = lv_at_fid
+* V15.2 20261011: ANALYZETASK 新增可选参数 Scene(会话场景: REPORT/DATA/
+*   INVENTORY/CODE/AUTO; 只在新会话首条消息时写入 AGENT_TYPE, 之后以库内
+*   为准) —— 需在 SEGW 给 AnalyzeTask 加参数 Scene(Edm.String, Nullable)
+*   并重新生成; 未加之前前端不会发送(按 metadata 探测), 新会话按 AUTO 处理
+*   ★ 重贴后核对标记: ANALYZETASK 分支有 WHEN 'SCENE' 与 iv_scene = lv_at_scn
 *=======================================================================
 * V15(P1~P3) 20261007: Agent 多业务任务与报表分析接口
 *   新增函数导入分支(全部旁路, 不改既有分支; SEGW 未建 metadata 前
@@ -363,13 +368,15 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
         DATA: ls_atask TYPE zcl_ai_agent_service=>ty_agent_result,
               lv_at_tid TYPE string,
               lv_at_rid TYPE string,
-              lv_at_fid TYPE string.
-        CLEAR: lv_at_tid, lv_at_rid, lv_at_fid.
+              lv_at_fid TYPE string,
+              lv_at_scn TYPE string.   " V15.2: 会话场景
+        CLEAR: lv_at_tid, lv_at_rid, lv_at_fid, lv_at_scn.
         LOOP AT it_parameter INTO ls_param.
           CASE to_upper( ls_param-name ).
             WHEN 'TASKID'.            lv_at_tid = ls_param-value.
             WHEN 'CLIENTREQUESTID'.   lv_at_rid = ls_param-value.
             WHEN 'FOCUSEDARTIFACTID'. lv_at_fid = ls_param-value.
+            WHEN 'SCENE'.             lv_at_scn = ls_param-value.   " V15.2
           ENDCASE.
         ENDLOOP.
 
@@ -379,6 +386,7 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
                     iv_question          = lv_question
                     iv_model_id          = lv_model
                     iv_focus_artifact_id = lv_at_fid
+                    iv_scene             = lv_at_scn
           IMPORTING es_result            = ls_atask ).
 
         " 显式指定 TaskId 且与后端解析一致时以显式为准(归属已校验);

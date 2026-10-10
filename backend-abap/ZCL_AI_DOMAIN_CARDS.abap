@@ -7,6 +7,10 @@
 *   新增第 7 条: 结果用 markdown 表格呈现(<=15 全列/>15 前 10+其余合计)
 *   UNION 不在 SQL_GUARD 关键字黑名单, 7.50 支持 UNION ALL
 *   ★ 重贴后核对标记: 域卡内应有 UNION ALL 合并
+* V1.2   20261011: 新增 CODE 域(Agent「代码分析」场景; 对话页不再读 SAP,
+*   源码解读迁入 Agent): 常量 gc_dom_code + 代码分析领域卡。
+*   match_domain 不变(CODE 只由会话场景显式选择, 不靠关键词猜)
+*   ★ 重贴后核对标记: get_card 有 ELSEIF lv_domain = gc_dom_code 分支
 *=======================================================================
 CLASS zcl_ai_domain_cards DEFINITION
   PUBLIC
@@ -17,6 +21,7 @@ CLASS zcl_ai_domain_cards DEFINITION
 
     CONSTANTS: gc_dom_inventory TYPE string VALUE 'INVENTORY',
                gc_dom_data      TYPE string VALUE 'DATA',      " V1.1: 数据分析域
+               gc_dom_code      TYPE string VALUE 'CODE',      " V1.2: 代码分析域(仅场景显式选择)
                gc_dom_general   TYPE string VALUE 'GENERAL'.
 
     CLASS-METHODS match_domain
@@ -174,6 +179,23 @@ CLASS zcl_ai_domain_cards IMPLEMENTATION.
         |- SD 销售: VBAK(销售订单头)/VBAP(行项目)/LIKP+LIPS(交货)/VBRK+VBRP(开票)/KNA1(客户)\n| &&
         |- PP 生产: AFKO(订单头)/AFPO(订单项)/RESB(预留)\n| &&
         |- FI/CO: BKPF(凭证头)/BSEG(凭证行)/ACDOCA(总账行项目)/SKAT(科目文本)/CSKS(成本中心)\n|.
+
+    ELSEIF lv_domain = gc_dom_code.
+
+      " V1.2: 代码分析领域卡(原对话页"解释程序/代码审查"能力迁入 Agent)
+      rv_card =
+        |【代码分析领域知识】(当前会话是「代码分析」场景, 以下口径必须遵守)\n| &&
+        |\n| &&
+        |1. 用户点名程序/事务码/类时, 先用 read_program_source 读源码(事务码会自动\n| &&
+        |   解析到主程序); 未点名对象时先问清楚要分析哪个对象, 不要猜。\n| &&
+        |2. 源码较长时按 start_line 分段读取, 只读回答所需的部分; 结论要引用行号。\n| &&
+        |3. 涉及数据库表时可用 describe_table 读字段结构; 本场景不取表数据、不写 SQL\n| &&
+        |   (需要看数据请提示用户到「数据分析」场景)。\n| &&
+        |4. 回答结构: 功能概述 → 主要数据结构与数据库表 → 关键业务逻辑 →\n| &&
+        |   潜在问题与优化建议(性能/健壮性/安全), 修改示例放在 abap 代码块。\n| &&
+        |5. 只陈述源码里看得到的内容; 工具返回 source_hidden 时说明当前账号\n| &&
+        |   不能查看源码, 只基于元信息解释用途, 禁止编造代码细节。\n| &&
+        |6. 工具报错(对象不存在/非自开发对象)时如实告知, 不要凭记忆补全代码。\n|.
 
     ELSE.
 

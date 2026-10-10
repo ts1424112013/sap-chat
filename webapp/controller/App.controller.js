@@ -877,6 +877,9 @@ sap.ui.define([
                                 if (!oChatModel.getProperty("/currentModel")) {
                                         oChatModel.setProperty("/currentModel", "AUTO");
                                 }
+                                // 20261011：Agent 场景模型白名单（下拉按场景过滤）
+                                that._syncModelList();
+                                that._loadAgentModelRules();
                         }).catch(function (sErr) {
                                 MessageToast.show(Formatter.escapeHtml(sErr || "模型列表加载失败"));
                         });
@@ -1143,7 +1146,9 @@ sap.ui.define([
                                 taskId: bAgent ? (oCurTask.taskId || "") : "",
                                 clientRequestId: bAgent ? this._newSessionId() : "",
                                 // 20261011：本会话最近就绪的报表结果，供"分析一下这个结果"（后端校验归属/状态）
-                                focusedArtifactId: bAgent ? ((this._mFocusArt || {})[sSessionId] || "") : ""
+                                focusedArtifactId: bAgent ? ((this._mFocusArt || {})[sSessionId] || "") : "",
+                                // 20261011：会话场景（新会话首条消息写入后端，之后以后端为准）
+                                scene: bAgent ? this._normScene(oCfg.agentType) : ""
                         });
 
                         return pReq.then(function (oRes) {
@@ -1533,6 +1538,187 @@ sap.ui.define([
                 },
 
                 /** 左侧模式导航入口（对话 / Agent） */
+                /* =========================================================
+                 * 20261011：Agent 会话场景 —— 一个 Agent 入口 + 会话级场景。
+                 * 场景存 ZAI_CHAT_SESS.AGENT_TYPE，新会话首条消息随 Scene 发给后端，
+                 * 之后固定；后端按场景收窄意图与工具（前端只是选择与展示）。
+                 * 旧会话 AgentType 为空/GENERAL → 自动（原混合路由）
+                 * ========================================================= */
+                SCENES: [
+                        { key: "REPORT", text: "报表执行", icon: "sap-icon://document-text",
+                          sub: "选报表、填参数、后台执行；结果出来后可以直接追问分析",
+                          ph: "说「执行 ZDPMM702」，或对已出的报表结果提问…",
+                          chips: ["执行 ZDPMM702", "分析一下这个结果", "哪个工厂的 MIH 需求最大"] },
+                        { key: "DATA", text: "数据分析", icon: "sap-icon://database",
+                          sub: "按表 / SQL 只读取数与统计分析，不会触发任何报表执行",
+                          ph: "说要分析哪张表、看什么维度，例如「按工厂统计 ZIDPMM455」…",
+                          chips: ["按工厂统计 ZIDPMM455 的记录数", "ZIDPPP099 表的数据", "MARA 按物料类型统计数量"] },
+                        { key: "INVENTORY", text: "库存查询", icon: "sap-icon://product",
+                          sub: "用库存专用工具查询库存快照、当天收发与批次库存",
+                          ph: "说物料与工厂，例如「A001 在 0001 工厂的库存」…",
+                          chips: ["物料 A001 在 0001 工厂的库存", "A001 今天的收发", "A001 在 0001 的批次库存"] },
+                        { key: "CODE", text: "代码分析", icon: "sap-icon://syntax",
+                          sub: "读取自开发程序源码与表结构，解读逻辑、审查代码",
+                          ph: "说要看哪个程序 / 事务码 / 类，例如「解释 ZDPMM702 的程序逻辑」…",
+                          chips: ["解释 ZDPMM702 的程序逻辑", "审查 ZRMM_IDP_0702 的性能问题", "ZIDPMM455 表结构"] },
+                        { key: "AUTO", text: "自动", icon: "sap-icon://lightbulb",
+                          sub: "按每句话自动判断用哪类工具（混合场景，适合熟悉的用户）",
+                          ph: "", chips: [] }
+                ],
+
+                _normScene: function (s) {
+                        var v = String(s || "").toUpperCase();
+                        return ["REPORT", "DATA", "INVENTORY", "CODE"].indexOf(v) >= 0 ? v : "AUTO";
+                },
+
+                _sceneDef: function (sKey) {
+                        var k = this._normScene(sKey);
+                        return this.SCENES.filter(function (d) { return d.key === k; })[0];
+                },
+
+                /** 当前 Agent 会话的场景（对话模式恒为 AUTO） */
+                _curScene: function () {
+                        var oCtx = this.getView().getModel("chat").getProperty("/currentSession") || {};
+                        return oCtx.mode === "AGENT" ? this._normScene(oCtx.agentType) : "AUTO";
+                },
+
+                /** 新建 Agent 会话默认用上次选择的场景（首次 = 报表执行） */
+                _lastScene: function () {
+                        var s = "";
+                        try { s = window.localStorage.getItem("zaiChat.lastScene") || ""; } catch (e) { s = ""; }
+                        return s ? this._normScene(s) : "REPORT";
+                },
+
+                _setLastScene: function (sKey) {
+                        try { window.localStorage.setItem("zaiChat.lastScene", this._normScene(sKey)); } catch (e) { /* 忽略 */ }
+                },
+
+                /** 场景选择条（仅 Agent 空会话首页；发出首条消息后场景固定） */
+                _renderScenePicker: function () {
+                        var that = this;
+                        var oBox = this.byId("scenePicker");
+                        if (!oBox) {
+                                return;
+                        }
+                        oBox.destroyItems();
+                        var bAgent = this.getView().getModel("chat").getProperty("/workspaceMode") === "AGENT";
+                        oBox.setVisible(bAgent);
+                        if (!bAgent) {
+                                return;
+                        }
+                        var sCur = this._curScene();
+                        this.SCENES.forEach(function (d) {
+                                oBox.addItem(new Button({
+                                        text: d.text,
+                                        icon: d.icon,
+                                        type: "Transparent",
+                                        tooltip: d.sub,
+                                        press: that._onScenePick.bind(that, d.key)
+                                }).addStyleClass("sceneBtn" + (d.key === sCur ? " sceneOn" : "") + (d.key === "AUTO" ? " sceneAuto" : "")));
+                        });
+                },
+
+                _onScenePick: function (sKey) {
+                        var oChat = this.getView().getModel("chat");
+                        if ((oChat.getProperty("/messages") || []).length) {
+                                MessageToast.show("已开始的会话不能更换场景，请新建任务");
+                                return;
+                        }
+                        oChat.setProperty("/currentSession/agentType", this._normScene(sKey));
+                        this._setLastScene(sKey);
+                        this._applyWorkspaceChrome();
+                        var oInput = this.byId("heroInput");
+                        if (oInput && oInput.focus) {
+                                oInput.focus();
+                        }
+                },
+
+                /**
+                  * 20261011：Agent 模式模型下拉只显示该场景白名单内的模型
+                  * （AGENT_MODELS[_<场景>]，空 = 不限制；后端同口径强制校验）
+                  */
+                _syncModelList: function () {
+                        var oChat = this.getView().getModel("chat");
+                        var aAll = oChat.getProperty("/models") || [];
+                        var aAllow = [];
+                        if (oChat.getProperty("/workspaceMode") === "AGENT" && this._mAgentModelRules) {
+                                var sScene = this._curScene();
+                                var aScene = (sScene !== "AUTO" && this._mAgentModelRules[sScene]) || [];
+                                aAllow = aScene.length ? aScene : (this._mAgentModelRules.ALL || []);
+                        }
+                        var aView = !aAllow.length ? aAll : aAll.filter(function (m) {
+                                return m.ModelId === "AUTO" || aAllow.indexOf(String(m.ModelId || "").toUpperCase()) >= 0;
+                        });
+                        oChat.setProperty("/modelsView", aView);
+                        var sCur = oChat.getProperty("/currentModel");
+                        if (sCur && aView.length && !aView.some(function (m) { return m.ModelId === sCur; })) {
+                                oChat.setProperty("/currentModel", "AUTO");
+                        }
+                },
+
+                _loadAgentModelRules: function () {
+                        var that = this;
+                        ChatService.getAgentModelRules().then(function (m) {
+                                that._mAgentModelRules = m || {};
+                                that._syncModelList();
+                        }).catch(function () {
+                                that._mAgentModelRules = {};
+                                that._syncModelList();
+                        });
+                },
+
+                /**
+                  * 20261011：对话页不读 SAP —— 问题里点名了程序 / 事务码 / 表时，
+                  * 回答下方建议转到对应 Agent 场景（不拦截发送；粘贴代码的长问题不提示）
+                  * @returns {string} 建议场景 REPORT/DATA/CODE，或 ""
+                  */
+                _sapSceneHint: function (sQ) {
+                        var q = String(sQ || "").toUpperCase();
+                        if (!q || q.length > 300 || /\n.*\n.*\n/.test(q) || q.indexOf("```") >= 0) {
+                                return "";
+                        }
+                        var bObj = /(^|[^A-Z0-9_])[ZY][A-Z0-9_]{3,29}(?![A-Z0-9_])/.test(q);
+                        var qTab = q.replace(/报表|图表|列表|表格|表单/g, "#");
+                        var bTab = /表\s*[A-Z][A-Z0-9_]{2,29}|[A-Z][A-Z0-9_]{2,29}\s*表/.test(qTab);
+                        if (!bObj && !bTab) {
+                                return "";
+                        }
+                        if (bObj && /执行|运行|跑一下|跑一次|重跑/.test(q)) {
+                                return "REPORT";
+                        }
+                        if (bTab || /数据|统计|多少|分布|记录|明细/.test(q)) {
+                                return "DATA";
+                        }
+                        return "CODE";
+                },
+
+                /** 带着原问题转到 Agent 的指定场景（新会话 + 自动发送） */
+                _jumpToAgentScene: function (sScene, sQuestion) {
+                        var oChat = this.getView().getModel("chat");
+                        if (oChat.getProperty("/busy")) {
+                                MessageToast.show("上一条请求仍在处理中，请稍候");
+                                return;
+                        }
+                        var sKey = this._normScene(sScene);
+                        this._setLastScene(sKey);
+                        this._sStreamToken = "";
+                        oChat.setProperty("/workspaceMode", "AGENT");
+                        var sNew = this._newSessionId();
+                        this._setSessionContext({ id: sNew, mode: "AGENT", agentType: sKey, status: "IDLE" });
+                        this.getView().getModel("session").setProperty("/currentId", sNew);
+                        this.getView().getModel("session").setProperty("/title", "");
+                        oChat.setProperty("/messages", []);
+                        this._setViewLayout(false);
+                        this._applyWorkspaceChrome();
+                        this._applySessionFilter();
+                        if (sQuestion) {
+                                this._executeSend({
+                                        mode: "AGENT", agentType: sKey, displayText: sQuestion,
+                                        meta: "", question: sQuestion, keepInput: true
+                                });
+                        }
+                },
+
                 onSelectWorkspaceMode: function (oEvent) {
                         var sMode = (oEvent.getSource() && oEvent.getSource().data("mode")) === "AGENT"
                                 ? "AGENT" : "CHAT";
@@ -1592,9 +1778,10 @@ sap.ui.define([
                                 return;
                         }
 
-                        // 模式空状态：CHAT 用已记住的空会话；AGENT 新建空通用会话
+                        // 模式空状态：CHAT 用已记住的空会话；AGENT 新建空会话（20261011：默认上次的场景）
                         var sNew = sId || this._newSessionId();
-                        this._setSessionContext({ id: sNew, mode: sMode, agentType: "", status: "IDLE" });
+                        this._setSessionContext({ id: sNew, mode: sMode,
+                                agentType: sMode === "AGENT" ? this._lastScene() : "", status: "IDLE" });
                         this.getView().getModel("session").setProperty("/currentId", sNew);
                         oChat.setProperty("/messages", []);
                         this.getView().getModel("session").setProperty("/title", "");
@@ -1651,24 +1838,31 @@ sap.ui.define([
                         }
                         // V16：新建按钮两模式统一样式(仅文案切换)，不再做主次跳变
                         // V13：徽标只显示模式本身，不拼接 Agent 类型
+                        var oScene = sMode === "AGENT" ? this._sceneDef(this._curScene()) : null;
+                        var bScene = !!oScene && oScene.key !== "AUTO";
                         oChat.setProperty("/modeLabel",
-                                oRB.getText(sMode === "AGENT" ? "modeLabelAgent" : "modeLabelChat"));
+                                oRB.getText(sMode === "AGENT" ? "modeLabelAgent" : "modeLabelChat") +
+                                (bScene ? " · " + oScene.text : ""));
                         oChat.setProperty("/newBtnLabel",
                                 oRB.getText(sMode === "AGENT" ? "newAgentSession" : "newChatBtnChat"));
                         oChat.setProperty("/histLabel",
                                 oRB.getText(sMode === "AGENT" ? "histAgent" : "histChat"));
                         oChat.setProperty("/heroTitle",
                                 oRB.getText(sMode === "AGENT" ? "agentHeroTitle" : "heroTitle"));
-                        oChat.setProperty("/heroSub",
-                                oRB.getText(sMode === "AGENT" ? "agentHeroSub" : "heroSub"));
+                        oChat.setProperty("/heroSub", sMode === "AGENT"
+                                ? (oScene ? oScene.sub : oRB.getText("agentHeroSub")) : oRB.getText("heroSub"));
+                        var sAgentPh = bScene && oScene.ph ? oScene.ph : oRB.getText("agentInputPh");
                         oChat.setProperty("/heroPh",
-                                sMode === "AGENT" ? oRB.getText("agentInputPh") : oRB.getText("heroPlaceholder"));
+                                sMode === "AGENT" ? sAgentPh : oRB.getText("heroPlaceholder"));
                         oChat.setProperty("/inputPh",
-                                sMode === "AGENT" ? oRB.getText("agentInputPh") : oRB.getText("inputPlaceholder"));
+                                sMode === "AGENT" ? sAgentPh : oRB.getText("inputPlaceholder"));
                         // V12：附件回显行仅对话模式显示
                         this._syncAttachRowVisibility();
                         // V16：建议标签随模式切换（对话 = 快捷指令，Agent = 示例问题）
                         this._renderHeroBubbles();
+                        // 20261011：场景选择条 + 按场景过滤模型下拉
+                        this._renderScenePicker();
+                        this._syncModelList();
                 },
 
                 /** 左侧列表只显示当前工作模式的会话（搜索词在模式内过滤） */
@@ -2382,6 +2576,11 @@ sap.ui.define([
                         // V12：时间行；Agent 任务附带状态徽标（进行中/已完成/部分完成/失败）
                         var oTimeRow = new HBox({ alignItems: "Center" }).addStyleClass("sessTimeRow");
                         oTimeRow.addItem(new Text({ text: Formatter.formatTime(o.ChangedAt) }).addStyleClass("sessItemTime"));
+                        // 20261011：Agent 会话场景标签（自动场景不显示）
+                        var oSc = bAgent ? this._sceneDef(o.AgentType) : null;
+                        if (oSc && oSc.key !== "AUTO") {
+                                oTimeRow.addItem(new Text({ text: oSc.text }).addStyleClass("sessSceneTag scene-" + oSc.key));
+                        }
                         if (bAgent) {
                                 oTimeRow.addItem(new Text({
                                         text: this._agentStatusText(o.Status)
@@ -2503,7 +2702,7 @@ sap.ui.define([
                                         Title: sFirstText.length > 24 ? sFirstText.substring(0, 24) + "…" : sFirstText,
                                         ChangedAt: "",
                                         Mode: sMode === "AGENT" ? "AGENT" : "CHAT",
-                                        AgentType: sMode === "AGENT" ? (sAgentType || "INVENTORY") : "",
+                                        AgentType: sMode === "AGENT" ? (sAgentType || "GENERAL") : "",
                                         Status: sStatus || "IDLE"
                                 });
                                 // V12：同步进全量缓存（切换模式后仍可见）
@@ -2650,11 +2849,14 @@ sap.ui.define([
                         oField.destroyItems();
                         var oRB = this._rb();
                         var bAgent = this.getView().getModel("chat").getProperty("/workspaceMode") === "AGENT";
+                        var oSc = bAgent ? this._sceneDef(this._curScene()) : null;
                         var aList = bAgent
-                                ? [1, 2, 3, 4].map(function (i) {
-                                        var s = oRB.getText("agentChip" + i);
-                                        return { title: s, prompt: s };
-                                })
+                                ? ((oSc && oSc.chips.length)
+                                        ? oSc.chips.map(function (s) { return { title: s, prompt: s }; })
+                                        : [1, 2, 3, 4].map(function (i) {
+                                                var s = oRB.getText("agentChip" + i);
+                                                return { title: s, prompt: s };
+                                        }))
                                 : (this.getView().getModel("chat").getProperty("/quickPrompts") || []);
                         aList.slice(0, 8).forEach(function (oEntry) {
                                 oField.addItem(new Button({
@@ -3239,10 +3441,11 @@ sap.ui.define([
                         var oChat = this.getView().getModel("chat");
 
                         var sNew = this._newSessionId();
+                        var bAgentNew = oChat.getProperty("/workspaceMode") === "AGENT";
                         this._setSessionContext({
                                 id: sNew,
-                                mode: oChat.getProperty("/workspaceMode") === "AGENT" ? "AGENT" : "CHAT",
-                                agentType: "",   // V13：通用 Agent 会话不带类型
+                                mode: bAgentNew ? "AGENT" : "CHAT",
+                                agentType: bAgentNew ? this._lastScene() : "",   // 20261011：新任务默认上次的场景
                                 status: "IDLE"
                         });
                         oSession.setProperty("/currentId", sNew);
@@ -3251,6 +3454,7 @@ sap.ui.define([
                         oChat.setProperty("/messages", []);
                         oChat.setProperty("/input", "");
                         this._setViewLayout(false);
+                        this._applyWorkspaceChrome();   // 20261011：场景选择条 / 文案随新会话刷新
                         MessageToast.show(this._rb().getText("toastSessionNew"));
                 },
 
@@ -3284,6 +3488,11 @@ sap.ui.define([
                         ChatService.getConfigValue("LONG_SRC_CHUNK").then(function (sVal) {
                                 oSettings.setProperty("/chunkMode", sVal === "X");
                         }).catch(function () { /* 读不到保持默认关 */ });
+
+                        // 20261011：Agent 可用模型白名单（管理员维护；空 = 不限制）
+                        ChatService.getAgentModelRules().then(function (m) {
+                                oSettings.setProperty("/agentRules", m || {});
+                        }).catch(function () { oSettings.setProperty("/agentRules", {}); });
 
                         // 刷新模型管理页签列表
                         if (ChatService.getMode() === "backend") {
@@ -3384,6 +3593,20 @@ sap.ui.define([
                                 MessageToast.show(oRB.getText(bOn ? "chunkOn" : "chunkOff"));
                         }).catch(function (oErr) {
                                 that.getView().getModel("settings").setProperty("/chunkMode", !bOn);
+                                MessageToast.show(Formatter.escapeHtml((oErr && oErr.message) || String(oErr)));
+                        });
+                },
+
+                /** 20261011：保存 Agent 可用模型白名单（全部场景 + 各场景覆盖） */
+                onSaveAgentModelRules: function () {
+                        var that = this;
+                        var oSettings = this.getView().getModel("settings");
+                        var mRules = oSettings.getProperty("/agentRules") || {};
+                        ChatService.saveAgentModelRules(mRules).then(function () {
+                                that._mAgentModelRules = jQuery.extend(true, {}, mRules);
+                                that._syncModelList();
+                                MessageToast.show("Agent 可用模型已保存");
+                        }).catch(function (oErr) {
                                 MessageToast.show(Formatter.escapeHtml((oErr && oErr.message) || String(oErr)));
                         });
                 },
@@ -3713,6 +3936,25 @@ sap.ui.define([
                                 this._renderAsk(oEntry.uid);
                                 return;
                         }
+                        // 20261011：对话页不读 SAP —— 点名了程序/事务码/表时建议转到 Agent 对应场景
+                        var oCtxNow = this.getView().getModel("chat").getProperty("/currentSession") || {};
+                        if (oCtxNow.mode !== "AGENT") {
+                                var sHint = this._sapSceneHint(this._prevUserText(iIndex));
+                                var oHintScene = sHint ? this._sceneDef(sHint) : null;
+                                if (oHintScene) {
+                                        oEntry.ask = {
+                                                kind: "choice", state: "open",
+                                                title: "对话模式不读取 SAP 系统数据。要在 Agent 里查看系统中的这个对象吗？",
+                                                options: [
+                                                        { key: "scene", scene: oHintScene.key, label: "转到 Agent · " + oHintScene.text, desc: oHintScene.sub },
+                                                        { key: "dismiss", label: "不用了", desc: "继续在对话里聊" }
+                                                ],
+                                                sel: 0, autoFocus: false, allowFree: false
+                                        };
+                                        this._renderAsk(oEntry.uid);
+                                        return;
+                                }
+                        }
                         if (/多个.*任务.*(指定|选择|哪一个)/.test(sAnswer || "")) {
                                 ChatService.getTasks(sSessionId).then(function (aTasks) {
                                         var aOpts = (aTasks || []).slice(0, 6).map(function (t) {
@@ -3774,6 +4016,20 @@ sap.ui.define([
                                 oAsk.state = "cancelled";
                                 oAsk.resultText = "本次不执行，任务已保留";
                                 this._renderAsk(sUid);
+                                return;
+                        }
+                        // 20261011：对话页"转到 Agent 场景"建议
+                        if (oPick.key === "dismiss") {
+                                oAsk.state = "cancelled";
+                                oAsk.resultText = "好的，继续在对话里聊";
+                                this._renderAsk(sUid);
+                                return;
+                        }
+                        if (oPick.key === "scene" && oPick.option) {
+                                oAsk.state = "done";
+                                oAsk.resultText = "已转到 Agent · " + this._sceneDef(oPick.option.scene).text;
+                                this._renderAsk(sUid);
+                                this._jumpToAgentScene(oPick.option.scene, this._prevUserText(oHit.index));
                                 return;
                         }
                         if (this.getView().getModel("chat").getProperty("/busy")) {

@@ -30,7 +30,7 @@ function extractTcode(question) {
  * @param {string} question 用户消息
  * @returns {{module_id, intent_code, action, object_kind, object_value, task_id, needs_clarify, reason}}
  */
-function quickRoute(question, opts = {}) {
+function routeAuto(question, opts = {}) {
   const out = {
     module_id: 'GENERAL', intent_code: 'GENERAL_CHAT', action: 'CREATE_TASK',
     object_kind: '', object_value: '', task_id: '', needs_clarify: false, reason: '通用问题, 走旧链路'
@@ -144,4 +144,76 @@ function quickRoute(question, opts = {}) {
   return out;
 }
 
-module.exports = { quickRoute, isTcodeLike, extractTcode };
+/* ===== V1.0.5(20261011, 与 ABAP 同步): 会话场景约束 ===== */
+const SCENES = ['REPORT', 'DATA', 'INVENTORY', 'CODE'];
+
+function normalizeScene(s) {
+  const v = String(s || '').toUpperCase().trim();
+  return SCENES.includes(v) ? v : 'AUTO';
+}
+
+function applyScene(question, scene, r, opts) {
+  const q = String(question || '').toUpperCase();
+  const tc = extractTcode(question);
+  const exec = !!tc && /执行|运行|跑一下|跑一次|重跑/.test(q);
+  const base = { action: 'CREATE_TASK', object_kind: '', object_value: '', task_id: '',
+    needs_clarify: false, reason: '', out_of_scene: false };
+  const out = (o) => Object.assign({}, base, o);
+  if (scene === 'REPORT') {
+    if (r.module_id === 'REPORT') return r;
+    if (r.object_kind === 'TABLE' || r.module_id === 'INVENTORY') {
+      return Object.assign({}, r, { out_of_scene: true,
+        reason: r.object_kind === 'TABLE' ? '查表/统计表数据属于「数据分析」场景' : '库存查询属于「库存查询」场景' });
+    }
+    if (tc) {
+      return out({ module_id: 'REPORT', intent_code: exec ? 'RUN_AND_ANALYZE_REPORT' : 'VIEW_REPORT_RESULT',
+        action: exec ? 'EXECUTE' : 'CREATE_TASK', object_kind: 'TCODE', object_value: tc,
+        task_id: opts.findTaskId ? (opts.findTaskId(tc) || '') : '', reason: `报表场景: 按报表 ${tc} 处理` });
+    }
+    return out({ module_id: 'REPORT', intent_code: 'ANALYZE_ARTIFACT', action: 'ANALYZE',
+      object_kind: 'ARTIFACT', reason: '报表场景: 追问本会话的报表结果' });
+  }
+  if (scene === 'DATA') {
+    if (r.module_id === 'REPORT') {
+      if (r.intent_code === 'RUN_AND_ANALYZE_REPORT' && exec) {
+        return Object.assign({}, r, { out_of_scene: true, reason: '执行报表属于「报表执行」场景' });
+      }
+      return r.object_kind === 'TCODE' && tc
+        ? out({ module_id: 'DATA', intent_code: 'TABLE_ANALYSIS', object_kind: 'TABLE', object_value: tc, reason: `数据分析场景: ${tc} 按表名处理` })
+        : out({ module_id: 'DATA', intent_code: 'TABLE_ANALYSIS', object_kind: 'NONE', reason: '数据分析场景: 追问已有数据结果' });
+    }
+    if (r.module_id !== 'DATA') {
+      return out({ module_id: 'DATA', intent_code: 'TABLE_ANALYSIS', object_kind: 'NONE', reason: '数据分析场景' });
+    }
+    return r;
+  }
+  if (scene === 'INVENTORY') {
+    if (r.module_id === 'REPORT' && r.intent_code === 'RUN_AND_ANALYZE_REPORT' && exec) {
+      return Object.assign({}, r, { out_of_scene: true, reason: '执行报表属于「报表执行」场景' });
+    }
+    if (r.object_kind === 'TABLE') {
+      return Object.assign({}, r, { out_of_scene: true, reason: '查表/写 SQL 属于「数据分析」场景' });
+    }
+    return out({ module_id: 'INVENTORY', intent_code: 'INVENTORY_QUERY', object_kind: 'MATERIAL', reason: '库存查询场景' });
+  }
+  if (scene === 'CODE') {
+    if (r.module_id === 'REPORT' && r.intent_code === 'RUN_AND_ANALYZE_REPORT' && exec) {
+      return Object.assign({}, r, { out_of_scene: true, reason: '执行报表属于「报表执行」场景(这里可以解读该报表的程序逻辑)' });
+    }
+    if (r.object_kind === 'TABLE') {
+      return out({ module_id: 'CODE', intent_code: 'CODE_ANALYSIS', object_kind: 'TABLE', object_value: r.object_value, reason: '代码分析场景' });
+    }
+    return out({ module_id: 'CODE', intent_code: 'CODE_ANALYSIS', object_kind: tc ? 'PROGRAM' : 'NONE',
+      object_value: tc || '', reason: '代码分析场景' });
+  }
+  return r;
+}
+
+/** V1.0.5: 先按原混合规则判, 再按会话场景(opts.scene)收窄 */
+function quickRoute(question, opts = {}) {
+  const r = Object.assign({ out_of_scene: false }, routeAuto(question, opts));
+  const scene = normalizeScene(opts.scene);
+  return scene === 'AUTO' ? r : applyScene(question, scene, r, opts);
+}
+
+module.exports = { quickRoute, isTcodeLike, extractTcode, normalizeScene };

@@ -104,7 +104,7 @@
                                                                         width="13rem"
                                                                         placeholder="{i18n>selectModel}"
                                                                         tooltip="{i18n>selectModel}"
-                                                                        items="{path: 'chat>/models', templateShareable: false}"
+                                                                        items="{path: 'chat>/modelsView', templateShareable: false}"
                                                                         selectedKey="{chat>/currentModel}"
                                                                         change=".onModelChange"
                                                                         class="modelSelect">
@@ -138,6 +138,8 @@
                                                                 <Title level="H2" text="{chat>/heroTitle}" class="heroTitle"/>
                                                                 <!-- V7：hero 副标题；V13：Agent 模式换为 Agent 引导文案 -->
                                                                 <Text text="{chat>/heroSub}" class="heroSub"/>
+                                                                <!-- 20261011：Agent 场景选择（新会话首条消息前可选，之后固定；控制器 _renderScenePicker 渲染） -->
+                                                                <HBox id="scenePicker" class="scenePicker" wrap="Wrap" justifyContent="Center" visible="false"/>
 
                                                                 <!-- V4.3：输入卡（含内部右下角发送键）保持原结构，仅位于胶囊下方 -->
                                                                 <VBox class="inputCard heroCard" width="100%">

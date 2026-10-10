@@ -3505,6 +3505,26 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .chartDeck { display: flex; flex-direction: column; gap: .7rem; margin: .4rem 0 .6rem; }
 /* 20261011：紧跟来源表格的图表（工具条下方，与下一段内容留出间距） */
 .chartDeck.chartInline { margin: -.35rem 0 1rem; }
+
+/* 20261011：Agent 会话场景选择条（hero 副标题下方） */
+.scenePicker { gap: .4rem; margin: .2rem 0 .9rem; max-width: 46rem; }
+.scenePicker .sceneBtn .sapMBtnInner {
+        border: 1px solid var(--line-strong) !important; border-radius: 999px !important;
+        background: var(--surface) !important; color: var(--text-2) !important;
+        height: 2rem; padding: 0 .85rem; font-size: .8rem;
+}
+.scenePicker .sceneBtn .sapMBtnIcon { color: var(--sub) !important; font-size: .85rem; }
+.scenePicker .sceneBtn:hover .sapMBtnInner { border-color: var(--accent) !important; color: var(--accent) !important; }
+.scenePicker .sceneBtn.sceneOn .sapMBtnInner {
+        background: var(--accent-soft) !important; border-color: var(--accent) !important;
+        color: var(--accent) !important; font-weight: 600;
+}
+.scenePicker .sceneBtn.sceneOn .sapMBtnIcon { color: var(--accent) !important; }
+.scenePicker .sceneBtn.sceneAuto .sapMBtnInner { border-style: dashed !important; }
+/* 侧栏会话场景标签 */
+.sessSceneTag { font-size: .68rem; line-height: 1.2; padding: .05rem .4rem; margin-left: .35rem;
+        border-radius: 999px; background: var(--hover); color: var(--text-2); }
+.agentModelLbl { margin-top: .55rem; }
 .chartCard { border: 1px solid var(--line); border-radius: var(--r-card); background: var(--surface); padding: .65rem .85rem .5rem; }
 .ccHead { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .3rem; }
 .ccTitle { font-size: .84rem; font-weight: 600; color: var(--text); margin-right: auto; }
