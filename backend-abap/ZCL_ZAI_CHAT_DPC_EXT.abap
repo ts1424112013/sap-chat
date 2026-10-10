@@ -60,6 +60,11 @@
 *   (GenericResult 走 ty_generic_odata 无下划线输出)
 *   ★ 重贴后核对标记: 搜 to_agent_odata 应有 2 处调用(ANALYZEAGENT/
 *   ANALYZETASK) + 1 处实现; to_generic_odata 应有 7 处调用 + 1 处实现
+* V15.1 20261011: ANALYZETASK 把 FocusedArtifactId 透传给
+*   AGENT_SERVICE.analyze_agent(iv_focus_artifact_id) —— 此前只解析不使用,
+*   "分析一下这个结果" 拿不到前端正在看的报表结果(10.09 遗留问题 1);
+*   需同时重贴 AGENT_SERVICE V15.1(新增可选参数), SEGW 无需改动
+*   ★ 重贴后核对标记: ANALYZETASK 分支调用含 iv_focus_artifact_id = lv_at_fid
 *=======================================================================
 * V15(P1~P3) 20261007: Agent 多业务任务与报表分析接口
 *   新增函数导入分支(全部旁路, 不改既有分支; SEGW 未建 metadata 前
@@ -368,11 +373,13 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
           ENDCASE.
         ENDLOOP.
 
+        " V15.1: FocusedArtifactId 透传(候选值; 归属/会话/READY 由后端校验)
         zcl_ai_agent_service=>analyze_agent(
-          EXPORTING iv_session_id = lv_session
-                    iv_question   = lv_question
-                    iv_model_id   = lv_model
-          IMPORTING es_result     = ls_atask ).
+          EXPORTING iv_session_id        = lv_session
+                    iv_question          = lv_question
+                    iv_model_id          = lv_model
+                    iv_focus_artifact_id = lv_at_fid
+          IMPORTING es_result            = ls_atask ).
 
         " 显式指定 TaskId 且与后端解析一致时以显式为准(归属已校验);
         " 不一致以后端为准(后端是事实源)

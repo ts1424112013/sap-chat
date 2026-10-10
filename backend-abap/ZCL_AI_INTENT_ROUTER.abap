@@ -23,9 +23,21 @@
 * V1.0.2  20261008: 保留字修复连锁 —— resolve_task_by_object 引用
 *   ty_task.title 已随 V1.0.2(TASK_SERVICE) 改名 task_title, 同步 2 处;
 *   ty_candidate.title 视图键不变(模型/前端无感)
+* V1.0.3  20261009: 表名双语序 —— "表ZIDPPP099的数据" 与 "ZIDPPP099表数据"
+*   均命中规则 1(本版按 10.09 日报复原, 整类替换即可)
+* V1.0.4  20261011: 对话式结果分析(10.09 遗留问题 1) ——
+*   ① 新规则 4b: 指代报表结果("这个结果/上面的数据/报表结果") + 分析类
+*     动作, 或"分析一下结果" → REPORT/ANALYZE_ARTIFACT, object_kind=ARTIFACT
+*     (原先落到规则 5 被"分析"判成新建 DATA 任务); 结果由 AGENT_SERVICE
+*     定位(前端聚焦结果 > 会话最近可用报表结果)并校验, 找不到回落旧路由;
+*   ② TCode 块内"分析/看看/解读"(规则 4)提前到"继续/刚才"(规则 3)之前:
+*     "分析一下刚才 ZDPMM702 的结果" 应分析结果, 而不是再出参数卡;
+*   ③ 规则 1 表名匹配前先屏蔽 报表/图表/列表/表格/表单 —— 防 "执行报表
+*     ZDPMM702" 被当成表分析、"ALV表格" 被当成表 ALV;
+*   ④ validate_plan 允许 object_kind = ARTIFACT
 * ★ 重贴后核对标记: quick_route 中 "表+表名" 规则必须在执行/继续规则
 *   之前(防 "分析表 ZTEST_DATA" 因 Z 开头误判 REPORT); 偏移/长度
-*   已全部先落中间变量(§2.1-2)
+*   已全部先落中间变量(§2.1-2); 规则 4b 在 TCode 块之后、规则 5 之前
 *=======================================================================
 CLASS zcl_ai_intent_router DEFINITION
   PUBLIC
@@ -121,8 +133,16 @@ CLASS zcl_ai_intent_router IMPLEMENTATION.
     " ---- 规则 1(最高优先): "表 + 表名" → DATA(03 场景 2) ----
     " 分析表 ZTEST_DATA / 统计 ZTEST_DATA 表 的记录分布 → 表分析,
     " 不因 Z 开头误判报表, 也不因"分析"误判报表执行
-    FIND REGEX '表[\s:：]*([A-Z][A-Z0-9_]{2,29})' IN lv_up
+    " V1.0.4: 报表/图表/列表/表格/表单 里的"表"不是表名标记, 先屏蔽
+    DATA(lv_tabsrc) = lv_up.
+    REPLACE ALL OCCURRENCES OF REGEX '报表|图表|列表|表格|表单' IN lv_tabsrc WITH '#'.
+    FIND REGEX '表[\s:：]*([A-Z][A-Z0-9_]{2,29})' IN lv_tabsrc
       SUBMATCHES DATA(lv_tab).
+    IF sy-subrc <> 0.
+      " V1.0.3: 反语序 "ZIDPPP099表数据" / "MARA 表"
+      FIND REGEX '([A-Z][A-Z0-9_]{2,29})\s*表' IN lv_tabsrc
+        SUBMATCHES lv_tab.
+    ENDIF.
     IF sy-subrc = 0.
       rs-module_id    = zcl_ai_task_service=>gc_mod_data.
       rs-intent_code  = gc_int_table_data.
@@ -151,6 +171,40 @@ CLASS zcl_ai_intent_router IMPLEMENTATION.
                     iv_module_id  = zcl_ai_task_service=>gc_mod_report
           IMPORTING ev_task_id    = rs-task_id ).
         rs-reason = |用户要求执行报表 { lv_tcode }(对象待后端登记核验)|.
+        RETURN.
+      ENDIF.
+
+      " ---- 规则 4: "分析 ZM001"(无执行词): 执行语义不能默认 ----
+      " V1.0.4: 先于规则 3 判断 —— "分析一下刚才 ZM001 的结果" 是分析, 不是恢复
+      " 01 计划 §8.2: "分析"不隐含"重新执行"; 有唯一可用结果 → 分析它,
+      " 否则澄清(查看已有结果 / 填参数执行)
+      FIND REGEX '分析|看看|解读' IN lv_up.
+      IF sy-subrc = 0.
+        rs-module_id    = zcl_ai_task_service=>gc_mod_report.
+        rs-intent_code  = gc_int_analyze_art.
+        rs-action       = gc_act_analyze.
+        rs-object_kind  = 'TCODE'.
+        rs-object_value = lv_tcode.
+        DATA: lv_f2 TYPE string,
+              lv_a2 TYPE abap_bool,
+              lt_c2 TYPE zcl_ai_task_service=>tt_candidate.
+        resolve_task_by_object(
+          EXPORTING iv_session_id = iv_session_id
+                    iv_object     = lv_tcode
+                    iv_module_id  = zcl_ai_task_service=>gc_mod_report
+          IMPORTING ev_task_id    = lv_f2
+                    ev_ambiguous  = lv_a2
+                    et_candidates = lt_c2 ).
+        IF lv_a2 = abap_true.
+          rs-needs_clarify = abap_true.
+          rs-reason = |多个 { lv_tcode } 结果, 需要用户选择分析哪一份|.
+        ELSEIF lv_f2 IS NOT INITIAL.
+          rs-task_id = lv_f2.
+          rs-reason  = |分析已有报表结果(不触发重新执行)|.
+        ELSE.
+          rs-needs_clarify = abap_true.
+          rs-reason = |无已有结果; 需要用户确认是查看结果还是填写参数执行|.
+        ENDIF.
         RETURN.
       ENDIF.
 
@@ -195,39 +249,46 @@ CLASS zcl_ai_intent_router IMPLEMENTATION.
         ENDIF.
         RETURN.
       ENDIF.
+    ENDIF.
 
-      " ---- 规则 4: "分析 ZM001"(无执行词): 执行语义不能默认 ----
-      " 01 计划 §8.2: "分析"不隐含"重新执行"; 有唯一可用结果 → 分析它,
-      " 否则澄清(查看已有结果 / 填参数执行)
-      FIND REGEX '分析|看看|解读' IN lv_up.
+    " ---- 规则 4b(V1.0.4): 指代报表结果 + 分析类动作 → ANALYZE_ARTIFACT ----
+    " "分析一下这个结果" / "上面的数据哪个工厂最多" / "解读报表结果":
+    " 原先落到规则 5 被"分析"判成新建 DATA 任务, 结果数据也不在上下文。
+    " 这里只给候选意图; 结果定位/归属/READY 校验在 AGENT_SERVICE
+    " (找不到可用报表结果时回落旧路由, 不硬拒)
+    DATA(lv_refsrc) = lv_up.
+    REPLACE ALL OCCURRENCES OF REGEX '数据库|数据元素|数据类型|数据字典' IN lv_refsrc WITH '#'.
+    DATA(lv_ref_hit) = abap_false.
+    FIND REGEX '(这个|这份|这些|该|此|上面|上述|刚才|刚刚|前面|以上)的?(报表)?(运行)?(结果|数据)'
+      IN lv_refsrc.
+    IF sy-subrc = 0.
+      lv_ref_hit = abap_true.
+    ELSE.
+      FIND REGEX '(报表|运行)的?结果' IN lv_refsrc.
       IF sy-subrc = 0.
-        rs-module_id    = zcl_ai_task_service=>gc_mod_report.
-        rs-intent_code  = gc_int_analyze_art.
-        rs-action       = gc_act_analyze.
-        rs-object_kind  = 'TCODE'.
-        rs-object_value = lv_tcode.
-        DATA: lv_f2 TYPE string,
-              lv_a2 TYPE abap_bool,
-              lt_c2 TYPE zcl_ai_task_service=>tt_candidate.
-        resolve_task_by_object(
-          EXPORTING iv_session_id = iv_session_id
-                    iv_object     = lv_tcode
-                    iv_module_id  = zcl_ai_task_service=>gc_mod_report
-          IMPORTING ev_task_id    = lv_f2
-                    ev_ambiguous  = lv_a2
-                    et_candidates = lt_c2 ).
-        IF lv_a2 = abap_true.
-          rs-needs_clarify = abap_true.
-          rs-reason = |多个 { lv_tcode } 结果, 需要用户选择分析哪一份|.
-        ELSEIF lv_f2 IS NOT INITIAL.
-          rs-task_id = lv_f2.
-          rs-reason  = |分析已有报表结果(不触发重新执行)|.
-        ELSE.
-          rs-needs_clarify = abap_true.
-          rs-reason = |无已有结果; 需要用户确认是查看结果还是填写参数执行|.
-        ENDIF.
-        RETURN.
+        lv_ref_hit = abap_true.
       ENDIF.
+    ENDIF.
+    IF lv_ref_hit = abap_true.
+      FIND REGEX '分析|解读|总结|看看|看一下|说明|洞察|结论|怎么样|如何|有什么|有哪些|趋势|异常|汇总|统计|对比|排名|占比|分布|最多|最少|最大|最小|最高|最低|哪个|哪些|多少'
+        IN lv_refsrc.
+      IF sy-subrc <> 0.
+        lv_ref_hit = abap_false.
+      ENDIF.
+    ELSE.
+      " 无指代词但明确说"结果": 分析一下结果 / 结果分析
+      FIND REGEX '(分析|解读|总结)(一下|下)?的?结果|结果(分析|解读|总结)' IN lv_refsrc.
+      IF sy-subrc = 0.
+        lv_ref_hit = abap_true.
+      ENDIF.
+    ENDIF.
+    IF lv_ref_hit = abap_true.
+      rs-module_id    = zcl_ai_task_service=>gc_mod_report.
+      rs-intent_code  = gc_int_analyze_art.
+      rs-action       = gc_act_analyze.
+      rs-object_kind  = 'ARTIFACT'.
+      rs-reason       = |分析会话中的报表结果(不重新执行, 不新建数据任务)|.
+      RETURN.
     ENDIF.
 
     " ---- 规则 5: "先看库存"/库存词 → INVENTORY(沿用领域卡词表) ----
@@ -310,7 +371,7 @@ CLASS zcl_ai_intent_router IMPLEMENTATION.
           ev_reason = |对象值 { iv_object_val } 不是合法的表名形式|.
           RETURN.
         ENDIF.
-      WHEN 'MATERIAL' OR 'NONE' OR ''.
+      WHEN 'MATERIAL' OR 'NONE' OR '' OR 'ARTIFACT'.   " V1.0.4: ARTIFACT = 会话内报表结果
         " 通过(具体校验由各模块工具参数 Schema 承担)
       WHEN OTHERS.
         ev_reason = |未注册的对象类型: { iv_object_kind }|.

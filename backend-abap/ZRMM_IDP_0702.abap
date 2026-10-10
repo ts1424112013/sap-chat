@@ -1,7 +1,14 @@
 *&---------------------------------------------------------------------*
 *& Report ZRMM_IDP_0702
 *&---------------------------------------------------------------------*
-*&
+*& V1.1 20261009: AI 采集通道(P_AICAP/P_RUNID NO-DISPLAY + FORM ai_capture)
+*& V1.2 20261011: ai_capture 序列化改 compress = abap_false ——
+*&   compress 会丢掉初始值字段(MIH=0、CONFIG 空、日期空等), 首行缺键时
+*&   前端按首行推断列会整列丢失; 改为每行输出全部字段;
+*&   AI 通道(P_AICAP='X')下工厂为空 → MESSAGE TYPE 'E' 让作业取消
+*&   (前端显示失败原因), 不再"成功 0 行"冒充有效空结果; 手工运行行为不变
+*& ★ 重贴后核对标记: FORM ai_capture 内 compress = abap_false;
+*&   START-OF-SELECTION 的 P2 分支有 IF p_aicap = 'X' ... TYPE 'E'
 *&---------------------------------------------------------------------*
 REPORT zrmm_idp_0702 .
 
@@ -112,6 +119,11 @@ START-OF-SELECTION.
   IF p2 = 'X'.
     CLEAR:fieldcat.
     IF werks_i IS INITIAL.
+      " V1.2: AI 采集通道缺工厂 = 明确失败(后台作业取消 → 适配器返回 FAILED),
+      "       不能当成 0 行有效结果; 手工运行(P_AICAP 恒空)仍只提示
+      IF p_aicap = 'X'.
+        MESSAGE '請輸入工廠欄位(AI 通道: 工廠為必填)' TYPE 'E'.
+      ENDIF.
       MESSAGE  '請輸入工廠欄位' TYPE 'S' DISPLAY LIKE 'E'.
     ELSE.
       PERFORM selectData.
@@ -742,7 +754,8 @@ FORM ai_capture USING p_runid TYPE c.
 
   LOOP AT lt_data.
     MOVE-CORRESPONDING lt_data TO ls_row.
-    lv_json = /ui2/cl_json=>serialize( data = ls_row compress = abap_true ).
+    " V1.2: 不压缩 —— 初始值字段(0/空)也必须保留键, 列结构才完整
+    lv_json = /ui2/cl_json=>serialize( data = ls_row compress = abap_false ).
     lv_idx = lv_idx + 1.
     CLEAR ls_res.
     ls_res-mandt      = sy-mandt.

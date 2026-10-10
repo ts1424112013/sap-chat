@@ -95,6 +95,22 @@
 *   依赖: ZAI_RPT_PARAM 加列 SEL_KIND CHAR1(P=PARAMETER S=SELECT-OPTION)
 *         + 新表 ZAI_RPT_RESULT + 程序端 P_AICAP/P_RUNID 采集参数
 *         + ZAI_CHAT_CFG 键 REPORT_EXEC_REAL(缺省关闭=MOCK)
+* V1.0.11 20261011: 10.09 遗留问题修复 ——
+*   ① 已提交运行的 poll/read_result 按运行自身作业记录路由
+*     (adapter_real_for_run: 作业名 ZAI_RPT_* = 真实作业), 中途切换
+*     REPORT_EXEC_REAL 不再把 MOCK 运行交给真实适配器查(反之亦然);
+*   ② UNKNOWN 是非终态, 不再写 finished_at;
+*   ③ 运行 READY → 任务 COMPLETED / FAILED → 任务 FAILED(任务徽标与
+*     任务列表不再停在 QUEUED);
+*   ④ 提交失败(ad_submit 返回 FAILED)把原因写入 run.error_code/
+*     error_message, 轮询/前端步骤条直接显示失败原因;
+*   ⑤ validate_params: 多值/范围参数按逗号(兼容竖线)拆分逐项校验 ——
+*     原先整串校验, 日期范围 "20261001,20261009" 必报 TYPE、多值超长误报;
+*     范围两端次序校验(DATE 字典序 / NUM 数值);
+*   ⑥ 新增 find_latest_artifact(会话最近可用报表结果, 可按 TCode 过滤),
+*     供 AGENT_SERVICE 对话式结果分析定位结果
+* ★ 重贴后核对标记: 全文应有 adapter_real_for_run 与 find_latest_artifact;
+*   ad_poll/ad_read_result 内调用 adapter_real_for_run(而非 adapter_real)
 *=======================================================================
 CLASS zcl_ai_report_service DEFINITION
   PUBLIC
@@ -229,6 +245,10 @@ CLASS zcl_ai_report_service DEFINITION
     " ---- V1.0.10: 适配器路由(MOCK <-> EXEC_SAP 透明切换) ----
     CLASS-METHODS adapter_real
       RETURNING VALUE(rv_real) TYPE abap_bool.
+    " V1.0.11: 已提交运行按自身作业记录选适配器(不随开关漂移)
+    CLASS-METHODS adapter_real_for_run
+      IMPORTING iv_report_run_id TYPE string
+      RETURNING VALUE(rv_real)   TYPE abap_bool.
     CLASS-METHODS ad_submit
       IMPORTING iv_report_run_id TYPE string
                 iv_program       TYPE string
@@ -311,6 +331,14 @@ CLASS zcl_ai_report_service DEFINITION
     CLASS-METHODS is_artifact_available
       IMPORTING iv_artifact_id TYPE string
       RETURNING VALUE(rv)      TYPE abap_bool.
+
+    " V1.0.11: 会话内最近一份可用的报表结果(当前用户; AVAILABLE; 有运行号)。
+    " iv_tcode 非空时只取该 TCode 的运行。对话式结果分析在前端未带
+    " FocusedArtifactId 时用它定位; 找不到返回空(调用方决定回落)
+    CLASS-METHODS find_latest_artifact
+      IMPORTING iv_session_id    TYPE string
+                iv_tcode         TYPE string OPTIONAL
+      RETURNING VALUE(rv_art_id) TYPE string.
 
     " 扁平 JSON 键值解析(仅对象形态, 值限字符串/数字/bool/null, 不支持
     " 嵌套; 正则模式与 AGENT_GUARD.parse_flat_json 一致 —— 已部署验证。
@@ -690,10 +718,25 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
                   WHERE report_run_id = @iv_report_run_id.
               ENDIF.
             ENDIF.
-          WHEN gc_run_failed OR gc_run_timeout OR gc_run_unknown.
+            " V1.0.11: 运行就绪 → 任务完成(乐观锁; 版本冲突仅不推进, 不影响运行)
+            zcl_ai_task_service=>update_status(
+              iv_task_id = CONV string( ls_run-task_id )
+              iv_version = ls_task-current_version
+              iv_status  = zcl_ai_task_service=>gc_st_completed
+              iv_summary = |{ ls_run-tcode } 运行完成, 结果已登记| ).
+          WHEN gc_run_failed OR gc_run_timeout.
             UPDATE zai_rpt_run SET status = @lv_new_sts, finished_at = @lv_now
               WHERE report_run_id = @iv_report_run_id.
+            " V1.0.11: 失败 → 任务 FAILED(TIMEOUT 不等于作业已停止, 任务不动)
+            IF lv_new_sts = gc_run_failed.
+              zcl_ai_task_service=>update_status(
+                iv_task_id = CONV string( ls_run-task_id )
+                iv_version = ls_task-current_version
+                iv_status  = zcl_ai_task_service=>gc_st_failed
+                iv_summary = |{ ls_run-tcode } 运行失败| ).
+            ENDIF.
           WHEN OTHERS.
+            " V1.0.11: UNKNOWN 等非终态只记状态, 不写 finished_at
             UPDATE zai_rpt_run SET status = @lv_new_sts
               WHERE report_run_id = @iv_report_run_id.
         ENDCASE.
@@ -748,6 +791,50 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
       WHERE artifact_id = @iv_artifact_id AND owner = @sy-uname
       INTO @DATA(lv_sts).
     rv = xsdbool( sy-subrc = 0 AND lv_sts = 'AVAILABLE' ).
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_AI_REPORT_SERVICE=>FIND_LATEST_ARTIFACT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_SESSION_ID                  TYPE        STRING
+* | [--->] IV_TCODE                       TYPE        STRING(optional)
+* | [<-()] RV_ART_ID                      TYPE        STRING
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD find_latest_artifact.
+
+    " V1.0.11: 只认当前用户、本会话、AVAILABLE 且来自报表运行的结果;
+    " 读取时仍须过 get_result 的 READY/归属校验(这里只做定位)
+    CLEAR rv_art_id.
+    IF iv_session_id IS INITIAL.
+      RETURN.
+    ENDIF.
+    DATA(lv_tc) = to_upper( iv_tcode ).
+    CONDENSE lv_tc NO-GAPS.
+
+    SELECT artifact_id, report_run_id, created_at
+      FROM zai_artifact
+      WHERE session_id    = @iv_session_id
+        AND owner         = @sy-uname
+        AND status        = 'AVAILABLE'
+        AND report_run_id <> ' '
+      ORDER BY created_at DESCENDING
+      INTO TABLE @DATA(lt_a)
+      UP TO 20 ROWS.
+
+    LOOP AT lt_a INTO DATA(ls_a).
+      IF lv_tc IS NOT INITIAL.
+        SELECT SINGLE tcode FROM zai_rpt_run
+          WHERE report_run_id = @ls_a-report_run_id
+          INTO @DATA(lv_run_tc).
+        IF sy-subrc <> 0 OR lv_run_tc <> lv_tc.
+          CONTINUE.
+        ENDIF.
+      ENDIF.
+      rv_art_id = ls_a-artifact_id.
+      RETURN.
+    ENDLOOP.
 
   ENDMETHOD.
 
@@ -857,6 +944,23 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD adapter_real_for_run.
+    " V1.0.11: 运行一旦提交, 由它自己的作业记录决定适配器:
+    " 作业名 ZAI_RPT_*(EXEC_SAP 写入) = 真实作业; 有其他值 = MOCK;
+    " 尚无作业记录(未提交/提交失败)才按当前开关
+    SELECT SINGLE sap_job_name FROM zai_rpt_run
+      WHERE report_run_id = @iv_report_run_id
+      INTO @DATA(lv_jn).
+    IF sy-subrc = 0 AND lv_jn CP 'ZAI_RPT_*'.
+      rv_real = abap_true.
+    ELSEIF sy-subrc = 0 AND lv_jn IS NOT INITIAL.
+      rv_real = abap_false.
+    ELSE.
+      rv_real = adapter_real( ).
+    ENDIF.
+  ENDMETHOD.
+
+
   METHOD ad_submit.
     CLEAR: ev_status, ev_message.
     IF adapter_real( ) = abap_true.
@@ -881,7 +985,7 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
 
   METHOD ad_poll.
     CLEAR: ev_status, ev_message.
-    IF adapter_real( ) = abap_true.
+    IF adapter_real_for_run( iv_report_run_id ) = abap_true.
       zcl_ai_report_exec_sap=>poll(
         EXPORTING iv_report_run_id = iv_report_run_id
         IMPORTING ev_status        = ev_status
@@ -897,7 +1001,7 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
 
   METHOD ad_read_result.
     CLEAR: ev_schema_json, ev_summary_json, ev_rows_json, ev_row_count, ev_message.
-    IF adapter_real( ) = abap_true.
+    IF adapter_real_for_run( iv_report_run_id ) = abap_true.
       zcl_ai_report_exec_sap=>read_result(
         EXPORTING iv_report_run_id = iv_report_run_id
                   iv_max_rows      = iv_max_rows
@@ -1072,6 +1176,16 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
     UPDATE zai_rpt_run
       SET status = @lv_sub_sts, started_at = @lv_now
       WHERE report_run_id = @lv_id.
+    " V1.0.11: 提交失败原因落 run 表(轮询返回 error_message, 前端步骤条直接展示;
+    " 原先只写状态, 用户只看到"失败"不知原因)。宿主变量按列类型声明 → 超长自动截断
+    IF lv_sub_sts = gc_run_failed.
+      DATA lv_sub_err TYPE zai_rpt_run-error_message.
+      lv_sub_err = lv_sub_msg.
+      UPDATE zai_rpt_run SET error_code    = 'SUBMIT',
+                             error_message = @lv_sub_err,
+                             finished_at   = @lv_now
+        WHERE report_run_id = @lv_id.
+    ENDIF.
     COMMIT WORK.
 
     zcl_ai_report_mock=>add_step(
@@ -1087,9 +1201,12 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
     rs-message       = lv_sub_msg.
 
     " 任务状态推进(乐观锁; 版本冲突不影响运行记录, 下次查询时补偿)
+    " V1.0.11: 提交即失败时任务直接 FAILED(不再挂在 QUEUED)
     zcl_ai_task_service=>update_status(
       iv_task_id = iv_task_id iv_version = ls_task-current_version
-      iv_status  = zcl_ai_task_service=>gc_st_queued ).
+      iv_status  = COND #( WHEN lv_sub_sts = gc_run_failed
+                           THEN zcl_ai_task_service=>gc_st_failed
+                           ELSE zcl_ai_task_service=>gc_st_queued ) ).
 
   ENDMETHOD.
 
@@ -1264,8 +1381,58 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
 
       " 单值校验(类型/范围/值域)
       DATA: lv_norm TYPE string, lv_err TYPE string.
-      validate_one( EXPORTING is_p = ls_p iv_val = lv_val
-                    IMPORTING ev_norm = lv_norm ev_err = lv_err ).
+      CLEAR: lv_norm, lv_err.
+      IF ls_p-multi_value = abap_true OR ls_p-range_allowed = abap_true.
+        " V1.0.11: 多值/范围逐项校验 —— 前端 AskCard 多值 "a,b,c"、范围
+        " "low,high"(兼容 "|"); 规范化为逗号分隔, EXEC_SAP 据此拆成选择表行
+        DATA: lt_items TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
+              lv_item  TYPE string,
+              lv_inorm TYPE string,
+              lv_ierr  TYPE string,
+              lv_split TYPE string.
+        CLEAR: lt_items, lv_inorm, lv_ierr.
+        lv_split = lv_val.
+        REPLACE ALL OCCURRENCES OF '|' IN lv_split WITH ','.
+        SPLIT lv_split AT ',' INTO TABLE lt_items.
+        LOOP AT lt_items INTO lv_item.
+          CONDENSE lv_item.
+          IF lv_item IS INITIAL.
+            CONTINUE.
+          ENDIF.
+          validate_one( EXPORTING is_p = ls_p iv_val = lv_item
+                        IMPORTING ev_norm = lv_inorm ev_err = lv_ierr ).
+          IF lv_ierr IS NOT INITIAL.
+            lv_err = lv_ierr.
+            EXIT.
+          ENDIF.
+          lv_norm = COND #( WHEN lv_norm IS INITIAL THEN lv_inorm
+                            ELSE lv_norm && ',' && lv_inorm ).
+        ENDLOOP.
+        " 范围两端次序(仅范围、非多值、恰好两项): DATE 字典序即时间序, NUM 按数值
+        IF lv_err IS INITIAL AND ls_p-range_allowed = abap_true
+           AND ls_p-multi_value = abap_false.
+          DATA: lv_rlo TYPE string,
+                lv_rhi TYPE string.
+          CLEAR: lv_rlo, lv_rhi.
+          SPLIT lv_norm AT ',' INTO lv_rlo lv_rhi.
+          IF lv_rlo IS NOT INITIAL AND lv_rhi IS NOT INITIAL.
+            IF ls_p-data_type = 'NUM'.
+              TRY.
+                  IF CONV f( lv_rlo ) > CONV f( lv_rhi ).
+                    lv_err = 'RANGE'.
+                  ENDIF.
+                CATCH cx_root.
+                  lv_err = 'TYPE'.
+              ENDTRY.
+            ELSEIF lv_rlo > lv_rhi.
+              lv_err = 'RANGE'.
+            ENDIF.
+          ENDIF.
+        ENDIF.
+      ELSE.
+        validate_one( EXPORTING is_p = ls_p iv_val = lv_val
+                      IMPORTING ev_norm = lv_norm ev_err = lv_err ).
+      ENDIF.
       IF lv_err IS NOT INITIAL.
         rs-ok = abap_false.
         APPEND VALUE #( param_id = ls_p-param_id

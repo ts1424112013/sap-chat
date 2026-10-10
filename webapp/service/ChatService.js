@@ -697,7 +697,9 @@ sap.ui.define([
                         };
                         var fnTry = function (sToken) {
                                 return fnSend(fnBuild(sToken)).catch(function (e) {
-                                        if (e.message === "HTTP 403") {
+                                        // 20261011: 错误消息自 V15.0.1 起带响应体（"HTTP 403 - …"），
+                                        // 原严格相等永不命中 → 令牌失效后不再自动换牌重试
+                                        if (Service._isCsrfFail(e)) {
                                                 return that._fetchCsrf(sBasic).then(function (sNew) {
                                                         that._sCsrfToken = sNew;
                                                         return fnSend(fnBuild(sNew));
@@ -942,7 +944,9 @@ sap.ui.define([
                                         question: o.question,
                                         modelId: o.modelId,
                                         taskId: o.taskId || "",
-                                        clientRequestId: o.clientRequestId || ""
+                                        clientRequestId: o.clientRequestId || "",
+                                        // 20261011：会话中正在看的报表结果（"分析一下这个结果"），后端校验归属
+                                        focusedArtifactId: o.focusedArtifactId || ""
                                 });
                         }
                         return this.send({
@@ -1455,6 +1459,11 @@ sap.ui.define([
                         });
                 },
 
+                /** 20261011：是否 403（CSRF 失效）—— 兼容 "HTTP 403" 与 "HTTP 403 - <响应体>" 两种错误格式 */
+                _isCsrfFail: function (e) {
+                        return !!e && (e.statusCode === 403 || /^HTTP 403\b/.test(e.message || ""));
+                },
+
                 /** V8：调用后端 Function Import 的统一通道
                  *  返回契约：{ d: { Success, Message, Json } }（Json 承载列表/对象数据）
                  *  POST 参数走 OData V2 FI 标准的 form-urlencoded
@@ -1511,7 +1520,7 @@ sap.ui.define([
                         // POST：带缓存 token；403 时刷新 token 重试一次
                         var fnTry = function (sToken) {
                                 return fnSend(fnBuild(sToken)).catch(function (e) {
-                                        if (e.message === "HTTP 403") {
+                                        if (Service._isCsrfFail(e)) {
                                                 return that._fetchCsrf(sBasic).then(function (sNew) {
                                                         that._sCsrfToken = sNew;
                                                         return fnSend(fnBuild(sNew));

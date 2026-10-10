@@ -1141,7 +1141,9 @@ sap.ui.define([
                                 question: oCfg.question,
                                 modelId: sModelId,
                                 taskId: bAgent ? (oCurTask.taskId || "") : "",
-                                clientRequestId: bAgent ? this._newSessionId() : ""
+                                clientRequestId: bAgent ? this._newSessionId() : "",
+                                // 20261011：本会话最近就绪的报表结果，供"分析一下这个结果"（后端校验归属/状态）
+                                focusedArtifactId: bAgent ? ((this._mFocusArt || {})[sSessionId] || "") : ""
                         });
 
                         return pReq.then(function (oRes) {
@@ -3928,6 +3930,13 @@ sap.ui.define([
                 /** READY：读取结果，作为新一条回复插入（仅当仍在发起会话中） */
                 _loadRunResult: function (o) {
                         var that = this;
+                        if (!o.artifactId || o.artifactId === "undefined") {
+                                // 20261011：READY 但结果索引未登记（后端 compress 丢空值键）——不拼 ArtifactId=undefined 去查
+                                o.phase = "failed";
+                                o.message = o.message || "运行已完成，但结果索引未登记（请在 ZAI_RPT_STEP 查看 ARTIFACT 审计行）";
+                                this._renderRun();
+                                return;
+                        }
                         ChatService.getReportResult(o.artifactId).then(function (oRes) {
                                 var oNow = that.getView().getModel("chat").getProperty("/currentSession") || {};
                                 if ((oNow.id || "") !== o.sessionId) {
@@ -3940,6 +3949,9 @@ sap.ui.define([
                                         return;
                                 }
                                 that._pushReportResult(oRes, o.runId);
+                                // 20261011：记为本会话聚焦结果，之后"分析一下这个结果"带给后端
+                                that._mFocusArt = that._mFocusArt || {};
+                                that._mFocusArt[o.sessionId] = o.artifactId;
                         });
                 },
 
@@ -3967,6 +3979,10 @@ sap.ui.define([
                                 aSteps[1].text = "确认状态中";
                         }
                         var sMsg = o.message;
+                        if (o.phase === "active" && o.count > 0) {
+                                // 20261011：轮询进度可见（上限 100 次，约 5 分钟）
+                                sMsg = (sMsg ? sMsg + " · " : "") + "第 " + o.count + "/100 次查询";
+                        }
                         if (o.phase === "stalled") {
                                 sMsg = (sMsg ? sMsg + " · " : "") + "状态长时间未确认，可稍后刷新或在 SAP 中核对（不伪造结果）";
                         } else if (o.phase === "stopped") {
@@ -3995,7 +4011,11 @@ sap.ui.define([
                 /** READY 结果 → 新一条回复（数据表 + 工具条；用户可自行生成图表） */
                 _pushReportResult: function (oRes, sRunId) {
                         var aCols = [], aRaw = [];
-                        try { aCols = (JSON.parse(oRes.schemaJson || "{}").columns) || []; } catch (e) { aCols = []; }
+                        try {
+                                // 20261011：兼容 {"columns":[…]}（MOCK/EXEC_SAP V1.0e）与旧版纯数组 […]（EXEC_SAP V1.0d）
+                                var oSchema = JSON.parse(oRes.schemaJson || "{}");
+                                aCols = (Array.isArray(oSchema) ? oSchema : oSchema && oSchema.columns) || [];
+                        } catch (e) { aCols = []; }
                         try { aRaw = JSON.parse(oRes.rowsJson || "[]") || []; } catch (e) { aRaw = []; }
                         if (!aCols.length && aRaw.length && !Array.isArray(aRaw[0])) {
                                 aCols = Object.keys(aRaw[0]).map(function (k) { return { name: k, label: k }; });

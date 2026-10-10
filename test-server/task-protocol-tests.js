@@ -55,6 +55,7 @@ function freshStores({ execEnabled = true } = {}) {
       validation_rule: 'GE:P_DATE_FROM', sort_no: 3 },
     { param_id: 'P_MTART', label: '物料类型', data_type: 'ENUM', validation_rule: 'FERT,ROH,HIBE', sort_no: 4 },
     { param_id: 'P_MULTI', label: '多值物料', data_type: 'CHAR', length: 18, multi_value: true, sort_no: 5 },
+    { param_id: 'P_BUDAT', label: '过账日期范围', data_type: 'DATE', range_allowed: true, sort_no: 6 },
     { param_id: 'MOCK_SCENARIO', label: 'Mock 场景', data_type: 'CHAR', required: false, sort_no: 99 },
     { param_id: 'MOCK_DELAY_SEC', label: 'Mock 延迟秒', data_type: 'NUM', required: false, sort_no: 100 }
   ]);
@@ -405,6 +406,53 @@ function scenarioExtra() {
   check('跨用户更新被拒', r3other.ok === false);
 }
 
+/* =============== 场景 11: 10.09 遗留问题修复(路由 V1.0.4 / 参数 V1.0.11) =============== */
+function scenario11() {
+  section('场景 11: 对话式结果分析路由 / 表名双语序 / 报表词不误判 / 多值范围校验');
+  const r = (q, o) => quickRoute(q, o);
+  let x = r('分析一下这个结果');
+  check('"分析一下这个结果" → ANALYZE_ARTIFACT(不再新建 DATA 任务)',
+    x.intent_code === 'ANALYZE_ARTIFACT' && x.object_kind === 'ARTIFACT' && x.module_id === 'REPORT',
+    `${x.module_id}/${x.intent_code}/${x.object_kind}`);
+  x = r('上面的报表结果里哪个工厂 MIH 需求最大');
+  check('"上面的报表结果里哪个工厂…最大" → ANALYZE_ARTIFACT', x.intent_code === 'ANALYZE_ARTIFACT');
+  x = r('分析一下结果');
+  check('"分析一下结果"(无指代词) → ANALYZE_ARTIFACT', x.intent_code === 'ANALYZE_ARTIFACT');
+  x = r('分析一下刚才 ZM001 的结果');
+  check('"分析一下刚才 ZM001 的结果" → 分析(不是恢复出参数卡)',
+    x.intent_code === 'ANALYZE_ARTIFACT' && x.object_kind === 'TCODE' && x.object_value === 'ZM001',
+    `${x.intent_code}/${x.object_kind}/${x.object_value}`);
+  x = r('继续刚才的 ZM001');
+  check('回归: "继续刚才的 ZM001" 仍是恢复任务', x.intent_code === 'VIEW_REPORT_RESULT');
+  x = r('执行报表 ZDPMM702');
+  check('"执行报表 ZDPMM702" → 报表执行(不被"表 ZDPMM702"误判 DATA)',
+    x.module_id === 'REPORT' && x.intent_code === 'RUN_AND_ANALYZE_REPORT' && x.object_value === 'ZDPMM702',
+    `${x.module_id}/${x.intent_code}/${x.object_value}`);
+  x = r('ZIDPPP099表数据');
+  check('反语序 "ZIDPPP099表数据" → DATA 表 ZIDPPP099', x.object_kind === 'TABLE' && x.object_value === 'ZIDPPP099',
+    `${x.object_kind}/${x.object_value}`);
+  x = r('表ZIDPPP099的数据');
+  check('正语序 "表ZIDPPP099的数据" → DATA 表 ZIDPPP099', x.object_kind === 'TABLE' && x.object_value === 'ZIDPPP099');
+  x = r('分析一下表 ZIDPMM455 的数据');
+  check('显式表名优先于结果指代', x.object_kind === 'TABLE' && x.object_value === 'ZIDPMM455');
+  x = r('写一个 ALV 表格程序');
+  check('"ALV 表格" 不被当成表 ALV', x.object_kind !== 'TABLE', `${x.object_kind}/${x.object_value}`);
+  x = r('这个数据库如何优化');
+  check('"这个数据库如何优化" 不误判为结果分析', x.intent_code !== 'ANALYZE_ARTIFACT', x.intent_code);
+
+  const { reports } = freshStores();
+  const def = reports.getDefByTcode('ZM001');
+  const base = { P_WERKS: '1000', P_DATE_FROM: '20261001', P_DATE_TO: '20261007' };
+  let pv = reports.validateParams(def, JSON.stringify({ ...base, P_BUDAT: '20261001,20261009' }));
+  check('日期范围 "low,high"(前端 AskCard 格式)校验通过', pv.ok === true, JSON.stringify(pv.errors));
+  pv = reports.validateParams(def, JSON.stringify({ ...base, P_BUDAT: '20261009,20261001' }));
+  check('日期范围倒序被拒(RANGE)', pv.errors.some(e => e.param_id === 'P_BUDAT' && e.code === 'RANGE'));
+  pv = reports.validateParams(def, JSON.stringify({ ...base, P_MULTI: 'M001,M002,M003' }));
+  check('多值逗号分隔逐项校验通过', pv.ok === true, JSON.stringify(pv.errors));
+  pv = reports.validateParams(def, JSON.stringify({ ...base, P_MULTI: 'M001,' + 'X'.repeat(19) }));
+  check('多值单项超长被拒(TYPE)', pv.errors.some(e => e.param_id === 'P_MULTI' && e.code === 'TYPE'));
+}
+
 /* =============== 主流程 =============== */
 function main() {
   console.log('╔══════════════════════════════════════════╗');
@@ -421,6 +469,7 @@ function main() {
   scenario9();
   scenario10();
   scenarioExtra();
+  scenario11();
 
   console.log(`\n${'='.repeat(50)}`);
   console.log(`总计: ${passed} 通过, ${failed} 失败`);

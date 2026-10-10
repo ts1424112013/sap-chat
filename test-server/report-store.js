@@ -100,7 +100,7 @@ class ReportStore {
   /**
    * 参数校验(纯校验, 不拼接不执行):
    * 必填缺失 → needsInput; 类型/值域错误 → errors
-   * 多值: "|" 分隔字符串; 范围: "low|high"
+   * 多值: "a,b,c"(兼容 "|"); 范围: "low,high"(V1.0.11 与前端 AskCard 对齐)
    */
   validateParams(def, paramsJson) {
     const res = { ok: true, needs_input: false, errors: [], defaulted: [], norm: {}, norm_json: '', hash: '' };
@@ -187,7 +187,28 @@ class ReportStore {
     return res;
   }
 
+  /**
+   * V1.0.11(与 ABAP validate_params 同口径): 多值/范围参数按逗号(兼容竖线)
+   * 拆分逐项校验 —— 前端 AskCard 多值 "a,b,c"、范围 "low,high";
+   * 范围(非多值)恰好两项时校验次序(NUM 按数值, 其余字典序 = YYYYMMDD 时间序)
+   */
   _validateOne(p, v) {
+    if (p.multi_value || p.range_allowed) {
+      const items = String(v).split(/[|,]/).map(s => s.trim()).filter(Boolean);
+      for (const it of items) {
+        const e = this._validateScalar(p, it);
+        if (e) return e;
+      }
+      if (p.range_allowed && !p.multi_value && items.length === 2) {
+        const [a, b] = items;
+        if (p.data_type === 'NUM' ? +a > +b : a > b) return 'RANGE';
+      }
+      return null;
+    }
+    return this._validateScalar(p, v);
+  }
+
+  _validateScalar(p, v) {
     if (p.data_type === 'BOOL') {
       return ['true', 'false', 'X', 'x', '1', '0'].includes(v) ? null : 'TYPE';
     }
@@ -207,17 +228,7 @@ class ReportStore {
       if (list.length && !list.includes(v)) return 'DOMAIN';
       return null;
     }
-    // 多值/范围: "|" 分隔后逐项校验基础类型
-    const items = v.split('|');
-    for (const it of items) {
-      if (p.length && it.length > p.length) return 'TYPE';
-    }
-    if (p.range_allowed && items.length === 2) {
-      // 简单范围次序校验(数字/日期可比较; 其他类型跳过)
-      const [a, b] = items;
-      if (/^\d{8}$/.test(a) && /^\d{8}$/.test(b) && a > b) return 'RANGE';
-      if (/^-?\d+(\.\d+)?$/.test(a) && /^-?\d+(\.\d+)?$/.test(b) && +a > +b) return 'RANGE';
-    }
+    if (p.length && v.length > p.length) return 'TYPE';
     return null;
   }
 
