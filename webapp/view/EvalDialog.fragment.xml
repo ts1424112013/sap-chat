@@ -1,0 +1,104 @@
+<core:FragmentDefinition
+        xmlns="sap.m"
+        xmlns:u="sap.ui.unified"
+        xmlns:core="sap.ui.core">
+
+        <!-- 20261011：Agent 测评（管理员）—— 按题库逐题调用后端 Agent，与用户走同一条链路，
+             记录状态/轮数/耗时/工具调用并按预期打分；逻辑见 utils/AgentEval.js -->
+        <Dialog id="evalDialog"
+                title="{i18n>evalTitle}"
+                contentWidth="72rem"
+                contentHeight="82%"
+                resizable="true"
+                draggable="true"
+                class="evalDialog">
+                <content>
+                        <VBox class="sapUiSmallMargin">
+                                <Text text="{i18n>evalIntro}" wrapping="true" class="hintText"/>
+
+                                <HBox alignItems="Center" wrap="Wrap" class="evalBar">
+                                        <Label text="{i18n>evalScene}" class="evalLbl"/>
+                                        <Select selectedKey="{eval>/scene}" width="9rem" enabled="{= !${eval>/running} }">
+                                                <core:Item key="ALL" text="{i18n>evalSceneAll}"/>
+                                                <core:Item key="REPORT" text="报表执行"/>
+                                                <core:Item key="DATA" text="数据分析"/>
+                                                <core:Item key="INVENTORY" text="库存查询"/>
+                                                <core:Item key="CODE" text="代码分析"/>
+                                                <core:Item key="AUTO" text="自动"/>
+                                        </Select>
+                                        <Label text="{i18n>evalRepeat}" class="evalLbl"/>
+                                        <Select selectedKey="{eval>/repeat}" width="5rem" enabled="{= !${eval>/running} }">
+                                                <core:Item key="1" text="1"/>
+                                                <core:Item key="2" text="2"/>
+                                                <core:Item key="3" text="3"/>
+                                        </Select>
+                                        <Label text="{i18n>evalModel}" class="evalLbl"/>
+                                        <Select selectedKey="{eval>/modelId}" width="14rem" enabled="{= !${eval>/running} }"
+                                                items="{path: 'chat>/models', templateShareable: false}">
+                                                <core:Item key="{chat>ModelId}" text="{chat>ModelName}"/>
+                                        </Select>
+                                        <CheckBox text="{i18n>evalCleanup}" selected="{eval>/cleanup}" enabled="{= !${eval>/running} }"/>
+                                </HBox>
+
+                                <HBox alignItems="Center" wrap="Wrap" class="evalBar">
+                                        <Button text="{i18n>evalRun}" icon="sap-icon://play" type="Emphasized"
+                                                press=".onEvalRun" enabled="{= !${eval>/running} }"/>
+                                        <Button text="{i18n>evalStop}" icon="sap-icon://stop" press=".onEvalStop" enabled="{eval>/running}"/>
+                                        <Button text="{i18n>evalExportMd}" icon="sap-icon://document-text" press=".onEvalExportMd"
+                                                enabled="{= !${eval>/running} &amp;&amp; ${eval>/hasResults} }"/>
+                                        <Button text="{i18n>evalExportJson}" icon="sap-icon://download" press=".onEvalExportJson"
+                                                enabled="{= !${eval>/running} &amp;&amp; ${eval>/hasResults} }"/>
+                                        <Button text="{i18n>evalExportCases}" icon="sap-icon://list" press=".onEvalExportCases"
+                                                enabled="{= !${eval>/running} }"/>
+                                        <u:FileUploader buttonOnly="true" buttonText="{i18n>evalImportCases}" icon="sap-icon://upload"
+                                                fileType="json" style="Transparent" uploadOnChange="false"
+                                                change=".onEvalImport" enabled="{= !${eval>/running} }"/>
+                                </HBox>
+
+                                <Text text="{eval>/statusText}" wrapping="true" class="evalStatus"/>
+                                <Text text="{eval>/summaryText}" wrapping="true" renderWhitespace="true" class="evalSummary"
+                                        visible="{= !!${eval>/summaryText} }"/>
+
+                                <Table id="evalTable"
+                                        items="{eval>/rows}"
+                                        mode="SingleSelectMaster"
+                                        selectionChange=".onEvalRowSelect"
+                                        noDataText="{i18n>evalNoRows}"
+                                        growing="true"
+                                        growingThreshold="200"
+                                        class="evalTable">
+                                        <columns>
+                                                <Column width="15rem"><Text text="{i18n>evalColCase}"/></Column>
+                                                <Column width="5.5rem"><Text text="{i18n>evalColScene}"/></Column>
+                                                <Column width="4.5rem"><Text text="{i18n>evalColResult}"/></Column>
+                                                <Column width="5rem"><Text text="{i18n>evalColStatus}"/></Column>
+                                                <Column width="3.5rem" hAlign="End"><Text text="{i18n>evalColRounds}"/></Column>
+                                                <Column width="4.5rem" hAlign="End"><Text text="{i18n>evalColSeconds}"/></Column>
+                                                <Column minScreenWidth="Tablet" demandPopin="true"><Text text="{i18n>evalColTools}"/></Column>
+                                                <Column minScreenWidth="Tablet" demandPopin="true"><Text text="{i18n>evalColReasons}"/></Column>
+                                        </columns>
+                                        <items>
+                                                <ColumnListItem type="Active">
+                                                        <cells>
+                                                                <Text text="{eval>label}" wrapping="true"/>
+                                                                <Text text="{eval>sceneText}"/>
+                                                                <ObjectStatus text="{eval>resultText}" state="{eval>resultState}"/>
+                                                                <Text text="{eval>status}"/>
+                                                                <Text text="{eval>rounds}"/>
+                                                                <Text text="{eval>seconds}"/>
+                                                                <Text text="{eval>tools}" wrapping="true"/>
+                                                                <Text text="{eval>reasons}" wrapping="true"/>
+                                                        </cells>
+                                                </ColumnListItem>
+                                        </items>
+                                </Table>
+
+                                <TextArea value="{eval>/detail}" editable="false" rows="12" width="100%" growing="false"
+                                        visible="{= !!${eval>/detail} }" class="evalDetail"/>
+                        </VBox>
+                </content>
+                <endButton>
+                        <Button text="{i18n>evalClose}" press=".onEvalClose"/>
+                </endButton>
+        </Dialog>
+</core:FragmentDefinition>

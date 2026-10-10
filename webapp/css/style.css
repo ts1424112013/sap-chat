@@ -3525,6 +3525,16 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .sessSceneTag { font-size: .68rem; line-height: 1.2; padding: .05rem .4rem; margin-left: .35rem;
         border-radius: 999px; background: var(--hover); color: var(--text-2); }
 .agentModelLbl { margin-top: .55rem; }
+
+/* 20261011：Agent 测评窗口 */
+.evalBar { gap: .5rem; margin-top: .6rem; }
+.evalLbl { margin-left: .3rem; }
+.evalStatus { display: block; margin-top: .7rem; font-size: .82rem; color: var(--text-2); }
+.evalSummary { display: block; margin: .5rem 0 .3rem; padding: .6rem .8rem; border-radius: 10px;
+        background: var(--hover); font-size: .8rem; line-height: 1.55; white-space: pre-wrap; }
+.evalTable { margin-top: .4rem; }
+.evalTable .sapMText { font-size: .8rem; }
+.evalDetail textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; }
 .chartCard { border: 1px solid var(--line); border-radius: var(--r-card); background: var(--surface); padding: .65rem .85rem .5rem; }
 .ccHead { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .3rem; }
 .ccTitle { font-size: .84rem; font-weight: 600; color: var(--text); margin-right: auto; }

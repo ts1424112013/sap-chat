@@ -179,6 +179,16 @@
                                                 </VBox>
                                         </IconTabFilter>
 
+                                        <!-- ========== 20261011：Agent 测评入口（仅管理员） ========== -->
+                                        <IconTabFilter icon="sap-icon://performance" text="{i18n>tabEval}" key="eval"
+                                                visible="{settings>/isAdmin}">
+                                                <VBox class="sapUiSmallMargin">
+                                                        <Text text="{i18n>evalIntro}" wrapping="true" class="hintText"/>
+                                                        <Button text="{i18n>evalOpen}" icon="sap-icon://performance" type="Emphasized"
+                                                                press=".onOpenEval" class="sapUiSmallMarginTop"/>
+                                                </VBox>
+                                        </IconTabFilter>
+
                                         <!-- ========== 页签3：用户管理（V8，仅管理员可见） ========== -->
                                         <IconTabFilter icon="sap-icon://group" text="{i18n>tabUsers}" key="users"
                                                 visible="{settings>/isAdmin}">
