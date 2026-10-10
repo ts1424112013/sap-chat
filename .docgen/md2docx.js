@@ -171,16 +171,21 @@ function buildCoverR1(config) {
   })];
 }
 
-/* ── 行内解析: `code` / **bold** / [text](link) ─────────── */
+/* ── 行内解析: `code` / **bold** / <mark>revision</mark> / [text](link) ── */
 function inlineRuns(text, opt) {
   const o = Object.assign({ size: 24, color: P.body, bold: false, font: FONT_BODY }, opt || {});
   const runs = [];
-  const parts = String(text).split(/(`[^`]+`)/g);
+  const parts = String(text).split(/(`[^`]+`|<mark>.*?<\/mark>)/g);
   for (const part of parts) {
     if (!part) continue;
+    const marked = part.match(/^<mark>([\s\S]*?)<\/mark>$/);
+    if (marked) {
+      runs.push(...inlineRuns(marked[1], Object.assign({}, o, { highlight: "yellow" })));
+      continue;
+    }
     if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
       runs.push(new TextRun({ text: part.slice(1, -1), size: o.size, bold: o.bold,
-        color: P.inlineCode, font: FONT_CODE }));
+        color: P.inlineCode, font: FONT_CODE, highlight: o.highlight }));
       continue;
     }
     // 链接只保留文字
@@ -189,9 +194,9 @@ function inlineRuns(text, opt) {
     for (const bp of boldParts) {
       if (!bp) continue;
       if (bp.startsWith("**") && bp.endsWith("**") && bp.length > 4) {
-        runs.push(new TextRun({ text: bp.slice(2, -2), size: o.size, bold: true, color: o.color, font: o.font }));
+        runs.push(new TextRun({ text: bp.slice(2, -2), size: o.size, bold: true, color: o.color, font: o.font, highlight: o.highlight }));
       } else {
-        runs.push(new TextRun({ text: bp, size: o.size, bold: o.bold, color: o.color, font: o.font }));
+        runs.push(new TextRun({ text: bp, size: o.size, bold: o.bold, color: o.color, font: o.font, highlight: o.highlight }));
       }
     }
   }
@@ -529,7 +534,7 @@ function buildDoc(md, coverCfg) {
 }
 
 /* ── 五份文档的封面配置 ───────────────────────────────── */
-const META_COMMON = ["更新时间: 2026-09-06", "当前版本: 前端 V8.3 · 后端 V8.4", "适用环境: S/4HANA 760 · SAP 网关 client 470"];
+const META_COMMON = ["更新时间: 2026-10-11", "当前版本: 后端 A/B 批 · 前端 Agent 场景增量", "适用环境: S/4HANA 760 · SAP 网关 client 470（SAP_BASIS 以现场实测为准）"];
 const covers = {
   "00-项目说明文档": {
     title: "SAP AI 对话助手 项目说明文档",
@@ -540,7 +545,7 @@ const covers = {
   },
   "01-后端开发文档": {
     title: "SAP AI 对话助手 后端开发文档",
-    subtitle: "7 张表 · 12 个 OData 接口 · 4 个 ABAP 类 · 核心流程 · 坑档案 · 扩展指南",
+    subtitle: "20 个 ABAP 对象 · 4 EntityType · 6 ComplexType · 22 个 Function Import · 核心流程与部署核对",
     englishLabel: "BACKEND DEVELOPMENT",
     metaLines: ["文档编号: 01", ...META_COMMON],
     footerLeft: "SAP AI CHAT", footerRight: "docs/01",
