@@ -1301,9 +1301,10 @@ sap.ui.define([
                 /**
                  * 构造数据分析结果 HTML（summary/findings/datasets/charts）
                  * @param {object} oAnalysis ChatService._sanitizeAnalysis 的输出
+                 * @param {object} [oEntry] 消息条目（20261011：用户图表紧跟在对应数据集表格下方）
                  * @returns {string} HTML；无有效内容时返回空串
                  */
-                _buildAnalysisHtml: function (oAnalysis) {
+                _buildAnalysisHtml: function (oAnalysis, oEntry) {
                         if (!oAnalysis) {
                                 return "";
                         }
@@ -1378,6 +1379,8 @@ sap.ui.define([
                                                 var oHint = that._chartHint(oAnalysis, oDs);
                                                 s += Formatter.dataToolsHtml(iDs, oHint ? oRB.getText("chartSuggest",
                                                         [ChartRenderer.typeText(oHint.type)]) : "");
+                                                // 20261011：该表生成的图表就放在这张表下方
+                                                s += oEntry ? that._chartDeckHtml(oEntry, "ds:" + iDs) : "";
                                         }
                                 }
                                 s += "</div>";
@@ -1416,22 +1419,28 @@ sap.ui.define([
                         if (!oEntry) {
                                 return "";
                         }
-                        var sAn = oEntry.analysis ? this._buildAnalysisHtml(oEntry.analysis) : "";
-                        var sCharts = this._chartDeckHtml(oEntry);
+                        var sAn = oEntry.analysis ? this._buildAnalysisHtml(oEntry.analysis, oEntry) : "";
+                        var sCharts = this._chartDeckHtml(oEntry, "");   // 无锚点的图表（兜底）
                         if (!sAn && !sCharts) {
                                 return "";
                         }
                         return '<div class="msgExtra" data-uid="' + oEntry.uid + '">' + sAn + sCharts + "</div>";
                 },
 
-                /** V16：用户图表卡（标题 + 类型快切 + 编辑/下载/删除 + SVG） */
-                _chartDeckHtml: function (oEntry) {
-                        var aCharts = oEntry.userCharts || [];
+                /**
+                  * V16：用户图表卡（标题 + 类型快切 + 编辑/下载/删除 + SVG）
+                  * 20261011：按锚点筛选 —— "ds:<下标>" 数据集表格 / "md:<序号>" 正文 Markdown 表格 /
+                  * "" 无锚点（兜底放附加区末尾）；有锚点的紧跟在来源表格下方
+                  */
+                _chartDeckHtml: function (oEntry, sSrc) {
+                        var aCharts = (oEntry.userCharts || []).filter(function (c) {
+                                return (c.src || "") === (sSrc || "");
+                        });
                         if (!aCharts.length) {
                                 return "";
                         }
                         var esc = Formatter.escapeHtml;
-                        var s = '<div class="chartDeck">';
+                        var s = '<div class="chartDeck' + (sSrc ? " chartInline" : "") + '">';
                         aCharts.forEach(function (ch) {
                                 var o = ChartRenderer.render(ch.ds, ch.cfg);
                                 var sTypes = ChartRenderer.TYPES.map(function (t) {
@@ -1915,6 +1924,31 @@ sap.ui.define([
 
                 /** 按消息下标定位该条目的 HTML 正文控件（msgBody=1 标记；V16：行内新增了
                   * thinkBar/stepBar 等原生 HTML 控件，“第一个 HTML”不再可靠） */
+                /**
+                  * 20261011：正文 HTML + 正文 Markdown 表格生成的图表（插在第 N 个表格工具条之后）。
+                  * 表格数变少（极少见）时，找不到锚点的图表追加在正文末尾，不丢失
+                  */
+                _bodyHtml: function (oEntry) {
+                        var sHtml = oEntry.html || "";
+                        var aMd = (oEntry.userCharts || []).filter(function (c) { return /^md:/.test(c.src || ""); });
+                        if (!aMd.length) {
+                                return sHtml;
+                        }
+                        var that = this, iN = -1, oUsed = {};
+                        sHtml = sHtml.replace(/<div class="dataTools">[\s\S]*?<\/div>/g, function (sTools) {
+                                iN++;
+                                oUsed["md:" + iN] = true;
+                                return sTools + that._chartDeckHtml(oEntry, "md:" + iN);
+                        });
+                        aMd.forEach(function (c) {
+                                if (!oUsed[c.src]) {
+                                        oUsed[c.src] = true;
+                                        sHtml += that._chartDeckHtml(oEntry, c.src);
+                                }
+                        });
+                        return sHtml;
+                },
+
                 _findMsgBodyCtrl: function (iIndex) {
                         var oList = this.byId("msgList");
                         var oItem = oList && oList.getItems()[iIndex];
@@ -1996,7 +2030,7 @@ sap.ui.define([
                         // 中已先整体 HTML 转义，输出标签均由代码构造，无注入路径。
                         // V16：data-uid 供表格工具条（生成图表/复制/CSV）的事件委托定位消息
                         var oBody = new HTML({
-                                content: '<div class="bubbleBody" data-uid="' + (oEntry.uid || "") + '">' + (oEntry.html || "") + "</div>",
+                                content: '<div class="bubbleBody" data-uid="' + (oEntry.uid || "") + '">' + this._bodyHtml(oEntry) + "</div>",
                                 preferDOM: false,
                                 sanitizeContent: false
                         }).data("msgBody", "1");   // V16：打标 —— Agent 行内还有 thinkBar/stepBar 等 HTML 控件，
@@ -4105,15 +4139,15 @@ sap.ui.define([
                                 }
                                 if (sAct === "chart-type") {
                                         oCh.cfg.type = oBtn.getAttribute("data-type");
-                                        this._refreshExtra(oEntry);
+                                        this._refreshExtra(oEntry, oCh.src);
                                 } else if (sAct === "chart-edit") {
                                         ChartBuilder.open(oCh.ds, oCh.cfg, function (oCfg) {
                                                 oCh.cfg = oCfg;
-                                                that._refreshExtra(oEntry);
+                                                that._refreshExtra(oEntry, oCh.src);
                                         }, { edit: true });
                                 } else if (sAct === "chart-del") {
                                         oEntry.userCharts = aCharts.filter(function (c) { return c !== oCh; });
-                                        this._refreshExtra(oEntry);
+                                        this._refreshExtra(oEntry, oCh.src);
                                 } else if (sAct === "chart-svg") {
                                         var oR = ChartRenderer.render(oCh.ds, oCh.cfg);
                                         if (oR.svg) {
@@ -4127,14 +4161,19 @@ sap.ui.define([
                         if (!oTools) {
                                 return;
                         }
-                        var oDs = null, oHint = null;
+                        var oDs = null, oHint = null, sSrc = "";
                         var sDs = oTools.getAttribute("data-ds");
                         if (sDs !== null && oEntry.analysis) {
                                 oDs = (oEntry.analysis.datasets || [])[parseInt(sDs, 10)];
                                 oHint = oDs ? this._chartHint(oEntry.analysis, oDs) : null;
+                                sSrc = "ds:" + parseInt(sDs, 10);
                         } else {
                                 var oPrev = oTools.previousElementSibling;
                                 oDs = ChartRenderer.fromTable(oPrev && oPrev.querySelector("table"));
+                                // 20261011：正文第几个表格（图表插回它的下方）
+                                var oBodyRoot = oTools.closest(".bubbleBody");
+                                var iMd = oBodyRoot ? Array.prototype.indexOf.call(oBodyRoot.querySelectorAll(".dataTools"), oTools) : -1;
+                                sSrc = iMd >= 0 ? "md:" + iMd : "";
                         }
                         if (!oDs) {
                                 return;
@@ -4144,13 +4183,17 @@ sap.ui.define([
                         } else if (sAct === "csv") {
                                 this._download("\uFEFF" + ChartRenderer.toDelimited(oDs, ","), (oDs.name || "数据") + ".csv", "text/csv;charset=utf-8");
                         } else if (sAct === "chart") {
-                                this._openChartFor(oEntry, oDs, oHint);
+                                this._openChartFor(oEntry, oDs, oHint, sSrc);
                         }
                 },
 
-                /** 打开图表面板；不适合出图时说明原因（不硬画） */
-                _openChartFor: function (oEntry, oDs, oHint) {
+                /** 打开图表面板；不适合出图时说明原因（不硬画）。sSrc = 来源表格锚点（图表放在其下方） */
+                _openChartFor: function (oEntry, oDs, oHint, sSrc) {
                         var that = this;
+                        if (oEntry.streaming && /^md:/.test(sSrc || "")) {
+                                MessageToast.show("回答还在生成中，完成后再生成图表");
+                                return;
+                        }
                         var oA = ChartRenderer.analyze(oDs);
                         if (!oA.chartable) {
                                 MessageToast.show("这份数据不适合生成图表：" + oA.reason);
@@ -4158,17 +4201,28 @@ sap.ui.define([
                         }
                         ChartBuilder.open(oDs, oHint, function (oCfg) {
                                 oEntry.userCharts = (oEntry.userCharts || []).concat([{
-                                        id: "c" + that._newSessionId().substring(0, 8), ds: oDs, cfg: oCfg
+                                        id: "c" + that._newSessionId().substring(0, 8), ds: oDs, cfg: oCfg, src: sSrc || ""
                                 }]);
-                                that._refreshExtra(oEntry);
+                                that._refreshExtra(oEntry, sSrc);
                         });
                 },
 
-                /** 附加区局部刷新（extraHtml 绑定 → HTML 控件重绘） */
-                _refreshExtra: function (oEntry) {
+                /**
+                  * 附加区局部刷新（extraHtml 绑定 → HTML 控件重绘）。
+                  * 20261011：sSrc 为正文表格锚点（md:）时同时重绘正文，图表才能出现在该表格下方
+                  */
+                _refreshExtra: function (oEntry, sSrc) {
                         var oHit = this._entryByUid(oEntry.uid);
-                        if (oHit) {
-                                this.getView().getModel("chat").setProperty("/messages/" + oHit.index + "/extraHtml", this._extraHtml(oEntry));
+                        if (!oHit) {
+                                return;
+                        }
+                        this.getView().getModel("chat").setProperty("/messages/" + oHit.index + "/extraHtml", this._extraHtml(oEntry));
+                        if (/^md:/.test(sSrc || "")) {
+                                var oBody = this._findMsgBodyCtrl(oHit.index);
+                                if (oBody) {
+                                        oBody.setContent('<div class="bubbleBody" data-uid="' + oEntry.uid + '">' + this._bodyHtml(oEntry) + "</div>");
+                                        setTimeout(this._highlightCodeBlocks.bind(this), 60);
+                                }
                         }
                 },
 

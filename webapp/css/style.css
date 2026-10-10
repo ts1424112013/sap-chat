@@ -3503,6 +3503,8 @@ body, body.sapUiBody { background: var(--bg) !important; }
 
 /* —— 用户图表卡 —— */
 .chartDeck { display: flex; flex-direction: column; gap: .7rem; margin: .4rem 0 .6rem; }
+/* 20261011：紧跟来源表格的图表（工具条下方，与下一段内容留出间距） */
+.chartDeck.chartInline { margin: -.35rem 0 1rem; }
 .chartCard { border: 1px solid var(--line); border-radius: var(--r-card); background: var(--surface); padding: .65rem .85rem .5rem; }
 .ccHead { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .3rem; }
 .ccTitle { font-size: .84rem; font-weight: 600; color: var(--text); margin-right: auto; }
