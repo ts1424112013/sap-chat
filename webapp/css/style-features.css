@@ -1,0 +1,824 @@
+/* ============================================================
+   功能层（V10 表格·图片·会话管理·模型管控 / V12-13 工作模式 / V14 精修 / V1.3 数据分析 / V15 任务区）
+   20261011（FE-09）由 style.css 按原顺序切出，规则未改；四个文件在
+   manifest.json 的 sap.ui5/resources/css 里按 style → style-patches →
+   style-features → style-gale 顺序加载，后者覆盖前者（层叠顺序与拆分前一致）。
+   新规则加到对应层的末尾；跨层覆盖时放后面的文件。
+   ============================================================ */
+
+/* ============================================================
+   V10：Markdown 表格渲染（.mdTable）
+   ============================================================ */
+.mdTableWrap {
+        max-width: 100%;
+        overflow-x: auto;
+        margin: .55rem 0;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+}
+
+.mdTable {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: .86rem;
+        line-height: 1.55;
+}
+
+.mdTable th,
+.mdTable td {
+        padding: .45rem .7rem;
+        text-align: left;
+        border-bottom: 1px solid var(--line);
+        border-right: 1px solid var(--line);
+        word-break: break-word;
+        vertical-align: top;
+}
+
+.mdTable th:last-child,
+.mdTable td:last-child {
+        border-right: none;
+}
+
+.mdTable thead th {
+        background: var(--accent-soft);
+        color: var(--text);
+        font-weight: 600;
+        white-space: nowrap;
+}
+
+.mdTable tbody tr:last-child td {
+        border-bottom: none;
+}
+
+.mdTable tbody tr:nth-child(even) td {
+        background: rgba(45, 122, 179, .035);
+}
+
+[data-theme="dark"] .mdTable {
+        background: rgba(255, 255, 255, .02);
+}
+
+[data-theme="dark"] .mdTable thead th {
+        background: rgba(45, 122, 179, .14);
+}
+
+/* ============================================================
+   V10：模型返回图片（.mdImg）+ 点击放大遮罩（.imgLightbox）
+   ============================================================ */
+.mdImg {
+        max-width: 100%;
+        max-height: 420px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        cursor: zoom-in;
+        display: block;
+        margin: .55rem 0;
+        transition: box-shadow .15s ease;
+}
+
+.mdImg:hover {
+        box-shadow: 0 4px 18px rgba(20, 30, 50, .18);
+}
+
+.imgLightbox {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: rgba(10, 14, 22, .82);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: zoom-out;
+        animation: lbIn .16s ease;
+}
+
+@keyframes lbIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+}
+
+.imgLightbox img {
+        max-width: 92vw;
+        max-height: 92vh;
+        border-radius: 8px;
+        box-shadow: 0 12px 48px rgba(0, 0, 0, .5);
+}
+
+/* ============================================================
+   V10：会话管理增强（搜索框 / 置顶样式 / 操作按钮）
+   ============================================================ */
+/* V16：会话搜索框 —— 胶囊造型 + 柔背景 + 丝滑聚焦过渡
+   (本主题 SearchField 的 DOM 为 .sapMSF > form.sapMSFF，
+   放大镜图标 .sapMSFSSI 天然居左) */
+.sessSearch {
+        margin: .25rem .65rem .45rem;
+        width: calc(100% - 1.3rem);
+}
+
+.sessSearch .sapMSFF {
+        border-radius: 999px !important;
+        background: var(--side-bg) !important;
+        border: 1px solid transparent !important;
+        box-shadow: none !important;
+        overflow: hidden;
+        transition: background-color .22s var(--ease),
+                    border-color .22s var(--ease),
+                    box-shadow .22s var(--ease);
+}
+
+.sessSearch .sapMSFI {
+        background: transparent !important;
+        font-size: .8rem;
+        height: 2.15rem;
+}
+
+.sessSearch .sapMSFI::placeholder {
+        color: var(--sub);
+        opacity: 1;
+}
+
+/* 左侧放大镜与右侧清除/提交图标随状态柔和变色 */
+.sessSearch .sapUiIcon {
+        color: var(--sub) !important;
+        transition: color .2s var(--ease);
+}
+
+.sessSearch:hover .sapMSFF {
+        background: var(--hover) !important;
+}
+
+.sessSearch:hover .sapUiIcon {
+        color: var(--text-2) !important;
+}
+
+.sessSearch .sapMSFF:focus-within {
+        background: var(--surface) !important;
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 3px rgba(45, 122, 179, .13) !important;
+}
+
+.sessSearch .sapMSFF:focus-within .sapUiIcon {
+        color: var(--accent) !important;
+}
+
+/* UI5 主题在 input 上画的 focus 下划线/内阴影一并抚平 */
+.sessSearch .sapMSFI:focus {
+        outline: none !important;
+        box-shadow: none !important;
+}
+
+/* 置顶会话：左侧蓝色竖条 + 微底色（当前会话高亮优先） */
+.sessionItem.sessItemPinned {
+        box-shadow: inset 3px 0 0 var(--accent);
+        background: rgba(45, 122, 179, .05);
+}
+
+/* 会话条目悬浮操作按钮排（置顶/重命名/删除） */
+.sessActions {
+        display: none;
+        align-items: center;
+}
+
+.sessionItem:hover .sessActions {
+        display: flex;
+}
+
+.sessActions .sapMBtnIcon {
+        color: var(--sub) !important;
+        font-size: .82rem !important;
+}
+
+.sessActions .sapMBtn:hover .sapMBtnIcon {
+        color: var(--accent) !important;
+}
+
+/* 已置顶条目的图钉常亮（不悬浮也可见） */
+.sessPinBtn.pinned .sapMBtnIcon {
+        color: var(--accent) !important;
+}
+
+/* ============================================================
+   V10：设置-模型管理「代码提取管控」卡片
+   ============================================================ */
+.codeAclCard {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: .6rem .8rem;
+        margin: .15rem 0 .7rem;
+        background: var(--surface);
+}
+
+.codeAclCard .sapMSwitch {
+        min-width: 3.2rem;
+}
+
+.codeAclTitle {
+        font-weight: 600;
+        color: var(--text);
+        font-size: .88rem;
+}
+
+.codeAclHint {
+        color: var(--sub);
+        font-size: .76rem;
+}
+
+/* ============================================================
+   V12/V13：工作模式（对话 / 通用 Agent）
+   —— 分段控件 / 顶栏徽标 / 任务状态 / Agent 思考卡
+   ============================================================ */
+
+/* —— 左侧模式分段控件（横向等宽，单层边框，选中态纯 CSS） —— */
+.modeNav {
+        display: flex;
+        flex-direction: row;
+        gap: 0;
+        padding: 0.25rem;
+        margin: 0.5rem 0 0.6rem;
+        border: 1px solid var(--line-strong);
+        border-radius: 0.875rem;
+        background: var(--surface);
+        box-shadow: var(--shadow-1);
+}
+
+/* 关键：VBox 会给每个子控件包一层 .sapMFlexItem 包装 div(flex:0 1 auto，
+   内容多宽就多宽 —— 这就是右侧留白很大的根源)。伸缩必须打在包装层，
+   按钮自身再 100% 撑满包装。 */
+.modeNav > .sapMFlexItem {
+        flex: 1 1 0 !important;
+        width: auto !important;
+        min-width: 0 !important;
+        height: 2.6rem;
+}
+
+.modeNav > .sapMFlexItem > .sapMBtn {
+        width: 100% !important;
+        min-width: 0 !important;
+        height: 2.6rem;
+}
+
+.modeNavBtn {
+        border-radius: 0.6875rem !important;
+}
+
+/* 内层节点同样撑满，保证两个分段完全等宽占满容器 */
+.modeNavBtn .sapMBtnInner {
+        width: 100% !important;
+        min-width: 0 !important;
+        justify-content: center;
+}
+
+/* UI5 Transparent 按钮的内层节点：清默认底色/边框，圆角与选中态作用到内层 */
+.modeNavBtn .sapMBtnInner {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0.6875rem !important;
+}
+
+.modeNavBtn .sapMBtnIcon {
+        font-size: 0.9rem !important;
+        color: var(--text-2) !important;
+}
+
+.modeNavBtn .sapMBtnText {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--text) !important;
+}
+
+.modeNavBtn:hover .sapMBtnInner {
+        background: var(--hover) !important;
+}
+
+.modeNavBtn.modeNavActive .sapMBtnInner {
+        background: var(--accent-soft) !important;
+        box-shadow: inset 0 0 0 1px rgba(10, 110, 209, 0.14) !important;
+}
+
+.modeNavBtn.modeNavActive .sapMBtnIcon {
+        color: var(--accent-deep) !important;
+}
+
+.modeNavBtn.modeNavActive .sapMBtnText {
+        color: var(--accent-deep) !important;
+}
+
+/* 移动端保持横向等宽，不改上下堆叠 */
+@media (max-width: 599px) {
+        .modeNav {
+                flex-direction: row;
+        }
+}
+
+/* —— 顶栏模式徽标 —— */
+.topModeBadge {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--accent-deep);
+        background: var(--accent-soft);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0.18rem 0.65rem;
+        white-space: nowrap;
+}
+
+/* —— 会话列表：模式图标 + 最近一轮运行状态徽标 —— */
+.sessTitleRow {
+        gap: 0.3rem;
+        max-width: 100%;
+}
+
+.sessModeIcon {
+        font-size: 0.78rem;
+        color: var(--accent) !important;
+        flex-shrink: 0;
+}
+
+.sessTimeRow {
+        gap: 0.4rem;
+}
+
+.agentStChip {
+        font-size: 0.68rem;
+        line-height: 1.4;
+        padding: 0.04rem 0.45rem;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        white-space: nowrap;
+}
+
+.agentSt-RUNNING {
+        color: var(--accent-deep);
+        background: var(--accent-soft);
+        border-color: var(--line);
+}
+
+.agentSt-COMPLETED {
+        color: #1d7a4f;
+        background: rgba(46, 160, 103, 0.12);
+        border-color: rgba(46, 160, 103, 0.3);
+}
+
+.agentSt-PARTIAL {
+        color: var(--warning);
+        background: rgba(192, 138, 45, 0.12);
+        border-color: rgba(192, 138, 45, 0.3);
+}
+
+.agentSt-FAILED,
+.agentSt-ERROR {
+        color: var(--danger);
+        background: var(--danger-bg);
+        border-color: var(--danger-line);
+}
+
+.agentSt-IDLE {
+        color: var(--sub);
+        background: var(--side-bg);
+        border-color: var(--line);
+}
+
+/* —— Agent 模式输入提示标签（输入框右下角） —— */
+.agentModeHint {
+        font-size: 0.72rem;
+        color: var(--accent-deep);
+        background: var(--accent-soft);
+        border-radius: 999px;
+        padding: 0.12rem 0.55rem;
+        margin-right: 0.45rem;
+        white-space: nowrap;
+}
+
+/* —— Agent 思考卡（运行中动态状态 / 完成后阶段摘要） —— */
+.agentThinkingCard {
+        margin: 0.15rem 0 0.55rem;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--side-bg);
+        max-width: 100%;
+}
+
+.agentThinkingHeader {
+        gap: 0.5rem;
+}
+
+.agentThinkingTitle {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text-2);
+}
+
+.agentThinkingPhase {
+        font-size: 0.76rem;
+        color: var(--accent-deep);
+}
+
+.agentThinkingLive {
+        border-style: dashed;
+}
+
+.agentThinkingPulse::after {
+        content: "…";
+        animation: agentPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes agentPulse {
+        0%, 100% { opacity: 0.25; }
+        50% { opacity: 1; }
+}
+
+.agentThinkingSteps {
+        margin-top: 0.35rem;
+        gap: 0.18rem;
+}
+
+.agentThinkingStep {
+        gap: 0.45rem;
+        font-size: 0.76rem;
+        color: var(--text-2);
+        line-height: 1.5;
+}
+
+.agentStepGlyph {
+        font-size: 0.74rem;
+        color: #1d7a4f;
+        flex-shrink: 0;
+        width: 0.9rem;
+        text-align: center;
+}
+
+.agentThinkingStepFail .agentStepGlyph {
+        color: var(--danger);
+}
+
+.agentStepLabel {
+        color: var(--text-2);
+        flex: 1;
+        min-width: 0;
+}
+
+.agentStepTime {
+        font-size: 0.7rem;
+        color: var(--sub);
+        flex-shrink: 0;
+}
+
+.agentThinkingFold {
+        font-size: 0.78rem !important;
+        color: var(--accent) !important;
+        padding: 0 0.25rem;
+}
+
+/* ============================================================
+   V14：UI 精修
+   目标：更轻的模式导航、更稳定的欢迎区层级、更克制的顶栏模型选择。
+   ============================================================ */
+
+/* 侧栏宽度稍微增加，让中文会话标题和状态徽标不显拥挤 */
+.sideBar {
+        min-width: 18rem;
+        max-width: 18rem;
+        padding-left: .85rem;
+        padding-right: .85rem;
+}
+
+.brandRow {
+        padding-left: .2rem;
+        padding-right: .2rem;
+        padding-bottom: .85rem;
+}
+
+.brandName {
+        font-size: 1.08rem !important;
+        font-weight: 650 !important;
+}
+
+/* 模式切换保持横向，但降低按钮的“卡片感” */
+.modeNav {
+        margin: .35rem .05rem .8rem;
+        padding: .22rem;
+        border-color: var(--line-strong);
+        background: var(--surface);
+        box-shadow: 0 2px 10px rgba(30, 65, 100, .045);
+}
+
+.modeNavBtn {
+        height: 2.45rem;
+}
+
+.modeNavBtn .sapMBtnText {
+        font-size: .84rem;
+        letter-spacing: .01em;
+}
+
+.modeNavBtn.modeNavActive .sapMBtnInner {
+        background: var(--accent-soft) !important;
+        box-shadow: inset 0 0 0 1px rgba(45, 122, 179, .18),
+                0 1px 3px rgba(45, 122, 179, .08) !important;
+}
+
+/* 顶栏模型选择器弱化为信息胶囊，避免抢过模式和会话标题 */
+.topBar .modelSelect,
+.topBar .modelSelect .sapMInputBaseContentWrapper {
+        border-radius: 999px !important;
+}
+
+.topBar .modelSelect {
+        min-width: 10rem;
+        max-width: 13rem;
+        margin-right: .2rem;
+}
+
+.topBar .modelSelect .sapMInputBaseInner {
+        font-size: .78rem !important;
+        font-weight: 600;
+        padding-left: .8rem !important;
+    }
+
+.topModeBadge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 1.9rem;
+        padding: .18rem .72rem;
+        margin-left: .15rem;
+        background: var(--accent-soft);
+        border-color: var(--line);
+        letter-spacing: .01em;
+}
+
+/* 欢迎区输入卡适度放宽，消息列和输入列保持同一条视觉基线 */
+.heroCard,
+.inputDock .inputCard {
+        width: min(100%, var(--content-max));
+}
+
+.inputCard {
+        border-radius: 18px;
+        padding: .8rem 1rem .75rem 1.2rem;
+        box-shadow: 0 8px 28px rgba(20, 30, 50, .055);
+}
+
+.inputCard:focus-within {
+        box-shadow: 0 0 0 3px rgba(45, 122, 179, .12),
+                0 10px 30px rgba(20, 30, 50, .07);
+}
+
+/* 快捷气泡只占欢迎标题上方的安全区域，不再盖住副标题和输入卡 */
+.heroBubbleField {
+        inset: 9% 0 auto;
+        height: 28%;
+        overflow: visible;
+}
+
+.bubSlot0 { left: 32%; top: 60%; }
+.bubSlot1 { right: 32%; top: 60%; }
+.bubSlot2 { left: 24%; top: 15%; }
+.bubSlot3 { right: 24%; top: 15%; }
+.bubSlot4 { left: 15%; top: 78%; }
+.bubSlot5 { right: 15%; top: 78%; }
+.bubSlot6 { left: 40%; top: 0; }
+.bubSlot7 { right: 40%; top: 0; }
+
+.heroBubble {
+        padding: 1px 11px;
+        box-shadow: 0 3px 12px rgba(40, 70, 110, .08);
+}
+
+.heroBubble .bubbleChip .sapMBtnText {
+        font-size: .75rem;
+}
+
+@media (max-height: 720px) {
+        .heroBubbleField {
+                display: none;
+        }
+}
+
+@media (max-width: 900px) {
+        :root {
+                --content-max: calc(100vw - 20rem);
+        }
+
+        .sideBar {
+                min-width: 16.5rem;
+                max-width: 16.5rem;
+        }
+}
+
+@media (max-width: 599px) {
+        :root {
+                --content-max: calc(100vw - 2rem);
+        }
+
+        .sideBar {
+                min-width: 15.5rem;
+                max-width: 15.5rem;
+        }
+
+        .topBar .modelSelect {
+                display: none;
+        }
+}
+
+/* ============================================================
+   V1.3：数据分析结果区（Agent 回复内嵌）
+   数据集表格复用 .mdTable 系样式；图表为原生 SVG（viewBox 自适应）
+   ============================================================ */
+.analysisBlock {
+        margin: 0.35rem 0 0.6rem;
+        padding: 0.65rem 0.8rem;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--side-bg);
+        max-width: 100%;
+}
+
+.analysisSummary {
+        font-size: 0.84rem;
+        color: var(--text);
+        line-height: 1.6;
+        margin-bottom: 0.4rem;
+}
+
+/* —— 分析发现（info/warn/error 三档） —— */
+.analysisFindings {
+        margin-bottom: 0.45rem;
+}
+
+.analysisFinding {
+        display: flex;
+        align-items: baseline;
+        gap: 0.45rem;
+        font-size: 0.78rem;
+        line-height: 1.55;
+        padding: 0.12rem 0;
+        color: var(--text-2);
+}
+
+.analysisFinding .findingGlyph {
+        flex-shrink: 0;
+        width: 0.95rem;
+        text-align: center;
+}
+
+.analysisFinding.sev-info .findingGlyph { color: #1d7a4f; }
+.analysisFinding.sev-warn .findingGlyph { color: #b07a1f; }
+.analysisFinding.sev-error .findingGlyph { color: var(--danger); }
+
+.analysisFinding .findingTitle {
+        font-weight: 600;
+        color: var(--text);
+        flex-shrink: 0;
+}
+
+.analysisFinding .findingDetail {
+        min-width: 0;
+}
+
+/* —— 数据集（标题行 + 表格/错误/空态） —— */
+.analysisDs {
+        margin: 0.5rem 0;
+}
+
+.analysisDsHead {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.6rem;
+        margin-bottom: 0.3rem;
+}
+
+.analysisDsHead .dsName {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text);
+}
+
+.analysisDsHead .dsMeta {
+        font-size: 0.7rem;
+        color: var(--sub);
+        white-space: nowrap;
+}
+
+.analysisTable td.num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+}
+
+.analysisDsEmpty,
+.analysisDsError,
+.analysisChartSkip {
+        font-size: 0.78rem;
+        line-height: 1.5;
+        padding: 0.4rem 0.6rem;
+        border-radius: 8px;
+        background: var(--hover);
+        color: var(--text-2);
+}
+
+.analysisDsError {
+        background: rgba(207, 52, 42, 0.08);
+        color: var(--danger);
+}
+
+/* —— 原生 SVG 图表 —— */
+.analysisChart {
+        margin: 0.55rem 0 0.15rem;
+}
+
+.analysisChart .chartTitle {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--text-2);
+        margin-bottom: 0.25rem;
+}
+
+.anSvg {
+        display: block;
+        width: 100%;
+        max-width: 720px;
+        height: auto;
+}
+
+.anSvg .anGrid {
+        stroke: var(--line);
+        stroke-width: 1;
+}
+
+.anSvg .anSvgText {
+        fill: var(--text-2);
+        font-size: 11px;
+}
+
+.anSvg .anSvgTextR { text-anchor: end; }
+.anSvg .anSvgTextC { text-anchor: middle; }
+
+.anSvg .anLine {
+        fill: none;
+        stroke: #4d7cfe;
+        stroke-width: 2.5;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+}
+
+[data-theme="dark"] .analysisDsError {
+        background: rgba(207, 52, 42, 0.16);
+}
+
+/* ==================== V15: 任务区(当前任务/参数表单/运行状态) ==================== */
+.taskStrip {
+        padding: 0.5rem 1.5rem 0.25rem;
+}
+.taskStripHead {
+        gap: 0.5rem;
+}
+.taskBadge {
+        flex-shrink: 0;
+}
+.taskTitle {
+        font-size: 0.8125rem;
+        opacity: 0.85;
+}
+.runStatus {
+        font-size: 0.75rem;
+        opacity: 0.8;
+        padding: 0.25rem 0;
+}
+.paramForm {
+        padding: 0.25rem 0;
+}
+.paramForm .sapMLabel {
+        font-size: 0.75rem;
+}
+.paramError {
+        font-size: 0.75rem;
+        color: #bb0000;
+}
+.taskSubmitBtn {
+        margin-right: 0.5rem;
+}
+.taskSubmitHint {
+        font-size: 0.6875rem;
+        opacity: 0.6;
+}
+[data-theme="dark"] .paramError {
+        color: #ff8a80;
+}
+/* V15: 报表结果样例表(仅渲染后端下发数据, 全部 escapeHtml) */
+.rptResultTable {
+        border-collapse: collapse;
+        margin: 0.25rem 0;
+        font-size: 0.8125rem;
+}
+.rptResultTable th,
+.rptResultTable td {
+        border: 1px solid rgba(128, 128, 128, 0.35);
+        padding: 0.2rem 0.6rem;
+        text-align: left;
+}
+.rptResultTable th {
+        background: rgba(128, 128, 128, 0.12);
+}

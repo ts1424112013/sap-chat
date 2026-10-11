@@ -1,0 +1,696 @@
+/* ============================================================
+   V5～V9 补层（快捷指令 / 对话框修复 / 简约补层与暗色 / V8 登录 / V9.3 附件）
+   20261011（FE-09）由 style.css 按原顺序切出，规则未改；四个文件在
+   manifest.json 的 sap.ui5/resources/css 里按 style → style-patches →
+   style-features → style-gale 顺序加载，后者覆盖前者（层叠顺序与拆分前一致）。
+   新规则加到对应层的末尾；跨层覆盖时放后面的文件。
+   ============================================================ */
+
+/* ============================================================
+   V5：快捷指令（可增删）· 对话态指令行 · 停止态 · 测试按钮
+   ============================================================ */
+
+/* 停止态发送键：可点击的柔化蓝（V5 起忙碌中不禁用，点击即停止） */
+.sendBtn.sendBtnStop:not(.sapMBtnDisabled):hover .sapMBtnHoverable {
+        background: #A3C7E1;
+}
+
+/* 模型管理"测试"按钮 */
+[id$="modelTable"] .testBtn .sapMBtnInner {
+        font-size: .78rem;
+        min-width: 2.6rem;
+        padding: 0 .35rem;
+        color: var(--accent-deep);
+        background: var(--accent-soft);
+        border: 1px solid #D9E2FB;
+        border-radius: 999px;
+}
+
+[id$="modelTable"] .testBtn:hover .sapMBtnInner {
+        background: #E4EBFD;
+}
+
+/* 快捷指令编辑对话框内提示 */
+.qpDialog .hintText {
+        font-size: .75rem;
+        color: var(--sub);
+}
+
+/* V5：AI 标题行的 meta 展示位（如"已停止生成"），空值隐藏 */
+.aiHeadMeta {
+        font-size: .72rem;
+        color: var(--sub);
+}
+
+.aiHeadMeta:empty {
+        display: none;
+}
+
+/* V5.1：网关登录对话框错误提示文字 */
+.sapLoginDialog .sapMText {
+        max-width: 100%;
+}
+
+.sapLoginDialog .sapMText.sapUiSmallMarginTop {
+        color: var(--danger);
+        font-size: .8rem;
+}
+
+/* ============================================================
+   V5.2：对话框与按钮样式修复（联调反馈）
+   ============================================================ */
+
+/* ① 修复 Dialog 底部按钮被拉伸变形（Horizon 默认 flex:1 各占半宽）
+   恢复 Fiori 惯例：按钮紧凑右对齐，自适应内容宽度 */
+.sapMDialog .sapMDialogBar .sapMBtn {
+        flex: 0 0 auto !important;
+        width: auto !important;
+        min-width: 5.2rem;
+        margin-left: .5rem;
+}
+
+/* MessageBox（模型测试结果等）同样处理 */
+.sapMMessageBox .sapMDialogBar .sapMBtn {
+        flex: 0 0 auto !important;
+        width: auto !important;
+        min-width: 5.2rem;
+        margin-left: .5rem;
+}
+
+/* ② 对话框底部按钮区与内容加分隔线（原"漂浮"感） */
+.sapMDialog section.sapMDialogSection + div.sapMDialogBar,
+.sapMDialog .sapMDialogBar {
+        border-top: 1px solid var(--line);
+        padding-top: .6rem;
+}
+
+/* ③ 自定义头部工具栏（右上角 × 关闭）：透明背景，与标题基线对齐 */
+.dlgHeadToolbar {
+        background: transparent !important;
+        border-bottom: 1px solid var(--line) !important;
+        padding: .35rem .9rem .35rem 1.2rem !important;
+        min-height: 2.6rem;
+}
+
+.dlgHeadToolbar .sapMToolBarMiddle {
+        align-items: center;
+}
+
+.dlgHeadTitle {
+        font-size: 1.05rem;
+        font-weight: 600;
+        color: var(--text);
+}
+
+.dlgCloseBtn .sapMBtnInner {
+        border-radius: 50%;
+        min-width: 1.8rem;
+        padding: 0;
+}
+
+.dlgCloseBtn:hover .sapMBtnInner {
+        background: var(--hover);
+}
+
+/* ④ 模型管理表格列头加底色（与数据行区分） */
+[id$="modelTable"] th.sapMListTblHeaderCell,
+[id$="modelTable"] thead th {
+        background: var(--hover) !important;
+}
+
+/* ⑥ 设置对话框页签行底部加分隔线（层级更清晰） */
+[id$="settingsTabs"] .sapMTabBar,
+[id$="settingsTabs"] .sapMITBHead {
+        border-bottom: 1px solid var(--line);
+        background: transparent;
+}
+
+/* ============================================================
+   V5.2e 侧栏空提示缩小（保留）；快捷胶囊相关规则已随 V5.4
+   泡泡化改造移除（泡泡/角色清单的 × 按钮样式见各自章节）
+   ============================================================ */
+
+/* 清除小圆 × 点击后残留的 Horizon 深蓝焦点框（泡泡/角色清单共用） */
+.chipDel:focus {
+        outline: none !important;
+}
+
+.chipDel .sapMBtnInner::before {
+        content: none !important;
+}
+
+/* ④ 侧栏"暂无历史会话…"空提示文字缩小弱化 */
+[id$="sessionList"] .sapMListNoData {
+        font-size: .72rem !important;
+        color: #A0A8B8 !important;
+        padding: .7rem .5rem !important;
+}
+
+/* ============================================================
+   V5.3：登录对话框美化（DeepSeek 风格：徽标 + 居中标题 + 圆角输入）
+   ============================================================ */
+
+/* 对话框本体：大圆角 + 柔和阴影（内边距由内容区自身控制） */
+.sapLoginDialog {
+        border-radius: 16px !important;
+        box-shadow: 0 18px 50px rgba(15, 23, 42, .18) !important;
+}
+
+.sapLoginDialog .sapMDialogContent {
+        padding: 0 !important;
+}
+
+/* —— 表单标签与输入框 —— */
+.loginLabel {
+        font-size: .76rem !important;
+        color: var(--text-2) !important;
+        margin-bottom: .25rem !important;
+}
+
+.loginLabel ~ .loginLabel {
+        margin-top: .55rem !important;
+}
+
+.loginInput {
+        border-radius: 10px !important;
+        margin-bottom: .1rem;
+}
+
+.loginInput .sapMInputBaseContentWrapper {
+        border-radius: 10px !important;
+        border: 1px solid #DDE3EE !important;
+        background: var(--hover) !important;
+        min-height: 2.35rem !important;
+        transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+
+.loginInput .sapMInputBaseContentWrapper:focus-within,
+.loginInput.sapMInputBaseFocused .sapMInputBaseContentWrapper {
+        border-color: var(--accent, #2d7ab3) !important;
+        background: var(--surface-solid, #FFFFFF) !important;
+        box-shadow: 0 0 0 3px rgba(45, 122, 179, .12) !important;
+}
+
+/* —— 错误提示条：浅红底圆角 —— */
+.loginErr {
+        background: var(--danger-bg) !important;
+        color: var(--danger) !important;
+        border-radius: 8px;
+        padding: .45rem .65rem !important;
+        font-size: .76rem !important;
+        margin-top: .6rem !important;
+        max-width: 100% !important;
+}
+
+.loginErr:empty {
+        display: none;
+}
+
+.sapLoginDialog .sapMDialogBar {
+        border-top: 1px solid var(--line, #E2E6EF) !important;
+        padding: .65rem 1.2rem .65rem 0 !important;
+}
+
+
+/* ============================================================
+   V6.1：简约版补层（替代 V6.0 特效层）
+   原则：纯平色 / 发丝线 / 无模糊 / 无常驻动画；
+   微交互只保留 hover / press / 入场 / 打字点
+   ============================================================ */
+
+/* 画布：body 直绘渐变底（V7.3：轻主色晕染，UI5 页面根节点透明化，亮暗通用） */
+body {
+        background: var(--bg-gradient);
+        background-attachment: fixed;
+        transition: background-color .25s var(--ease);
+}
+.sapMApp,
+.sapMPage,
+.sapMPage .sapMPageBgSolid,
+.sapMPageBgSolid,
+.sapMPage > section,
+[id$="page"],
+[id$="page"] > section,
+.mainCol {
+        background: transparent !important;
+}
+body.sapUiBody {
+        background: var(--bg-gradient) !important;
+        background-attachment: fixed !important;
+}
+
+/* 欢迎标题：纯色（原 V4 深蓝 → 简约风正文色） */
+.heroTitle { color: var(--text) !important; }
+
+/* V7：用户胶囊改为浅蓝实底深字（--bubble-user），由 .userBubble 承担；
+   原 .bubbleUser 白字覆盖规则已随旧类废弃删除 */
+
+/* 快捷指令泡泡：V7 恢复常驻漂浮（泡泡浮动效果），外观对齐 V2 简约版
+   —— 纯平卡片色 + 发丝线 + 中性浅投影，去毛玻璃（零 filter 模糊）。
+   漂浮打在外层盒（bubFloat，仅 translateY，GPU 友好），
+   入场缩放仍打在内层 chip（bubIn），错拍由 bubD0~3 的 --d 提供 */
+.heroBubble {
+        animation: bubFloat 5.5s ease-in-out infinite alternate !important;
+        animation-delay: var(--d, 0s);
+        border-color: var(--line) !important;
+        background: var(--card, var(--surface)) !important;
+        box-shadow: var(--shadow-1) !important;
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+}
+
+/* 点击淡出态必须压过常驻漂浮（同为 !important，后声明者胜出） */
+.heroBubble.bubOut {
+        animation: none !important;
+}
+
+.heroBubble:hover {
+        border-color: var(--accent) !important;
+        box-shadow: var(--shadow-2) !important;
+        background: var(--card, var(--surface)) !important;
+}
+[data-theme="dark"] .heroBubble {
+        background: var(--pill-bg) !important;
+        border-color: var(--pill-line) !important;
+}
+[data-theme="dark"] .heroBubble.bubAdd { background: transparent !important; }
+[data-theme="dark"] .heroBubble:hover {
+        background: var(--accent-soft) !important;
+}
+[data-theme="dark"] .heroBubble:hover .bubbleChip .sapMBtnText {
+        color: var(--accent-lum) !important;
+}
+
+/* 发送键：纯色 + 轻微 hover 加深（无渐变无辉光） */
+[id$="sendBtn"] .sapMBtnInner {
+        background: var(--accent) !important;
+        border: none !important;
+        transition: background-color .16s var(--ease), transform .12s var(--ease);
+}
+[id$="sendBtn"]:hover .sapMBtnInner { background: var(--accent-deep) !important; }
+[id$="sendBtn"]:active .sapMBtnInner { transform: scale(.94); }
+
+/* 建议胶囊 hover：仅边框 + 底色（无阴影位移） */
+.pill:hover {
+        border-color: var(--accent) !important;
+        box-shadow: none !important;
+}
+
+/* 会话条目当前项：恢复纯平高亮（去发光描边） */
+.sessionList .sessItemCurrent { box-shadow: none !important; }
+
+/* 顶栏主题切换按钮：图标旋转微交互保留（低成本） */
+#themeToggle .sapMBtnIcon,
+#themeToggle img {
+        transition: transform .4s var(--ease), opacity .2s var(--ease);
+}
+#themeToggle:hover img { transform: rotate(30deg); }
+[data-theme="dark"] .topBar .sapMBtnTransparent .sapMBtnIcon {
+        color: var(--text-2) !important;
+}
+[data-theme="dark"] .topBar .sapMBtnTransparent:hover .sapMBtnIcon {
+        color: var(--accent-lum) !important;
+}
+
+/* ---------- 暗色补层（popup 体系不吃根节点 token，需显式覆盖） ---------- */
+[data-theme="dark"] .sapMDialog,
+[data-theme="dark"] .sapMDialog .sapMDialogContent {
+        background: var(--surface-solid) !important;
+        color: var(--text) !important;
+}
+[data-theme="dark"] .sapMDialog .sapMDialogTitle,
+[data-theme="dark"] .sapMDialog .sapMDialogSection { color: var(--text) !important; }
+[data-theme="dark"] .sapMDialog .sapMLabel { color: var(--text-2) !important; }
+[data-theme="dark"] .sapMDialog table th { background: rgba(255,255,255,.04) !important; }
+[data-theme="dark"] .sapMDialog table td { color: var(--text) !important; border-color: var(--line) !important; }
+
+/* Horizon 把输入框白底画在 ContentWrapper：暗色统一透明化 */
+[data-theme="dark"] .sapMInputBaseContentWrapper {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+}
+
+/* 顶栏模型 ComboBox：暗色纯平胶囊 */
+[data-theme="dark"] .topBar .sapMComboBox {
+        background: transparent !important;
+        border: 1px solid var(--line-strong) !important;
+        border-radius: 10px;
+}
+[data-theme="dark"] .topBar .sapMComboBox:hover { border-color: var(--accent) !important; }
+[data-theme="dark"] .topBar .sapMComboBox input,
+[data-theme="dark"] .topBar .sapMComboBox .sapMInputBase-inner,
+[data-theme="dark"] .topBar .sapMComboBox .sapMInner {
+        background: transparent !important;
+        color: var(--text) !important;
+}
+[data-theme="dark"] .topBar .sapMComboBox .sapMPlaceHolder {
+        color: var(--sub) !important;
+}
+
+/* ComboBox 下拉列表暗色（V7.3b 修正类名：真实弹层类为 .sapMComboBoxBasePicker，
+   旧 .sapMComboBoxPicker 系过时类名从未命中；弹层面板/条目样式由文件尾
+   V7.3 token 化规则统一驱动，此处仅保留暗色文字兜底） */
+[data-theme="dark"] .sapMComboBoxBasePicker {
+        color: var(--text) !important;
+}
+[data-theme="dark"] .sapMComboBoxBasePicker .sapMLIB {
+        color: var(--text) !important;
+}
+
+/* MessageToast 暗色 */
+[data-theme="dark"] .sapMMessageToast {
+        background: #232b36 !important;
+        color: var(--text) !important;
+        border: 1px solid var(--line-strong) !important;
+        border-radius: 12px !important;
+}
+
+/* 登录对话框暗色 */
+[data-theme="dark"] .sapLoginDialog { background: var(--surface-solid) !important; }
+
+/* ---------- 系统减弱动效：全部静止 ---------- */
+@media (prefers-reduced-motion: reduce) {
+        * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+
+/* ============================================================
+   V7 · V2 简约版设计图对齐补层
+   基准：V2 SAP AI 对话助手 · 简约版设计图（V2）.html
+   内容：亮色代码高亮重映射 / 顶栏模型胶囊 / hero 副标题
+   （其余 V2 对齐项已就地并入上方各 token 与规则）
+   ============================================================ */
+
+/* ---------- 顶栏模型胶囊：亮色同款纯平胶囊（V2 .model-pill） ---------- */
+.topBar .sapMComboBox {
+        background: var(--surface) !important;
+        border: 1px solid var(--line) !important;
+        border-radius: 9px;
+        transition: border-color .16s var(--ease);
+}
+.topBar .sapMComboBox:hover {
+        border-color: var(--accent) !important;
+}
+.topBar .sapMComboBox input,
+.topBar .sapMComboBox .sapMInputBase-inner,
+.topBar .sapMComboBox .sapMInner {
+        background: transparent !important;
+        color: var(--text) !important;
+}
+
+/* ---------- hero 副标题（V2 .sub） ---------- */
+.heroSub {
+        font-size: 14px;
+        color: var(--sub);
+        margin: 0 0 1.6rem;
+        text-align: center;
+        max-width: 40rem;
+}
+
+/* ---------- 消息正文显式走 token 色 ----------
+   UI5 Horizon 的正文色是固定深色值，不随暗色画布变化；
+   不显式指定时暗色主题下消息正文/输入文字不可读（实测发现）。 */
+.bubbleBody {
+        color: var(--text);
+}
+
+[data-theme="dark"] .inputCard textarea {
+        color: var(--text) !important;
+}
+
+[data-theme="dark"] .roleBox .sapMComboBox input,
+[data-theme="dark"] .roleBox .sapMComboBox .sapMPlaceHolder {
+        color: var(--text) !important;
+}
+
+/* ---------- 亮色代码高亮重映射 ----------
+   index.html 加载的 hljs 主题为 github-dark-dimmed（暗底配色），
+   V7 代码块改浅底后由本层接管亮色配色（V2：kw=主色加粗、
+   str=绿、cmt=弱灰）；hljs 未加载/未命中类时自然退化为正文色，
+   暗色主题不受影响（继续用 dimmed 原配色）。 */
+[data-theme="light"] .bubbleBody pre code.hljs {
+        color: var(--code-text) !important;
+        background: transparent !important;
+}
+[data-theme="light"] .bubbleBody pre .hljs-keyword,
+[data-theme="light"] .bubbleBody pre .hljs-built_in,
+[data-theme="light"] .bubbleBody pre .hljs-name,
+[data-theme="light"] .bubbleBody pre .hljs-section {
+        color: var(--accent);
+        font-weight: 600;
+}
+[data-theme="light"] .bubbleBody pre .hljs-string,
+[data-theme="light"] .bubbleBody pre .hljs-regexp {
+        color: #3f9d63;
+}
+[data-theme="light"] .bubbleBody pre .hljs-comment,
+[data-theme="light"] .bubbleBody pre .hljs-quote {
+        color: var(--sub);
+}
+[data-theme="light"] .bubbleBody pre .hljs-number,
+[data-theme="light"] .bubbleBody pre .hljs-literal {
+        color: #B36539;
+}
+[data-theme="light"] .bubbleBody pre .hljs-title,
+[data-theme="light"] .bubbleBody pre .hljs-function {
+        color: var(--accent-deep);
+}
+
+/* ============================================================
+   V7.1 · 用户圈注修正：图标/控件统一（V2 .icon-btn / .mode / .role）
+   Horizon 给透明按钮图标默认上色（蓝/深蓝不一）且字号偏大，
+   颜色与尺寸均需 !important 压过主题默认值
+   ============================================================ */
+
+/* 顶栏图标按钮：统一 16px 中性灰，hover 浅底（主题切换/导出/设置/折叠侧栏） */
+.topBar .sapMBtn {
+        border-radius: 9px;
+}
+
+.topBar .sapMBtn .sapMBtnIcon {
+        color: var(--text-2) !important;
+        font-size: 1.05rem !important;
+        width: 1.05rem;
+        height: 1.05rem;
+        line-height: 1.05rem;
+}
+
+.topBar .sapMBtn:hover .sapMBtnIcon {
+        color: var(--text) !important;
+}
+
+.topBar .sapMBtn:not(.sapMBtnDisabled):hover .sapMBtnHoverable,
+.topBar .sapMBtn:not(.sapMBtnDisabled):active .sapMBtnHoverable {
+        background: var(--hover) !important;
+        box-shadow: none !important;
+        border: none !important;
+}
+
+/* 侧栏底部设置齿轮：弱化 sub 灰，hover 主色 */
+.sideFoot .sideSetBtn .sapMBtnIcon {
+        color: var(--sub) !important;
+        font-size: .95rem !important;
+}
+
+.sideFoot .sideSetBtn:hover .sapMBtnIcon {
+        color: var(--accent) !important;
+}
+
+/* 会话条目悬浮删除键：弱化灰，hover 危险色 */
+.sessDelBtn .sapMBtnIcon {
+        color: var(--sub) !important;
+        font-size: .85rem !important;
+}
+
+.sessDelBtn:hover .sapMBtnIcon {
+        color: var(--danger) !important;
+}
+
+/* 侧栏空提示：左对齐（原居中换行观感差） */
+[id$="sessionList"] .sapMListNoData {
+        text-align: left !important;
+}
+
+/* V7.2：顶栏图标垂直居中 —— Horizon 的 .sapMBtnInner 为 flex 但
+   align-items:normal，固定高度的图标 span 按 flex-start 顶在上沿
+   （实测图标盒中心比 ComboBox 中心高约 9px）；显式居中修正 */
+.topBar .sapMBtn .sapMBtnInner {
+        align-items: center !important;
+}
+
+.topBar .sapMBtn .sapMBtnIcon {
+        align-self: center !important;
+}
+
+/* ============================================================
+   V7.3 · 样例二次对齐 + 渐变画布
+   ① 侧栏透出渐变 + 发丝线分隔（样例 .sidebar 同款 border-right）
+   ② 角色下拉展开态彻底 ghost 化（箭头按钮的 Horizon 边框/底色）
+   ③ 下拉选项列表（角色/模型共用）统一：圆角 + 发丝线 + accent-soft 悬停
+   ============================================================ */
+
+/* ① 侧栏：V7.4 改为半透明底色（透出一点渐变但明显成块）+ 发丝线 + 右缘极轻投影，
+   解决全透明时与主区糊在一起的问题 */
+.sideBar {
+        background: var(--side-tint) !important;
+        border-right: 1px solid var(--line) !important;
+        box-shadow: 6px 0 24px rgba(20, 30, 50, .05) !important;
+}
+
+/* 底部输入坞的实底渐隐带：渐变画布上会形成色带，去除 */
+.inputDock {
+        background: transparent !important;
+}
+
+/* ② 角色下拉：箭头按钮的 Horizon 边框/底色（常态 + 聚焦/展开态）一并剥离 */
+.roleBox .sapMComboBox .sapMComboBoxArrow,
+.roleBox .sapMComboBox:focus .sapMComboBoxArrow,
+.roleBox .sapMComboBox:focus-within .sapMComboBoxArrow {
+        border: none !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        outline: none !important;
+        color: var(--sub) !important;
+}
+
+.roleBox .sapMComboBox:focus-within .sapMInputBaseContentWrapper {
+        background: var(--hover) !important;
+}
+
+/* ③ 下拉选项列表（V7.3b 修正类名：真实弹层 = .sapMComboBoxBasePicker，
+   条目 = .sapMLIB；圆角面板 + 发丝边 + 轻投影，亮暗由 token 驱动） */
+.sapMComboBoxBasePicker {
+        background: var(--surface) !important;
+        border: 1px solid var(--line) !important;
+        border-radius: 12px !important;
+        box-shadow: var(--shadow-2) !important;
+}
+
+/* ============================================================
+   V8 · 应用层登录/权限
+   ============================================================ */
+/* 弹窗底色修复：Horizon 未在 .sapMDialog 根节点/标题栏上画底色，
+   自定义头部区域会透出底层内容（管理角色弹窗实测复现）；
+   亮暗统一走 token，根/标题/子头部一并兜底 */
+.sapMDialog,
+.sapMDialogTitle,
+.sapMDialogSubHeader {
+        background: var(--surface) !important;
+}
+[data-theme="dark"] .sapMDialogTitle {
+        background: var(--surface-solid) !important;
+}
+
+/* 登录框（V8）：居中徽标 + 圆角输入 + 全宽登录按钮 */
+.appLoginBody { padding: 0 1.6rem 1.2rem !important; }
+.appLoginChip {
+        width: 3.2rem; height: 3.2rem; border-radius: 15px;
+        background: var(--accent); box-shadow: var(--shadow-2);
+        align-items: center; justify-content: center;
+        margin: .4rem auto .6rem;
+}
+.appLoginChip .sapMText { color: #fff !important; font-size: 1.4rem; }
+.appLoginTitle { font-size: 1.25rem !important; font-weight: 700 !important; color: var(--text) !important; text-align: center !important; }
+.appLoginSub { font-size: .78rem !important; color: var(--sub) !important; text-align: center !important; margin: .3rem 0 1.1rem !important; }
+.appLoginBody .loginLabel { font-size: .76rem !important; color: var(--text-2) !important; margin-bottom: .25rem !important; }
+.appLoginBtn { width: 100%; margin-top: .9rem !important; }
+.appLoginBtn .sapMBtnInner { border-radius: 10px !important; height: 2.4rem !important; }
+.appLoginDemo { margin-top: .7rem !important; text-align: center !important; font-size: .74rem !important; color: var(--sub) !important; }
+.appLoginDemo .sapMBtnInner { font-size: .74rem !important; color: var(--accent-deep) !important; }
+
+.sapMComboBoxBasePicker .sapMList,
+.sapMComboBoxBasePicker .sapMListUl {
+        background: transparent !important;
+}
+
+.sapMComboBoxBasePicker .sapMLIB {
+        border-radius: 8px !important;
+        margin: 2px 6px !important;
+        font-size: .82rem !important;
+        color: var(--text-2) !important;
+        background: transparent !important;
+}
+
+.sapMComboBoxBasePicker .sapMLIB:hover,
+.sapMComboBoxBasePicker .sapMLIB.sapMLIBSelected {
+        background: var(--accent-soft) !important;
+        color: var(--accent) !important;
+}
+
+/* ②b 角色下拉箭头容器（.sapMInputBaseIconContainer）：Horizon 会在
+   聚焦/按压时给它上底色蓝框，连同各状态一并剥离 */
+.roleBox .sapMComboBox .sapMInputBaseIconContainer,
+.roleBox .sapMComboBox:focus .sapMInputBaseIconContainer,
+.roleBox .sapMComboBox:focus-within .sapMInputBaseIconContainer,
+.roleBox .sapMComboBox.sapMInputBaseIconPressed .sapMInputBaseIconContainer {
+        border: none !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        outline: none !important;
+}
+
+/* V7.3c：角色下拉箭头蓝框真凶 —— Horizon 把按压态高亮画在图标 span 的
+   inset box-shadow 上（rgba(79,160,255,.5) 0 0 0 1px inset，实测 elementFromPoint），
+   与容器无关；连同按压态一并剥离 */
+.roleBox .sapMComboBox .sapMInputBaseIcon,
+.roleBox .sapMComboBox.sapMInputBaseIconPressed .sapMInputBaseIcon,
+.roleBox .sapMComboBox:focus .sapMInputBaseIcon,
+.roleBox .sapMComboBox:focus-within .sapMInputBaseIcon {
+        box-shadow: none !important;
+        border: none !important;
+        background: transparent !important;
+        outline: none !important;
+        color: var(--sub) !important;
+}
+
+/* ============================================================
+   V9.3：文本附件（回显行 + 回形针按钮）
+   ============================================================ */
+.attachRow {
+        padding: .1rem .3rem 0;
+}
+
+.attachName {
+        color: var(--sub) !important;
+        font-size: .78rem;
+}
+
+.attachDel .sapMBtnIcon {
+        color: var(--sub) !important;
+        font-size: .7rem !important;
+}
+
+.attachDel:hover .sapMBtnIcon {
+        color: var(--danger) !important;
+}
+
+/* 回形针按钮：ghost 化，与顶栏图标同风格 */
+.attachBtn {
+        margin-right: .35rem;
+}
+
+.attachBtn .sapMFileUploader-inputContainer,
+.attachBtn .sapMInputBaseContentWrapper {
+        display: none !important;
+}
+
+.attachBtn .sapMBtn {
+        border-radius: 9px;
+}
+
+/* unified.FileUploader 在 buttonText 为空时仍渲染默认文案「浏览...」，
+   与极简图标风格不符：仅隐藏按钮文字 span，保留回形针图标
+   （注意 sapMBtnText 是按钮 inner 容器的类，不能隐藏，否则按钮塌缩为 0 宽） */
+.attachBtn .sapMBtnContent {
+        display: none !important;
+}
+
+.attachBtn .sapMBtnIcon {
+        color: var(--sub) !important;
+        font-size: 1.05rem !important;
+}
+
+.attachBtn .sapMBtn:not(.sapMBtnDisabled):hover .sapMBtnHoverable,
+.attachBtn .sapMBtn:not(.sapMBtnDisabled):active .sapMBtnHoverable {
+        background: var(--hover) !important;
+}

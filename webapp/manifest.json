@@ -62,6 +62,15 @@
                         "css": [
                                 {
                                         "uri": "css/style.css"
+                                },
+                                {
+                                        "uri": "css/style-patches.css"
+                                },
+                                {
+                                        "uri": "css/style-features.css"
+                                },
+                                {
+                                        "uri": "css/style-gale.css"
                                 }
                         ]
                 },
