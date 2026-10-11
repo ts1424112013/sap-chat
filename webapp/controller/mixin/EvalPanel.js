@@ -45,7 +45,7 @@ sap.ui.define([
 
                 onEvalClose: function () {
                         if (this._oEvalModel && this._oEvalModel.getProperty("/running")) {
-                                MessageToast.show("测评进行中，请先停止");
+                                MessageToast.show(this._rb().getText("evalBusyClose"));
                                 return;
                         }
                         this._oEvalDialog.close();
@@ -60,11 +60,11 @@ sap.ui.define([
                         return fetch(sap.ui.require.toUrl("zai/chat/model/evalCases.json"), { cache: "no-store" })
                                 .then(function (r) { return r.json(); })
                                 .then(function (oRaw) {
-                                        that._setEvalCases(oRaw, "内置");
+                                        that._setEvalCases(oRaw, that._rb().getText("evalSrcBuiltin"));
                                         return that._oEvalCases;
                                 }).catch(function (e) {
-                                        that._oEvalCases = { version: "", raw: { cases: [] }, cases: [], invalid: 0, source: "内置" };
-                                        MessageToast.show("题库加载失败：" + ((e && e.message) || e));
+                                        that._oEvalCases = { version: "", raw: { cases: [] }, cases: [], invalid: 0, source: that._rb().getText("evalSrcBuiltin") };
+                                        MessageToast.show(that._rb().getText("evalCasesLoadFail", [(e && e.message) || e]));
                                         return that._oEvalCases;
                                 });
                 },
@@ -89,11 +89,12 @@ sap.ui.define([
                         var aParts = Object.keys(mCnt).map(function (k) { return AgentEval.SCENE_TEXT[k] + " " + mCnt[k]; });
                         var bScene = this._evalSceneSupported();
                         var iNeed = oC.cases.filter(function (c) { return c.requiresScene; }).length;
+                        var oRB = this._rb();
                         this._oEvalModel.setProperty("/statusText",
-                                "题库（" + oC.source + (oC.version ? " " + oC.version : "") + "）：共 " + oC.cases.length + " 题（" + aParts.join(" / ") + "）" +
-                                (oC.invalid ? "，无效 " + oC.invalid + " 题已忽略" : "") + "。" +
-                                (bScene ? "" : "后端尚未支持 Scene 参数：标记\"需场景\"的 " + iNeed + " 题会跳过，其余按自动场景运行。") +
-                                (ChatService.getMode() === "mock" ? " 当前是演示模式：回答为内置示例，不代表真实模型能力。" : ""));
+                                oRB.getText("evalIdle", [oC.source + (oC.version ? " " + oC.version : ""), oC.cases.length, aParts.join(" / ")]) +
+                                (oC.invalid ? oRB.getText("evalIdleInvalid", [oC.invalid]) : "") + oRB.getText("sentenceEnd") +
+                                (bScene ? "" : oRB.getText("evalIdleNoScene", [iNeed])) +
+                                (ChatService.getMode() === "mock" ? " " + oRB.getText("evalIdleMock") : ""));
                 },
 
                 onEvalRun: function () {
@@ -103,7 +104,7 @@ sap.ui.define([
                                 return;
                         }
                         if (this.getView().getModel("chat").getProperty("/busy")) {
-                                MessageToast.show("对话还在进行中，请等它完成后再开始测评");
+                                MessageToast.show(this._rb().getText("evalChatBusy"));
                                 return;
                         }
                         var sScene = oM.getProperty("/scene");
@@ -111,7 +112,7 @@ sap.ui.define([
                                 return sScene === "ALL" || c.scene === sScene;
                         });
                         if (!aCases.length) {
-                                MessageToast.show("所选场景没有题目");
+                                MessageToast.show(this._rb().getText("evalNoCases"));
                                 return;
                         }
                         var bScene = this._evalSceneSupported();
@@ -153,13 +154,13 @@ sap.ui.define([
                                 that._refreshSessions();
                         }).catch(function (e) {
                                 oM.setProperty("/running", false);
-                                MessageToast.show("测评中断：" + ((e && e.message) || e));
+                                MessageToast.show(that._rb().getText("evalAborted", [(e && e.message) || e]));
                         });
                 },
 
                 onEvalStop: function () {
                         this._bEvalStop = true;
-                        this._oEvalModel.setProperty("/statusText", "正在停止：等当前这一题完成后结束…");
+                        this._oEvalModel.setProperty("/statusText", this._rb().getText("evalStopping"));
                 },
 
                 _evalOnProgress: function (o) {
@@ -172,48 +173,49 @@ sap.ui.define([
                                 this._evalRender(false);
                         }
                         if (!o.done) {
-                                oM.setProperty("/statusText", "正在测评 " + (o.index + 1) + "/" + o.total + "：" +
-                                        o.item.id + " " + o.item.name + (o.item.rep > 1 ? " #" + o.item.rep : "") + " …");
+                                oM.setProperty("/statusText", this._rb().getText("evalRunning", [o.index + 1, o.total,
+                                        o.item.id + " " + o.item.name + (o.item.rep > 1 ? " #" + o.item.rep : "")]));
                         }
                 },
 
                 /** 结果表 + 汇总（bFinal = 跑完） */
                 _evalRender: function (bFinal) {
                         var oM = this._oEvalModel;
+                        var oRB = this._rb();
                         var aRes = (this._oEvalRun && this._oEvalRun.results) || [];
                         oM.setProperty("/rows", aRes.map(function (r) {
                                 var t = r.turns[r.turns.length - 1];
                                 return {
                                         key: r.id + "#" + r.rep,
-                                        label: r.id + " " + r.name + (r.rep > 1 ? " #" + r.rep : "") + (r.turns.length > 1 ? "（" + r.turns.length + " 轮对话）" : ""),
+                                        label: r.id + " " + r.name + (r.rep > 1 ? " #" + r.rep : "") + (r.turns.length > 1 ? oRB.getText("evalTurns", [r.turns.length]) : ""),
                                         sceneText: AgentEval.SCENE_TEXT[r.scene] || r.scene,
-                                        resultText: r.skipped ? "跳过" : (r.pass ? "通过" : "失败"),
+                                        resultText: oRB.getText(r.skipped ? "evalSkip" : (r.pass ? "evalPass" : "evalFail")),
                                         resultState: r.skipped ? "None" : (r.pass ? "Success" : "Error"),
                                         status: t ? t.status : "",
                                         rounds: t ? String(t.rounds) : "",
                                         seconds: t ? (t.wallMs / 1000).toFixed(1) : "",
                                         tools: t ? (t.tools.map(function (x) {
                                                 return x.tool + (x.status !== "OK" ? "(" + x.status + ")" : "");
-                                        }).join(", ") || (t.deterministic ? "（确定性应答）" : "—")) : "",
-                                        reasons: r.reasons.join("；")
+                                        }).join(", ") || (t.deterministic ? oRB.getText("evalDeterministic") : "—")) : "",
+                                        reasons: r.reasons.join(oRB.getText("listSepSemi"))
                                 };
                         }));
                         var S = AgentEval.summarize(aRes);
                         var fnLine = function (sName, a) {
-                                return sName + "：执行 " + a.run + (a.skipped ? "（跳过 " + a.skipped + "）" : "") +
-                                        "，通过 " + a.pass + "（" + a.passRate + "%）" +
-                                        "，模型平均 " + a.avgRounds + " 轮 / " + a.avgSeconds + "s（最长 " + a.maxSeconds + "s）" +
-                                        "，错误 " + a.errors + "，超时 " + a.timeouts + "，协议错 " + a.protocolErrors + "，工具被拒 " + a.rejected;
+                                return oRB.getText("evalSummaryLine", [sName, a.run,
+                                        a.skipped ? oRB.getText("evalSummarySkipped", [a.skipped]) : "",
+                                        a.pass, a.passRate, a.avgRounds, a.avgSeconds, a.maxSeconds,
+                                        a.errors, a.timeouts, a.protocolErrors, a.rejected]);
                         };
-                        var aLines = [fnLine("全部", S.all)];
+                        var aLines = [fnLine(oRB.getText("evalAll"), S.all)];
                         Object.keys(S.byScene).forEach(function (k) {
                                 aLines.push("  · " + fnLine(AgentEval.SCENE_TEXT[k], S.byScene[k]));
                         });
                         oM.setProperty("/summaryText", aLines.join("\n"));
                         if (bFinal) {
-                                oM.setProperty("/statusText", (this._bEvalStop ? "已停止" : "已完成") + "，用时 " +
-                                        Math.round((this._oEvalRun.durationMs || 0) / 1000) + "s。点一行查看问答详情；" +
-                                        "可导出报告发给开发分析。");
+                                oM.setProperty("/statusText", oRB.getText("evalFinished", [
+                                        oRB.getText(this._bEvalStop ? "evalStoppedWord" : "evalDoneWord"),
+                                        Math.round((this._oEvalRun.durationMs || 0) / 1000)]));
                         }
                 },
 
@@ -226,14 +228,26 @@ sap.ui.define([
                         if (!r) {
                                 return;
                         }
-                        var a = [r.id + " " + r.name + "（" + (AgentEval.SCENE_TEXT[r.scene] || r.scene) + "）→ " +
-                                (r.skipped ? "跳过" : (r.pass ? "通过" : "失败")) + (r.reasons.length ? "：" + r.reasons.join("；") : "")];
+                        var oRB = this._rb();
+                        var a = [oRB.getText("evalDHead", [r.id + " " + r.name, AgentEval.SCENE_TEXT[r.scene] || r.scene,
+                                oRB.getText(r.skipped ? "evalSkip" : (r.pass ? "evalPass" : "evalFail"))]) +
+                                (r.reasons.length ? oRB.getText("evalDReasons", [r.reasons.join(oRB.getText("listSepSemi"))]) : "")];
                         r.turns.forEach(function (t, i) {
-                                a.push("", "—— 第 " + (i + 1) + " 轮 ——", "问：" + t.question,
-                                        "状态 " + t.status + " · " + t.rounds + " 轮 · " + (t.wallMs / 1000).toFixed(1) + "s · 模型 " + (t.modelId || "-") +
-                                        (t.taskModule ? " · 任务模块 " + t.taskModule : "") + (t.needsInput ? " · 待填参数" : ""),
-                                        "工具：" + (t.tools.map(function (x) { return x.tool + "(" + x.status + (x.rows ? ", " + x.rows + " 行" : "") + ")"; }).join("，") || "无"),
-                                        t.message ? "消息：" + t.message : "", "答：", t.answer || "（空）");
+                                var aStat = [oRB.getText("evalDStatus", [t.status]), oRB.getText("evalDRounds", [t.rounds]),
+                                        (t.wallMs / 1000).toFixed(1) + "s", oRB.getText("evalDModel", [t.modelId || "-"])];
+                                if (t.taskModule) {
+                                        aStat.push(oRB.getText("evalDModule", [t.taskModule]));
+                                }
+                                if (t.needsInput) {
+                                        aStat.push(oRB.getText("evalDNeedsInput"));
+                                }
+                                a.push("", oRB.getText("evalDTurn", [i + 1]), oRB.getText("evalDQuestion", [t.question]),
+                                        aStat.join(" · "),
+                                        oRB.getText("evalDTools", [t.tools.map(function (x) {
+                                                return x.tool + "(" + x.status + (x.rows ? ", " + oRB.getText("evalDRows", [x.rows]) : "") + ")";
+                                        }).join(oRB.getText("listSepComma")) || oRB.getText("evalDNone")]),
+                                        t.message ? oRB.getText("evalDMessage", [t.message]) : "", oRB.getText("evalDAnswer"),
+                                        t.answer || oRB.getText("evalDEmpty"));
                         });
                         this._oEvalModel.setProperty("/detail", a.filter(function (x) { return x !== ""; }).join("\n"));
                 },
@@ -245,18 +259,18 @@ sap.ui.define([
                 },
 
                 onEvalExportMd: function () {
-                        this._download(AgentEval.toMarkdown(this._oEvalRun || {}), "Agent测评_" + this._evalStamp() + ".md",
+                        this._download(AgentEval.toMarkdown(this._oEvalRun || {}), this._rb().getText("evalFileReport", [this._evalStamp()]),
                                 "text/markdown;charset=utf-8");
                 },
 
                 onEvalExportJson: function () {
-                        this._download(JSON.stringify(this._oEvalRun || {}, null, 2), "Agent测评明细_" + this._evalStamp() + ".json",
+                        this._download(JSON.stringify(this._oEvalRun || {}, null, 2), this._rb().getText("evalFileDetail", [this._evalStamp()]),
                                 "application/json;charset=utf-8");
                 },
 
                 onEvalExportCases: function () {
                         var oRaw = (this._oEvalCases && this._oEvalCases.raw) || { cases: [] };
-                        this._download(JSON.stringify(oRaw, null, 2), "Agent测评题库_" + this._evalStamp() + ".json",
+                        this._download(JSON.stringify(oRaw, null, 2), this._rb().getText("evalFileCases", [this._evalStamp()]),
                                 "application/json;charset=utf-8");
                 },
 
@@ -273,12 +287,12 @@ sap.ui.define([
                                 try { oRaw = JSON.parse(String(oReader.result || "")); } catch (e) { oRaw = null; }
                                 var oN = oRaw ? AgentEval.normalizeCases(oRaw) : { cases: [] };
                                 if (!oN.cases.length) {
-                                        MessageToast.show("文件里没有可用的题目（需要 {cases:[{scene, turns, expect}]} 格式）");
+                                        MessageToast.show(that._rb().getText("evalImportBad"));
                                         return;
                                 }
-                                that._setEvalCases(oRaw, "导入 " + oFile.name);
+                                that._setEvalCases(oRaw, that._rb().getText("evalSrcImported", [oFile.name]));
                                 that._evalIdleStatus();
-                                MessageToast.show("已导入 " + oN.cases.length + " 题");
+                                MessageToast.show(that._rb().getText("evalImported", [oN.cases.length]));
                         };
                         oReader.readAsText(oFile, "utf-8");
                         oEvent.getSource().clear();

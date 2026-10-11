@@ -32,7 +32,7 @@ sap.ui.define([
                         var oUser = ChatService.getAppUser() || {};
                         var oSettings = this.getView().getModel("settings");
                         oSettings.setProperty("/isAdmin", ChatService.isAdmin());
-                        oSettings.setProperty("/loginUserId", (oUser.userId || "") + (oUser.role === "ADMIN" ? " · 管理员" : ""));
+                        oSettings.setProperty("/loginUserId", (oUser.userId || "") + (oUser.role === "ADMIN" ? " · " + this._rb().getText("roleAdminTag") : ""));
                         this._oSettingsDialog.open();
 
                         // V8：刷新用户管理页签（仅管理员）
@@ -67,15 +67,16 @@ sap.ui.define([
                 /** V8：用户管理（管理员）——列表刷新 */
                 _refreshUserTable: function () {
                         var oSettings = this.getView().getModel("settings");
+                        var oRB = this._rb();
                         ChatService.getUsersData().then(function (aUsers) {
                                 oSettings.setProperty("/userList", aUsers.map(function (u) {
                                         return {
                                                 UserId: u.UserId,
                                                 UserName: u.UserName || "",
-                                                Role: u.Role === "ADMIN" ? "ADMIN · 管理员" : "USER · 使用者",
+                                                Role: oRB.getText(u.Role === "ADMIN" ? "userRoleAdminLabel" : "userRoleUserLabel"),
                                                 RoleRaw: u.Role,
                                                 ActiveState: u.Active === "X" ? "Success" : "Error",
-                                                IsActive: u.Active === "X" ? "启用" : "停用"
+                                                IsActive: oRB.getText(u.Active === "X" ? "userActive" : "userInactive")
                                         };
                                 }));
                         }).catch(function () {
@@ -296,7 +297,7 @@ sap.ui.define([
 
                         var sModelId = (oMe.getProperty("/ModelId") || "").trim().toUpperCase();
                         if (!sModelId) {
-                                MessageToast.show("模型 ID 必填");
+                                MessageToast.show(oRB.getText("modelIdRequired"));
                                 return;
                         }
 

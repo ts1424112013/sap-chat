@@ -24,26 +24,14 @@ sap.ui.define([
                  * 之后固定；后端按场景收窄意图与工具（前端只是选择与展示）。
                  * 旧会话 AgentType 为空/GENERAL → 自动（原混合路由）
                  * ========================================================= */
+                /** 20261011（FE-11）：文案在 i18n（scene<KEY> / scene<KEY>Sub / scene<KEY>Ph /
+                  * scene<KEY>Chip1..n），由 _sceneDef 按当前语言解析 */
                 SCENES: [
-                        { key: "REPORT", text: "报表执行", icon: "sap-icon://document-text",
-                          sub: "选报表、填参数、后台执行；结果出来后可以直接追问分析",
-                          ph: "说「执行 ZDPMM702」，或对已出的报表结果提问…",
-                          chips: ["执行 ZDPMM702", "分析一下这个结果", "哪个工厂的 MIH 需求最大"] },
-                        { key: "DATA", text: "数据分析", icon: "sap-icon://database",
-                          sub: "按表 / SQL 只读取数与统计分析，不会触发任何报表执行",
-                          ph: "说要分析哪张表、看什么维度，例如「按工厂统计 ZIDPMM455」…",
-                          chips: ["按工厂统计 ZIDPMM455 的记录数", "ZIDPPP099 表的数据", "MARA 按物料类型统计数量"] },
-                        { key: "INVENTORY", text: "库存查询", icon: "sap-icon://product",
-                          sub: "用库存专用工具查询库存快照、当天收发与批次库存",
-                          ph: "说物料与工厂，例如「A001 在 0001 工厂的库存」…",
-                          chips: ["物料 A001 在 0001 工厂的库存", "A001 今天的收发", "A001 在 0001 的批次库存"] },
-                        { key: "CODE", text: "代码分析", icon: "sap-icon://syntax",
-                          sub: "读取自开发程序源码与表结构，解读逻辑、审查代码",
-                          ph: "说要看哪个程序 / 事务码 / 类，例如「解释 ZDPMM702 的程序逻辑」…",
-                          chips: ["解释 ZDPMM702 的程序逻辑", "审查 ZRMM_IDP_0702 的性能问题", "ZIDPMM455 表结构"] },
-                        { key: "AUTO", text: "自动", icon: "sap-icon://lightbulb",
-                          sub: "按每句话自动判断用哪类工具（混合场景，适合熟悉的用户）",
-                          ph: "", chips: [] }
+                        { key: "REPORT", icon: "sap-icon://document-text", chips: 3 },
+                        { key: "DATA", icon: "sap-icon://database", chips: 3 },
+                        { key: "INVENTORY", icon: "sap-icon://product", chips: 3 },
+                        { key: "CODE", icon: "sap-icon://syntax", chips: 3 },
+                        { key: "AUTO", icon: "sap-icon://lightbulb", chips: 0 }
                 ],
 
                 _normScene: function (s) {
@@ -51,9 +39,23 @@ sap.ui.define([
                         return ["REPORT", "DATA", "INVENTORY", "CODE"].indexOf(v) >= 0 ? v : "AUTO";
                 },
 
+                /** 场景定义（文案已解析）：{key, icon, text, sub, ph, chips[]}；AUTO 无占位与示例 */
                 _sceneDef: function (sKey) {
+                        var oRB = this._rb();
                         var k = this._normScene(sKey);
-                        return this.SCENES.filter(function (d) { return d.key === k; })[0];
+                        var d = this.SCENES.filter(function (o) { return o.key === k; })[0];
+                        var aChips = [];
+                        for (var i = 1; i <= d.chips; i++) {
+                                aChips.push(oRB.getText("scene" + k + "Chip" + i));
+                        }
+                        return {
+                                key: k,
+                                icon: d.icon,
+                                text: oRB.getText("scene" + k),
+                                sub: oRB.getText("scene" + k + "Sub"),
+                                ph: k === "AUTO" ? "" : oRB.getText("scene" + k + "Ph"),
+                                chips: aChips
+                        };
                 },
 
                 /** 当前 Agent 会话的场景（对话模式恒为 AUTO） */
@@ -87,7 +89,7 @@ sap.ui.define([
                                 return;
                         }
                         var sCur = this._curScene();
-                        this.SCENES.forEach(function (d) {
+                        this.SCENES.map(function (o) { return that._sceneDef(o.key); }).forEach(function (d) {
                                 oBox.addItem(new Button({
                                         text: d.text,
                                         icon: d.icon,
@@ -101,7 +103,7 @@ sap.ui.define([
                 _onScenePick: function (sKey) {
                         var oChat = this.getView().getModel("chat");
                         if ((oChat.getProperty("/messages") || []).length) {
-                                MessageToast.show("已开始的会话不能更换场景，请新建任务");
+                                MessageToast.show(this._rb().getText("sceneLocked"));
                                 return;
                         }
                         oChat.setProperty("/currentSession/agentType", this._normScene(sKey));
@@ -176,7 +178,7 @@ sap.ui.define([
                 _jumpToAgentScene: function (sScene, sQuestion) {
                         var oChat = this.getView().getModel("chat");
                         if (oChat.getProperty("/busy")) {
-                                MessageToast.show("上一条请求仍在处理中，请稍候");
+                                MessageToast.show(this._rb().getText("busyWait"));
                                 return;
                         }
                         var sKey = this._normScene(sScene);
@@ -207,7 +209,7 @@ sap.ui.define([
                         ChatService.saveAgentModelRules(mRules).then(function () {
                                 that._mAgentModelRules = jQuery.extend(true, {}, mRules);
                                 that._syncModelList();
-                                MessageToast.show("Agent 可用模型已保存");
+                                MessageToast.show(that._rb().getText("agentModelsSaved"));
                         }).catch(function (oErr) {
                                 MessageToast.show(Formatter.escapeHtml((oErr && oErr.message) || String(oErr)));
                         });

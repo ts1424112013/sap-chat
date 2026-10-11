@@ -127,7 +127,7 @@ sap.ui.define([
                         if (!o.artifactId || o.artifactId === "undefined") {
                                 // 20261011：READY 但结果索引未登记（后端 compress 丢空值键）——不拼 ArtifactId=undefined 去查
                                 o.phase = "failed";
-                                o.message = o.message || "运行已完成，但结果索引未登记（请在 ZAI_RPT_STEP 查看 ARTIFACT 审计行）";
+                                o.message = o.message || this._rb().getText("runNoArtifact");
                                 this._renderRun();
                                 return;
                         }
@@ -138,7 +138,7 @@ sap.ui.define([
                                 }
                                 if (!oRes || (!oRes.rowsJson && !oRes.schemaJson && !oRes.rowCount)) {
                                         o.phase = "failed";
-                                        o.message = (oRes && oRes.message) || "结果读取失败";
+                                        o.message = (oRes && oRes.message) || that._rb().getText("runResultReadFail");
                                         that._renderRun();
                                         return;
                                 }
@@ -160,33 +160,34 @@ sap.ui.define([
                                 return;
                         }
                         var esc = Formatter.escapeHtml;
+                        var oRB = this._rb();
                         var iSec = Math.round((Date.now() - o.start) / 1000);
                         var bFail = o.phase === "failed";
                         var bReady = o.phase === "ready";
                         var sMid = bReady || bFail ? "done" : (o.phase === "active" ? "on" : "warn");
                         var aSteps = [
-                                { st: "done", text: "已提交" },
-                                { st: sMid, text: o.phase === "active" ? this._taskStatusText(o.status === "SUBMITTED" ? "QUEUED" : o.status) : "执行" },
-                                { st: bReady ? "done" : (bFail ? "fail" : "todo"), text: bFail ? "失败" : "结果就绪" }
+                                { st: "done", text: oRB.getText("runStepSubmitted") },
+                                { st: sMid, text: o.phase === "active" ? this._taskStatusText(o.status === "SUBMITTED" ? "QUEUED" : o.status) : oRB.getText("runStepExec") },
+                                { st: bReady ? "done" : (bFail ? "fail" : "todo"), text: oRB.getText(bFail ? "runStepFailed" : "runStepReady") }
                         ];
                         if (o.status === "UNKNOWN" && o.phase === "active") {
-                                aSteps[1].text = "确认状态中";
+                                aSteps[1].text = oRB.getText("runStepChecking");
                         }
                         var sMsg = o.message;
                         if (o.phase === "active" && o.count > 0) {
                                 // 20261011：轮询进度可见（上限 100 次，约 5 分钟）
-                                sMsg = (sMsg ? sMsg + " · " : "") + "第 " + o.count + "/100 次查询";
+                                sMsg = (sMsg ? sMsg + " · " : "") + oRB.getText("runPollCount", [o.count]);
                         }
                         if (o.phase === "stalled") {
-                                sMsg = (sMsg ? sMsg + " · " : "") + "状态长时间未确认，可稍后刷新或在 SAP 中核对（不伪造结果）";
+                                sMsg = (sMsg ? sMsg + " · " : "") + oRB.getText("runStalled");
                         } else if (o.phase === "stopped") {
-                                sMsg = "已停止跟踪（SAP 后台作业不受影响）";
+                                sMsg = oRB.getText("runStopped");
                         } else if (bReady) {
-                                sMsg = sMsg || "结果已生成，见下方回复";
+                                sMsg = sMsg || oRB.getText("runReadyMsg");
                         }
                         var s = '<div class="runCard run-' + o.phase + '" data-uid="' + o.uid + '">' +
-                                '<div class="runHead"><span class="runTitle">报表运行 ' + esc(o.shortId) + "</span>" +
-                                '<span class="runTime">' + iSec + " 秒</span></div>" +
+                                '<div class="runHead"><span class="runTitle">' + esc(oRB.getText("runTitle", [o.shortId])) + "</span>" +
+                                '<span class="runTime">' + esc(oRB.getText("runSeconds", [iSec])) + "</span></div>" +
                                 '<div class="runSteps">' + aSteps.map(function (st, i) {
                                         return (i ? '<span class="runLine' + (st.st !== "todo" ? " on" : "") + '"></span>' : "") +
                                                 '<span class="runStep st-' + st.st + '"><i></i>' + esc(st.text) + "</span>";
@@ -194,16 +195,17 @@ sap.ui.define([
                                 (sMsg ? '<div class="runMsg">' + esc(sMsg) + "</div>" : "") +
                                 '<div class="runActs">' +
                                 (o.phase === "active"
-                                        ? '<button type="button" class="dtBtn" data-act="run-refresh">立即刷新</button>' +
-                                          '<button type="button" class="dtBtn" data-act="run-stop">停止跟踪</button>'
+                                        ? '<button type="button" class="dtBtn" data-act="run-refresh">' + esc(oRB.getText("runRefreshNow")) + "</button>" +
+                                          '<button type="button" class="dtBtn" data-act="run-stop">' + esc(oRB.getText("runStopTrack")) + "</button>"
                                         : (o.phase === "stalled" || o.phase === "stopped"
-                                                ? '<button type="button" class="dtBtn dtPrimary" data-act="run-refresh">刷新状态</button>' : "")) +
+                                                ? '<button type="button" class="dtBtn dtPrimary" data-act="run-refresh">' + esc(oRB.getText("runRefresh")) + "</button>" : "")) +
                                 "</div></div>";
                         this.getView().getModel("chat").setProperty("/messages/" + oHit.index + "/runHtml", s);
                 },
 
                 /** READY 结果 → 新一条回复（数据表 + 工具条；用户可自行生成图表） */
                 _pushReportResult: function (oRes, sRunId) {
+                        var oRB = this._rb();
                         var aCols = [], aRaw = [];
                         try {
                                 // 20261011：兼容 {"columns":[…]}（MOCK/EXEC_SAP V1.0e）与旧版纯数组 […]（EXEC_SAP V1.0d）
@@ -215,7 +217,7 @@ sap.ui.define([
                                 aCols = Object.keys(aRaw[0]).map(function (k) { return { name: k, label: k }; });
                         }
                         var oDs = {
-                                name: oRes.label || ("报表结果 " + String(sRunId || "").substring(0, 8)),
+                                name: oRes.label || oRB.getText("runResultName", [String(sRunId || "").substring(0, 8)]),
                                 status: "OK", error: "", truncated: false, elapsedMs: 0,
                                 columns: aCols.map(function (c) {
                                         return { name: c.name, label: c.label || c.name, numeric: c.numeric === true ? true : undefined };
@@ -228,9 +230,9 @@ sap.ui.define([
                         };
                         var iTotal = parseInt(oRes.rowCount, 10) || oDs.rows.length;
                         oDs.truncated = iTotal > oDs.rows.length;
-                        var sText = "**报表结果**（运行 " + String(sRunId || "").substring(0, 8) + "，共 " + iTotal + " 行" +
-                                (oDs.truncated ? "，以下为受控样例 " + oDs.rows.length + " 行" : "") + "）" +
-                                (iTotal === 0 ? "\n\n0 行结果是有效的业务事实，不是失败。" : "");
+                        var sText = oRB.getText("runResultText", [String(sRunId || "").substring(0, 8), iTotal,
+                                oDs.truncated ? oRB.getText("runResultSample", [oDs.rows.length]) : ""]) +
+                                (iTotal === 0 ? "\n\n" + oRB.getText("runResultZero") : "");
                         var oEntry = this._buildEntry("assistant", sText, "", "");
                         if ((this.getView().getModel("chat").getProperty("/currentSession") || {}).mode === "AGENT") {
                                 oEntry.sender = this._rb().getText("agentSender");

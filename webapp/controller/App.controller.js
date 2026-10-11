@@ -264,7 +264,7 @@ sap.ui.define([
                         if (!oFile) {
                                 return;
                         }
-                        var sName = oFile.name || "附件";
+                        var sName = oFile.name || oRB.getText("attachDefaultName");
                         var iBytes = oFile.size || 0;
                         var sExt = (sName.split(".").pop() || "").toLowerCase();
                         var bKnown = sName.indexOf(".") >= 0;
@@ -320,7 +320,7 @@ sap.ui.define([
                                 lines: iLines,
                                 block: sBlock
                         };
-                        var sLabel = "📎 " + sName + "（" + sSize + " · " + iLines + " 行" + (bTrunc ? " · 已截断" : "") + "）";
+                        var sLabel = oRB.getText(bTrunc ? "attachLabelTrunc" : "attachLabel", [sName, sSize, iLines]);
                         this.byId("attachNameHero").setText(sLabel);
                         this.byId("attachNameDock").setText(sLabel);
                         this._syncAttachRowVisibility();
@@ -506,7 +506,7 @@ sap.ui.define([
                                                 text: oRB.getText("appLoginDemoLink"),
                                                 type: "Transparent",
                                                 press: function () {
-                                                        ChatService._setAppUser({ userId: "DEMO", userName: "演示用户", role: "USER", mustChangePwd: false });
+                                                        ChatService._setAppUser({ userId: "DEMO", userName: oRB.getText("demoUserName"), role: "USER", mustChangePwd: false });
                                                         that._oAppLoginDialog.close();
                                                         that._afterAppLogin();
                                                 }
@@ -634,8 +634,8 @@ sap.ui.define([
                                 var oCode = oWrap && oWrap.querySelector("pre code");
                                 var sCode = (oCode ? (oCode.textContent || "") : "").replace(/\n+$/, "");
                                 var fnDone = function () {
-                                        oBtn.textContent = "已复制";
-                                        setTimeout(function () { oBtn.textContent = "复制"; }, 1200);
+                                        oBtn.textContent = that._rb().getText("codeCopied");
+                                        setTimeout(function () { oBtn.textContent = that._rb().getText("copy"); }, 1200);
                                 };
                                 if (navigator.clipboard && navigator.clipboard.writeText) {
                                         navigator.clipboard.writeText(sCode).then(fnDone).catch(function () {
@@ -719,7 +719,7 @@ sap.ui.define([
                                 that._syncModelList();
                                 that._loadAgentModelRules();
                         }).catch(function (sErr) {
-                                MessageToast.show(Formatter.escapeHtml(sErr || "模型列表加载失败"));
+                                MessageToast.show(Formatter.escapeHtml(sErr || that._rb().getText("modelsLoadFail")));
                         });
                 },
 
@@ -998,7 +998,7 @@ sap.ui.define([
                                 that._stopThinkingTicker();
                                 oChatModel.setProperty("/messages/" + iAssistantIdx + "/waiting", false);
                                 if (!bAgent && oRes.status === "ERROR") {
-                                        fnSetError(oRes.message || "服务返回错误");
+                                        fnSetError(oRes.message || oRB.getText("errServiceReturned"));
                                         fnFinish();
                                 } else {
                                         // V11~V13：Agent 的 TIMEOUT/DENIED/ERROR 已由后端护栏生成
@@ -1013,7 +1013,7 @@ sap.ui.define([
                                                 // V15/V16：任务徽标回写；待填参数挂到本条回复的内联卡片
                                                 that._updateTaskState(oRes, sSessionId, iAssistantIdx);
                                         }
-                                        var sAnswer = oRes.answer || oRes.message || "（空回复）";
+                                        var sAnswer = oRes.answer || oRes.message || oRB.getText("emptyAnswer");
                                         return that._streamAnswer(iAssistantIdx, sAnswer, sDoneMeta, sSendToken)
                                                 .then(function () {
                                                         fnFinish();
@@ -1283,6 +1283,7 @@ sap.ui.define([
                                 return "";
                         }
                         var esc = Formatter.escapeHtml;
+                        var oRB = this._rb();
                         var s = '<div class="chartDeck' + (sSrc ? " chartInline" : "") + '">';
                         aCharts.forEach(function (ch) {
                                 var o = ChartRenderer.render(ch.ds, ch.cfg);
@@ -1291,12 +1292,12 @@ sap.ui.define([
                                                 '" data-act="chart-type" data-cid="' + ch.id + '" data-type="' + t.key + '" title="' + t.text + '">' + t.short + "</button>";
                                 }).join("");
                                 s += '<div class="chartCard">' +
-                                        '<div class="ccHead"><span class="ccTitle">' + esc(ch.cfg.title || ch.ds.name || "图表") + "</span>" +
+                                        '<div class="ccHead"><span class="ccTitle">' + esc(ch.cfg.title || ch.ds.name || oRB.getText("chartDefaultTitle")) + "</span>" +
                                         '<span class="ccTypes">' + sTypes + "</span>" +
                                         '<span class="ccActs">' +
-                                        '<button type="button" class="ccAct" data-act="chart-edit" data-cid="' + ch.id + '">编辑</button>' +
-                                        '<button type="button" class="ccAct" data-act="chart-svg" data-cid="' + ch.id + '">下载</button>' +
-                                        '<button type="button" class="ccAct ccDel" data-act="chart-del" data-cid="' + ch.id + '">移除</button>' +
+                                        '<button type="button" class="ccAct" data-act="chart-edit" data-cid="' + ch.id + '">' + esc(oRB.getText("chartEdit")) + "</button>" +
+                                        '<button type="button" class="ccAct" data-act="chart-svg" data-cid="' + ch.id + '">' + esc(oRB.getText("chartDownload")) + "</button>" +
+                                        '<button type="button" class="ccAct ccDel" data-act="chart-del" data-cid="' + ch.id + '">' + esc(oRB.getText("chartRemove")) + "</button>" +
                                         "</span></div>" +
                                         '<div class="ccBody">' + (o.svg || '<div class="cbEmpty">' + esc(o.note) + "</div>") + "</div>" +
                                         (o.svg && o.note ? '<div class="ccNote">' + esc(o.note) + "</div>" : "") +
@@ -1940,7 +1941,7 @@ sap.ui.define([
                                 if (oEntry.streaming && !oEntry.agentThinking && !oEntry.thinking) {
                                         // V16：等待计时（"思考中 · 3 秒"）
                                         oHeadLeft.addItem(new Text({
-                                                text: "{= '思考中' + (${chat>elapsedText} ? ' · ' + ${chat>elapsedText} : '…') }",
+                                                text: "{= ${i18n>thinkingWait} + (${chat>elapsedText} ? ' · ' + ${chat>elapsedText} : '…') }",
                                                 visible: "{= ${chat>raw} === '' }"
                                         }).addStyleClass("headThinking"));
                                 }
@@ -2009,7 +2010,7 @@ sap.ui.define([
                                                         oSqlBtn.attachPress(function () {
                                                                 var bVisible = oSqlText.getVisible();
                                                                 oSqlText.setVisible(!bVisible);
-                                                                oSqlBtn.setText(bVisible ? "SQL" : "收起");
+                                                                oSqlBtn.setText(bVisible ? "SQL" : oRB.getText("sqlCollapse"));
                                                         });
                                                         oStepRow.addItem(oSqlBtn);
                                                         oStepBox.addItem(oSqlText);
@@ -2437,7 +2438,7 @@ sap.ui.define([
                         if (!sSid) {
                                 return;
                         }
-                        MessageBox.confirm("确定删除该会话及全部消息吗？", {
+                        MessageBox.confirm(this._rb().getText("sessDeleteConfirm"), {
                                 onClose: function (sAction) {
                                         if (sAction !== MessageBox.Action.OK) {
                                                 return;
@@ -3051,13 +3052,13 @@ sap.ui.define([
                         var aLines = [];
                         aLines.push("# " + sTitle);
                         aLines.push("");
-                        aLines.push("> 模型：" + sModel + " · 导出时间：" + sStamp.replace("_", " ") + " · 消息 " + aValid.length + " 条");
+                        aLines.push(oRB.getText("exportMdMeta", [sModel, sStamp.replace("_", " "), aValid.length]));
                         aLines.push("");
                         aLines.push("---");
                         aLines.push("");
                         aMsgs.forEach(function (m) {
                                 if (m.role === "user") {
-                                        aLines.push("### 🧑 我");
+                                        aLines.push(oRB.getText("exportMdMe"));
                                 } else if (m.role === "assistant") {
                                         aLines.push("### 🤖 Gale-SAP");
                                 } else {
@@ -3076,7 +3077,7 @@ sap.ui.define([
                         var sUrl = URL.createObjectURL(oBlob);
                         var oLink = document.createElement("a");
                         oLink.href = sUrl;
-                        oLink.download = "Gale-SAP_会话_" + sStamp + ".md";
+                        oLink.download = oRB.getText("exportMdFile", [sStamp]);
                         document.body.appendChild(oLink);
                         oLink.click();
                         document.body.removeChild(oLink);
@@ -3107,7 +3108,7 @@ sap.ui.define([
                         var aLines = [];
                         aBlocks.forEach(function (d, idx) {
                                 if (idx) { aLines.push(""); }
-                                aLines.push(escCsv("数据集") + "," + escCsv(d.name || "SQL查询结果"));
+                                aLines.push(escCsv(oRB.getText("exportCsvDataset")) + "," + escCsv(d.name || oRB.getText("exportCsvDefaultName")));
                                 aLines.push((d.columns || []).map(function (c) { return escCsv(c.label || c.name); }).join(","));
                                 (d.rows || []).forEach(function (row) {
                                         aLines.push((d.columns || []).map(function (_, i) { return escCsv(row[i]); }).join(","));
@@ -3118,7 +3119,7 @@ sap.ui.define([
                         var sUrl = URL.createObjectURL(oBlob);
                         var oLink = document.createElement("a");
                         oLink.href = sUrl;
-                        oLink.download = "Gale-SAP_分析结果_" + sStamp + ".csv";
+                        oLink.download = oRB.getText("exportCsvFile", [sStamp]);
                         document.body.appendChild(oLink);
                         oLink.click();
                         document.body.removeChild(oLink);
@@ -3160,7 +3161,7 @@ sap.ui.define([
                                 document.execCommand("copy");
                                 MessageToast.show(oRB.getText("toastCopied"));
                         } catch (e) {
-                                MessageToast.show("复制失败");
+                                MessageToast.show(oRB.getText("copyFail"));
                         }
                         document.body.removeChild(oTA);
                 },
@@ -3219,10 +3220,9 @@ sap.ui.define([
                  * 不把结果写进其他任务；轮询独立于聊天 busy
                  * ========================================================= */
 
-                /** 任务徽标文案（模块中文名 + 状态） */
+                /** 任务徽标文案（模块中文名 + 状态；i18n taskMod_<模块>，未登记的原样显示） */
                 _taskModuleLabel: function (sModule) {
-                        var aMap = { REPORT: "报表", INVENTORY: "库存", DATA: "数据", CODE: "源码", GENERAL: "通用" };
-                        return aMap[sModule] || sModule || "";
+                        return (sModule && this._rb().getText("taskMod_" + sModule, undefined, true)) || sModule || "";
                 },
 
                 _taskStateColor: function (sSts) {
@@ -3234,14 +3234,9 @@ sap.ui.define([
                         return aMap[sSts] || "None";
                 },
 
-                /** V16：任务/运行状态 → 中文（徽标与卡片共用） */
+                /** V16：任务/运行状态 → 中文（徽标与卡片共用；i18n taskSt_<状态>，未登记的原样显示） */
                 _taskStatusText: function (sSts) {
-                        var aMap = {
-                                OPEN: "已创建", WAITING_INPUT: "待填参数", QUEUED: "排队中", RUNNING: "运行中",
-                                ANALYZING: "分析中", COMPLETED: "已完成", READY: "结果就绪", PARTIAL: "部分完成",
-                                PAUSED: "已暂停", FAILED: "失败", CANCELLED: "已取消", EXPIRED: "已过期"
-                        };
-                        return aMap[sSts] || sSts || "";
+                        return (sSts && this._rb().getText("taskSt_" + sSts, undefined, true)) || sSts || "";
                 },
 
                 /** V16：顶栏任务徽标（模块 · 状态；短编号放悬浮提示） */
@@ -3249,7 +3244,7 @@ sap.ui.define([
                         var oChat = this.getView().getModel("chat");
                         oChat.setProperty("/taskBadge", this._taskModuleLabel(sModule) + " · " + this._taskStatusText(sStatus));
                         oChat.setProperty("/taskBadgeState", this._taskStateColor(sStatus));
-                        oChat.setProperty("/taskBadgeTip", "任务 " + String(sTaskId || "").substring(0, 8) + " · 点击查看会话任务");
+                        oChat.setProperty("/taskBadgeTip", this._rb().getText("taskBadgeTip", [String(sTaskId || "").substring(0, 8)]));
                 },
 
                 /**
@@ -3297,19 +3292,20 @@ sap.ui.define([
                         oChatModel.setProperty("/currentTask", oTask);
                         this._setTaskBadge(oTask.module, oTask.status, oTask.taskId);
                         var oEntry = (oChatModel.getProperty("/messages") || [])[iAssistantIdx];
+                        var oRB = this._rb();
                         if (oEntry && oTask.needsInput && aPending.length) {
                                 oEntry.ask = {
                                         kind: "params",
                                         state: "open",
-                                        title: "需要填写参数",
+                                        title: oRB.getText("askParamsTitle"),
                                         subtitle: [oTask.tcode, oTask.reportId].filter(Boolean).join(" · "),
                                         params: aPending,
                                         values: {},
                                         options: [
-                                                { key: "submit", label: "提交执行", desc: "参数由 SAP 服务端二次校验后再执行" },
-                                                { key: "cancel", label: "先不执行", desc: "保留任务，稍后再填" }
+                                                { key: "submit", label: oRB.getText("askSubmit"), desc: oRB.getText("askSubmitDesc") },
+                                                { key: "cancel", label: oRB.getText("askCancel"), desc: oRB.getText("askCancelDesc") }
                                         ],
-                                        freePh: "告诉 Agent 接下来应该怎么做…",
+                                        freePh: oRB.getText("askParamsFreePh"),
                                         taskId: oTask.taskId,
                                         reportId: oTask.reportId,
                                         module: oTask.module,
@@ -3360,6 +3356,7 @@ sap.ui.define([
                                 this._renderAsk(oEntry.uid);
                                 return;
                         }
+                        var oRB = this._rb();
                         // 20261011：对话页不读 SAP —— 点名了程序/事务码/表时建议转到 Agent 对应场景
                         var oCtxNow = this.getView().getModel("chat").getProperty("/currentSession") || {};
                         if (oCtxNow.mode !== "AGENT") {
@@ -3368,10 +3365,10 @@ sap.ui.define([
                                 if (oHintScene) {
                                         oEntry.ask = {
                                                 kind: "choice", state: "open",
-                                                title: "对话模式不读取 SAP 系统数据。要在 Agent 里查看系统中的这个对象吗？",
+                                                title: oRB.getText("askSceneTitle"),
                                                 options: [
-                                                        { key: "scene", scene: oHintScene.key, label: "转到 Agent · " + oHintScene.text, desc: oHintScene.sub },
-                                                        { key: "dismiss", label: "不用了", desc: "继续在对话里聊" }
+                                                        { key: "scene", scene: oHintScene.key, label: oRB.getText("askSceneGo", [oHintScene.text]), desc: oHintScene.sub },
+                                                        { key: "dismiss", label: oRB.getText("askSceneDismiss"), desc: oRB.getText("askSceneDismissDesc") }
                                                 ],
                                                 sel: 0, autoFocus: false, allowFree: false
                                         };
@@ -3392,8 +3389,8 @@ sap.ui.define([
                                                 return;
                                         }
                                         oEntry.ask = {
-                                                kind: "choice", state: "open", title: "请选择要继续的任务",
-                                                options: aOpts, freePh: "都不是，告诉 Agent 你的意图…",
+                                                kind: "choice", state: "open", title: oRB.getText("askTaskTitle"),
+                                                options: aOpts, freePh: oRB.getText("askTaskFreePh"),
                                                 resend: that._prevUserText(iIndex), sel: 0, autoFocus: true
                                         };
                                         that._renderAsk(oEntry.uid);
@@ -3404,7 +3401,7 @@ sap.ui.define([
                         if (oDet) {
                                 oEntry.ask = {
                                         kind: "choice", state: "open", title: oDet.question,
-                                        options: oDet.options, freePh: "其他想法，直接告诉我…", sel: 0, autoFocus: true
+                                        options: oDet.options, freePh: oRB.getText("askChoiceFreePh"), sel: 0, autoFocus: true
                                 };
                                 this._renderAsk(oEntry.uid);
                         }
@@ -3429,6 +3426,7 @@ sap.ui.define([
                 _onAskAction: function (sUid, oPick) {
                         var oHit = this._entryByUid(sUid);
                         var oAsk = oHit && oHit.entry.ask;
+                        var oRB = this._rb();
                         if (!oAsk) {
                                 return;
                         }
@@ -3438,26 +3436,26 @@ sap.ui.define([
                         }
                         if (oPick.key === "cancel") {
                                 oAsk.state = "cancelled";
-                                oAsk.resultText = "本次不执行，任务已保留";
+                                oAsk.resultText = oRB.getText("askCancelled");
                                 this._renderAsk(sUid);
                                 return;
                         }
                         // 20261011：对话页"转到 Agent 场景"建议
                         if (oPick.key === "dismiss") {
                                 oAsk.state = "cancelled";
-                                oAsk.resultText = "好的，继续在对话里聊";
+                                oAsk.resultText = oRB.getText("askDismissed");
                                 this._renderAsk(sUid);
                                 return;
                         }
                         if (oPick.key === "scene" && oPick.option) {
                                 oAsk.state = "done";
-                                oAsk.resultText = "已转到 Agent · " + this._sceneDef(oPick.option.scene).text;
+                                oAsk.resultText = oRB.getText("askSceneDone", [this._sceneDef(oPick.option.scene).text]);
                                 this._renderAsk(sUid);
                                 this._jumpToAgentScene(oPick.option.scene, this._prevUserText(oHit.index));
                                 return;
                         }
                         if (this.getView().getModel("chat").getProperty("/busy")) {
-                                oAsk.error = "上一条请求仍在处理中，请稍候再确认";
+                                oAsk.error = oRB.getText("askBusy");
                                 this._renderAsk(sUid);
                                 return;
                         }
@@ -3471,12 +3469,12 @@ sap.ui.define([
                                         sessionId: (this.getView().getModel("chat").getProperty("/currentSession") || {}).id || ""
                                 });
                                 this._setTaskBadge(o.module, o.status, o.taskId);
-                                sShow = "继续任务：" + o.label;
+                                sShow = oRB.getText("askContinueTask", [o.label]);
                                 sSend = oAsk.resend || sShow;
                         }
                         oAsk.state = "done";
                         oAsk.error = "";
-                        oAsk.resultText = oPick.key === "free" ? "已告诉 Agent：" + sShow : "已选择：" + sShow;
+                        oAsk.resultText = oRB.getText(oPick.key === "free" ? "askToldAgent" : "askPicked", [sShow]);
                         this._renderAsk(sUid);
                         this._sendFollowUp(sShow, sSend);
                 },
@@ -3497,14 +3495,15 @@ sap.ui.define([
                 /** V16：参数卡"提交执行" → StartReportRun（每次提交 = 新 ClientRequestId；幂等由后端保证） */
                 _submitReportFromCard: function (sUid, oAsk, oPick) {
                         var that = this;
+                        var oRB = this._rb();
                         if (oPick.missing && oPick.missing.length) {
-                                oAsk.error = "请先填写必填参数：" + oPick.missing.join("、");
+                                oAsk.error = oRB.getText("askMissing", [oPick.missing.join(oRB.getText("listSep"))]);
                                 this._renderAsk(sUid);
                                 return;
                         }
                         oAsk.state = "busy";
                         oAsk.error = "";
-                        oAsk.busyText = "正在提交到 SAP，参数由服务端校验…";
+                        oAsk.busyText = oRB.getText("askSubmitting");
                         this._renderAsk(sUid);
                         ChatService.startReportRun({
                                 sessionId: oAsk.sessionId,
@@ -3516,7 +3515,7 @@ sap.ui.define([
                                 if (!oRes || oRes.needsInput || oRes.rejected || !oRes.reportRunId) {
                                         oAsk.state = "open";
                                         oAsk.error = (oRes && oRes.message) ||
-                                                (oRes && oRes.needsInput ? "参数未通过服务端校验" : "提交被拒绝");
+                                                oRB.getText(oRes && oRes.needsInput ? "askParamsRejected" : "askSubmitRejected");
                                         that._renderAsk(sUid);
                                         return;
                                 }
@@ -3526,7 +3525,7 @@ sap.ui.define([
                                                 String(v).split(",").map(AskCard.dateDisplay).join(" ~ ") : "";
                                 }).filter(Boolean);
                                 oAsk.state = "done";
-                                oAsk.resultText = "已提交" + (aSum.length ? "：" + aSum.join("，") : "");
+                                oAsk.resultText = aSum.length ? oRB.getText("askSubmittedWith", [aSum.join(oRB.getText("listSepComma"))]) : oRB.getText("askSubmitted");
                                 that._renderAsk(sUid);
                                 that._trackRun(sUid, oRes.reportRunId, oAsk.sessionId, oRes.shortId);
                         }).catch(function (oErr) {
@@ -3569,7 +3568,7 @@ sap.ui.define([
                         var oEntry = oHit.entry;
                         if (sAct === "run-refresh" || sAct === "run-stop") {
                                 if (!this._oRun || this._oRun.uid !== sUid) {
-                                        MessageToast.show("该运行已不在跟踪中，请重新提交或在任务中查看");
+                                        MessageToast.show(this._rb().getText("runNotTracked"));
                                         return;
                                 }
                                 if (sAct === "run-stop") {
@@ -3602,7 +3601,7 @@ sap.ui.define([
                                 } else if (sAct === "chart-svg") {
                                         var oR = ChartRenderer.render(oCh.ds, oCh.cfg);
                                         if (oR.svg) {
-                                                this._download(ChartRenderer.standalone(oR.svg), (oCh.cfg.title || oCh.ds.name || "图表") + ".svg", "image/svg+xml");
+                                                this._download(ChartRenderer.standalone(oR.svg), (oCh.cfg.title || oCh.ds.name || this._rb().getText("chartDefaultTitle")) + ".svg", "image/svg+xml");
                                         }
                                 }
                                 return;
@@ -3630,9 +3629,9 @@ sap.ui.define([
                                 return;
                         }
                         if (sAct === "copy") {
-                                this._copyText(ChartRenderer.toDelimited(oDs, "\t"), "已复制，可直接粘贴到 Excel");
+                                this._copyText(ChartRenderer.toDelimited(oDs, "\t"), this._rb().getText("copiedForExcel"));
                         } else if (sAct === "csv") {
-                                this._download("\uFEFF" + ChartRenderer.toDelimited(oDs, ","), (oDs.name || "数据") + ".csv", "text/csv;charset=utf-8");
+                                this._download("\uFEFF" + ChartRenderer.toDelimited(oDs, ","), (oDs.name || this._rb().getText("dataDefaultName")) + ".csv", "text/csv;charset=utf-8");
                         } else if (sAct === "chart") {
                                 this._openChartFor(oEntry, oDs, oHint, sSrc);
                         }
@@ -3642,12 +3641,12 @@ sap.ui.define([
                 _openChartFor: function (oEntry, oDs, oHint, sSrc) {
                         var that = this;
                         if (oEntry.streaming && /^md:/.test(sSrc || "")) {
-                                MessageToast.show("回答还在生成中，完成后再生成图表");
+                                MessageToast.show(this._rb().getText("chartWhileStreaming"));
                                 return;
                         }
                         var oA = ChartRenderer.analyze(oDs);
                         if (!oA.chartable) {
-                                MessageToast.show("这份数据不适合生成图表：" + oA.reason);
+                                MessageToast.show(this._rb().getText("chartNotSuitable", [oA.reason]));
                                 return;
                         }
                         ChartBuilder.open(oDs, oHint, function (oCfg) {
@@ -3706,14 +3705,15 @@ sap.ui.define([
                         var that = this;
                         var oChatModel = this.getView().getModel("chat");
                         var oCtx = oChatModel.getProperty("/currentSession") || {};
+                        var oRB = this._rb();
                         ChatService.getTasks(oCtx.id || "").then(function (aTasks) {
                                 var oPop = new Dialog({
-                                        title: "会话任务",
+                                        title: oRB.getText("taskListTitle"),
                                         contentWidth: "26rem",
                                         content: (function () {
                                                 var oVBox = new VBox();
                                                 if (!aTasks || !aTasks.length) {
-                                                        oVBox.addItem(new Text({ text: "当前会话暂无任务（后端未开启任务层或还没有业务提问）" }));
+                                                        oVBox.addItem(new Text({ text: oRB.getText("taskListEmpty") }));
                                                 }
                                                 (aTasks || []).slice(0, 20).forEach(function (oT) {
                                                         oVBox.addItem(new Button({
@@ -3739,11 +3739,11 @@ sap.ui.define([
                                                 });
                                                 return oVBox;
                                         })(),
-                                        endButton: new Button({ text: "关闭", press: function () { oPop.close(); } })
+                                        endButton: new Button({ text: oRB.getText("close"), press: function () { oPop.close(); } })
                                 });
                                 oPop.open();
                         }).catch(function () {
-                                MessageToast.show("任务列表获取失败（后端未开启任务层时不可用）");
+                                MessageToast.show(oRB.getText("taskListFail"));
                         });
                 },
 
