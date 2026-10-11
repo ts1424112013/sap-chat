@@ -409,6 +409,18 @@ html:not(.zai-keynav) [id$="newChatBtn"]:focus .sapMBtnHoverable {
         box-sizing: border-box;
 }
 
+/* 20261011（BE-09）：会话列表在侧栏内自身滚动 —— 与 chatScroll 同一个坑：UI5 包裹
+   列表的 .sapMFlexItem 默认 min-height:auto，会话一多整列被撑高，超出部分（含末尾
+   "加载更早的会话"）被外层 overflow:hidden 裁掉、滚不到 */
+.sideBar > .sapMFlexItem:has(> .sessionList) {
+        min-height: 0;
+        overflow: hidden;
+}
+
+.sideBar > .sapMFlexItem > .sessionList {
+        height: 100%;
+}
+
 .sessionList .sapMLIB {
         background: transparent !important;
         border-radius: 9px;   /* V7：V2 hist-item 9px 圆角 */
@@ -1573,6 +1585,18 @@ html:not(.zai-keynav) [id$="newChatBtn"]:focus .sapMBtnHoverable {
         color: var(--accent) !important;
 }
 
+/* 20261011（BE-09）：列表末尾"加载更早的会话"占位行 */
+.sessionList .sessMoreItem .sapMLIBContent {
+        display: flex;
+        justify-content: center;
+        padding: .5rem .72rem;
+}
+
+.sessionList .sessMoreItem .sessMoreText {
+        font-size: .78rem;
+        color: var(--accent) !important;
+}
+
 .sessionList .sessItemCurrent {
         background: #dcecff !important;
         box-shadow: none !important;
@@ -1747,7 +1771,7 @@ html:not(.zai-keynav) [id$="newChatBtn"]:focus .sapMBtnHoverable {
    V5.3：登录对话框美化（DeepSeek 风格：徽标 + 居中标题 + 圆角输入）
    ============================================================ */
 
-/* 对话框本体：大圆角 + 柔和阴影，去默认内边距由 .loginBody 控制 */
+/* 对话框本体：大圆角 + 柔和阴影（内边距由内容区自身控制） */
 .sapLoginDialog {
         border-radius: 16px !important;
         box-shadow: 0 18px 50px rgba(15, 23, 42, .18) !important;
@@ -1757,46 +1781,6 @@ html:not(.zai-keynav) [id$="newChatBtn"]:focus .sapMBtnHoverable {
         padding: 0 !important;
 }
 
-.loginBody {
-        padding: 0 1.4rem 1.2rem !important;
-}
-
-/* —— Hero 区：克莱因蓝渐变徽标 + 居中标题 —— */
-.loginHero {
-        margin-top: .6rem;
-        margin-bottom: 1.1rem;
-}
-
-.loginChip {
-        width: 3rem;
-        height: 3rem;
-        border-radius: 14px;
-        background: var(--accent);   /* V7：纯平主色（去渐变去辉光） */
-        box-shadow: none;
-        align-items: center;
-        justify-content: center;
-        margin-bottom: .65rem;
-}
-
-.loginChipIcon {
-        color: #FFFFFF !important;
-        font-size: 1.5rem;
-}
-
-.loginTitle {
-        font-size: 1.1rem !important;
-        font-weight: 600 !important;
-        color: #1F2430 !important;
-}
-
-.loginSub {
-        font-size: .74rem !important;
-        color: var(--sub) !important;
-        margin-top: .25rem;
-        max-width: 17rem;
-        text-align: center !important;
-}
-
 /* —— 表单标签与输入框 —— */
 .loginLabel {
         font-size: .76rem !important;
@@ -1804,8 +1788,7 @@ html:not(.zai-keynav) [id$="newChatBtn"]:focus .sapMBtnHoverable {
         margin-bottom: .25rem !important;
 }
 
-.loginLabel ~ .loginLabel,
-.loginBody .loginLabel {
+.loginLabel ~ .loginLabel {
         margin-top: .55rem !important;
 }
 
@@ -1829,11 +1812,6 @@ html:not(.zai-keynav) [id$="newChatBtn"]:focus .sapMBtnHoverable {
         box-shadow: 0 0 0 3px rgba(45, 122, 179, .12) !important;
 }
 
-.loginInputMono input {
-        font-family: "JetBrains Mono", Consolas, monospace !important;
-        font-size: .8rem !important;
-}
-
 /* —— 错误提示条：浅红底圆角 —— */
 .loginErr {
         background: var(--danger-bg) !important;
@@ -1847,56 +1825,6 @@ html:not(.zai-keynav) [id$="newChatBtn"]:focus .sapMBtnHoverable {
 
 .loginErr:empty {
         display: none;
-}
-
-/* —— 分隔线：线 + 文字 + 线 —— */
-.loginDivider {
-        margin: 1rem 0 .55rem;
-        width: 100%;
-}
-
-.loginDividerLine {
-        flex: 1 1 auto;
-        height: 1px;
-        background: var(--line, #E2E6EF);
-}
-
-.loginDividerText {
-        font-size: .7rem !important;
-        color: var(--sub) !important;
-        padding: 0 .6rem !important;
-        white-space: nowrap;
-}
-
-/* —— 提示与记住密码 —— */
-.loginHint {
-        font-size: .68rem !important;
-        color: var(--sub) !important;
-        margin-top: .35rem !important;
-        max-width: 100% !important;
-}
-
-.loginRemember {
-        margin-top: .7rem !important;
-}
-
-.loginRemember .sapMCbLabel {
-        font-size: .78rem !important;
-        color: var(--text-2) !important;
-}
-
-/* —— 头部仅保留 ×，弱化 —— */
-.loginHeadToolbar {
-        border-bottom: none !important;
-        min-height: 2.4rem !important;
-        padding: .3rem .4rem 0 0 !important;
-}
-
-/* —— 底部按钮：胶囊形 —— */
-.sapLoginDialog .sapMDialogBar .sapMBtn.loginBtn .sapMBtnInner {
-        border-radius: 999px !important;
-        min-width: 5.4rem;
-        padding: 0 1rem !important;
 }
 
 .sapLoginDialog .sapMDialogBar {
@@ -2061,9 +1989,6 @@ body.sapUiBody {
 
 /* 登录对话框暗色 */
 [data-theme="dark"] .sapLoginDialog { background: var(--surface-solid) !important; }
-[data-theme="dark"] .loginTitle { color: var(--text) !important; }
-[data-theme="dark"] .loginSub { color: var(--sub) !important; }
-[data-theme="dark"] .loginRemember .sapMCbLabel { color: var(--text-2) !important; }
 
 /* ---------- 系统减弱动效：全部静止 ---------- */
 @media (prefers-reduced-motion: reduce) {

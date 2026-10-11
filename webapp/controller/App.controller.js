@@ -203,7 +203,6 @@ sap.ui.define([
                                 if (oEv.key === "zaiChat-sapAuth") {
                                         // 其他窗口登录/更换/清除凭据 → 本窗口同步并重建模型
                                         ChatService.reloadAuth();
-                                        that._refreshSapAuthState();
                                         if (that.getView().getModel("settings").getProperty("/mode") === "backend") {
                                                 that._loadModels();
                                                 that._refreshSessions();
@@ -395,8 +394,6 @@ sap.ui.define([
                         var bAdmin = ChatService.isAdmin();
                         var oSettings = this.getView().getModel("settings");
                         oSettings.setProperty("/isAdmin", bAdmin);
-                        // V8：SAP Basic 登录区块退役（由应用层强制登录承担）
-                        oSettings.setProperty("/showSapAuth", false);
                         // 角色管理入口仅管理员可见；泡泡的「＋新增」仅管理员可加
                         this.byId("roleMngHero").setVisible(bAdmin);
                         this.byId("roleMngDock").setVisible(bAdmin);
@@ -551,177 +548,6 @@ sap.ui.define([
                                 afterClose: function () { oDlg.destroy(); }
                         });
                         oDlg.open();
-                },
-
-                /* =========================================================
-                 * V5.1：SAP 网关登录（HTTP Basic，随全部 OData 请求发送）
-                 * ========================================================= */
-
-                /**
-                 * 打开网关登录对话框
-                 * @param {boolean} bExpired true=由 401 触发（标题提示"登录已失效"）
-                 */
-                _openSapLogin: function (bExpired) {
-                        var that = this;
-                        var oRB = this.getView().getModel("i18n").getResourceBundle();
-
-                        if (this._oSapLoginDialog) {
-                                // 已打开：仅刷新提示（防重复弹）
-                                return;
-                        }
-
-                        var oUser = new sap.m.Input({ placeholder: oRB.getText("sapUserPh"), maxLength: 40 }).addStyleClass("loginInput");
-                        var oPass = new sap.m.Input({ type: sap.m.InputType.Password, placeholder: oRB.getText("sapPassPh") }).addStyleClass("loginInput");
-                        // V5.3：Basic 认证头直填（内网联调已有 base64 串时免拆账号密码）
-                        var oBasic = new sap.m.Input({
-                                placeholder: oRB.getText("fldBasicPh"),
-                                maxLength: 300,
-                                submit: function () { fnLogin(); }
-                        }).addStyleClass("loginInput loginInputMono");
-                        var oRemember = new sap.m.CheckBox({
-                                text: oRB.getText("rememberMe"),
-                                selected: true
-                        }).addStyleClass("loginRemember");
-                        var oErr = new sap.m.Text({ visible: false, wrapping: true }).addStyleClass("loginErr");
-
-                        // V5.3：美化布局 —— 锁形徽标 + 居中标题 + 圆角输入 + 分隔线
-                        var oBody = new sap.m.VBox().addStyleClass("loginBody");
-
-                        // —— 顶部 Hero：锁形徽标 + 标题 + 副标题 ——
-                        oBody.addItem(new sap.m.VBox({ alignItems: "Center" }).addStyleClass("loginHero")
-                                .addItem(new sap.m.HBox({ justifyContent: "Center" }).addStyleClass("loginChip")
-                                        .addItem(new sap.ui.core.Icon({ src: "sap-icon://locked" }).addStyleClass("loginChipIcon")))
-                                .addItem(new sap.m.Title({ level: "H2", text: bExpired ? oRB.getText("sapLoginTitleExpired") : oRB.getText("sapLoginTitle") }).addStyleClass("loginTitle"))
-                                .addItem(new sap.m.Text({ text: oRB.getText("loginSub"), wrapping: true, textAlign: "Center" }).addStyleClass("loginSub")));
-
-                        // —— 账密表单 ——
-                        oBody.addItem(new sap.m.Label({ text: oRB.getText("sapUser"), required: true }).addStyleClass("loginLabel"));
-                        oBody.addItem(oUser);
-                        oBody.addItem(new sap.m.Label({ text: oRB.getText("sapPass"), required: true }).addStyleClass("loginLabel"));
-                        oBody.addItem(oPass);
-
-                        // —— 错误提示条 ——
-                        oBody.addItem(oErr);
-
-                        // —— 分隔线：或者使用 Basic 认证头 ——
-                        oBody.addItem(new sap.m.HBox({ alignItems: "Center" }).addStyleClass("loginDivider")
-                                .addItem(new sap.m.HBox().addStyleClass("loginDividerLine"))
-                                .addItem(new sap.m.Text({ text: oRB.getText("basicDivider") }).addStyleClass("loginDividerText"))
-                                .addItem(new sap.m.HBox().addStyleClass("loginDividerLine")));
-
-                        // —— Basic 头直填 ——
-                        oBody.addItem(oBasic);
-                        oBody.addItem(new sap.m.Text({ text: oRB.getText("fldBasicTip"), wrapping: true }).addStyleClass("loginHint"));
-
-                        // —— 记住密码 ——
-                        oBody.addItem(oRemember);
-
-                        var oDialog = new sap.m.Dialog({
-                                contentWidth: "25rem",
-                                resizable: false,
-                                // V5.2：自定义头部（仅右上角 × 关闭，标题移入 Hero 区）
-                                customHeader: new sap.m.Toolbar({ design: "Transparent" })
-                                        .addStyleClass("dlgHeadToolbar loginHeadToolbar")
-                                        .addContent(new sap.m.ToolbarSpacer())
-                                        .addContent(new sap.m.Button({
-                                                icon: "sap-icon://decline",
-                                                type: "Transparent",
-                                                tooltip: oRB.getText("loginSkip"),
-                                                press: function () {
-                                                        that._bSapLoginSkipped = true;
-                                                        oDialog.close();
-                                                }
-                                        }).addStyleClass("dlgCloseBtn")),
-                                content: [oBody],
-                                beginButton: new sap.m.Button({
-                                        text: oRB.getText("loginConnect"),
-                                        type: "Emphasized",
-                                        press: function () { fnLogin(); }
-                                }).addStyleClass("loginBtn"),
-                                endButton: new sap.m.Button({
-                                        text: oRB.getText("loginSkip"),
-                                        press: function () {
-                                                that._bSapLoginSkipped = true; // 本次会话不再主动弹（401 仍会弹）
-                                                oDialog.close();
-                                        }
-                                }).addStyleClass("loginBtn"),
-                                afterClose: function () {
-                                        oDialog.destroy();
-                                        that._oSapLoginDialog = null;
-                                }
-                        });
-                        oDialog.addStyleClass("sapLoginDialog");
-
-                        /** 验证并连接：Basic 头直填 或 用户名+密码（二选一），$metadata 探测 → 成功保存并重载 */
-                        function fnLogin() {
-                                var sUser = (oUser.getValue() || "").trim();
-                                var sPass = oPass.getValue() || "";
-                                var sHeader = (oBasic.getValue() || "").trim();
-
-                                // 二选一：填了 Basic 头 → 走头模式（账密可留空）；否则必须账密齐全
-                                if (!sHeader && (!sUser || !sPass)) {
-                                        oErr.setText(oRB.getText("sapLoginEither")).setVisible(true);
-                                        return;
-                                }
-                                oErr.setText(oRB.getText("sapLoginVerifying")).setVisible(true);
-
-                                var oVerify = sHeader
-                                        ? ChatService.verifySapHeader(sHeader)
-                                        : ChatService.verifySapCredentials(sUser, sPass);
-
-                                oVerify.then(function (oRes) {
-                                        if (oRes.ok) {
-                                                if (sHeader) {
-                                                        ChatService.setSapHeader(sHeader, oRemember.getSelected());
-                                                } else {
-                                                        ChatService.setSapCredentials(sUser, sPass, oRemember.getSelected());
-                                                }
-                                                that._bSapLoginSkipped = false;
-                                                oDialog.close();
-                                                MessageToast.show(oRB.getText("loginOk"));
-                                                // 凭据已生效（模型已重建），重载后端数据
-                                                that._loadModels();
-                                                that._refreshSessions();
-                                                that._loadHistory();
-                                                that._refreshSapAuthState();
-                                        } else {
-                                                oErr.setText(oRes.message).setVisible(true);
-                                        }
-                                });
-                        }
-
-                        this._oSapLoginDialog = oDialog;
-                        oDialog.open();
-                },
-
-                /** 设置-连接页签：网关登录状态文本 */
-                _refreshSapAuthState: function () {
-                        var oState = this.byId("sapAuthState");
-                        if (!oState) {
-                                return;
-                        }
-                        var oRB = this.getView().getModel("i18n").getResourceBundle();
-                        if (ChatService.hasSapCredentials()) {
-                                // V5.3：Basic 头模式标注形态（避免误以为是账密登录）
-                                var sMode = ChatService.isHeaderMode() ? oRB.getText("credSavedHeader") : oRB.getText("credSaved");
-                                oState.setText(sMode + " " + ChatService.getSapUser());
-                                oState.setState("Success");
-                        } else {
-                                oState.setText(oRB.getText("credNone"));
-                                oState.setState("Error");
-                        }
-                },
-
-                /** 设置-连接：登录/更换账号按钮 */
-                onOpenSapLogin: function () {
-                        this._openSapLogin(false);
-                },
-
-                /** 设置-连接：清除已保存凭据 */
-                onClearSapAuth: function () {
-                        ChatService.clearSapCredentials();
-                        this._refreshSapAuthState();
-                        MessageToast.show(this.getView().getModel("i18n").getResourceBundle().getText("credCleared"));
                 },
 
                 /**
@@ -1771,7 +1597,7 @@ sap.ui.define([
                         oChat.setProperty("/workspaceMode", sMode);
 
                         var sId = this._mModeSession[sMode];
-                        var oHit = (this._aAllSessions || []).filter(function (s) { return s.SessionId === sId; })[0];
+                        var oHit = this._findSession(sId);
                         if (sId && oHit) {
                                 this._loadSessionById(sId);
                                 this._applyWorkspaceChrome();
@@ -1866,21 +1692,49 @@ sap.ui.define([
                         this._syncModelList();
                 },
 
-                /** 左侧列表只显示当前工作模式的会话（搜索词在模式内过滤） */
-                _applySessionFilter: function () {
-                        var sMode = this.getView().getModel("chat").getProperty("/workspaceMode") === "AGENT"
-                                ? "AGENT" : "CHAT";
-                        var sQ = (this._sSessQuery || "").toLowerCase();
-                        var aList = (this._aAllSessions || []).filter(function (s) {
-                                return (s.Mode === "AGENT" ? "AGENT" : "CHAT") === sMode;
+                /** 当前浏览的工作区（"CHAT" | "AGENT"） */
+                _wsMode: function () {
+                        return this.getView().getModel("chat").getProperty("/workspaceMode") === "AGENT" ? "AGENT" : "CHAT";
+                },
+
+                /** 已加载的会话里，属于该模式且标题含搜索词的 */
+                _localSessions: function (sMode, sQ) {
+                        return (this._aAllSessions || []).filter(function (s) {
+                                return (s.Mode === "AGENT" ? "AGENT" : "CHAT") === sMode &&
+                                        (!sQ || String(s.Title || "").toLowerCase().indexOf(sQ) >= 0);
                         });
-                        if (sQ) {
-                                aList = aList.filter(function (s) {
-                                        return String(s.Title || "").toLowerCase().indexOf(sQ) >= 0;
-                                });
+                },
+
+                /**
+                  * 左侧列表只显示当前工作模式的会话（搜索词在模式内过滤）。
+                  * 20261011（BE-09）：有搜索词时显示服务端搜索结果（含未加载的更早会话），
+                  * 结果回来前先按已加载的会话即时过滤；还有更早的会话时末尾加一条"加载更多"
+                  */
+                _applySessionFilter: function () {
+                        var sMode = this._wsMode();
+                        var sQ = (this._sSessQuery || "").toLowerCase();
+                        var oHits = this._oSessHits;
+                        var bHits = !!sQ && !!oHits && oHits.q === sQ && oHits.mode === sMode;
+                        var aList = bHits ? oHits.rows.slice() : this._localSessions(sMode, sQ);
+                        var bMore = bHits ? oHits.more : (!sQ && !!(this._mSessMore || {})[sMode]);
+                        if (bMore) {
+                                aList.push({ SessionId: "", Title: "", _more: true });
                         }
                         this.getView().getModel("session").setProperty("/sessions", aList);
                         this._syncSessionHighlight();
+                        if (sQ && !bHits) {
+                                this._searchSessions();
+                        }
+                },
+
+                /** 按 ID 找会话（已加载的列表 + 当前搜索结果） */
+                _findSession: function (sSid) {
+                        if (!sSid) {
+                                return null;
+                        }
+                        var fnHit = function (s) { return s.SessionId === sSid; };
+                        return (this._aAllSessions || []).filter(fnHit)[0] ||
+                                ((this._oSessHits && this._oSessHits.rows) || []).filter(fnHit)[0] || null;
                 },
 
                 /** V12：按会话加载（以会话自身 Mode 恢复工作模式，不全局覆盖） */
@@ -1888,7 +1742,7 @@ sap.ui.define([
                         if (!sSid) {
                                 return;
                         }
-                        var oMeta = (this._aAllSessions || []).filter(function (s) { return s.SessionId === sSid; })[0];
+                        var oMeta = this._findSession(sSid);
                         if (!oMeta) {
                                 return;
                         }
@@ -1952,7 +1806,7 @@ sap.ui.define([
                                 return;   // CHAT 沿用既有恢复路径(_afterAppLogin → _loadHistory)
                         }
                         var sId = this._mModeSession.AGENT;
-                        var bHit = (this._aAllSessions || []).some(function (s) { return s.SessionId === sId; });
+                        var bHit = !!this._findSession(sId);
                         if (sId && bHit) {
                                 this._loadSessionById(sId);
                         } else {
@@ -1969,10 +1823,13 @@ sap.ui.define([
                         if (oCtx.id === sSid) {
                                 oChat.setProperty("/currentSession/status", sSts);
                         }
-                        var oHit = (this._aAllSessions || []).filter(function (s) { return s.SessionId === sSid; })[0];
-                        if (oHit) {
-                                oHit.Status = sSts;
-                        }
+                        // 全量缓存与搜索结果里是各自的对象，两处都要改
+                        (this._aAllSessions || []).concat((this._oSessHits && this._oSessHits.rows) || [])
+                                .forEach(function (s) {
+                                        if (s.SessionId === sSid) {
+                                                s.Status = sSts;
+                                        }
+                                });
                         this._applySessionFilter();   // 重渲染列表状态徽标
                 },
 
@@ -1983,9 +1840,7 @@ sap.ui.define([
                         if (oCtx.mode !== "AGENT" || !oCtx.id) {
                                 return;
                         }
-                        var oMeta = (this._aAllSessions || []).filter(function (s) {
-                                return s.SessionId === oCtx.id;
-                        })[0] || {};
+                        var oMeta = this._findSession(oCtx.id) || {};
                         MessageBox.information(oRB.getText("agentInfoTextV13", [
                                 this._agentStatusText(oCtx.status),
                                 oMeta.ModelId || "-",
@@ -2418,26 +2273,54 @@ sap.ui.define([
                  * 会话历史（左侧栏）：列表 / 打开 / 删除 / 折叠
                  * ========================================================= */
 
-                /** 刷新左侧会话列表（V12：全量缓存后按当前模式过滤渲染） */
+                /** 20261011（BE-09）：每个模式每次多加载的会话条数 */
+                SESS_PAGE: 50,
+
+                /** 会话行显示层规整：剥离角色前缀（V5.4）+ 置顶优先排序（V10，兜底兼容旧后端/演示模式） */
+                _normSessRows: function (a) {
+                        var that = this;
+                        var aList = (a || []).filter(Boolean).map(function (o) {
+                                return Object.assign({}, o, {
+                                        Title: that._stripRolePrefix(o.Title),
+                                        Pinned: o.Pinned || ""
+                                });
+                        });
+                        aList.sort(function (x, y) {
+                                var pX = x.Pinned === "X" ? 1 : 0, pY = y.Pinned === "X" ? 1 : 0;
+                                if (pX !== pY) {
+                                        return pY - pX;
+                                }
+                                return String(y.ChangedAt || "").localeCompare(String(x.ChangedAt || ""));
+                        });
+                        return aList;
+                },
+
+                /**
+                  * 刷新左侧会话列表（V12：两种模式合并缓存，按当前模式过滤渲染）。
+                  * 20261011（BE-09）：原来一次取前 100 条（两模式混合），更早的会话看不到；
+                  * 现在按模式各取前 N 条（多取 1 条判断是否还有更早的），"加载更多"把 N 加一页
+                  */
                 _refreshSessions: function () {
                         var that = this;
-                        ChatService.getSessions().then(function (a) {
-                                // V5.4：后端把带角色前缀的 Question 存为会话标题，显示层剥离还原
-                                var aList = (a || []).map(function (o) {
-                                        return o ? Object.assign({}, o, {
-                                                Title: that._stripRolePrefix(o.Title),
-                                                Pinned: o.Pinned || ""
-                                        }) : o;
+                        var aModes = ["CHAT", "AGENT"];
+                        this._mSessN = this._mSessN || { CHAT: this.SESS_PAGE, AGENT: this.SESS_PAGE };
+                        this._mSessMore = this._mSessMore || {};
+                        Promise.all(aModes.map(function (sMode) {
+                                return ChatService.getSessions({ mode: sMode, top: that._mSessN[sMode] + 1 });
+                        })).then(function (aRes) {
+                                var aAll = [], oSeen = {};
+                                aModes.forEach(function (sMode, i) {
+                                        var aRows = that._normSessRows(aRes[i]);
+                                        that._mSessMore[sMode] = aRows.length > that._mSessN[sMode];
+                                        aRows.slice(0, that._mSessN[sMode]).forEach(function (s) {
+                                                if (!oSeen[s.SessionId]) {
+                                                        oSeen[s.SessionId] = true;
+                                                        aAll.push(s);
+                                                }
+                                        });
                                 });
-                                // V10：置顶优先（后端已排序，此处兜底兼容旧后端/演示模式）
-                                aList.sort(function (x, y) {
-                                        var pX = x.Pinned === "X" ? 1 : 0, pY = y.Pinned === "X" ? 1 : 0;
-                                        if (pX !== pY) {
-                                                return pY - pX;
-                                        }
-                                        return String(y.ChangedAt || "").localeCompare(String(x.ChangedAt || ""));
-                                });
-                                that._aAllSessions = aList;        // V12：跨模式全量缓存
+                                that._aAllSessions = aAll;        // V12：跨模式缓存
+                                that._oSessHits = null;           // 列表有变化：搜索结果按最新数据重查
                                 that._applySessionFilter();
                                 // V12：首次加载后恢复上次工作模式（仅一次）
                                 if (!that._bStartupRestored) {
@@ -2446,17 +2329,59 @@ sap.ui.define([
                                 }
                         }).catch(function () {
                                 that._aAllSessions = [];
+                                that._mSessMore = {};
                                 that.getView().getModel("session").setProperty("/sessions", []);
                                 that._syncSessionHighlight();
                         });
                 },
 
+                /** 列表末尾"加载更多"：无搜索词时当前模式多加载一页；有搜索词时搜索结果多取一页 */
+                onMoreSessions: function () {
+                        if (this._sSessQuery) {
+                                this._iSearchN = (this._iSearchN || this.SESS_PAGE) + this.SESS_PAGE;
+                                this._oSessHits = null;
+                                this._applySessionFilter();   // → 按新条数重新搜索
+                                return;
+                        }
+                        this._mSessN[this._wsMode()] += this.SESS_PAGE;
+                        this._refreshSessions();
+                },
+
                 /**
                   * V12：会话搜索（仅当前工作模式内按标题过滤；不跨模式混排）
+                  * 20261011（BE-09）：先在已加载的会话里即时过滤，再查服务端（覆盖更早的会话）
                   */
                 onSearchSession: function (oEvent) {
                         this._sSessQuery = (oEvent.getSource().getValue() || "").trim().toLowerCase();
+                        this._iSearchN = this.SESS_PAGE;
                         this._applySessionFilter();
+                },
+
+                /** 服务端标题搜索（防抖 300ms；搜索词或模式已变时丢弃结果；服务端失败退回本地过滤） */
+                _searchSessions: function () {
+                        var that = this;
+                        clearTimeout(this._iSessSearchTimer);
+                        this._iSessSearchTimer = setTimeout(function () {
+                                var sQ = that._sSessQuery;
+                                var sMode = that._wsMode();
+                                var iN = that._iSearchN || that.SESS_PAGE;
+                                if (!sQ) {
+                                        return;
+                                }
+                                var fnDone = function (aRows, bMore) {
+                                        if (sQ !== that._sSessQuery || sMode !== that._wsMode()) {
+                                                return;
+                                        }
+                                        that._oSessHits = { q: sQ, mode: sMode, rows: aRows.slice(0, iN), more: bMore };
+                                        that._applySessionFilter();
+                                };
+                                ChatService.getSessions({ mode: sMode, top: iN + 1, search: sQ }).then(function (a) {
+                                        var aRows = that._normSessRows(a);
+                                        fnDone(aRows, aRows.length > iN);
+                                }).catch(function () {
+                                        fnDone(that._localSessions(sMode, sQ), false);
+                                });
+                        }, 300);
                 },
 
                 /**
@@ -2523,7 +2448,7 @@ sap.ui.define([
                         var bPinNow = oSrc.data("pinned") === "X";
                         ChatService.updateSession({
                                 sessionId: sSid,
-                                pinned: bPinNow ? "" : "X"
+                                pinned: !bPinNow
                         }).then(function () {
                                 MessageToast.show(oRB.getText(bPinNow ? "sessUnpinned" : "sessPinned"));
                                 that._refreshSessions();
@@ -2560,6 +2485,14 @@ sap.ui.define([
                 sessionItemFactory: function (sId, oContext) {
                         var o = oContext.getObject();
                         var oRB = this._rb();   // V13 修复：置顶/重命名/删除按钮的 tooltip 依赖
+                        // 20261011（BE-09）：列表末尾的"加载更多"占位行
+                        if (o._more) {
+                                return new CustomListItem({
+                                        type: "Active",
+                                        press: this.onMoreSessions.bind(this),
+                                        content: [new Text({ text: oRB.getText("sessMore") }).addStyleClass("sessMoreText")]
+                                }).addStyleClass("sessionItem sessMoreItem");
+                        }
                         var bAgent = o.Mode === "AGENT";
 
                         var oBox = new VBox({ alignItems: "Start" }).addStyleClass("sessItemBox");
@@ -2659,7 +2592,7 @@ sap.ui.define([
                         if (!sSid) {
                                 return;
                         }
-                        var oMeta = (this._aAllSessions || []).filter(function (s) { return s.SessionId === sSid; })[0];
+                        var oMeta = this._findSession(sSid);
                         if (!oMeta) {
                                 return;
                         }
@@ -2680,16 +2613,41 @@ sap.ui.define([
                                                 return;
                                         }
                                         ChatService.deleteSession(sSid).then(function () {
+                                                that._forgetSession(sSid);
                                                 that._refreshSessions();
-                                                var oSettings = that.getView().getModel("settings");
-                                                if (oSettings.getProperty("/sessionId") === sSid) {
-                                                        that.onNewSession();
-                                                }
                                         }).catch(function (oErr) {
                                                 MessageToast.show(Formatter.escapeHtml((oErr && oErr.message) || String(oErr)));
                                         });
                                 }
                         });
+                },
+
+                /**
+                  * 会话已删除：清掉各处对它的引用。
+                  * 20261011：原先只比较 settings>/sessionId（对话会话），删除正打开的
+                  * Agent 会话后界面仍停在原会话；改为以 session>/currentId 为准
+                  */
+                _forgetSession: function (sSid) {
+                        var oSettings = this.getView().getModel("settings");
+                        if (this._oRun && this._oRun.sessionId === sSid && this._oRun.timer) {
+                                this._stopRun("stopped");
+                        }
+                        if (this._mFocusArt) {
+                                delete this._mFocusArt[sSid];
+                        }
+                        if (this.getView().getModel("session").getProperty("/currentId") === sSid) {
+                                this._startNewSession();
+                        }
+                        // 另一模式记住的会话也可能就是它（列表只显示当前模式，正常不会发生）
+                        ["CHAT", "AGENT"].forEach(function (sMode) {
+                                if (this._mModeSession[sMode] === sSid) {
+                                        this._mModeSession[sMode] = "";
+                                }
+                        }, this);
+                        if (oSettings.getProperty("/agentSessionId") === sSid) {
+                                oSettings.setProperty("/agentSessionId", "");
+                                this._persistSettings();
+                        }
                 },
 
                 /** 发送时确保当前会话出现在左侧列表（V12：携带模式/类型/状态） */
@@ -2959,18 +2917,6 @@ sap.ui.define([
                         });
                         oDialog.addStyleClass("qpDialog");
                         oDialog.open();
-                },
-
-                /** 删除快捷指令（按工厂写入的下标定位） */
-                onDelQuickPrompt: function (oEvent) {
-                        var iIndex = parseInt(oEvent.getSource().data("i"), 10);
-                        var oChat = this.getView().getModel("chat");
-                        var aList = oChat.getProperty("/quickPrompts") || [];
-                        if (iIndex >= 0 && iIndex < aList.length) {
-                                aList.splice(iIndex, 1);
-                                oChat.setProperty("/quickPrompts", aList);
-                                this._saveQuickPrompts();
-                        }
                 },
 
                 /* =========================================================
@@ -3415,11 +3361,6 @@ sap.ui.define([
                         document.body.removeChild(oTA);
                 },
 
-                /** 清除分析对象 */
-                onClearProgram: function () {
-                        this.getView().getModel("chat").setProperty("/programName", "");
-                },
-
                 /** 右上角切换大模型（V10：AUTO=智能路由，按任务类型由后端自动选模型） */
                 onModelChange: function (oEvent) {
                         var sKey = oEvent.getSource().getSelectedKey();
@@ -3436,6 +3377,12 @@ sap.ui.define([
 
                 /** 新会话（V13：随当前模式直接新建 —— CHAT=新对话；AGENT=新通用 Agent 会话） */
                 onNewSession: function () {
+                        this._startNewSession();
+                        MessageToast.show(this._rb().getText("toastSessionNew"));
+                },
+
+                /** 切到当前工作模式下的一个空会话（新建 / 删除当前会话后复位） */
+                _startNewSession: function () {
                         // 中断进行中的流式输出
                         this._sStreamToken = "";
                         var oSession = this.getView().getModel("session");
@@ -3454,9 +3401,11 @@ sap.ui.define([
                         oSession.setProperty("/title", "");
                         oChat.setProperty("/messages", []);
                         oChat.setProperty("/input", "");
+                        // 新会话没有任务：清掉上一个会话的任务徽标（删除当前会话后也走这里）
+                        oChat.setProperty("/currentTask", null);
+                        oChat.setProperty("/taskBadge", "");
                         this._setViewLayout(false);
                         this._applyWorkspaceChrome();   // 20261011：场景选择条 / 文案随新会话刷新
-                        MessageToast.show(this._rb().getText("toastSessionNew"));
                 },
 
                 /* =========================================================
@@ -3475,9 +3424,6 @@ sap.ui.define([
                         oSettings.setProperty("/isAdmin", ChatService.isAdmin());
                         oSettings.setProperty("/loginUserId", (oUser.userId || "") + (oUser.role === "ADMIN" ? " · 管理员" : ""));
                         this._oSettingsDialog.open();
-
-                        // V5.1：刷新网关登录状态
-                        this._refreshSapAuthState();
 
                         // V8：刷新用户管理页签（仅管理员）
                         if (ChatService.isAdmin()) {

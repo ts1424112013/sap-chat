@@ -11,6 +11,16 @@
 *   签名 IMPORTING iv_json, 方法体误用 iv_raw(7z 源码笔误) → 改 iv_json
 *   全包已做"签名-方法体参数名一致性"静态扫描, 真雷仅此一处
 *   ★ 重贴后核对标记: parse_analysis_plan 方法内应有 "DATA(lv_raw) = iv_json."
+* V1.1.3 20261011(改进清单 BE-02): parse_flat_json 支持 JSON 字符串转义 ——
+*   原正则 "([^"]*)" 遇到值里的 \" 就截断, 且 \n、\uXXXX 等原样保留
+*   (run_sql 的多行 SQL 带着字面 \n 交给 SQL 校验; 中文被模型写成 \uXXXX
+*   时关键字查不到)。现: 值正则 "((?:[^"\\]|\\.)*)" 按转义成对匹配,
+*   取出后经新私有方法 json_unescape 还原(包成 {"v":"..."} 交 /ui2/cl_json,
+*   与 parse_model_json 同一解析器); FIND 包 TRY, 正则异常转参数错误
+*   注: ZCL_AI_REPORT_SERVICE.parse_flat_kv 仍是旧正则(报表参数值不含转义,
+*   本批不动), 其头部"正则与 parse_flat_json 同款"的核对标记以旧版为准
+*   ★ 重贴后核对标记: parse_flat_json 内有 json_unescape( lv_raw ) 与
+*   (?:[^"\\]|\\.)*; PRIVATE SECTION 有 json_unescape 声明
 *         - parse_analysis_plan    查询计划 JSON 解析与规范化
 *                                  (白名单校验在 DATA_ANALYSIS_SERVICE)
 *         - parse_analysis_output  结构化分析输出解析+字段清洗+图表引用校验
@@ -115,6 +125,11 @@ CLASS zcl_ai_agent_guard DEFINITION
       IMPORTING iv            TYPE string
       RETURNING VALUE(rv)     TYPE string.
 
+    " V1.1.3: JSON 字符串内容反转义(\" \\ \/ \n \r \t \b \f \uXXXX); 无反斜杠原样返回
+    CLASS-METHODS json_unescape
+      IMPORTING iv            TYPE string
+      RETURNING VALUE(rv)     TYPE string.
+
 ENDCLASS.
 
 CLASS zcl_ai_agent_guard IMPLEMENTATION.
@@ -201,9 +216,18 @@ CLASS zcl_ai_agent_guard IMPLEMENTATION.
       lv_inner = lv_inner+1(lv_body).
     ENDIF.
 
-    FIND ALL OCCURRENCES OF REGEX
-      '"([A-Za-z0-9_]+)"[ ]*:[ ]*("([^"]*)"|([0-9]+|[a-z]+))'
-      IN lv_inner RESULTS DATA(lt_m).
+    " V1.1.3: 字符串值按 JSON 转义成对匹配(\" 不再截断), 取出后反转义;
+    "   正则过长/过复杂时转为参数错误(走"修复一次"通道), 不抛到外层
+    DATA: lt_m    TYPE match_result_tab,
+          lv_raw  TYPE string.
+    TRY.
+        FIND ALL OCCURRENCES OF REGEX
+          '"([A-Za-z0-9_]+)"[ ]*:[ ]*("((?:[^"\\]|\\.)*)"|([0-9]+|[a-z]+))'
+          IN lv_inner RESULTS lt_m.
+      CATCH cx_root.
+        ev_error = 'args 无法解析(值过长或格式异常)'.
+        RETURN.
+    ENDTRY.
 
     IF lines( lt_m ) = 0 AND strlen( condense( val = lv_inner ) ) > 0.
       ev_error = 'args 不是合法的键值对'.
@@ -219,7 +243,8 @@ CLASS zcl_ai_agent_guard IMPLEMENTATION.
                                            len = lv_s1-length ) ).
       DATA(lv_val) = ``.
       IF lv_s3-length > 0.
-        lv_val = substring( val = lv_inner off = lv_s3-offset len = lv_s3-length ).
+        lv_raw = substring( val = lv_inner off = lv_s3-offset len = lv_s3-length ).
+        lv_val = json_unescape( lv_raw ).
       ELSEIF lv_s4-length > 0.
         lv_val = substring( val = lv_inner off = lv_s4-offset len = lv_s4-length ).
       ENDIF.
@@ -684,6 +709,36 @@ CLASS zcl_ai_agent_guard IMPLEMENTATION.
 
     REPLACE ALL OCCURRENCES OF REGEX '[<>"''\t\n\r]' IN rv WITH ``.
     CONDENSE rv.
+
+  ENDMETHOD.
+
+
+  METHOD json_unescape.
+
+    TYPES: BEGIN OF ty_box,
+             v TYPE string,
+           END OF ty_box.
+    DATA: ls_box  TYPE ty_box,
+          lv_json TYPE string.
+
+    rv = iv.
+    IF find( val = iv sub = `\` ) < 0.
+      RETURN.
+    ENDIF.
+
+    " parse_flat_json 的正则已保证 iv 是合法的 JSON 字符串内容(转义成对),
+    " 包成 {"v":"..."} 交 /ui2/cl_json 还原 —— 与 parse_model_json 同一解析器;
+    " 失败时保留原文(由 validate_args / SQL 校验按原样拒绝)
+    lv_json = `{"v":"` && iv && `"}`.
+    TRY.
+        /ui2/cl_json=>deserialize(
+          EXPORTING json          = lv_json
+                    name_mappings = VALUE #( ( abap = 'V' json = 'v' ) )
+          CHANGING  data          = ls_box ).
+        rv = ls_box-v.
+      CATCH cx_root.
+        rv = iv.
+    ENDTRY.
 
   ENDMETHOD.
 

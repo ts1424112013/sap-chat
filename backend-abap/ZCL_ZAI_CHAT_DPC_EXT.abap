@@ -70,6 +70,13 @@
 *   为准) —— 需在 SEGW 给 AnalyzeTask 加参数 Scene(Edm.String, Nullable)
 *   并重新生成; 未加之前前端不会发送(按 metadata 探测), 新会话按 AUTO 处理
 *   ★ 重贴后核对标记: ANALYZETASK 分支有 WHEN 'SCENE' 与 iv_scene = lv_at_scn
+* V15.3 20261011(改进清单 BE-09): SESSIONS_GET_ENTITYSET 把 $top / $skip、
+*   $filter 的 Mode(eq 'CHAT'/'AGENT') 与 search(标题关键字) 传给
+*   CHAT_SERVICE.get_sessions(V2.4 新增可选入参) —— 原来固定前 100 条、
+*   更早的会话前端看不到, 也没有服务端搜索。只改这一个方法, SEGW 无需改动;
+*   需同时重贴 CHAT_SERVICE V2.4(先激活 CHAT_SERVICE)
+*   ★ 重贴后核对标记: sessions_get_entityset 内有 iv_search = lv_search
+*   与 is_paging-skip
 *=======================================================================
 * V15(P1~P3) 20261007: Agent 多业务任务与报表分析接口
 *   新增函数导入分支(全部旁路, 不改既有分支; SEGW 未建 metadata 前
@@ -705,9 +712,33 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
 
   METHOD sessions_get_entityset.
 
-    DATA: lt_sessions TYPE zcl_ai_chat_service=>tt_sessions.
+    DATA: lt_sessions TYPE zcl_ai_chat_service=>tt_sessions,
+          lv_mode     TYPE string,
+          lv_search   TYPE string,
+          lv_top      TYPE i,
+          lv_skip     TYPE i.
 
-    zcl_ai_chat_service=>get_sessions( IMPORTING et_sessions = lt_sessions ).
+    " V15.3(BE-09): 分页 + 模式过滤 + 标题搜索(都不传 = 前 100 条全部模式)
+    "   $filter=Mode eq 'AGENT'  → 每个属性只取第一个条件的 low
+    "   search=<关键字>           → iv_search_string(标题包含, 不区分大小写)
+    LOOP AT it_filter_select_options ASSIGNING FIELD-SYMBOL(<ls_fso>).
+      IF to_upper( <ls_fso>-property ) = 'MODE'.
+        LOOP AT <ls_fso>-select_options ASSIGNING FIELD-SYMBOL(<ls_so>).
+          lv_mode = <ls_so>-low.
+          EXIT.
+        ENDLOOP.
+      ENDIF.
+    ENDLOOP.
+    lv_search = iv_search_string.
+    lv_top    = is_paging-top.
+    lv_skip   = is_paging-skip.
+
+    zcl_ai_chat_service=>get_sessions(
+      EXPORTING iv_mode     = lv_mode
+                iv_search   = lv_search
+                iv_top      = lv_top
+                iv_skip     = lv_skip
+      IMPORTING et_sessions = lt_sessions ).
 
     LOOP AT lt_sessions INTO DATA(ls_session).
       APPEND VALUE #(

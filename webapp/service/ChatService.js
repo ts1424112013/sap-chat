@@ -94,8 +94,9 @@ sap.ui.define([
                 },
 
                 // =================================================================
-                // V5.1/V5.3：SAP 网关登录（HTTP Basic）
-                // 两种凭据形态：① 用户名+密码（自动编码） ② 直接粘贴 Basic 认证头
+                // V5.1/V5.3：SAP 网关凭据（HTTP Basic）
+                // V8 起凭据只来自应用层登录（appLogin → setSapCredentials）；
+                // 旧版"Basic 头直填"登录框已退役，_sSapHeader 仅保留读兼容
                 // =================================================================
 
                 /** 生成 Basic 头（凭据未保存时返回 null）；Basic 头直填模式优先 */
@@ -129,51 +130,6 @@ sap.ui.define([
                                         this._sSapHeader = o.header || "";
                                 }
                         } catch (e) { /* 忽略 */ }
-                },
-
-                /** 是否已有网关凭据（Basic 头或用户名，内存或 localStorage） */
-                hasSapCredentials: function () {
-                        this._loadAuthStore();
-                        return !!(this._sSapUser || this._sSapHeader);
-                },
-
-                /** 当前登录用户名；Basic 头模式尝试解码出用户名（失败显示"Basic 头"） */
-                getSapUser: function () {
-                        this._loadAuthStore();
-                        if (!this._sSapUser && this._sSapHeader) {
-                                try {
-                                        var sPayload = this._sSapHeader.replace(/^Basic\s+/i, "");
-                                        var sDecoded = decodeURIComponent(escape(atob(sPayload)));
-                                        return sDecoded.split(":")[0] || "Basic 头";
-                                } catch (e) {
-                                        return "Basic 头";
-                                }
-                        }
-                        return this._sSapUser;
-                },
-
-                /** 是否为 Basic 头直填模式 */
-                isHeaderMode: function () {
-                        this._loadAuthStore();
-                        return !!this._sSapHeader && !this._sSapUser;
-                },
-
-                /**
-                 * V5.3：直接保存 Basic 认证头（如 "Basic dXNlcjpwYXNz"）
-                 * @param {string} sHeader 完整 Authorization 头值；缺 "Basic " 前缀时自动补
-                 * @param {boolean} bRemember true=写入本次浏览器会话的 sessionStorage
-                 */
-                setSapHeader: function (sHeader, bRemember) {
-                        this._oAuthStore.loaded = true;
-                        var sVal = (sHeader || "").trim();
-                        if (sVal && !/^Basic\s/i.test(sVal)) {
-                                sVal = "Basic " + sVal;
-                        }
-                        this._sSapHeader = sVal;
-                        this._sSapUser = "";
-                        this._sSapPass = "";
-                        this._persistAuth(bRemember);
-                        this._oODataModel = null;
                 },
 
                 /**
@@ -227,75 +183,6 @@ sap.ui.define([
                         this._sSapHeader = "";
                         this._loadAuthStore();
                         this._oODataModel = null;
-                },
-
-                /** V5.3：格式校验 Basic 头（Basic 前缀 + 可解码的 base64 载荷） */
-                _validateBasicHeader: function (sHeader) {
-                        var sVal = (sHeader || "").trim();
-                        if (!sVal) {
-                                return { ok: false, message: "Basic 认证头为空" };
-                        }
-                        var sPayload = sVal.replace(/^Basic\s+/i, "");
-                        if (!sPayload) {
-                                return { ok: false, message: "缺少 base64 凭据载荷（应形如 Basic dXNlcjpwYXNz）" };
-                        }
-                        try {
-                                var sDecoded = decodeURIComponent(escape(atob(sPayload)));
-                                if (sDecoded.indexOf(":") < 0) {
-                                        return { ok: false, message: "base64 解码后缺少冒号分隔（应为 用户:密码 的编码）" };
-                                }
-                        } catch (e) {
-                                return { ok: false, message: "base64 载荷无法解码，请检查字符串是否完整（注意不要混入换行/空格）" };
-                        }
-                        return { ok: true };
-                },
-
-                /**
-                 * V5.3：验证 Basic 认证头：对 $metadata 发一次带该头的 GET
-                 * @param {string} sHeader 完整头值（自动补 Basic 前缀）
-                 * @returns {Promise<{ok, status, message}>} 永远 resolve，不 reject
-                 */
-                verifySapHeader: function (sHeader) {
-                        var that = this;
-                        var sVal = (sHeader || "").trim();
-                        if (sVal && !/^Basic\s/i.test(sVal)) {
-                                sVal = "Basic " + sVal;
-                        }
-                        var oFmt = that._validateBasicHeader(sVal);
-                        if (!oFmt.ok) {
-                                return Promise.resolve({ ok: false, status: 0, message: oFmt.message });
-                        }
-                        var sUrl = this._sConfig.host + this._sConfig.path + "$metadata";
-                        // 12 秒超时：地址不通（DNS 挂起）时避免验证请求无限等待
-                        var oAbort = new AbortController();
-                        var iTimer = setTimeout(function () { oAbort.abort(); }, 12000);
-                        return fetch(sUrl, {
-                                method: "GET",
-                                headers: { "Authorization": sVal },
-                                credentials: "omit",
-                                signal: oAbort.signal
-                        }).then(function (oResp) {
-                                clearTimeout(iTimer);
-                                if (oResp.ok) {
-                                        return { ok: true, status: oResp.status, message: "" };
-                                }
-                                if (oResp.status === 401 || oResp.status === 403) {
-                                        return {
-                                                ok: false, status: oResp.status,
-                                                message: "网关拒绝（HTTP " + oResp.status + "）：base64 串与账号密码不匹配，或账号被锁"
-                                        };
-                                }
-                                return {
-                                        ok: false, status: oResp.status,
-                                        message: "网关返回 HTTP " + oResp.status + "，服务可能未就绪或地址有误。"
-                                };
-                        }).catch(function () {
-                                clearTimeout(iTimer);
-                                return {
-                                        ok: false, status: 0,
-                                        message: "无法连接网关（或连接超时）：请检查 ui5.yaml 代理 baseUri / 网络连通性 / 后端地址。"
-                                };
-                        });
                 },
 
                 /** OData 请求返回 401 时触发 onAuthFailed 回调（60 秒防抖） */
@@ -388,11 +275,22 @@ sap.ui.define([
                 },
 
                 /**
-                  * 获取会话列表 → Promise<[{SessionId,Title,ModelId,MsgCount,CreatedAt,ChangedAt,Mode,AgentType,Status}]>
-                  * 后端模式: GET /Sessions（读 ZAI_CHAT_SESS，仅当前用户）
+                  * 获取会话列表 → Promise<[{SessionId,Title,ModelId,MsgCount,CreatedAt,ChangedAt,Pinned,Mode,AgentType,Status}]>
+                  * 后端模式: GET /Sessions（读 ZAI_CHAT_SESS，仅当前用户，置顶优先 + 最近修改）
                   * V12: Mode 统一规范化（空/缺省 → CHAT，老会话无需迁移即可打开）
+                  * 20261011（BE-09）：分页与服务端搜索 ——
+                  *   $top/$skip + $filter=Mode eq 'CHAT'|'AGENT' + search=<标题关键字>
+                  *   （CHAT_SERVICE V2.4 / DPC_EXT V15.3 起生效）。旧后端忽略这些参数、
+                  *   固定返回前 100 条混合列表，这里再按模式/关键字过滤一遍，行为不退化
+                  * @param {object} [oOpt] {mode, top, skip, search}
                   */
-                getSessions: function () {
+                getSessions: function (oOpt) {
+                        var o = oOpt || {};
+                        var sMode = o.mode === "AGENT" || o.mode === "CHAT" ? o.mode : "";
+                        var iTop = parseInt(o.top, 10) > 0 ? parseInt(o.top, 10) : 100;
+                        var iSkip = parseInt(o.skip, 10) > 0 ? parseInt(o.skip, 10) : 0;
+                        var sQ = String(o.search || "").trim();
+                        var sQLow = sQ.toLowerCase();
                         var fnNorm = function (s) {
                                 s = s || {};
                                 s.Mode = s.Mode === "AGENT" ? "AGENT" : "CHAT";
@@ -400,13 +298,30 @@ sap.ui.define([
                                 s.Status = s.Status || "IDLE";
                                 return s;
                         };
+                        var fnKeep = function (s) {
+                                return (!sMode || s.Mode === sMode) &&
+                                        (!sQLow || String(s.Title || "").toLowerCase().indexOf(sQLow) >= 0);
+                        };
                         if (this._sConfig.mode === "mock") {
-                                var a = Service._mockStore().sessions.slice().map(fnNorm);
-                                a.sort(function (x, y) { return (y.ChangedAt || "").localeCompare(x.ChangedAt || ""); });
-                                return Promise.resolve(a);
+                                var a = Service._mockStore().sessions.slice().map(fnNorm).filter(fnKeep);
+                                a.sort(function (x, y) {
+                                        var pX = x.Pinned === "X" ? 1 : 0, pY = y.Pinned === "X" ? 1 : 0;
+                                        return pX !== pY ? pY - pX : (y.ChangedAt || "").localeCompare(x.ChangedAt || "");
+                                });
+                                return Promise.resolve(a.slice(iSkip, iSkip + iTop));
                         }
-                        return this._read("/Sessions", { urlParameters: { "$top": "100" } }).then(function (oData) {
-                                return ((oData && oData.results) || []).map(fnNorm);
+                        var mUrl = { "$top": String(iTop) };
+                        if (iSkip) {
+                                mUrl.$skip = String(iSkip);
+                        }
+                        if (sQ) {
+                                mUrl.search = sQ;
+                        }
+                        return this._read("/Sessions", {
+                                filters: sMode ? [new Filter("Mode", FilterOperator.EQ, sMode)] : [],
+                                urlParameters: mUrl
+                        }).then(function (oData) {
+                                return ((oData && oData.results) || []).map(fnNorm).filter(fnKeep);
                         });
                 },
 
@@ -1117,10 +1032,13 @@ sap.ui.define([
 
                 /**
                  * V10：更新会话（重命名 / 置顶切换，后端仅限本人会话）
-                 * @param {object} oUpd {sessionId, title, pinned} title/pinned 可选
+                 * 20261011：Pinned 三态 —— "X" 置顶 / "N" 取消置顶 / 空 = 不改（重命名时
+                 * 不再把置顶清掉；CHAT_SERVICE V2.4 起生效，旧后端把 "N" 当取消置顶，兼容）
+                 * @param {object} oUpd {sessionId, title, pinned} title 可选；pinned: true/false 或省略
                  * @returns {Promise<string>} 后端 Message
                  */
                 updateSession: function (oUpd) {
+                        var sPinned = oUpd.pinned === undefined ? "" : (oUpd.pinned ? "X" : "N");
                         if (this._sConfig.mode === "mock") {
                                 var oStore = Service._mockStore();
                                 var oSess = oStore.sessions.filter(function (s) {
@@ -1132,14 +1050,16 @@ sap.ui.define([
                                 if (oUpd.title) {
                                         oSess.Title = oUpd.title;
                                 }
-                                oSess.Pinned = oUpd.pinned === "X" ? "X" : "";
+                                if (sPinned) {
+                                        oSess.Pinned = sPinned === "X" ? "X" : "";
+                                }
                                 Service._mockSave(oStore);
                                 return Promise.resolve("已更新");
                         }
                         return this._v8Call("UpdateSession", {
                                 SessionId: oUpd.sessionId || "",
                                 Title: oUpd.title || "",
-                                Pinned: oUpd.pinned === "X" ? "X" : ""
+                                Pinned: sPinned
                         }, true).then(function (sMsg) {
                                 return sMsg || "已更新";
                         });

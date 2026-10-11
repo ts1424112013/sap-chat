@@ -67,16 +67,6 @@
                                                                         <Text text="{i18n>settingsReadonlyTip}" class="hintText" wrapping="true"
                                                                                 visible="{= !${settings>/isAdmin} }"/>
                                                                 </VBox>
-                                                                <!-- V5.1：SAP 网关登录（V8 起由应用层强制登录取代，默认隐藏） -->
-                                                                <Label text="{i18n>sapAuthSection}" visible="{settings>/showSapAuth}"/>
-                                                                <VBox class="sapUiSmallMarginBottom" visible="{settings>/showSapAuth}">
-                                                                        <ObjectStatus id="sapAuthState" class="sapUiSmallMarginBottom"/>
-                                                                        <HBox>
-                                                                                <Button text="{i18n>changeCred}" icon="sap-icon://key" press=".onOpenSapLogin" type="Transparent"/>
-                                                                                <Button text="{i18n>clearCred}" press=".onClearSapAuth" type="Transparent" enabled="{= ${settings>/mode} === 'backend' }"/>
-                                                                        </HBox>
-                                                                        <Text text="{i18n>sapAuthHint}" class="hintText" wrapping="true"/>
-                                                                </VBox>
                                                         </f:content>
                                                 </f:SimpleForm>
                                         </IconTabFilter>

@@ -65,6 +65,22 @@
 *   read_program_source 复用同一套 USER_HIDE_SRC 规则
 *   ★ 重贴后核对标记: analyze 内有 is_cfg_on( 'CHAT_SAP_ACCESS' );
 *   PUBLIC SECTION 内有 v8_get_role 与 read_program_meta 声明
+* V2.4 20261011: 改进清单 BE-08 / BE-09(无 SE11 / SEGW 改动) ——
+*   ① v8_save_roles: 入参不是 JSON 数组或解析后为空(且不是显式 [])时
+*      拒绝并保留原数据 —— 原逻辑得到空列表会把全部角色置停用;
+*      deserialize 不设 sy-subrc, 原 sy-subrc 检查无意义, 改 TRY/CATCH;
+*      角色名去空格/去重/截 20 字符(与 ROLENAME CHAR20 一致)
+*   ② v8_save_prompts: 同①的入参校验; 全量覆盖改为"删旧行再插新行"
+*      (原来每次保存都插新 GUID 行、旧行只置停用, 表无限增长), 插入失败回滚
+*   ③ v8_update_session: Pinned 三态 X=置顶 / N=取消 / 空=不改 ——
+*      重命名不再清掉置顶; 兼容旧前端: 标题与 Pinned 都为空 = 取消置顶
+*   ④ get_sessions: 新增可选入参 iv_mode / iv_search / iv_top / iv_skip
+*      (DPC_EXT V15.3 从 $filter Mode / search / $top / $skip 传入);
+*      不传 = 原行为(前 100 条、全部模式)。模式与标题过滤在 ABAP 侧做
+*      (老数据 SESSION_MODE 可能为空/NULL, SQL 侧 <> 'AGENT' 会漏掉)
+*   ★ 重贴后核对标记: get_sessions 内有 lv_want_mode 与 NS lv_query;
+*   v8_update_session 内有 lv_pin = 'N'; v8_save_roles / v8_save_prompts
+*   内各有 lv_shape <> '[]'; v8_save_prompts 内有 DELETE FROM zai_chat_prompt
 *         read_program_meta: TRDIRT 的程序名字段是 NAME 而非 PROGNAME
 *         (PROGNAME 是 REPOSRC 的字段, 原代码两处混用导致
 *         "Unknown column name PROGNAME", 并连带 LV_T 内联声明失败报
@@ -197,8 +213,13 @@ CLASS zcl_ai_chat_service DEFINITION
                 iv_user_hide_src TYPE string OPTIONAL
       EXPORTING es_result       TYPE ty_save_result.
 
-    " 会话列表(按最近修改排序, 仅当前用户)
+    " 会话列表(置顶优先 + 最近修改, 仅当前用户)
+    " V2.4: 可选分页 / 模式 / 标题搜索(都不传 = 前 100 条全部模式, 与旧版一致)
     CLASS-METHODS get_sessions
+      IMPORTING iv_mode          TYPE string OPTIONAL   " CHAT / AGENT / 空=全部
+                iv_search        TYPE string OPTIONAL   " 标题包含(不区分大小写)
+                iv_top           TYPE i DEFAULT 100      " ≤0 按 100, 上限 500
+                iv_skip          TYPE i DEFAULT 0
       EXPORTING et_sessions      TYPE tt_sessions.
 
     " 删除会话及全部消息(仅限本人会话)
@@ -207,6 +228,7 @@ CLASS zcl_ai_chat_service DEFINITION
       EXPORTING es_result        TYPE ty_save_result.
 
     " V2.2: 更新会话(仅限本人) —— 重命名标题 / 置顶切换(FI UpdateSession)
+    " V2.4: iv_pinned 三态 X=置顶 / N=取消置顶 / 空=不改
     CLASS-METHODS v8_update_session
       IMPORTING iv_session_id TYPE string
                 iv_title      TYPE string OPTIONAL
@@ -839,7 +861,7 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    " 标题非空才改(重命名); pinned X/'' 置顶/取消
+    " 标题非空才改(重命名)
     IF iv_title IS NOT INITIAL.
       DATA(lv_title) = iv_title.
       CONDENSE lv_title.
@@ -848,7 +870,16 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
       ENDIF.
       ls_sess-title = lv_title.
     ENDIF.
-    ls_sess-pinned = COND #( WHEN to_upper( iv_pinned ) = 'X' THEN 'X' ELSE '' ).
+
+    " V2.4: 置顶三态 X=置顶 / N=取消 / 空=不改(原来总按入参覆盖, 重命名会把置顶清掉)。
+    "   兼容旧前端: 它取消置顶时发 标题空 + Pinned 空, 这种请求只可能是取消置顶
+    DATA(lv_pin) = to_upper( iv_pinned ).
+    CONDENSE lv_pin.
+    IF lv_pin = 'X'.
+      ls_sess-pinned = 'X'.
+    ELSEIF lv_pin = 'N' OR ( lv_pin IS INITIAL AND iv_title IS INITIAL ).
+      CLEAR ls_sess-pinned.
+    ENDIF.
 
     UPDATE zai_chat_sess FROM @ls_sess.
     IF sy-subrc = 0.
@@ -1154,17 +1185,58 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
 
   METHOD get_sessions.
 
+    DATA: lt_sess      TYPE STANDARD TABLE OF zai_chat_sess WITH DEFAULT KEY,
+          lv_want_mode TYPE string,
+          lv_query     TYPE string,
+          lv_top       TYPE i,
+          lv_skip      TYPE i,
+          lv_hit       TYPE i.
+
     CLEAR et_sessions.
 
+    " V2.4: 入参规整 —— 不传 = 原行为(前 100 条、全部模式)
+    lv_top = iv_top.
+    IF lv_top <= 0.
+      lv_top = 100.
+    ELSEIF lv_top > 500.
+      lv_top = 500.
+    ENDIF.
+    lv_skip = iv_skip.
+    IF lv_skip < 0.
+      lv_skip = 0.
+    ENDIF.
+    lv_want_mode = to_upper( iv_mode ).
+    CONDENSE lv_want_mode.
+    lv_query = iv_search.
+    CONDENSE lv_query.
+
     " V2.2: 置顶优先, 再按最近修改
-    " V12: 行数上限 50 → 100(对话与 Agent 两类会话共用本列表, 前端按模式过滤)
+    " V12: 对话与 Agent 两类会话共用本表
+    " V2.4: 读本人全部会话头(行很小), 模式/标题过滤与分页在 ABAP 侧做 ——
+    "   老数据 SESSION_MODE 可能为空/NULL, SQL 侧 <> 'AGENT' 会把它们漏掉
     SELECT * FROM zai_chat_sess
       WHERE created_by = @sy-uname
       ORDER BY pinned DESCENDING, changed_at DESCENDING
-      INTO TABLE @DATA(lt_sess)
-      UP TO 100 ROWS.
+      INTO TABLE @lt_sess.
 
     LOOP AT lt_sess INTO DATA(ls_sess).
+      IF lv_want_mode = 'AGENT' AND ls_sess-session_mode <> 'AGENT'.
+        CONTINUE.
+      ENDIF.
+      IF lv_want_mode = 'CHAT' AND ls_sess-session_mode = 'AGENT'.
+        CONTINUE.
+      ENDIF.
+      " NS = 不包含(不区分大小写)
+      IF lv_query IS NOT INITIAL AND ls_sess-title NS lv_query.
+        CONTINUE.
+      ENDIF.
+      lv_hit = lv_hit + 1.
+      IF lv_hit <= lv_skip.
+        CONTINUE.
+      ENDIF.
+      IF lines( et_sessions ) >= lv_top.
+        EXIT.
+      ENDIF.
       APPEND VALUE #(
         session_id = ls_sess-session_id
         title      = ls_sess-title
@@ -1911,12 +1983,42 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
         RETURN.
     ENDTRY.
     TYPES: BEGIN OF ty_p, title TYPE string, prompt TYPE string, END OF ty_p.
-    DATA lt_in TYPE STANDARD TABLE OF ty_p WITH DEFAULT KEY.
-    /ui2/cl_json=>deserialize( EXPORTING json = iv_json CHANGING data = lt_in ).
-    UPDATE zai_chat_prompt SET active = '' WHERE active = 'X'.
+    DATA: lt_raw   TYPE STANDARD TABLE OF ty_p WITH DEFAULT KEY,
+          lt_in    TYPE STANDARD TABLE OF ty_p WITH DEFAULT KEY,
+          ls_p     TYPE ty_p,
+          lv_shape TYPE string,
+          lv_fail  TYPE abap_bool.
+
+    " V2.4: 入参校验 —— 不是 JSON 数组 / 解析后为空(且不是显式 [])一律拒绝,
+    "   保留原数据(原逻辑解析失败得到空列表会把全部提示词置停用)
+    lv_shape = iv_json.
+    CONDENSE lv_shape NO-GAPS.
+    IF lv_shape IS INITIAL OR lv_shape(1) <> '['.
+      rs-message = '入参不是 JSON 数组, 提示词未做任何修改'.
+      RETURN.
+    ENDIF.
+    TRY.
+        /ui2/cl_json=>deserialize( EXPORTING json = iv_json CHANGING data = lt_raw ).
+      CATCH cx_root.
+        CLEAR lt_raw.
+    ENDTRY.
+    LOOP AT lt_raw INTO ls_p.
+      CONDENSE ls_p-title.
+      IF ls_p-title IS NOT INITIAL AND ls_p-prompt IS NOT INITIAL.
+        APPEND ls_p TO lt_in.
+      ENDIF.
+    ENDLOOP.
+    IF lt_in IS INITIAL AND lv_shape <> '[]'.
+      rs-message = '提示词清单解析失败, 未做任何修改'.
+      RETURN.
+    ENDIF.
+
+    " V2.4: 全量覆盖 = 删旧行再插新行(原来每次保存都插新 GUID 行、旧行只置停用,
+    "   表无限增长); 同一 LUW, 任一行插入失败整体回滚
+    DELETE FROM zai_chat_prompt WHERE prompt_id <> @space.
     DATA(lv_sort) = CONV numc4( 0 ).
     DATA lv_pid TYPE c LENGTH 32.
-    LOOP AT lt_in INTO DATA(ls_p).
+    LOOP AT lt_in INTO ls_p.
       lv_sort += 1.
       CALL FUNCTION 'GUID_CREATE' IMPORTING ev_guid_32 = lv_pid.
       INSERT zai_chat_prompt FROM @(
@@ -1925,7 +2027,16 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
                  title = ls_p-title content = ls_p-prompt
                  sort_no = lv_sort active = 'X'
                  createdby = sy-uname createdat = v8_now( ) ) ).
+      IF sy-subrc <> 0.
+        lv_fail = abap_true.
+        EXIT.
+      ENDIF.
     ENDLOOP.
+    IF lv_fail = abap_true.
+      ROLLBACK WORK.
+      rs-message = '提示词保存失败, 已回滚(原数据未变)'.
+      RETURN.
+    ENDIF.
     COMMIT WORK.
     rs-success = 'X'. rs-message = '保存成功'.
   ENDMETHOD.
@@ -1939,11 +2050,40 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
         rs-message = '该操作仅管理员可执行'.
         RETURN.
     ENDTRY.
-    DATA lt_in TYPE STANDARD TABLE OF string WITH DEFAULT KEY.
-    /ui2/cl_json=>deserialize( EXPORTING json = iv_json CHANGING data = lt_in ).
-    IF sy-subrc <> 0 AND iv_json IS NOT INITIAL.
-      rs-message = '入参 JSON 解析失败'. RETURN.
+    DATA: lt_raw   TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
+          lt_in    TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
+          lv_role  TYPE string,
+          lv_shape TYPE string.
+
+    " V2.4: 入参校验 —— 不是 JSON 数组 / 解析后为空(且不是显式 [])一律拒绝,
+    "   保留原数据。原逻辑: 解析失败得到空列表 → 把全部角色置停用;
+    "   且 deserialize 不设 sy-subrc, 原 sy-subrc 检查无意义
+    lv_shape = iv_json.
+    CONDENSE lv_shape NO-GAPS.
+    IF lv_shape IS INITIAL OR lv_shape(1) <> '['.
+      rs-message = '入参不是 JSON 数组, 角色未做任何修改'.
+      RETURN.
     ENDIF.
+    TRY.
+        /ui2/cl_json=>deserialize( EXPORTING json = iv_json CHANGING data = lt_raw ).
+      CATCH cx_root.
+        CLEAR lt_raw.
+    ENDTRY.
+    " 去空格 / 去空名 / 截 20 字符(ROLENAME CHAR20) / 去重
+    LOOP AT lt_raw INTO lv_role.
+      CONDENSE lv_role.
+      IF strlen( lv_role ) > 20.
+        lv_role = lv_role(20).
+      ENDIF.
+      IF lv_role IS NOT INITIAL AND NOT line_exists( lt_in[ table_line = lv_role ] ).
+        APPEND lv_role TO lt_in.
+      ENDIF.
+    ENDLOOP.
+    IF lt_in IS INITIAL AND lv_shape <> '[]'.
+      rs-message = '角色清单解析失败, 未做任何修改'.
+      RETURN.
+    ENDIF.
+
     SELECT * FROM zai_chat_role INTO TABLE @DATA(lt_old).
     LOOP AT lt_old INTO DATA(ls_old).
       IF NOT line_exists( lt_in[ table_line = ls_old-rolename ] ).
