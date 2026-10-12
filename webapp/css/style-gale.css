@@ -220,7 +220,13 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .sendBtn, .sendBtn .sapMBtnHoverable, [id$="sendBtn"] .sapMBtnInner, [id$="sendBtnHero"] .sapMBtnInner { background: var(--accent) !important; }
 [id$="sendBtn"]:hover .sapMBtnInner, [id$="sendBtnHero"]:hover .sapMBtnInner { background: var(--accent-deep) !important; }
 .sendBtn.sendBtnStop .sapMBtnHoverable, .sendBtn.sendBtnStop .sapMBtnInner { background: var(--text) !important; }
-.agentModeHint { background: transparent !important; color: var(--sub) !important; padding: 0 !important; font-size: .72rem !important; }
+/* 20261012：附件 + 发送恒靠右（Agent 模式左侧角色区隐藏时不再跑到左下角） */
+.inputFoot > .inputActions { margin-left: auto; }
+/* 20261012：输入为空（textarea 显示占位）时发送键淡化；响应中的停止键不受影响 */
+.inputCard:has(textarea:placeholder-shown) .sendBtn:not(.sendBtnStop) { opacity: .4; cursor: default; }
+.inputCard:has(textarea:placeholder-shown) .sendBtn:not(.sendBtnStop):hover .sapMBtnInner { background: var(--accent) !important; }
+.inputCard:has(textarea:placeholder-shown) .sendBtn:not(.sendBtnStop):active,
+.inputCard:has(textarea:placeholder-shown) .sendBtn:not(.sendBtnStop):active .sapMBtnInner { transform: none !important; }
 .inputDock { position: relative; padding: .4rem 1.2rem 1rem !important; }
 
 /* 回到底部浮钮 */

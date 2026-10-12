@@ -173,8 +173,9 @@
                                                                                                 tooltip="{i18n>roleManage}" press=".onOpenRoleManage" class="roleMngBtn"/>
                                                                                 </HBox>
                                                                                 <!-- V9.3：文本附件上传 + 发送；
-                                                                                     V13：Agent 模式下附件按钮保留（作为上下文） -->
-                                                                                <HBox alignItems="Center">
+                                                                                     V13：Agent 模式下附件按钮保留（作为上下文）
+                                                                                     20261012：inputActions 恒靠右（Agent 模式左侧角色区隐藏时不再被挤到左下角） -->
+                                                                                <HBox alignItems="Center" class="inputActions">
                                                                                         <u:FileUploader id="attachHero"
                                                                                                 buttonOnly="true"
                                                                                                 buttonText=""
@@ -184,9 +185,6 @@
                                                                                                 change=".onFileChosen"
                                                                                                 uploadOnChange="false"
                                                                                                 class="attachBtn"/>
-                                                                                        <!-- V13：Agent 模式提示标签（输入框右下角） -->
-                                                                                        <Text text="{i18n>agentModeHint}" class="agentModeHint"
-                                                                                                visible="{= ${chat>/workspaceMode} === 'AGENT' }"/>
                                                                                         <Button id="sendBtnHero" icon="sap-icon://paper-plane" press=".onSend" type="Emphasized" tooltip="{i18n>send}" class="sendBtn"/>
                                                                                 </HBox>
                                                                         </HBox>
@@ -247,8 +245,9 @@
                                                                                         <Button id="roleMngDock" icon="sap-icon://user-edit" type="Transparent"
                                                                                                 tooltip="{i18n>roleManage}" press=".onOpenRoleManage" class="roleMngBtn"/>
                                                                                 </HBox>
-                                                                                <!-- V9.3：文本附件上传（V13：Agent 模式保留 —— 附件作为任务上下文拼入提问） -->
-                                                                                <HBox alignItems="Center">
+                                                                                <!-- V9.3：文本附件上传（V13：Agent 模式保留 —— 附件作为任务上下文拼入提问）
+                                                                                     20261012：inputActions 恒靠右 -->
+                                                                                <HBox alignItems="Center" class="inputActions">
                                                                                         <u:FileUploader id="attachDock"
                                                                                                 buttonOnly="true"
                                                                                                 buttonText=""
@@ -258,9 +257,6 @@
                                                                                                 change=".onFileChosen"
                                                                                                 uploadOnChange="false"
                                                                                                 class="attachBtn"/>
-                                                                                        <!-- V13：Agent 模式提示标签（输入框右下角） -->
-                                                                                        <Text text="{i18n>agentModeHint}" class="agentModeHint"
-                                                                                                visible="{= ${chat>/workspaceMode} === 'AGENT' }"/>
                                                                                         <Button id="sendBtn" icon="sap-icon://paper-plane" press=".onSend" type="Emphasized" tooltip="{i18n>send}" class="sendBtn"/>
                                                                                 </HBox>
                                                                         </HBox>

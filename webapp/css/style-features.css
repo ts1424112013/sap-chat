@@ -380,17 +380,6 @@
         border-color: var(--line);
 }
 
-/* —— Agent 模式输入提示标签（输入框右下角） —— */
-.agentModeHint {
-        font-size: 0.72rem;
-        color: var(--accent-deep);
-        background: var(--accent-soft);
-        border-radius: 999px;
-        padding: 0.12rem 0.55rem;
-        margin-right: 0.45rem;
-        white-space: nowrap;
-}
-
 /* —— Agent 思考卡（运行中动态状态 / 完成后阶段摘要） —— */
 .agentThinkingCard {
         margin: 0.15rem 0 0.55rem;
