@@ -92,6 +92,14 @@
 *         CHAT_SERVICE V2.3(两个方法改 PUBLIC)
 * ★ 重贴后核对标记: analyze_agent 签名含 iv_scene OPTIONAL; 全文有
 *   exec_read_source / agent_model_allowed / build_scene_help
+* V15.2.1 20261014: 工具参数格式提示(仅 build_protocol_prompt) ——
+*   原参数清单只有"名称(必填/可选)", 模型看不到 GUARD 的格式要求, 只能猜,
+*   填错就被拒再改(白耗一轮)。现按参数类型附格式: PLANT=最多 4 位字母或数字 /
+*   MATERIAL=最多 18 位 / DATE=YYYYMMDD / LONGTEXT=最多 4000 字符;
+*   TEXT 只截断不拒绝, 不加提示。例: posting_date(可选, 日期 YYYYMMDD)
+*   基于 V15.2, 其余逻辑不变; 无新依赖, 激活顺序不变
+* ★ 重贴后核对标记: build_protocol_prompt 内有 lv_fmt 与
+*   WHEN zcl_ai_tool_registry=>gc_pt_date 分支
 *=======================================================================
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
@@ -1626,7 +1634,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     " 工具白名单按意图领域注入(可能为空 → 明确告知直接分析回答)
     DATA: lv_tools  TYPE string,
           lv_params TYPE string,
-          lv_req    TYPE string.
+          lv_req    TYPE string,
+          lv_fmt    TYPE string.   " V15.2.1: 参数格式提示
 
     CLEAR: lv_tools, lv_params.
 
@@ -1641,6 +1650,22 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         CLEAR lv_params.
         LOOP AT ls_tool-params INTO DATA(ls_p).
           lv_req = COND string( WHEN ls_p-required = abap_true THEN '必填' ELSE '可选' ).
+          " V15.2.1: 附上 AGENT_GUARD.validate_args 的格式要求, 避免模型先填错
+          " 被拒再改、白耗一轮。只列会被拒绝的类型; TEXT 超长只截断不拒绝, 不加
+          CLEAR lv_fmt.
+          CASE ls_p-ptype.
+            WHEN zcl_ai_tool_registry=>gc_pt_plant.
+              lv_fmt = `工厂代码, 最多 4 位字母或数字`.
+            WHEN zcl_ai_tool_registry=>gc_pt_material.
+              lv_fmt = `料号, 最多 18 位`.
+            WHEN zcl_ai_tool_registry=>gc_pt_date.
+              lv_fmt = `日期 YYYYMMDD`.
+            WHEN zcl_ai_tool_registry=>gc_pt_longtext.
+              lv_fmt = `最多 4000 字符`.
+          ENDCASE.
+          IF lv_fmt IS NOT INITIAL.
+            lv_req = |{ lv_req }, { lv_fmt }|.
+          ENDIF.
           IF lv_params IS INITIAL.
             lv_params = |{ ls_p-name }({ lv_req })|.
           ELSE.
