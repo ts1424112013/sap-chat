@@ -24,17 +24,34 @@ sap.ui.define([
                 return /^\d{8}$/.test(s) ? s.substring(0, 4) + "-" + s.substring(4, 6) + "-" + s.substring(6, 8) : s;
         }
 
+        /** 20261015：多值同时登记了范围时按多值处理（与后端校验 / EXEC_SAP 拆选择表同口径） */
+        function isRange(oP) {
+                return oP.range_allowed === true && oP.multi_value !== true;
+        }
+
+        /** 20261015：多值分隔符归一 —— 中英文逗号、顿号、分号、竖线、空格 / 换行都算分隔，
+          * 统一成英文逗号（后端只按 , 和 | 拆分，其余会被当成一个值校验失败） */
+        function normMulti(s) {
+                return String(s || "").split(/[,，、;；|｜\s]+/).filter(Boolean).join(",");
+        }
+
+        /** 提交后回显：范围 "从 ~ 至"，多值 "a、b"，日期转 yyyy-MM-dd */
+        function valueDisplay(oP, sVal) {
+                return String(sVal || "").split(",").map(dateDisplay).join(isRange(oP) ? " ~ " : "、");
+        }
+
         /** 参数控件：DATE → 日期选择器；范围 → 从/至两个输入；其余单输入（多值逗号分隔） */
         function buildParam(oP, mVals, bMarkErr) {
                 var sId = oP.param_id;
                 var bDate = String(oP.data_type || "").toUpperCase().indexOf("DAT") >= 0;
+                var bMulti = oP.multi_value === true;
                 var sVal = mVals[sId] || "";
                 var fnMk = function (sV, sPh) {
                         return bDate
                                 ? new DatePicker({ value: sV, valueFormat: "yyyyMMdd", displayFormat: "yyyy-MM-dd", placeholder: sPh || "选择日期", width: "100%" })
-                                : new Input({ value: sV, placeholder: sPh || (oP.multi_value === true ? "多个值用英文逗号分隔" : ""), width: "100%" });
+                                : new Input({ value: sV, placeholder: sPh || (bMulti ? "可填多个，用逗号或空格分隔" : ""), width: "100%" });
                 };
-                var oRec = { id: sId, label: oP.label || sId, required: oP.required === true, range: oP.range_allowed === true };
+                var oRec = { id: sId, label: oP.label || sId, required: oP.required === true, range: isRange(oP), multi: bMulti };
                 // 校验失败重绘后保留红框提示（必填且为空）
                 var fnMark = function (oCtl) {
                         if (bMarkErr && oRec.required && !sVal) {
@@ -71,6 +88,8 @@ sap.ui.define([
                         if (r.range) {
                                 var sLo = (r.low.getValue() || "").trim(), sHi = (r.high.getValue() || "").trim();
                                 sV = sLo && sHi ? sLo + "," + sHi : (sLo || sHi);
+                        } else if (r.multi) {
+                                sV = normMulti(r.input.getValue());
                         } else {
                                 sV = (r.input.getValue() || "").trim();
                         }
@@ -310,5 +329,5 @@ sap.ui.define([
                 };
         }
 
-        return { render: render, detectChoices: detectChoices, dateDisplay: dateDisplay };
+        return { render: render, detectChoices: detectChoices, dateDisplay: dateDisplay, valueDisplay: valueDisplay };
 });

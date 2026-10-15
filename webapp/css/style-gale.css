@@ -325,6 +325,23 @@ body, body.sapUiBody { background: var(--bg) !important; }
 }
 .scenePicker .sceneBtn.sceneOn .sapMBtnIcon { color: var(--accent) !important; }
 .scenePicker .sceneBtn.sceneAuto .sapMBtnInner { border-style: dashed !important; }
+/* 20261015：悬浮操作排（置顶/重命名/删除）浮在条目右上角，不再占位挤压 ——
+   原来出现时把时间、场景标签挤成竖排 */
+.sessionList .sessionItem .sessItemRow { position: relative; }
+.sessionItem .sessActions {
+        position: absolute; top: .4rem; right: .35rem; padding: 0 .1rem;
+        background: var(--surface); border-radius: 7px;
+        box-shadow: 0 1px 4px rgba(17, 24, 39, .12);
+}
+/* 小号按钮：只占标题那一行高度，不盖住下面的状态徽标 */
+.sessionItem .sessActions .sapMBtn { height: 1.4rem !important; padding: 0 !important; }
+.sessionItem .sessActions .sapMBtnInner {
+        width: 1.5rem !important; min-width: 0 !important;
+        height: 1.4rem !important; min-height: 0 !important;
+        display: flex; align-items: center; justify-content: center;
+}
+.sessionItem .sessActions .sapMBtnIcon { width: auto !important; margin: 0 !important; line-height: 1.4rem !important; }
+.sessTimeRow > * { flex-shrink: 0; white-space: nowrap !important; }
 /* 侧栏会话场景标签 */
 .sessSceneTag { font-size: .68rem; line-height: 1.2; padding: .05rem .4rem; margin-left: .35rem;
         border-radius: 999px; background: var(--hover); color: var(--text-2); }

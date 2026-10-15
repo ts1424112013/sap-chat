@@ -3521,8 +3521,8 @@ sap.ui.define([
                                 }
                                 var aSum = (oAsk.params || []).map(function (p) {
                                         var v = (oPick.values || {})[p.param_id];
-                                        return v ? (p.label || p.param_id) + " " +
-                                                String(v).split(",").map(AskCard.dateDisplay).join(" ~ ") : "";
+                                        // 20261015：只有范围参数用 " ~ "，多值用顿号（原来多值也显示成范围）
+                                        return v ? (p.label || p.param_id) + " " + AskCard.valueDisplay(p, v) : "";
                                 }).filter(Boolean);
                                 oAsk.state = "done";
                                 oAsk.resultText = aSum.length ? oRB.getText("askSubmittedWith", [aSum.join(oRB.getText("listSepComma"))]) : oRB.getText("askSubmitted");
