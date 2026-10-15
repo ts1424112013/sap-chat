@@ -411,11 +411,22 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .askHead { gap: .55rem; margin: 0 .3rem .6rem; }
 .askTitle { font-size: .88rem !important; font-weight: 650 !important; color: var(--text) !important; }
 .askSub { font-size: .74rem !important; color: var(--sub) !important; font-family: ui-monospace, "SF Mono", Consolas, monospace; }
-.askFields { gap: .65rem .9rem; margin: 0 .3rem .7rem; }
-.askFields > .sapMFlexItem { flex: 1 1 14rem !important; min-width: 12rem !important; max-width: 100%; }
-.askField { width: 100%; }
-.askFieldLabel { font-size: .74rem !important; color: var(--text-2) !important; margin-bottom: .2rem; }
+/* 20261015：参数一行一个 —— 标签在左、输入在右，帮助文字落在输入下方；窄屏退回上下排列 */
+.askFields { gap: .55rem; margin: 0 .3rem .7rem; }
+.askField {
+        width: 100%;
+        display: grid !important;
+        grid-template-columns: 7.5rem minmax(0, 1fr);
+        column-gap: .8rem;
+        align-items: center;
+}
+.askField > .sapMFlexItem:nth-child(n+3) { grid-column: 2; }
+.askFieldLabel { font-size: .8rem !important; color: var(--text-2) !important; }
 .askFieldHelp { font-size: .7rem !important; color: var(--sub) !important; margin-top: .15rem; }
+@media (max-width: 600px) {
+        .askField { grid-template-columns: minmax(0, 1fr); row-gap: .2rem; }
+        .askField > .sapMFlexItem:nth-child(n+3) { grid-column: 1; }
+}
 .askRange { width: 100%; gap: .35rem; }
 .askRange > .sapMFlexItem { flex: 1 1 0 !important; min-width: 0 !important; }
 .askRange > .sapMFlexItem:has(.askRangeSep) { flex: 0 0 auto !important; }

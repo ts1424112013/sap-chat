@@ -126,15 +126,16 @@ sap.ui.define([
                 // —— 参数表单（params 形态） ——
                 if (oAsk.kind === "params" && (oAsk.params || []).length) {
                         oAsk.values = oAsk.values || {};
-                        var oGrid = new HBox({ wrap: "Wrap" }).addStyleClass("askFields");
+                        // 20261015：参数一行一个（原 HBox 换行网格一行挤 2~3 个）
+                        var oFields = new VBox().addStyleClass("askFields");
                         oAsk.params.slice(0, 20).forEach(function (p) {
                                 if (p && p.param_id) {
                                         var r = buildParam(p, oAsk.values, !!oAsk.error);
                                         aRecs.push(r);
-                                        oGrid.addItem(r.cell);
+                                        oFields.addItem(r.cell);
                                 }
                         });
-                        oCard.addItem(oGrid);
+                        oCard.addItem(oFields);
                 }
 
                 // —— 编号选项 + 自由输入 ——
