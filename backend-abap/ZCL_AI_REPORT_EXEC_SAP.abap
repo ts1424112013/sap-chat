@@ -30,7 +30,12 @@
 *         ⑦ P2='X'/P_FILE 是 ZRMM_IDP_0702 专用的强制参数, 只对该程序下发 ——
 *         原先对所有报表下发, 其他报表若恰有同名参数(如 P2=删除勾选)会被
 *         强行置位; 通用"固定参数"后续改为 ZAI_RPT_PARAM 配置驱动
-* ★ 重贴后核对标记: JOB_CLOSE 处 strtimmed = 'X'; 全文无 SUBMIT (iv_program);
+* V1.0f   20261015: JOB_CLOSE 回收 JOB_WAS_RELEASED —— 调用用户没有释放权限
+*         (S_BTCH_JOB JOBACTION=RELE / S_BTCH_ADM)时 JOB_CLOSE 不抛异常, 只把
+*         作业留在"已计划(P)", 原先仍提示"已立即启动"; 现判失败、删除空作业,
+*         消息写明缺哪个权限
+* ★ 重贴后核对标记: JOB_CLOSE 处 strtimmed = 'X'; 两处 JOB_CLOSE 都有
+*   job_was_released = lv_released; 全文无 SUBMIT (iv_program);
 *   read_result 输出以 {"columns": 开头
 *=======================================================================
 CLASS zcl_ai_report_exec_sap DEFINITION
@@ -89,7 +94,8 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
           lv_rc      TYPE sysubrc,
           lv_delayed TYPE abap_bool,
           lv_sdldate TYPE tbtcjob-sdlstrtdt,
-          lv_sdltime TYPE tbtcjob-sdlstrttm.
+          lv_sdltime TYPE tbtcjob-sdlstrttm,
+          lv_released TYPE btch0000-char1.
     CLEAR: ev_status, ev_message.
 
     " V1.0a: SUBMIT 动态程序名必须是字符型定长(PROGNAME), 不能用 string
@@ -154,6 +160,8 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
         jobcount             = lv_jobcnt
         jobname              = lv_jobname
         strtimmed            = 'X'
+      IMPORTING
+        job_was_released     = lv_released
       EXCEPTIONS
         cant_start_immediate = 1
         invalid_startdate    = 2
@@ -176,6 +184,8 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
           jobname           = lv_jobname
           sdlstrtdt         = lv_sdldate
           sdlstrttm         = lv_sdltime
+        IMPORTING
+          job_was_released  = lv_released
         EXCEPTIONS
           invalid_startdate = 2
           jobname_missing   = 3
@@ -192,6 +202,15 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
       drop_job( iv_jobname = lv_jobname iv_jobcnt = lv_jobcnt ).
       ev_status  = zcl_ai_report_service=>gc_run_failed.
       ev_message = |作业释放失败(JOB_CLOSE subrc={ lv_rc }), 已撤销该作业, 本次未执行|.
+      RETURN.
+    ENDIF.
+
+    " V1.0f: 无释放权限时 JOB_CLOSE 正常返回但作业停在 P(不会自己运行)
+    IF lv_released IS INITIAL.
+      drop_job( iv_jobname = lv_jobname iv_jobcnt = lv_jobcnt ).
+      ev_status  = zcl_ai_report_service=>gc_run_failed.
+      ev_message = |作业未能释放: 用户 { sy-uname } 缺少后台作业释放权限 | &&
+                   |(S_BTCH_JOB JOBACTION=RELE 或 S_BTCH_ADM), 已撤销该作业, 请联系 Basis 授权|.
       RETURN.
     ENDIF.
 
