@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fiori 报表设计稿</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<style>
+:root {
+  --accent: #2563EB; --accent-deep: #1D4ED8; --accent-soft: #EEF3FE;
+  --bg: #F7F8FA; --surface: #FFFFFF; --side-bg: #F2F4F7; --bubble-user: #EEF2F7;
+  --sess-current: #E6EDFB; --hover: #ECEFF3; --line: #E6E8EC; --line-strong: #D9DDE3;
+  --text: #111827; --text-2: #4B5563; --sub: #8A93A2;
+  --ok: #15803D; --ok-soft: #E8F5EC; --warn-soft: #FEF6E7; --warn: #A16207; --danger: #DC2626;
+  --ring: 0 0 0 3px rgba(37, 99, 235, .14);
+  --shadow-1: 0 1px 2px rgba(17, 24, 39, .04);
+  --shadow-2: 0 1px 2px rgba(17, 24, 39, .04), 0 6px 20px rgba(17, 24, 39, .05);
+}
+[data-theme="dark"] {
+  --accent: #6B9BFF; --accent-deep: #8FB3FF; --accent-soft: rgba(107, 155, 255, .14);
+  --bg: #111317; --surface: #191C21; --side-bg: #15171B; --bubble-user: #22262D;
+  --sess-current: rgba(107, 155, 255, .14); --hover: #22262D; --line: #262A31; --line-strong: #30353D;
+  --text: #E8EAED; --text-2: #AEB4BE; --sub: #7D8590;
+  --ok: #4ADE80; --ok-soft: rgba(74, 222, 128, .12); --warn-soft: rgba(250, 204, 21, .12); --warn: #FACC15; --danger: #F87171;
+  --shadow-1: none; --shadow-2: none;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font: 14px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif; }
+button { font: inherit; cursor: pointer; }
+input, textarea { font: inherit; color: var(--text); }
+.ti { line-height: 1; }
+
+/* 设计稿切换条（不属于产品界面） */
+.dsBar { height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: var(--surface); border-bottom: 1px dashed var(--line-strong); }
+.dsBar b { font-size: 13px; }
+.dsBar .dsNote { font-size: 12px; color: var(--sub); }
+.dsTab { border: 1px solid var(--line-strong); background: var(--surface); color: var(--text-2); border-radius: 8px; height: 30px; padding: 0 12px; font-size: 12px; }
+.dsTab.on { background: var(--text); color: var(--surface); border-color: var(--text); }
+.dsSp { flex: 1; }
+
+/* 应用框架 */
+.app { display: flex; height: calc(100vh - 52px); min-height: 640px; }
+.side { width: 272px; flex: none; background: var(--side-bg); border-right: 1px solid var(--line); padding: 16px 12px 12px; display: flex; flex-direction: column; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 2px 6px 14px; }
+.brand img { width: 30px; height: 30px; border-radius: 8px; }
+.brand span { font-size: 1.06rem; font-weight: 700; letter-spacing: -.01em; }
+.modeNav { display: flex; background: var(--hover); border-radius: 11px; padding: 3px; margin: 3px 0 11px; }
+.modeNav button { flex: 1; height: 34px; border: none; background: transparent; border-radius: 9px; color: var(--text-2); font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.modeNav button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(17, 24, 39, .08); }
+.newBtn { height: 37px; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 10px; color: var(--text); font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: var(--shadow-1); }
+.histLabel { font-size: 11px; letter-spacing: .04em; color: var(--sub); padding: 14px 8px 6px; }
+.sessSearch { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px; margin: 0 3px 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; color: var(--sub); font-size: 13px; }
+.sess { padding: 8px 10px; border-radius: 10px; margin: 1px 0; }
+.sess.cur { background: var(--sess-current); }
+.sessT { font-size: 13.5px; font-weight: 500; color: var(--text-2); display: flex; align-items: center; gap: 6px; }
+.sess.cur .sessT { color: var(--text); font-weight: 600; }
+.sessM { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--sub); margin-top: 2px; }
+.pill { font-size: 11px; padding: 1px 8px; border-radius: 999px; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.sideFoot { margin-top: auto; border-top: 1px solid var(--line); padding: 10px 4px 0; display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 600; }
+.avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 12px; }
+
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.top { height: 48px; flex: none; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; padding: 0 12px; }
+.top .crumb { font-size: 13.5px; font-weight: 600; color: var(--text-2); display: flex; align-items: center; gap: 6px; }
+.iconBtn { width: 32px; height: 32px; border: none; background: transparent; border-radius: 8px; color: var(--text-2); display: inline-flex; align-items: center; justify-content: center; font-size: 18px; }
+.iconBtn:hover { background: var(--hover); }
+.modelSel { height: 32px; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 0 12px; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.body { flex: 1; overflow: auto; position: relative; }
+.screen { display: none; min-height: 100%; }
+.screen.on { display: flex; flex-direction: column; }
+
+/* 首页 */
+.hero { display: flex; flex-direction: column; align-items: center; padding: 20px 24px 40px; }
+.heroMark { width: 54px; height: 54px; border-radius: 14px; margin-bottom: 14px; }
+.heroTitle { font-size: 1.85rem; font-weight: 700; letter-spacing: -.02em; margin: 0 0 .45rem; }
+.heroSub { font-size: .9rem; color: var(--sub); margin: 0 0 1.3rem; text-align: center; }
+.scenes { display: flex; gap: .4rem; flex-wrap: wrap; justify-content: center; margin-bottom: .9rem; }
+.scene { border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); color: var(--text-2); height: 2rem; padding: 0 .85rem; font-size: .8rem; display: inline-flex; align-items: center; gap: .35rem; }
+.scene .ti { color: var(--sub); font-size: 15px; }
+.scene.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.scene.on .ti { color: var(--accent); }
+.scene.auto { border-style: dashed; }
+.scene.del { text-decoration: line-through; opacity: .45; border-style: dotted; }
+.inputCard { width: min(100%, 820px); border: 1px solid var(--line-strong); border-radius: 18px; background: var(--surface); box-shadow: 0 2px 12px rgba(17, 24, 39, .05); padding: .75rem .8rem .6rem 1.1rem; }
+.inputCard textarea { width: 100%; border: none; outline: none; resize: none; background: transparent; font-size: .95rem; height: 44px; }
+.inputCard textarea::placeholder { color: var(--sub); }
+.inputFoot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.send { width: 36px; height: 36px; border-radius: 50%; border: none; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 17px; opacity: .4; }
+
+/* 报表目录 */
+.catalog { width: min(100%, 820px); margin-top: 1.1rem; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-1); overflow: hidden; }
+.catHead { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; flex-wrap: wrap; }
+.catHead h3 { margin: 0; font-size: .98rem; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.catHead .cnt { font-size: 12px; color: var(--sub); }
+.catSearch { margin-left: auto; display: flex; align-items: center; gap: 6px; height: 32px; width: 240px; max-width: 100%; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--sub); }
+.catSearch input { border: none; outline: none; background: transparent; width: 100%; font-size: 13px; }
+.bizTabs { display: flex; gap: 6px; padding: 0 16px 10px; flex-wrap: wrap; }
+.bizTab { height: 28px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text-2); font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+.bizTab small { font-size: 11px; color: var(--sub); }
+.bizTab.on { background: var(--accent-soft); border-color: transparent; color: var(--accent); font-weight: 600; }
+.bizTab.on small { color: var(--accent); }
+.catList { border-top: 1px solid var(--line); padding: 6px 8px; max-height: 290px; overflow: auto; }
+.catGroup { font-size: 11.5px; color: var(--sub); padding: 8px 10px 4px; letter-spacing: .03em; }
+.catRow { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 10px; cursor: pointer; }
+.catRow:hover { background: var(--hover); }
+.catRow.sel { background: var(--accent-soft); }
+.cb { width: 17px; height: 17px; flex: none; border: 1.5px solid var(--line-strong); border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; background: var(--surface); }
+.catRow.sel .cb { background: var(--accent); border-color: var(--accent); }
+.rIcon { width: 32px; height: 32px; flex: none; border-radius: 9px; background: var(--hover); color: var(--text-2); display: flex; align-items: center; justify-content: center; font-size: 17px; }
+.catRow.sel .rIcon { background: var(--surface); color: var(--accent); }
+.rMain { flex: 1; min-width: 0; }
+.rName { font-size: .88rem; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.rDesc { font-size: .78rem; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tagEx { font-size: 10.5px; font-weight: 500; padding: 0 6px; border-radius: 999px; border: 1px dashed var(--line-strong); color: var(--sub); }
+.rMeta { display: flex; align-items: center; gap: 8px; flex: none; font-size: 11.5px; color: var(--sub); }
+.biz { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--hover); color: var(--text-2); }
+.catRow.sel .biz { background: var(--surface); }
+.catFoot { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); background: var(--bg); flex-wrap: wrap; }
+.catFoot .picked { font-size: 12.5px; color: var(--text-2); min-width: 0; flex: 1; }
+.catFoot .picked b { color: var(--text); font-weight: 600; }
+.err { font-size: 12px; color: var(--danger); }
+.btnP { height: 34px; padding: 0 16px; border-radius: 999px; border: none; background: var(--accent); color: #fff; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+.btnP:hover { background: var(--accent-deep); }
+.dtBtn { font-size: .76rem; line-height: 1; padding: .48rem .8rem; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text-2); display: inline-flex; align-items: center; gap: 5px; }
+.dtBtn:hover { border-color: var(--accent); color: var(--accent); }
+.dtBtn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.dtBtn.dtPrimary { background: var(--accent-soft); border-color: transparent; color: var(--accent); font-weight: 600; }
+.dtBtn.dtPrimary:hover { background: var(--accent); color: #fff; }
+.dtHint { font-size: .72rem; color: var(--sub); }
+
+/* 对话 */
+.conv { width: min(calc(100% - 3rem), 820px); margin: 0 auto; padding: 26px 0 30px; display: flex; flex-direction: column; gap: 18px; flex: 1; }
+.u { align-self: flex-end; max-width: 72%; background: var(--bubble-user); padding: .6rem .95rem; border-radius: 16px; font-size: .92rem; }
+.u .uSub { font-size: .76rem; color: var(--sub); margin-top: 2px; }
+.a { display: flex; gap: 10px; align-items: flex-start; }
+.a > img { width: 26px; height: 26px; border-radius: 7px; flex: none; margin-top: 2px; }
+.aBody { flex: 1; min-width: 0; }
+.sender { font-size: .76rem; color: var(--sub); margin-bottom: 4px; }
+.aText { font-size: .93rem; margin: 0 0 8px; }
+.askCard { border: 1px solid var(--line-strong); border-radius: 16px; background: var(--surface); padding: .85rem .9rem .75rem; box-shadow: var(--shadow-2); }
+.askHead { display: flex; align-items: center; gap: .55rem; margin: 0 .3rem .7rem; }
+.askHead .ti { font-size: 18px; color: var(--accent); }
+.askTitle { font-size: .9rem; font-weight: 650; }
+.askSub { font-size: .74rem; color: var(--sub); font-family: ui-monospace, "SF Mono", Consolas, monospace; }
+.askGroup { font-size: .76rem; font-weight: 600; color: var(--text-2); margin: .3rem .3rem .45rem; padding-top: .55rem; border-top: 1px dashed var(--line); display: flex; align-items: center; gap: 6px; }
+.askGroup:first-of-type { border-top: none; padding-top: 0; }
+.askGroup small { font-weight: 400; color: var(--sub); }
+.askFields { display: flex; flex-direction: column; gap: .55rem; margin: 0 .3rem .8rem; }
+.field { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); column-gap: .8rem; align-items: center; }
+.fLabel { font-size: .8rem; color: var(--text-2); }
+.fLabel i { color: var(--danger); font-style: normal; }
+.inp { height: 34px; width: 100%; border: 1px solid var(--line-strong); border-radius: 9px; padding: 0 10px; font-size: .85rem; background: var(--surface); outline: none; }
+.inp:focus { border-color: var(--accent); box-shadow: var(--ring); }
+.inp::placeholder { color: var(--sub); }
+.range { display: flex; align-items: center; gap: .4rem; }
+.range span { color: var(--sub); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { height: 28px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text-2); font-size: .78rem; display: inline-flex; align-items: center; gap: 5px; }
+.chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.tokenBox { min-height: 34px; display: flex; align-items: center; flex-wrap: wrap; gap: 5px; border: 1px solid var(--line-strong); border-radius: 9px; padding: 3px 6px; }
+.token { font-size: .78rem; padding: 1px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); display: inline-flex; align-items: center; gap: 4px; }
+.askActs { display: flex; align-items: center; gap: 8px; margin: 0 .3rem; }
+.askActs .dtHint { margin-left: auto; }
+.done { font-size: .8rem; color: var(--text-2); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: .55rem .8rem; display: flex; gap: 8px; align-items: flex-start; }
+.done .ti { color: var(--ok); font-size: 16px; margin-top: 1px; }
+.stepLine { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .78rem; color: var(--sub); }
+.stepLine .ti-circle-check { color: var(--ok); font-size: 16px; }
+.lockPill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text-2); }
+.resCard { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); overflow: hidden; }
+.resHead { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.resHead b { font-size: .88rem; }
+.resHead .meta { font-size: .74rem; color: var(--sub); }
+table.md { width: 100%; border-collapse: collapse; font-size: .85rem; }
+table.md th { background: var(--hover); color: var(--text-2); font-weight: 600; font-size: .78rem; text-align: left; padding: 8px 12px; }
+table.md td { padding: 8px 12px; border-top: 1px solid var(--line); }
+table.md .num { text-align: right; font-variant-numeric: tabular-nums; }
+table.md tr.sum td { font-weight: 600; background: var(--bg); }
+.chartBox { padding: 14px 16px 10px; }
+.dataTools { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; margin: .55rem 0 .2rem; }
+.anaGate { margin-top: .6rem; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: .6rem .8rem; border: 1px dashed var(--line-strong); border-radius: 12px; }
+.anaGate .btnP .ti { font-size: 15px; }
+.anaGate .gText { font-size: .78rem; color: var(--sub); }
+.anaCalc { font-size: .76rem; color: var(--text-2); background: var(--hover); border-radius: 10px; padding: .45rem .7rem; margin-bottom: 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.anaText p { margin: 0 0 6px; font-size: .93rem; }
+.anaText ul { margin: 4px 0 8px; padding-left: 1.2rem; font-size: .9rem; }
+.anaText li { margin: 3px 0; }
+.follow { display: flex; gap: .45rem; flex-wrap: wrap; margin-top: 8px; }
+.follow button { height: 2rem; padding: 0 .85rem; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text-2); font-size: .8rem; font-weight: 500; }
+.follow button:hover { border-color: var(--accent); color: var(--accent); }
+.dock { position: sticky; bottom: 0; padding: .4rem 1.2rem 1rem; background: var(--bg); display: flex; justify-content: center; }
+.dock .inputCard textarea { height: 30px; overflow: hidden; }
+.legend { display: flex; gap: 14px; font-size: .74rem; color: var(--sub); margin-top: 4px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+@media (max-width: 1000px) { .side { display: none; } }
+@media (max-width: 640px) { .field { grid-template-columns: minmax(0, 1fr); row-gap: .2rem; } .rMeta .pc { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="dsBar">
+  <b>设计稿 · Fiori 报表场景</b>
+  <button class="dsTab on" data-s="1">1 报表目录</button>
+  <button class="dsTab" data-s="2">2 填参数</button>
+  <button class="dsTab" data-s="3">3 取数结果</button>
+  <button class="dsTab" data-s="4">4 模型分析</button>
+  <span class="dsNote">可以直接点界面走流程；除 shipment報表 外均为示例报表</span>
+  <span class="dsSp"></span>
+  <button class="dsTab" id="themeBtn">深色</button>
+</div>
+
+<div class="app">
+  <aside class="side">
+    <div class="brand"><img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ2FsZUciIHgxPSIxNCIgeTE9IjYiIHgyPSI1MCIgeTI9IjYwIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IiMzN0E1RkYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIuNTIiIHN0b3AtY29sb3I9IiMyRjZCRkYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjOEI1Q0Y2Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEcg5aSW546v77ya5Y+z5LiK5byA5Y+jIOKGkiDpgIbml7bpkojnu5XooYzoh7Plj7PkuIvvvIjlsL7moLnlpITmlLblsL7vvIkgLS0+CiAgPHBhdGggZD0iTSA0MC43NSAxNS44IEEgMTcuNSAxNy41IDAgMSAwIDQ2LjggNDAuMyIKICAgICAgICBzdHJva2U9InVybCgjZ2FsZUcpIiBzdHJva2Utd2lkdGg9IjkuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBmaWxsPSJub25lIi8+CiAgPCEtLSDmsJTms6HlsL7lt7TvvJrlj7PkuIvlsJbop5IgLS0+CiAgPHBhdGggZD0iTSA0Ny40IDM5LjIgTCAzOS40IDQ2LjkgTCA1NC41IDU3LjUgWiIKICAgICAgICBmaWxsPSJ1cmwoI2dhbGVHKSIgc3Ryb2tlPSJ1cmwoI2dhbGVHKSIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPCEtLSBHIOWGhemSqe+8muiHquWPs+S+p+eOr+i6q+WQkeW3puWNt+WFpe+8jOaUtuWcqOS4ieeCueS4i+aWuSAtLT4KICA8cGF0aCBkPSJNIDQ2IDM3LjIgUSAzOC41IDM4LjQgMzcuMiAzMyIKICAgICAgICBzdHJva2U9InVybCgjZ2FsZUcpIiBzdHJva2Utd2lkdGg9IjcuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBmaWxsPSJub25lIi8+CiAgPCEtLSDmiZPlrZfkuInngrkgLS0+CiAgPGNpcmNsZSBjeD0iMjgiIGN5PSIyOS41IiByPSIyLjciIGZpbGw9IiMzOEJERjgiLz4KICA8Y2lyY2xlIGN4PSIzNC41IiBjeT0iMjkuNSIgcj0iMi43IiBmaWxsPSIjM0I4MkY2Ii8+CiAgPGNpcmNsZSBjeD0iNDEiIGN5PSIyOS41IiByPSIyLjciIGZpbGw9IiM4QjVDRjYiLz4KPC9zdmc+Cg==" alt=""><span>Gale-SAP</span></div>
+    <div class="modeNav"><button><i class="ti ti-message"></i>对话</button><button class="on"><i class="ti ti-bulb"></i>Agent</button></div>
+    <button class="newBtn"><i class="ti ti-plus"></i>新建任务</button>
+    <div class="histLabel">Agent 会话</div>
+    <div class="sessSearch"><i class="ti ti-search"></i>搜索会话标题…</div>
+    <div class="sess" id="sessNew" style="display:none">
+      <div class="sessT"><i class="ti ti-bulb" style="color:var(--accent)"></i>10 月 HHZZ 出货</div>
+      <div class="sessM">10-19 14:20<span>Fiori 报表</span><span class="pill ok">已完成</span></div>
+    </div>
+    <div class="sess">
+      <div class="sessT"><i class="ti ti-bulb" style="color:var(--accent)"></i>hi</div>
+      <div class="sessM">10-11 11:07<span>代码分析</span><span class="pill ok">已完成</span></div>
+    </div>
+    <div class="sess">
+      <div class="sessT"><i class="ti ti-bulb" style="color:var(--accent)"></i>hi</div>
+      <div class="sessM">10-11 11:07<span>数据分析</span><span class="pill ok">已完成</span></div>
+    </div>
+    <div class="sideFoot"><div class="avatar">TF</div>tangfeng</div>
+  </aside>
+
+  <section class="main">
+    <div class="top">
+      <button class="iconBtn"><i class="ti ti-menu-2"></i></button>
+      <span class="crumb">✦ Agent · Fiori 报表</span>
+      <span style="flex:1"></span>
+      <span class="modelSel">智能路由（按任务自动选…）<i class="ti ti-chevron-down"></i></span>
+      <button class="iconBtn" id="themeBtn2"><i class="ti ti-moon"></i></button>
+      <button class="iconBtn"><i class="ti ti-download"></i></button>
+    </div>
+
+    <div class="body">
+
+      <!-- 1 报表目录 -->
+      <div class="screen on" id="s1">
+        <div class="hero">
+          <img class="heroMark" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ2FsZUciIHgxPSIxNCIgeTE9IjYiIHgyPSI1MCIgeTI9IjYwIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IiMzN0E1RkYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIuNTIiIHN0b3AtY29sb3I9IiMyRjZCRkYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjOEI1Q0Y2Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEcg5aSW546v77ya5Y+z5LiK5byA5Y+jIOKGkiDpgIbml7bpkojnu5XooYzoh7Plj7PkuIvvvIjlsL7moLnlpITmlLblsL7vvIkgLS0+CiAgPHBhdGggZD0iTSA0MC43NSAxNS44IEEgMTcuNSAxNy41IDAgMSAwIDQ2LjggNDAuMyIKICAgICAgICBzdHJva2U9InVybCgjZ2FsZUcpIiBzdHJva2Utd2lkdGg9IjkuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBmaWxsPSJub25lIi8+CiAgPCEtLSDmsJTms6HlsL7lt7TvvJrlj7PkuIvlsJbop5IgLS0+CiAgPHBhdGggZD0iTSA0Ny40IDM5LjIgTCAzOS40IDQ2LjkgTCA1NC41IDU3LjUgWiIKICAgICAgICBmaWxsPSJ1cmwoI2dhbGVHKSIgc3Ryb2tlPSJ1cmwoI2dhbGVHKSIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPCEtLSBHIOWGhemSqe+8muiHquWPs+S+p+eOr+i6q+WQkeW3puWNt+WFpe+8jOaUtuWcqOS4ieeCueS4i+aWuSAtLT4KICA8cGF0aCBkPSJNIDQ2IDM3LjIgUSAzOC41IDM4LjQgMzcuMiAzMyIKICAgICAgICBzdHJva2U9InVybCgjZ2FsZUcpIiBzdHJva2Utd2lkdGg9IjcuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBmaWxsPSJub25lIi8+CiAgPCEtLSDmiZPlrZfkuInngrkgLS0+CiAgPGNpcmNsZSBjeD0iMjgiIGN5PSIyOS41IiByPSIyLjciIGZpbGw9IiMzOEJERjgiLz4KICA8Y2lyY2xlIGN4PSIzNC41IiBjeT0iMjkuNSIgcj0iMi43IiBmaWxsPSIjM0I4MkY2Ii8+CiAgPGNpcmNsZSBjeD0iNDEiIGN5PSIyOS41IiByPSIyLjciIGZpbGw9IiM4QjVDRjYiLz4KPC9zdmc+Cg==" alt="">
+          <h1 class="heroTitle">今天想让 Agent 做什么?</h1>
+          <p class="heroSub">从报表目录选报表、填参数、实时取数；需要时再交给模型分析</p>
+          <div class="scenes">
+            <span class="scene"><i class="ti ti-file-text"></i>报表执行</span>
+            <span class="scene on"><i class="ti ti-chart-line"></i>Fiori 报表</span>
+            <span class="scene"><i class="ti ti-database"></i>数据分析</span>
+            <span class="scene"><i class="ti ti-code"></i>代码分析</span>
+            <span class="scene auto"><i class="ti ti-bulb"></i>自动</span>
+          </div>
+          <div class="inputCard">
+            <textarea placeholder="说报表名或业务，例如「10 月 HHZZ 的出货」；也可以直接在下方目录里勾选"></textarea>
+            <div class="inputFoot"><button class="iconBtn"><i class="ti ti-paperclip"></i></button><button class="send"><i class="ti ti-send"></i></button></div>
+          </div>
+
+          <div class="catalog">
+            <div class="catHead">
+              <h3><i class="ti ti-layout-list" style="color:var(--accent)"></i>报表目录</h3>
+              <span class="cnt" id="catCnt"></span>
+              <label class="catSearch"><i class="ti ti-search"></i><input id="catQ" placeholder="搜报表名、业务、关键词"></label>
+            </div>
+            <div class="bizTabs" id="bizTabs"></div>
+            <div class="catList" id="catList"></div>
+            <div class="catFoot">
+              <span class="picked" id="picked"></span>
+              <span class="err" id="catErr"></span>
+              <button class="dtBtn" id="clearSel">清空</button>
+              <button class="btnP" id="toParams">填参数<i class="ti ti-arrow-right"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2 填参数 -->
+      <div class="screen" id="s2">
+        <div class="conv">
+          <div class="u" id="s2User"></div>
+          <div class="a">
+            <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ2FsZUciIHgxPSIxNCIgeTE9IjYiIHgyPSI1MCIgeTI9IjYwIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IiMzN0E1RkYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIuNTIiIHN0b3AtY29sb3I9IiMyRjZCRkYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjOEI1Q0Y2Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEcg5aSW546v77ya5Y+z5LiK5byA5Y+jIOKGkiDpgIbml7bpkojnu5XooYzoh7Plj7PkuIvvvIjlsL7moLnlpITmlLblsL7vvIkgLS0+CiAgPHBhdGggZD0iTSA0MC43NSAxNS44IEEgMTcuNSAxNy41IDAgMSAwIDQ2LjggNDAuMyIKICAgICAgICBzdHJva2U9InVybCgjZ2FsZUcpIiBzdHJva2Utd2lkdGg9IjkuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBmaWxsPSJub25lIi8+CiAgPCEtLSDmsJTms6HlsL7lt7TvvJrlj7PkuIvlsJbop5IgLS0+CiAgPHBhdGggZD0iTSA0Ny40IDM5LjIgTCAzOS40IDQ2LjkgTCA1NC41IDU3LjUgWiIKICAgICAgICBmaWxsPSJ1cmwoI2dhbGVHKSIgc3Ryb2tlPSJ1cmwoI2dhbGVHKSIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPCEtLSBHIOWGhemSqe+8muiHquWPs+S+p+eOr+i6q+WQkeW3puWNt+WFpe+8jOaUtuWcqOS4ieeCueS4i+aWuSAtLT4KICA8cGF0aCBkPSJNIDQ2IDM3LjIgUSAzOC41IDM4LjQgMzcuMiAzMyIKICAgICAgICBzdHJva2U9InVybCgjZ2FsZUcpIiBzdHJva2Utd2lkdGg9IjcuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBmaWxsPSJub25lIi8+CiAgPCEtLSDmiZPlrZfkuInngrkgLS0+CiAgPGNpcmNsZSBjeD0iMjgiIGN5PSIyOS41IiByPSIyLjciIGZpbGw9IiMzOEJERjgiLz4KICA8Y2lyY2xlIGN4PSIzNC41IiBjeT0iMjkuNSIgcj0iMi43IiBmaWxsPSIjM0I4MkY2Ii8+CiAgPGNpcmNsZSBjeD0iNDEiIGN5PSIyOS41IiByPSIyLjciIGZpbGw9IiM4QjVDRjYiLz4KPC9zdmc+Cg==" alt="">
+            <div class="aBody">
+              <div class="sender">Agent</div>
+              <p class="aText" id="s2Text"></p>
+              <div class="askCard">
+                <div class="askHead"><i class="ti ti-adjustments-horizontal"></i><span class="askTitle" id="askTitle"></span><span class="askSub" id="askSub"></span></div>
+                <div id="askBody"></div>
+                <div class="askActs">
+                  <button class="btnP" id="runBtn"><i class="ti ti-player-play"></i>取数</button>
+                  <button class="dtBtn" data-go="1">返回目录</button>
+                  <span class="dtHint">取数只读，数据不会发给模型</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="dock"><div class="inputCard"><textarea placeholder="也可以直接说，例如「日期改成 9 月到 10 月」"></textarea><div class="inputFoot"><button class="iconBtn"><i class="ti ti-paperclip"></i></button><button class="send"><i class="ti ti-send"></i></button></div></div></div>
+      </div>
+
+      <!-- 3 取数结果 / 4 模型分析 -->
+      <div class="screen" id="s3">
+        <div class="conv">
+          <div class="u" id="s3User"></div>
+          <div class="a">
+            <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ2FsZUciIHgxPSIxNCIgeTE9IjYiIHgyPSI1MCIgeTI9IjYwIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IiMzN0E1RkYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIuNTIiIHN0b3AtY29sb3I9IiMyRjZCRkYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjOEI1Q0Y2Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEcg5aSW546v77ya5Y+z5LiK5byA5Y+jIOKGkiDpgIbml7bpkojnu5XooYzoh7Plj7PkuIvvvIjlsL7moLnlpITmlLblsL7vvIkgLS0+CiAgPHBhdGggZD0iTSA0MC43NSAxNS44IEEgMTcuNSAxNy41IDAgMSAwIDQ2LjggNDAuMyIKICAgICAgICBzdHJva2U9InVybCgjZ2FsZUcpIiBzdHJva2Utd2lkdGg9IjkuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBmaWxsPSJub25lIi8+CiAgPCEtLSDmsJTms6HlsL7lt7TvvJrlj7PkuIvlsJbop5IgLS0+CiAgPHBhdGggZD0iTSA0Ny40IDM5LjIgTCAzOS40IDQ2LjkgTCA1NC41IDU3LjUgWiIKICAgICAgICBmaWxsPSJ1cmwoI2dhbGVHKSIgc3Ryb2tlPSJ1cmwoI2dhbGVHKSIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPCEtLSBHIOWGhemSqe+8muiHquWPs+S+p+eOr+i6q+WQkeW3puWNt+WFpe+8jOaUtuWcqOS4ieeCueS4i+aWuSAtLT4KICA8cGF0aCBkPSJNIDQ2IDM3LjIgUSAzOC41IDM4LjQgMzcuMiAzMyIKICAgICAgICBzdHJva2U9InVybCgjZ2FsZUcpIiBzdHJva2Utd2lkdGg9IjcuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBmaWxsPSJub25lIi8+CiAgPCEtLSDmiZPlrZfkuInngrkgLS0+CiAgPGNpcmNsZSBjeD0iMjgiIGN5PSIyOS41IiByPSIyLjciIGZpbGw9IiMzOEJERjgiLz4KICA8Y2lyY2xlIGN4PSIzNC41IiBjeT0iMjkuNSIgcj0iMi43IiBmaWxsPSIjM0I4MkY2Ii8+CiAgPGNpcmNsZSBjeD0iNDEiIGN5PSIyOS41IiByPSIyLjciIGZpbGw9IiM4QjVDRjYiLz4KPC9zdmc+Cg==" alt="">
+            <div class="aBody">
+              <div class="sender">Agent</div>
+              <div class="done"><i class="ti ti-circle-check"></i><div id="paramSummary"></div></div>
+            </div>
+          </div>
+          <div class="stepLine" style="padding-left:36px"><i class="ti ti-circle-check"></i><span id="fetchInfo"></span><span class="lockPill" id="lockPill"><i class="ti ti-eye-off"></i>模型只知道行数和列名，没看到数据</span></div>
+          <div id="results"></div>
+          <div id="analysis"></div>
+        </div>
+        <div class="dock"><div class="inputCard"><textarea placeholder="继续追问，例如「按 region 下钻」「和 9 月对比」"></textarea><div class="inputFoot"><button class="iconBtn"><i class="ti ti-paperclip"></i></button><button class="send"><i class="ti ti-send"></i></button></div></div></div>
+      </div>
+
+    </div>
+  </section>
+</div>
+
+<script>
+var LOGO = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ2FsZUciIHgxPSIxNCIgeTE9IjYiIHgyPSI1MCIgeTI9IjYwIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IiMzN0E1RkYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIuNTIiIHN0b3AtY29sb3I9IiMyRjZCRkYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjOEI1Q0Y2Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8IS0tIEcg5aSW546v77ya5Y+z5LiK5byA5Y+jIOKGkiDpgIbml7bpkojnu5XooYzoh7Plj7PkuIvvvIjlsL7moLnlpITmlLblsL7vvIkgLS0+CiAgPHBhdGggZD0iTSA0MC43NSAxNS44IEEgMTcuNSAxNy41IDAgMSAwIDQ2LjggNDAuMyIKICAgICAgICBzdHJva2U9InVybCgjZ2FsZUcpIiBzdHJva2Utd2lkdGg9IjkuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBmaWxsPSJub25lIi8+CiAgPCEtLSDmsJTms6HlsL7lt7TvvJrlj7PkuIvlsJbop5IgLS0+CiAgPHBhdGggZD0iTSA0Ny40IDM5LjIgTCAzOS40IDQ2LjkgTCA1NC41IDU3LjUgWiIKICAgICAgICBmaWxsPSJ1cmwoI2dhbGVHKSIgc3Ryb2tlPSJ1cmwoI2dhbGVHKSIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPCEtLSBHIOWGhemSqe+8muiHquWPs+S+p+eOr+i6q+WQkeW3puWNt+WFpe+8jOaUtuWcqOS4ieeCueS4i+aWuSAtLT4KICA8cGF0aCBkPSJNIDQ2IDM3LjIgUSAzOC41IDM4LjQgMzcuMiAzMyIKICAgICAgICBzdHJva2U9InVybCgjZ2FsZUcpIiBzdHJva2Utd2lkdGg9IjcuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBmaWxsPSJub25lIi8+CiAgPCEtLSDmiZPlrZfkuInngrkgLS0+CiAgPGNpcmNsZSBjeD0iMjgiIGN5PSIyOS41IiByPSIyLjciIGZpbGw9IiMzOEJERjgiLz4KICA8Y2lyY2xlIGN4PSIzNC41IiBjeT0iMjkuNSIgcj0iMi43IiBmaWxsPSIjM0I4MkY2Ii8+CiAgPGNpcmNsZSBjeD0iNDEiIGN5PSIyOS41IiByPSIyLjciIGZpbGw9IiM4QjVDRjYiLz4KPC9zdmc+Cg==";
+var REPORTS = [
+  { id: "shp", name: "shipment報表", biz: "销量分析", icon: "ti-truck-delivery", desc: "按 ship mode / region / site / BU / model 看月出货量", svc: "ZSD_IDP_001_SRV", real: true,
+    own: [{ k: "dim", label: "維度", req: true, type: "chips", opts: ["ship mode", "region", "SITE", "BU", "MODEL"], on: ["ship mode"] },
+          { k: "model", label: "model" }, { k: "region", label: "region" }, { k: "bu", label: "bu" }] },
+  { id: "ord", name: "订单达成率", biz: "销量分析", icon: "ti-target-arrow", desc: "按客户、机种看订单完成情况", svc: "示例",
+    own: [{ k: "cust", label: "客户" }, { k: "mdl", label: "机种" }] },
+  { id: "prc", name: "出货单价趋势", biz: "销量分析", icon: "ti-trending-up", desc: "按 BU 看月均出货单价", svc: "示例",
+    own: [{ k: "bu", label: "BU" }, { k: "cur", label: "币别", ph: "USD" }] },
+  { id: "rank", name: "客户出货排名", biz: "销量分析", icon: "ti-list-numbers", desc: "按出货量给客户排名", svc: "示例",
+    own: [{ k: "top", label: "前 N 名", ph: "10" }] },
+  { id: "po", name: "采购到货及时率", biz: "采购", icon: "ti-package-import", desc: "按供应商看到货是否准时", svc: "示例",
+    own: [{ k: "ven", label: "供应商" }] },
+  { id: "lead", name: "供应商交期", biz: "采购", icon: "ti-clock-hour-4", desc: "按物料看平均交期", svc: "示例",
+    own: [{ k: "mat", label: "物料" }] },
+  { id: "wo", name: "工单达成率", biz: "生产", icon: "ti-building-factory-2", desc: "按产线看工单完成率", svc: "示例",
+    own: [{ k: "line", label: "产线" }] }
+];
+var COMMON = [{ k: "DATE_RANGE", label: "日期区间", req: true }, { k: "SITE", label: "site" }];
+var biz = "全部", sel = { shp: true }, analyzed = false;
+
+function $(id) { return document.getElementById(id); }
+function picked() { return REPORTS.filter(function (r) { return sel[r.id]; }); }
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+function go(n) {
+  document.querySelectorAll(".dsTab[data-s]").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-s") === String(n)); });
+  $("s1").classList.toggle("on", n === 1);
+  $("s2").classList.toggle("on", n === 2);
+  $("s3").classList.toggle("on", n >= 3);
+  $("sessNew").style.display = n === 1 ? "none" : "";
+  $("sessNew").classList.toggle("cur", n !== 1);
+  if (!picked().length) { sel.shp = true; }
+  if (n === 2) { renderParams(); }
+  if (n >= 3) { analyzed = n === 4; renderResults(); }
+  document.querySelector(".body").scrollTop = 0;
+}
+
+/* ---------- 1 报表目录 ---------- */
+function renderCatalog() {
+  var q = $("catQ").value.trim().toLowerCase();
+  var bizList = ["全部", "销量分析", "采购", "生产"];
+  $("bizTabs").innerHTML = bizList.map(function (b) {
+    var n = REPORTS.filter(function (r) { return b === "全部" || r.biz === b; }).length;
+    return '<button class="bizTab' + (b === biz ? " on" : "") + '" data-b="' + b + '">' + b + '<small>' + n + '</small></button>';
+  }).join("");
+  var rows = REPORTS.filter(function (r) {
+    return (biz === "全部" || r.biz === biz) && (!q || (r.name + r.biz + r.desc).toLowerCase().indexOf(q) >= 0);
+  });
+  $("catCnt").textContent = REPORTS.length + " 张已登记";
+  var html = "", last = "";
+  rows.forEach(function (r) {
+    if (biz === "全部" && r.biz !== last) { html += '<div class="catGroup">' + r.biz + '</div>'; last = r.biz; }
+    var on = !!sel[r.id];
+    html += '<div class="catRow' + (on ? " sel" : "") + '" data-r="' + r.id + '">' +
+      '<span class="cb">' + (on ? '<i class="ti ti-check"></i>' : "") + '</span>' +
+      '<span class="rIcon"><i class="ti ' + r.icon + '"></i></span>' +
+      '<span class="rMain"><span class="rName">' + esc(r.name) + (r.real ? "" : ' <span class="tagEx">示例</span>') + '</span><span class="rDesc" style="display:block">' + esc(r.desc) + '</span></span>' +
+      '<span class="rMeta"><span class="pc">' + (r.own.length + COMMON.length) + ' 个参数</span><span class="biz">' + r.biz + '</span></span></div>';
+  });
+  $("catList").innerHTML = html || '<div style="padding:22px;text-align:center;color:var(--sub);font-size:13px">没有匹配的报表，换个关键词试试</div>';
+  var p = picked();
+  $("picked").innerHTML = p.length ? '已选 <b>' + p.length + '</b> 张：' + p.map(function (r) { return esc(r.name); }).join("、") : '还没选报表，可以多选';
+  $("toParams").innerHTML = (p.length > 1 ? "填参数（" + p.length + " 张）" : "填参数") + '<i class="ti ti-arrow-right"></i>';
+  document.querySelectorAll(".bizTab").forEach(function (b) { b.onclick = function () { biz = b.getAttribute("data-b"); renderCatalog(); }; });
+  document.querySelectorAll(".catRow").forEach(function (el) {
+    el.onclick = function () { var id = el.getAttribute("data-r"); if (sel[id]) { delete sel[id]; } else { sel[id] = true; } $("catErr").textContent = ""; renderCatalog(); };
+  });
+}
+$("catQ").oninput = renderCatalog;
+$("clearSel").onclick = function () { sel = {}; renderCatalog(); };
+$("toParams").onclick = function () {
+  if (!picked().length) { $("catErr").textContent = "先勾选至少一张报表"; return; }
+  go(2);
+};
+
+/* ---------- 2 填参数 ---------- */
+function fieldHtml(f) {
+  var label = '<span class="fLabel">' + esc(f.label) + (f.req ? ' <i>*</i>' : "") + '</span>';
+  var ctl;
+  if (f.k === "DATE_RANGE") {
+    ctl = '<div class="range"><input class="inp" value="2026-10-01"><span>~</span><input class="inp" value="2026-10-31"></div>';
+  } else if (f.k === "SITE") {
+    ctl = '<div class="tokenBox"><span class="token">HHZZ <i class="ti ti-x" style="font-size:11px"></i></span><input class="inp" style="border:none;box-shadow:none;height:26px;flex:1;min-width:80px;padding:0 4px" placeholder="可多值，逗号分隔"></div>';
+  } else if (f.type === "chips") {
+    ctl = '<div class="chips">' + f.opts.map(function (o) { return '<button class="chip' + (f.on.indexOf(o) >= 0 ? " on" : "") + '">' + o + '</button>'; }).join("") + '</div>';
+  } else {
+    ctl = '<input class="inp" placeholder="' + esc(f.ph || "全部") + '">';
+  }
+  return '<div class="field">' + label + ctl + '</div>';
+}
+function renderParams() {
+  var p = picked(), multi = p.length > 1;
+  $("s2User").innerHTML = "选择报表：" + p.map(function (r) { return esc(r.name); }).join("、") + '<div class="uSub">来自报表目录</div>';
+  $("s2Text").textContent = multi ? "共选了 " + p.length + " 张报表。日期、site 是共同参数，填一次就行；其余按报表分组：" : "请确认「" + p[0].name + "」的参数：";
+  $("askTitle").textContent = multi ? p.length + " 张报表的参数" : p[0].name;
+  $("askSub").textContent = multi ? "" : p[0].svc;
+  var h = "";
+  if (multi) { h += '<div class="askGroup"><i class="ti ti-link"></i>共同参数 <small>所有选中的报表都用</small></div>'; }
+  h += '<div class="askFields">' + COMMON.map(fieldHtml).join("") + (multi ? "" : p[0].own.map(fieldHtml).join("")) + '</div>';
+  if (multi) {
+    p.forEach(function (r) {
+      h += '<div class="askGroup"><i class="ti ' + r.icon + '"></i>' + esc(r.name) + (r.real ? "" : ' <small>示例</small>') + '</div><div class="askFields">' + r.own.map(fieldHtml).join("") + '</div>';
+    });
+  }
+  $("askBody").innerHTML = h;
+  $("runBtn").innerHTML = '<i class="ti ti-player-play"></i>' + (multi ? "取数（" + p.length + " 张）" : "取数");
+  document.querySelectorAll("#askBody .chip").forEach(function (c) { c.onclick = function () { c.classList.toggle("on"); }; });
+}
+$("runBtn").onclick = function () { go(3); };
+
+/* ---------- 3 取数结果 / 4 分析 ---------- */
+var SHP = [["D", 139418], ["C", 33390]];
+function fmt(n) { return n.toLocaleString("en-US"); }
+function shpTable() {
+  var tot = SHP.reduce(function (s, r) { return s + r[1]; }, 0);
+  return '<table class="md"><tr><th>Ship Mode: D-DS</th><th class="num">202610</th></tr>' +
+    SHP.map(function (r) { return '<tr><td>' + r[0] + '</td><td class="num">' + fmt(r[1]) + '</td></tr>'; }).join("") +
+    '<tr class="sum"><td>合计</td><td class="num">' + fmt(tot) + '</td></tr></table>';
+}
+function shpChart() {
+  var max = SHP[0][1], w = 520, h = 150, bw = 90, gap = 70, x0 = 70;
+  var bars = SHP.map(function (r, i) {
+    var bh = Math.round(r[1] / max * 100), x = x0 + i * (bw + gap), y = 120 - bh;
+    return '<rect x="' + x + '" y="' + y + '" width="' + bw + '" height="' + bh + '" rx="4" fill="' + (i ? "#93B4F5" : "var(--accent)") + '"></rect>' +
+      '<text x="' + (x + bw / 2) + '" y="' + (y - 6) + '" text-anchor="middle" font-size="12" fill="var(--text-2)">' + fmt(r[1]) + '</text>' +
+      '<text x="' + (x + bw / 2) + '" y="138" text-anchor="middle" font-size="12" fill="var(--sub)">' + r[0] + '</text>';
+  }).join("");
+  return '<div class="chartBox"><svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" style="max-width:520px;display:block"><line x1="50" y1="120" x2="' + (w - 20) + '" y2="120" stroke="var(--line-strong)"></line>' + bars + '</svg><div class="legend"><span>柱状图 · 202610 出货量（按 ship mode）</span></div></div>';
+}
+function renderResults() {
+  var p = picked(), multi = p.length > 1;
+  $("s3User").innerHTML = "选择报表：" + p.map(function (r) { return esc(r.name); }).join("、") + '<div class="uSub">来自报表目录</div>';
+  $("paramSummary").innerHTML = '已提交参数：日期 2026-10-01 ~ 2026-10-31、site HHZZ' + (sel.shp ? '、維度 ship mode（shipment報表）' : "");
+  $("fetchInfo").textContent = (multi ? p.length + " 张报表已取数" : "已取数 2 行") + " · 0.8 秒";
+  $("lockPill").style.display = analyzed ? "none" : "";
+  var h = "";
+  p.forEach(function (r) {
+    h += '<div class="a"><img src="' + LOGO + '" alt=""><div class="aBody"><div class="sender">Agent</div>' +
+      '<div class="resCard"><div class="resHead"><i class="ti ' + r.icon + '" style="color:var(--accent)"></i><b>' + esc(r.name) + '</b><span class="meta">' + (r.real ? "2 行 · 2026-10 · HHZZ" : "示例报表") + '</span></div>' +
+      '<div data-view="' + r.id + '">' + (r.real ? shpTable() : '<div style="padding:14px;font-size:13px;color:var(--sub)">（示例报表，表格样式同上）</div>') + '</div></div>' +
+      '<div class="dataTools"><button class="dtBtn on" data-t="table" data-r="' + r.id + '"><i class="ti ti-table"></i>表格</button><button class="dtBtn" data-t="bar" data-r="' + r.id + '"><i class="ti ti-chart-bar"></i>柱状图</button><button class="dtBtn"><i class="ti ti-chart-line"></i>折线图</button><button class="dtBtn"><i class="ti ti-chart-pie"></i>饼图</button><button class="dtBtn"><i class="ti ti-file-spreadsheet"></i>导出 Excel</button></div>' +
+      '</div></div>';
+  });
+  h += '<div class="a"><span style="width:26px;flex:none"></span><div class="aBody">' + (analyzed
+      ? ""
+      : '<div class="anaGate"><button class="btnP" id="anaBtn"><i class="ti ti-sparkles"></i>' + (multi ? "一起交给模型分析" : "交给模型分析") + '</button><span class="gText">点了才会把' + (multi ? "这几张报表的" : "这 2 行") + '数据发给模型；不点就只保留数据</span></div>') + '</div></div>';
+  $("results").innerHTML = h;
+  $("analysis").innerHTML = analyzed ? analysisHtml(p) : "";
+  document.querySelectorAll(".dataTools .dtBtn[data-t]").forEach(function (b) {
+    b.onclick = function () {
+      var id = b.getAttribute("data-r"), box = document.querySelector('[data-view="' + id + '"]');
+      if (id !== "shp") { return; }
+      box.innerHTML = b.getAttribute("data-t") === "bar" ? shpChart() : shpTable();
+      b.parentNode.querySelectorAll("[data-t]").forEach(function (x) { x.classList.toggle("on", x === b); });
+    };
+  });
+  if ($("anaBtn")) { $("anaBtn").onclick = function () { go(4); }; }
+}
+function analysisHtml(p) {
+  var tot = SHP[0][1] + SHP[1][1], pD = (SHP[0][1] / tot * 100).toFixed(1), pC = (SHP[1][1] / tot * 100).toFixed(1), x = (SHP[0][1] / SHP[1][1]).toFixed(1);
+  var multi = p.length > 1;
+  var body = multi
+    ? '<p>（示意）先分别总结每张报表，再放在一起找关联：</p><ul><li>shipment報表：10 月 HHZZ 出货合计 ' + fmt(tot) + '，D 类占 ' + pD + '%。</li>' +
+      p.filter(function (r) { return !r.real; }).map(function (r) { return '<li>' + esc(r.name) + '：示例报表的结论。</li>'; }).join("") +
+      '<li>关联：比如出货量和单价是否同向变化、哪个维度差异最大。</li></ul>'
+    : '<p>10 月 site HHZZ 出货合计 <b>' + fmt(tot) + '</b>。</p><ul><li>D 类 ' + fmt(SHP[0][1]) + '，占 ' + pD + '%，是主要出货方式。</li><li>C 类 ' + fmt(SHP[1][1]) + '，占 ' + pC + '%；D 约是 C 的 ' + x + ' 倍。</li><li>目前只有 10 月一个月，看不出趋势；加上 9 月就能看环比。</li></ul>';
+  return '<div class="a"><img src="' + LOGO + '" alt=""><div class="aBody"><div class="sender">Agent · 分析</div>' +
+    '<div class="anaCalc"><i class="ti ti-calculator"></i>后端先算好：合计 ' + fmt(tot) + '、占比 ' + pD + '% / ' + pC + '%，模型只负责解读</div>' +
+    '<div class="anaText">' + body + '</div>' +
+    '<div class="follow"><button>按 region 下钻</button><button>和 9 月对比</button><button>看各 site 排名</button></div></div></div>';
+}
+
+/* ---------- 切换与主题 ---------- */
+document.querySelectorAll(".dsTab[data-s]").forEach(function (b) { b.onclick = function () { go(parseInt(b.getAttribute("data-s"), 10)); }; });
+document.addEventListener("click", function (e) { var t = e.target.closest("[data-go]"); if (t) { go(parseInt(t.getAttribute("data-go"), 10)); } });
+function toggleTheme() {
+  var dark = document.documentElement.getAttribute("data-theme") === "dark";
+  document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
+  $("themeBtn").textContent = dark ? "深色" : "浅色";
+}
+$("themeBtn").onclick = toggleTheme;
+$("themeBtn2").onclick = toggleTheme;
+renderCatalog();
+</script>
+</body>
+</html>
