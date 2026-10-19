@@ -206,9 +206,10 @@ ${toolLines}
     let parsed = null;
     let parseErr = '';
     try {
-      const jsonMatch = (assistantMsg.content || '').match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('输出中未找到 JSON');
-      parsed = JSON.parse(jsonMatch[0]);
+      // 20261019（BE-01）：与 ABAP AGENT_GUARD V1.1.4 同口径 —— 取第一个平衡的 {...}，内容不做任何替换
+      const jsonText = extractJsonObject(assistantMsg.content || '');
+      if (!jsonText) throw new Error('输出中未找到 JSON');
+      parsed = JSON.parse(jsonText);
       if (!parsed.action) throw new Error('缺少 action 字段');
     } catch (e) {
       parseErr = e.message;
@@ -302,4 +303,29 @@ ${toolLines}
   };
 }
 
-module.exports = { runAgent };
+/**
+ * 取第一个平衡的 {...}（对照 ZCL_AI_AGENT_GUARD.extract_json_object V1.1.4）：
+ * 只在对象内部跟踪字符串与转义；对象外的围栏、说明文字、不成对引号都忽略
+ */
+function extractJsonObject(text) {
+  let depth = 0, start = -1, inStr = false, esc = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+    } else if (c === '"' && depth > 0) {
+      inStr = true;
+    } else if (c === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (c === '}' && depth > 0) {
+      depth--;
+      if (depth === 0) return text.substring(start, i + 1);
+    }
+  }
+  return '';
+}
+
+module.exports = { runAgent, extractJsonObject };

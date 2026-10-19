@@ -15,6 +15,7 @@
 const { TaskStore, isActiveStatus } = require('./task-store');
 const { ReportStore, RUN_STATUS } = require('./report-store');
 const { quickRoute, isTcodeLike } = require('./intent-route');
+const { extractJsonObject } = require('./agent-loop');
 
 const USER = 'TESTER';
 const SESSION = 'SESS_TEST_0001';
@@ -503,6 +504,20 @@ function scenario12() {
 }
 
 /* =============== 主流程 =============== */
+// 20261019（改进清单 BE-01）：模型输出 JSON 平衡提取（对照 AGENT_GUARD V1.1.4 parse_model_json）
+function scenario13() {
+  console.log('\n━━ 场景 13: 模型输出 JSON 平衡提取（BE-01）');
+  const obj = '{"action":"final","summary":"x","answer":"说明\\n```abap\\nDATA lv TYPE i.\\n  lv = 1.\\n```"}';
+  check('纯对象原样取出', extractJsonObject(obj) === obj);
+  const wrapped = '好的：\n```json\n' + obj + '\n```';
+  check('围栏 + 前缀文字被忽略', extractJsonObject(wrapped) === obj);
+  const ans = JSON.parse(extractJsonObject(wrapped)).answer;
+  check('answer 保留代码围栏与两个空格缩进', /```abap\nDATA lv TYPE i\.\n  lv = 1\.\n```/.test(ans), ans);
+  check('对象外不成对的引号不影响提取', extractJsonObject('他说"好的 ' + obj) === obj);
+  check('字符串里的花括号不打断配平', extractJsonObject('{"a":"}{","b":1}') === '{"a":"}{","b":1}');
+  check('没有对象返回空串', extractJsonObject('没有 JSON') === '');
+}
+
 function main() {
   console.log('╔══════════════════════════════════════════╗');
   console.log('║ 任务/报表协议测试(本地 Mock/契约, 无 LLM) ║');
@@ -520,6 +535,7 @@ function main() {
   scenarioExtra();
   scenario11();
   scenario12();
+  scenario13();
 
   console.log(`\n${'='.repeat(50)}`);
   console.log(`总计: ${passed} 通过, ${failed} 失败`);

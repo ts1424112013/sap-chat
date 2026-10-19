@@ -111,6 +111,14 @@
 *     供 AGENT_SERVICE 对话式结果分析定位结果
 * ★ 重贴后核对标记: 全文应有 adapter_real_for_run 与 find_latest_artifact;
 *   ad_poll/ad_read_result 内调用 adapter_real_for_run(而非 adapter_real)
+* V1.0.12 20261019(改进清单 BE-11): parse_flat_kv 支持 JSON 字符串转义 ——
+*   照 AGENT_GUARD V1.1.3 parse_flat_json: 值正则改 "((?:[^"\\]|\\.)*)"
+*   按转义成对匹配(值里的 \" 不再截断), 取出后经新私有方法 json_unescape
+*   还原(包成 {"v":"..."} 交 /ui2/cl_json); FIND 包 TRY, 正则异常返回空表
+*   (由 validate_params 按缺参处理); 冒号两侧 [ ]* 改 \s*。
+*   注: V1.0.1 起"parse_flat_kv 与 parse_flat_json 同款正则"的标记以本版为准
+* ★ 重贴后核对标记: parse_flat_kv 内有 json_unescape( lv_raw ) 与
+*   (?:[^"\\]|\\.)*; PRIVATE SECTION 有 json_unescape 声明
 *=======================================================================
 CLASS zcl_ai_report_service DEFINITION
   PUBLIC
@@ -341,8 +349,8 @@ CLASS zcl_ai_report_service DEFINITION
       RETURNING VALUE(rv_art_id) TYPE string.
 
     " 扁平 JSON 键值解析(仅对象形态, 值限字符串/数字/bool/null, 不支持
-    " 嵌套; 正则模式与 AGENT_GUARD.parse_flat_json 一致 —— 已部署验证。
-    " 键统一转小写; 供本类参数校验与 REPORT_MOCK 场景读取共用)
+    " 嵌套; 正则模式与 AGENT_GUARD.parse_flat_json V1.1.3 一致(V1.0.12 起
+    " 支持转义)。键统一转小写; 供本类参数校验与 REPORT_MOCK 场景读取共用)
     CLASS-METHODS parse_flat_kv
       IMPORTING iv_json     TYPE string
       RETURNING VALUE(rt)   TYPE tt_kv.
@@ -353,6 +361,11 @@ CLASS zcl_ai_report_service DEFINITION
       RETURNING VALUE(rv)  TYPE string.
 
   PRIVATE SECTION.
+
+    " V1.0.12(BE-11): JSON 字符串内容反转义(\" \\ \n \uXXXX 等)
+    CLASS-METHODS json_unescape
+      IMPORTING iv            TYPE string
+      RETURNING VALUE(rv)     TYPE string.
 
     " 定义行 <-> 结构
     CLASS-METHODS row_to_def
@@ -857,6 +870,42 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
 
 
 * <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Private Method ZCL_AI_REPORT_SERVICE=>JSON_UNESCAPE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV                             TYPE        STRING
+* | [<-()] RV                             TYPE        STRING
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD json_unescape.
+
+    TYPES: BEGIN OF ty_box,
+             v TYPE string,
+           END OF ty_box.
+    DATA: ls_box  TYPE ty_box,
+          lv_json TYPE string.
+
+    rv = iv.
+    IF find( val = iv sub = `\` ) < 0.
+      RETURN.
+    ENDIF.
+
+    " parse_flat_kv 的正则已保证 iv 是合法的 JSON 字符串内容(转义成对),
+    " 包成 {"v":"..."} 交 /ui2/cl_json 还原(与 AGENT_GUARD.json_unescape 同法);
+    " 失败时保留原文(由 validate_params 按原样校验)
+    lv_json = `{"v":"` && iv && `"}`.
+    TRY.
+        /ui2/cl_json=>deserialize(
+          EXPORTING json          = lv_json
+                    name_mappings = VALUE #( ( abap = 'V' json = 'v' ) )
+          CHANGING  data          = ls_box ).
+        rv = ls_box-v.
+      CATCH cx_root.
+        rv = iv.
+    ENDTRY.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
 * | Static Public Method ZCL_AI_REPORT_SERVICE=>LIST_DEFS
 * +-------------------------------------------------------------------------------------------------+
 * | [<-()] RT                             TYPE        TT_DEF
@@ -909,9 +958,17 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    FIND ALL OCCURRENCES OF REGEX
-      '"([A-Za-z0-9_]+)"[ ]*:[ ]*("([^"]*)"|(-?[0-9]+(\.[0-9]+)?|true|false|null))'
-      IN lv_inner RESULTS DATA(lt_m).
+    " V1.0.12(BE-11): 字符串值按 JSON 转义成对匹配, 取出后反转义;
+    "   正则异常(值过长等)返回空表, 由 validate_params 按缺参处理
+    DATA: lt_m   TYPE match_result_tab,
+          lv_raw TYPE string.
+    TRY.
+        FIND ALL OCCURRENCES OF REGEX
+          '"([A-Za-z0-9_]+)"\s*:\s*("((?:[^"\\]|\\.)*)"|(-?[0-9]+(\.[0-9]+)?|true|false|null))'
+          IN lv_inner RESULTS lt_m.
+      CATCH cx_root.
+        RETURN.
+    ENDTRY.
 
     LOOP AT lt_m INTO DATA(ls_m).
       DATA(lv_s1) = ls_m-submatches[ 1 ].
@@ -922,8 +979,9 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
                                           len = lv_s1-length ) ).
       DATA(lv_val) = ``.
       IF lv_s3-length > 0.
-        " 带引号字符串: 取引号内内容(不含转义处理; 参数值约定不含 ")
-        lv_val = substring( val = lv_inner off = lv_s3-offset len = lv_s3-length ).
+        " 带引号字符串: 取引号内内容并反转义(V1.0.12)
+        lv_raw = substring( val = lv_inner off = lv_s3-offset len = lv_s3-length ).
+        lv_val = json_unescape( lv_raw ).
       ELSEIF lv_s4-length > 0.
         lv_val = substring( val = lv_inner off = lv_s4-offset len = lv_s4-length ).
       ENDIF.

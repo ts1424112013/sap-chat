@@ -100,6 +100,16 @@
 *   基于 V15.2, 其余逻辑不变; 无新依赖, 激活顺序不变
 * ★ 重贴后核对标记: build_protocol_prompt 内有 lv_fmt 与
 *   WHEN zcl_ai_tool_registry=>gc_pt_date 分支
+* V15.3 20261019(改进清单 BE-07): Agent 兜底模型 ——
+*   主循环模型调用失败(LLM_CLIENT V1.3 已对瞬时错误重试过)时, 在本场景
+*   白名单内换一个已启用、不同于失败模型的模型再试一次(新私有方法
+*   pick_fallback_model, 复用 agent_model_allowed); 切换后本次运行的后续
+*   轮次与结构化分析都沿用备选模型, es_result-model_id 同步更新; Trace 加
+*   一行 EXECUTING / REJECTED(⚠)"模型 X 调用失败, 已切换到 Y", detail
+*   带原始错误。每次运行最多切换一次; 两个模型都失败时照旧给出可读错误。
+*   基于 V15.2.1; 依赖 LLM_CLIENT V1.3(可选参数, 老版本也能激活)
+* ★ 重贴后核对标记: 主循环有 lv_switched 与 pick_fallback_model( 调用;
+*   PRIVATE SECTION 有 pick_fallback_model 声明
 *=======================================================================
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
@@ -176,6 +186,13 @@ CLASS zcl_ai_agent_service DEFINITION
                 iv_scene       TYPE string
       EXPORTING es_cfg         TYPE zai_model_cfg
                 ev_error       TYPE string.
+
+    " V15.3(BE-07): 首选模型失败时的备选 —— 本场景白名单内、已启用、
+    " 不同于失败模型的第一条(按主键顺序); 没有则返回空
+    CLASS-METHODS pick_fallback_model
+      IMPORTING iv_scene      TYPE string
+                iv_exclude    TYPE string
+      RETURNING VALUE(rs_cfg) TYPE zai_model_cfg.
 
     " V15.2: 模型是否允许用于该场景的 Agent(白名单为空 = 不限制)
     CLASS-METHODS agent_model_allowed
@@ -750,6 +767,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     " ---------------- 2. 受限工具循环 ----------------
     " V13: lv_plan_ms = 规划阶段累计耗时(非最终轮的模型调用, 含修复轮)
     DATA lv_plan_ms TYPE i VALUE 0.
+    DATA lv_switched TYPE abap_bool VALUE abap_false.   " V15.3: 本次运行是否已切换过备选模型
     lv_round    = 0.
     lv_repaired = abap_false.
     CLEAR lv_answer.
@@ -796,6 +814,38 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         IMPORTING ev_content  = lv_content
                   ev_elapsed  = lv_llm_ms
                   ev_error    = lv_llm_err ).
+
+      " ---- V15.3(BE-07): 首选模型失败 → 本场景白名单内换一个启用模型再试一次 ----
+      IF ( lv_llm_err IS NOT INITIAL OR lv_content IS INITIAL ) AND lv_switched = abap_false.
+        DATA(ls_fb_cfg) = pick_fallback_model( iv_scene   = lv_scene
+                                               iv_exclude = CONV string( ls_cfg-model_id ) ).
+        IF ls_fb_cfg-model_id IS NOT INITIAL.
+          lv_switched = abap_true.
+          APPEND VALUE #( phase      = 'EXECUTING'
+                          label      = |模型 { ls_cfg-model_id } 调用失败, 已切换到 { ls_fb_cfg-model_id }|
+                          status     = 'REJECTED'
+                          elapsed_ms = lv_llm_ms
+                          detail     = COND #( WHEN lv_llm_err IS NOT INITIAL
+                                               THEN lv_llm_err ELSE '模型返回了空内容' ) ) TO lt_trace.
+          lv_plan_ms = lv_plan_ms + lv_llm_ms.
+          ls_cfg = ls_fb_cfg.
+          es_result-model_id = ls_cfg-model_id.
+          GET RUN TIME FIELD lv_t1.
+          lv_rest_s = ( lv_budget_ms - ( lv_t1 - lv_t0 ) / 1000 ) / 1000.
+          IF lv_rest_s < 5.
+            lv_rest_s = 5.
+          ENDIF.
+          ls_call = ls_cfg.
+          ls_call-timeout_sec = lv_rest_s.
+          CLEAR: lv_content, lv_llm_ms, lv_llm_err.
+          zcl_ai_llm_client=>chat(
+            EXPORTING is_cfg      = ls_call
+                      it_messages = lt_messages
+            IMPORTING ev_content  = lv_content
+                      ev_elapsed  = lv_llm_ms
+                      ev_error    = lv_llm_err ).
+        ENDIF.
+      ENDIF.
 
       IF lv_llm_err IS NOT INITIAL OR lv_content IS INITIAL.
         es_result-status  = 'ERROR'.
@@ -1429,6 +1479,30 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       ev_error = |没有已启用且开放给 Agent「{ lv_scene_txt }」场景的模型, | &&
                  |请管理员在设置-模型管理的"Agent 可用模型"中配置|.
     ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD pick_fallback_model.
+
+    CLEAR rs_cfg.
+    DATA(lv_ex) = to_upper( iv_exclude ).
+    CONDENSE lv_ex NO-GAPS.
+    SELECT * FROM zai_model_cfg
+      WHERE is_active = @abap_true
+      ORDER BY PRIMARY KEY
+      INTO TABLE @DATA(lt_fb).
+    LOOP AT lt_fb INTO DATA(ls_fb).
+      DATA(lv_fb_id) = to_upper( CONV string( ls_fb-model_id ) ).
+      CONDENSE lv_fb_id NO-GAPS.
+      IF lv_fb_id = lv_ex.
+        CONTINUE.
+      ENDIF.
+      IF agent_model_allowed( iv_model_id = lv_fb_id iv_scene = iv_scene ) = abap_true.
+        rs_cfg = ls_fb.
+        RETURN.
+      ENDIF.
+    ENDLOOP.
 
   ENDMETHOD.
 

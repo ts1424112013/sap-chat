@@ -21,6 +21,19 @@
 *   本批不动), 其头部"正则与 parse_flat_json 同款"的核对标记以旧版为准
 *   ★ 重贴后核对标记: parse_flat_json 内有 json_unescape( lv_raw ) 与
 *   (?:[^"\\]|\\.)*; PRIVATE SECTION 有 json_unescape 声明
+* V1.1.4 20261019(改进清单 BE-01): parse_model_json 不再破坏回答内容 ——
+*   原 REPLACE 删整串所有 ``` (含 answer 里的代码围栏)、CONDENSE 压掉缩进;
+*   原 FIND '\{.*\}' 无捕获组, SUBMATCHES 恒空, "截取 JSON 对象"从未生效
+*   (模型在 JSON 前后带说明文字时只能走修复轮)。现: extract_json_object
+*   取第一个平衡的 {...}, 内容原样交 /ui2/cl_json; 围栏与前后文字在对象
+*   之外自然被忽略; args 正则冒号两侧改 \s*。parse_analysis_plan /
+*   parse_analysis_output 同样去掉 REPLACE + CONDENSE(直接平衡提取)。
+*   extract_json_object 只在对象内部跟踪字符串状态(对象外说明文字里
+*   不成对的引号不再让后面的 { 被当成字符串内容)
+*   ★ 重贴后核对标记: parse_model_json 内调用 extract_json_object( iv_raw );
+*   搜 "REPLACE ALL OCCURRENCES OF REGEX" 只剩 3 处(validate_args 换行、
+*   sanitize_summary、clean_text), 没有删围栏的那条; extract_json_object
+*   内有 "lv_c = '"' AND lv_depth > 0"
 *         - parse_analysis_plan    查询计划 JSON 解析与规范化
 *                                  (白名单校验在 DATA_ANALYSIS_SERVICE)
 *         - parse_analysis_output  结构化分析输出解析+字段清洗+图表引用校验
@@ -138,19 +151,17 @@ CLASS zcl_ai_agent_guard IMPLEMENTATION.
 
     CLEAR: es_out, ev_error.
 
-    DATA(lv_raw) = iv_raw.
-    REPLACE ALL OCCURRENCES OF REGEX '```[a-zA-Z]*' IN lv_raw WITH ``.
-    CONDENSE lv_raw.
-
-    IF strlen( lv_raw ) > 200000.
+    IF strlen( iv_raw ) > 200000.
       ev_error = '模型输出超过 200K 字符上限'.
       RETURN.
     ENDIF.
 
-    FIND FIRST OCCURRENCE OF REGEX '\{.*\}'
-      IN lv_raw SUBMATCHES DATA(lv_json).
-    IF sy-subrc = 0 AND lv_json IS NOT INITIAL.
-      lv_raw = lv_json.
+    " V1.1.4(BE-01): 取第一个平衡的 {...}(感知字符串与转义), 内容原样交解析器;
+    " ```json 围栏与前后说明文字都在对象之外, 自然被忽略。没有平衡对象时原文
+    " 交解析器, 由下面的报错进入修复轮
+    DATA(lv_raw) = extract_json_object( iv_raw ).
+    IF lv_raw IS INITIAL.
+      lv_raw = iv_raw.
     ENDIF.
 
     TRY.
@@ -188,7 +199,7 @@ CLASS zcl_ai_agent_guard IMPLEMENTATION.
         ev_error = 'action=tool 但缺少 tool'.
         RETURN.
       ENDIF.
-      FIND REGEX '"args"[ ]*:[ ]*\{([^}]*)\}'
+      FIND REGEX '"args"\s*:\s*\{([^}]*)\}'
         IN lv_raw SUBMATCHES DATA(lv_args).
       IF sy-subrc = 0.
         es_out-args = lv_args.
@@ -430,9 +441,8 @@ CLASS zcl_ai_agent_guard IMPLEMENTATION.
     CLEAR: es_plan, ev_error.
 
     " V1.1.1: 签名参数名为 iv_json, 方法体误写 iv_raw(SE24 激活报 Field IV_RAW is unknown)
+    " V1.1.4: 不再删 ``` / CONDENSE(平衡提取本身忽略对象外的围栏)
     DATA(lv_raw) = iv_json.
-    REPLACE ALL OCCURRENCES OF REGEX '```[a-zA-Z]*' IN lv_raw WITH ``.
-    CONDENSE lv_raw.
 
     IF strlen( lv_raw ) > 200000.
       ev_error = '查询计划超过 200K 字符上限'.
@@ -521,11 +531,8 @@ CLASS zcl_ai_agent_guard IMPLEMENTATION.
 
     CLEAR: es_analysis, ev_error.
 
-    DATA(lv_raw) = iv_raw.
-    REPLACE ALL OCCURRENCES OF REGEX '```[a-zA-Z]*' IN lv_raw WITH ``.
-    CONDENSE lv_raw.
-
-    DATA(lv_json) = extract_json_object( lv_raw ).
+    " V1.1.4: 不再删 ``` / CONDENSE —— 分析文字里的空格与代码片段原样保留
+    DATA(lv_json) = extract_json_object( iv_raw ).
     IF lv_json IS INITIAL.
       ev_error = '结构化分析不是合法的 JSON 对象'.
       RETURN.
@@ -679,7 +686,9 @@ CLASS zcl_ai_agent_guard IMPLEMENTATION.
           lv_in_str = abap_false.
         ENDIF.
       ELSE.
-        IF lv_c = '"'.
+        " V1.1.4: 只在对象内部跟踪字符串 —— 对象外的说明文字里不成对的引号
+        " 不应让后面的 { 被当成字符串内容
+        IF lv_c = '"' AND lv_depth > 0.
           lv_in_str = abap_true.
         ELSEIF lv_c = '{'.
           IF lv_depth = 0.
