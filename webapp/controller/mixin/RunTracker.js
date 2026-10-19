@@ -35,19 +35,36 @@ sap.ui.define([
                         this._resumeRun();
                 },
 
-                /** 开始 / 恢复轮询（3 秒一次，首轮立即查询） */
+                /** 20261019（改进清单 FE-10）：轮询改退避 —— 前 10 次每 3 秒，之后每次 ×1.3、最长 15 秒一次；
+                  * 上限 RUN_POLL_MAX 次（约 12 分钟）。原来固定 3 秒 × 100 次（约 5 分钟）：请求多、等得短 */
+                RUN_POLL_MAX: 60,
+
+                /** 第 iCount 次查询之后到下一次查询的间隔（毫秒） */
+                _runPollDelay: function (iCount) {
+                        return iCount < 10 ? 3000 : Math.min(15000, Math.round(3000 * Math.pow(1.3, iCount - 9)));
+                },
+
+                /** 排下一次查询（仅当该运行仍在跟踪中） */
+                _scheduleRunPoll: function (o) {
+                        var that = this;
+                        if (this._oRun !== o || !o.timer) {
+                                return;
+                        }
+                        window.clearTimeout(o.timer);
+                        o.timer = window.setTimeout(function () { that._pollRun(); }, this._runPollDelay(o.count));
+                },
+
+                /** 开始 / 恢复轮询（首轮立即查询，之后按退避间隔续排） */
                 _resumeRun: function () {
-                        var that = this, o = this._oRun;
+                        var o = this._oRun;
                         if (!o) {
                                 return;
                         }
-                        if (o.timer) {
-                                window.clearInterval(o.timer);
-                        }
+                        window.clearTimeout(o.timer);
                         o.phase = "active";
                         o.count = 0;
                         o.empty = 0;
-                        o.timer = window.setInterval(function () { that._pollRun(); }, 3000);
+                        o.timer = -1;   // 非空 = 跟踪中；真正的定时器由 _scheduleRunPoll 在每次查询后设置
                         this._syncActivity();
                         this._pollRun();
                 },
@@ -58,7 +75,7 @@ sap.ui.define([
                                 return;
                         }
                         if (o.timer) {
-                                window.clearInterval(o.timer);
+                                window.clearTimeout(o.timer);
                                 o.timer = null;
                         }
                         o.phase = sPhase;
@@ -71,6 +88,7 @@ sap.ui.define([
                         if (!o || !o.timer || o.inFlight) {
                                 return;
                         }
+                        window.clearTimeout(o.timer);   // "立即刷新"时取消已排的下一次，查完再重排
                         o.inFlight = true;
                         o.count++;
                         ChatService.getReportRunStatus(o.runId).then(function (oSts) {
@@ -104,19 +122,24 @@ sap.ui.define([
                                         that._loadRunResult(o);
                                         return;
                                 }
-                                if (o.count >= 100) {
+                                if (o.count >= that.RUN_POLL_MAX) {
                                         that._stopRun("stalled");
                                         return;
                                 }
                                 that._renderRun();
+                                that._scheduleRunPoll(o);
                         }).catch(function (e) {
                                 // 单次查询失败（网络抖动）不终止轮询，计入次数
                                 o.inFlight = false;
+                                if (that._oRun !== o || !o.timer) {
+                                        return;
+                                }
                                 o.message = (e && e.message) || "";
-                                if (o.count >= 100) {
+                                if (o.count >= that.RUN_POLL_MAX) {
                                         that._stopRun("stalled");
                                 } else {
                                         that._renderRun();
+                                        that._scheduleRunPoll(o);
                                 }
                         });
                 },
@@ -175,8 +198,8 @@ sap.ui.define([
                         }
                         var sMsg = o.message;
                         if (o.phase === "active" && o.count > 0) {
-                                // 20261011：轮询进度可见（上限 100 次，约 5 分钟）
-                                sMsg = (sMsg ? sMsg + " · " : "") + oRB.getText("runPollCount", [o.count]);
+                                // 20261011：轮询进度可见（20261019：上限 RUN_POLL_MAX 次，退避后约 12 分钟）
+                                sMsg = (sMsg ? sMsg + " · " : "") + oRB.getText("runPollCount", [o.count, this.RUN_POLL_MAX]);
                         }
                         if (o.phase === "stalled") {
                                 sMsg = (sMsg ? sMsg + " · " : "") + oRB.getText("runStalled");

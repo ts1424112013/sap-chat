@@ -559,93 +559,106 @@ sap.ui.define([
                         if (this._sConfig.mode === "mock") {
                                 return Promise.resolve({ success: false, message: "演示模式无任务后端", result: null });
                         }
+                        return this._fiCall(sAction, oParams, bPost).then(function (d) {
+                                var sJson = d.ResultJson || "";
+                                var oResult = null;
+                                if (sJson) {
+                                        try {
+                                                oResult = JSON.parse(sJson);
+                                        } catch (e) {
+                                                oResult = null;
+                                        }
+                                }
+                                return {
+                                        success: d.Success === "X",
+                                        message: d.Message || "",
+                                        result: oResult
+                                };
+                        }).catch(function (e) {
+                                return { success: false, message: Service._fmtError(e), result: null };
+                        });
+                },
+
+                /**
+                  * 20261019（改进清单 FE-01 / FE-08）：Function Import 统一通道，_taskCall 与 _v8Call 共用。
+                  *  · 参数一律放 URL 查询串（GET / POST 相同）：GW 的 OData V2 FI 只解析 URL 参数，
+                  *    form 正文不解析（V15.0.1 20261008 实锤）；V8 写操作原来走 form 正文，改到这里
+                  *  · URL 在调用开始时拼好一次，换牌重试复用同一个 URL（FE-01：原 fnBuild 每次都往
+                  *    闭包变量上追加查询串，重试时变成 "?a=1?a=1"）
+                  *  · POST 带 CSRF 令牌；403 时刷新令牌重试一次。GET 不需要令牌，403 直接报错
+                  *  · HTTP 非 2xx 抛 Error("HTTP <码> - <响应体前 300 字>")，附 statusCode / responseText
+                  * @returns {Promise<object>} 已剥掉函数名包装的返回对象 d（{Success, Message, Json | ResultJson, …}）
+                  */
+                _fiCall: function (sAction, oParams, bPost) {
                         var that = this;
-                        var sUrl = this._sConfig.host + this._sConfig.path + sAction;
                         var sBasic = this._basicHeader();
-                        var fnBuild = function (sToken) {
+                        var sUrl = this._sConfig.host + this._sConfig.path + sAction + Service._fiQuery(oParams);
+                        var fnSend = function (sToken) {
+                                // V8.2：GW 默认返回 Atom XML，必须声明 JSON 才能被 oResp.json() 解析
                                 var oHeaders = { "Accept": "application/json" };
                                 if (sBasic) {
                                         oHeaders.Authorization = sBasic;
                                 }
-                                var oInit = { method: bPost ? "POST" : "GET", headers: oHeaders, credentials: "same-origin" };
-                                if (bPost) {
-                                	if (sToken) {
-                                		oHeaders["x-csrf-token"] = sToken;
-                                	}
-                                	// V15.0.1 20261008: GW 的 OData V2 FI POST 参数必须放 URL query
-                                	// string(form body GW 不解析 → 参数全空 → 400 → 前端只见"未知错误")
-                                	var aQ0 = Object.keys(oParams || {}).map(function (k) {
-                                		return k + "='" + encodeURIComponent(oParams[k]) + "'";
-                                	});
-                                	if (aQ0.length) { sUrl += "?" + aQ0.join("&"); }
-                                } else if (oParams && Object.keys(oParams).length) {
-                                        var aQ = Object.keys(oParams).map(function (k) {
-                                                return k + "='" + encodeURIComponent(oParams[k]) + "'";
-                                        });
-                                        sUrl += "?" + aQ.join("&");
+                                if (bPost && sToken) {
+                                        oHeaders["x-csrf-token"] = sToken;
                                 }
-                                return oInit;
-                        };
-                        var fnSend = function (oInit) {
-                                return fetch(sUrl, oInit).then(function (oResp) {
+                                return fetch(sUrl, {
+                                        method: bPost ? "POST" : "GET",
+                                        headers: oHeaders,
+                                        credentials: "same-origin"
+                                }).then(function (oResp) {
                                         if (!oResp.ok) {
-                                        	// V15.0.1: 带回响应体, GW 错误原因(XML)可解析展示
-                                        	return oResp.text().then(function (t) {
-                                        		var e = new Error("HTTP " + oResp.status + (t ? " - " + t.substring(0, 300) : ""));
-                                        		e.statusCode = oResp.status; e.responseText = t;
-                                        		throw e;
-                                        	});
+                                                // V15.0.1: 带回响应体, GW 错误原因(XML)可解析展示
+                                                return oResp.text().then(function (t) {
+                                                        var e = new Error("HTTP " + oResp.status + (t ? " - " + t.substring(0, 300) : ""));
+                                                        e.statusCode = oResp.status;
+                                                        e.responseText = t;
+                                                        throw e;
+                                                });
                                         }
                                         return oResp.json();
                                 }).then(function (oJson) {
+                                        // V8.3：GW 把 FI 返回包在函数导入名下（d.AnalyzeCode 等），先剥壳
                                         var oRoot = (oJson && oJson.d) || oJson || {};
-                                        var d = (oRoot && typeof oRoot[sAction] === "object" && oRoot[sAction] !== null)
+                                        return (oRoot && typeof oRoot[sAction] === "object" && oRoot[sAction] !== null)
                                                 ? oRoot[sAction] : oRoot;
-                                        var sJson = d.ResultJson || "";
-                                        var oResult = null;
-                                        if (sJson) {
-                                                try {
-                                                        oResult = JSON.parse(sJson);
-                                                } catch (e) {
-                                                        oResult = null;
-                                                }
-                                        }
-                                        return {
-                                                success: d.Success === "X",
-                                                message: d.Message || "",
-                                                result: oResult
-                                        };
                                 });
                         };
+                        if (!bPost) {
+                                return fnSend("");
+                        }
                         var fnTry = function (sToken) {
-                                return fnSend(fnBuild(sToken)).catch(function (e) {
-                                        // 20261011: 错误消息自 V15.0.1 起带响应体（"HTTP 403 - …"），
-                                        // 原严格相等永不命中 → 令牌失效后不再自动换牌重试
+                                return fnSend(sToken).catch(function (e) {
+                                        // 20261011: 错误消息自 V15.0.1 起带响应体（"HTTP 403 - …"），用 _isCsrfFail 识别
                                         if (Service._isCsrfFail(e)) {
                                                 return that._fetchCsrf(sBasic).then(function (sNew) {
                                                         that._sCsrfToken = sNew;
-                                                        return fnSend(fnBuild(sNew));
+                                                        return fnSend(sNew);
                                                 });
                                         }
                                         throw e;
                                 });
                         };
-                        if (!bPost) {
-                                return fnTry("").catch(function (e) {
-                                        return { success: false, message: Service._fmtError(e), result: null };
-                                });
-                        }
                         if (this._sCsrfToken) {
-                                return fnTry(this._sCsrfToken).catch(function (e) {
-                                        return { success: false, message: Service._fmtError(e), result: null };
-                                });
+                                return fnTry(this._sCsrfToken);
                         }
                         return this._fetchCsrf(sBasic).then(function (sNew) {
                                 that._sCsrfToken = sNew;
                                 return fnTry(sNew);
-                        }).catch(function (e) {
-                                return { success: false, message: Service._fmtError(e), result: null };
                         });
+                },
+
+                /**
+                  * 20261019：FI 参数 → URL 查询串。参数是 OData 字符串字面量，值里的单引号写成两个
+                  * （O'Brien → 'O''Brien'，与 UI5 ODataModel.callFunction 的 formatValue 同口径），再 URL 编码
+                  * @returns {string} "?K1='v1'&K2='v2'"；无参数返回 ""
+                  */
+                _fiQuery: function (oParams) {
+                        var aQ = Object.keys(oParams || {}).map(function (k) {
+                                var sVal = oParams[k] === undefined || oParams[k] === null ? "" : String(oParams[k]);
+                                return k + "='" + encodeURIComponent(sVal.replace(/'/g, "''")) + "'";
+                        });
+                        return aQ.length ? "?" + aQ.join("&") : "";
                 },
 
                 /** 会话任务列表 → Promise<[TaskItem]>（能力未开/失败 → []） */
@@ -1147,77 +1160,23 @@ sap.ui.define([
                         return !!e && (e.statusCode === 403 || /^HTTP 403\b/.test(e.message || ""));
                 },
 
-                /** V8：调用后端 Function Import 的统一通道
-                 *  返回契约：{ d: { Success, Message, Json } }（Json 承载列表/对象数据）
-                 *  POST 参数走 OData V2 FI 标准的 form-urlencoded
-                 *  V8.1：POST 自动携带 CSRF token；遇 403 自动刷新 token 重试一次 */
+                /** V8：调用后端 Function Import（返回契约：{ d: { Success, Message, Json } }，Json 承载列表/对象数据）
+                 *  20261019（FE-08）：改走 _fiCall —— POST 参数从 form 正文移到 URL（GW 不解析 form 正文），
+                 *  CSRF / 403 重试与 _taskCall 共用一份
+                 *  20261019（FE-02）：带 Success 字段且不是 "X" 即失败（后端失败返回空串，原判断
+                 *  `d.Success && …` 对空串不成立 → 失败被当成功）；没有 Success 字段的旧后端照旧放行 */
                 _v8Call: function (sAction, oParams, bPost) {
-                        var that = this;
-                        var sUrl = this._sConfig.host + this._sConfig.path + sAction;
-                        var sBasic = this._basicHeader();
-                        var fnBuild = function (sToken) {
-                                // V8.2：GW 默认返回 Atom XML，必须声明 JSON 才能被 oResp.json() 解析
-                                var oHeaders = { "Accept": "application/json" };
-                                if (sBasic) {
-                                        oHeaders.Authorization = sBasic;
+                        return this._fiCall(sAction, oParams, bPost).catch(function (e) {
+                                // 保持 V8 原有错误文案（"HTTP 500" 等，不带响应体）
+                                if (e && e.statusCode) {
+                                        throw new Error("HTTP " + e.statusCode);
                                 }
-                                var oInit = { method: bPost ? "POST" : "GET", headers: oHeaders, credentials: "same-origin" };
-                                if (bPost) {
-                                        if (sToken) {
-                                                oHeaders["x-csrf-token"] = sToken;
-                                        }
-                                        oHeaders["Content-Type"] = "application/x-www-form-urlencoded";
-                                        var oBody = new URLSearchParams();
-                                        Object.keys(oParams || {}).forEach(function (k) {
-                                                oBody.append(k, oParams[k]);
-                                        });
-                                        oInit.body = oBody.toString();
-                                } else if (oParams && Object.keys(oParams).length) {
-                                        var aQ = Object.keys(oParams).map(function (k) {
-                                                return k + "='" + encodeURIComponent(oParams[k]) + "'";
-                                        });
-                                        sUrl += "?" + aQ.join("&");
+                                throw e;
+                        }).then(function (d) {
+                                if (d.Success !== undefined && d.Success !== null && d.Success !== "X") {
+                                        throw new Error(d.Message || "调用失败");
                                 }
-                                return oInit;
-                        };
-                        var fnSend = function (oInit) {
-                                return fetch(sUrl, oInit).then(function (oResp) {
-                                        if (!oResp.ok) {
-                                                throw new Error("HTTP " + oResp.status);
-                                        }
-                                        return oResp.json();
-                                }).then(function (oJson) {
-                                        // V8.3：GW 把 FI 返回包在函数导入名下（d.AnalyzeCode 等），先剥壳
-                                        var oRoot = (oJson && oJson.d) || oJson || {};
-                                        var d = (oRoot && typeof oRoot[sAction] === "object" && oRoot[sAction] !== null)
-                                                ? oRoot[sAction] : oRoot;
-                                        if (d.Success && d.Success !== "X") {
-                                                throw new Error(d.Message || "调用失败");
-                                        }
-                                        return d.Json || "";
-                                });
-                        };
-                        if (!bPost) {
-                                return fnSend(fnBuild(""));
-                        }
-                        // POST：带缓存 token；403 时刷新 token 重试一次
-                        var fnTry = function (sToken) {
-                                return fnSend(fnBuild(sToken)).catch(function (e) {
-                                        if (Service._isCsrfFail(e)) {
-                                                return that._fetchCsrf(sBasic).then(function (sNew) {
-                                                        that._sCsrfToken = sNew;
-                                                        return fnSend(fnBuild(sNew));
-                                                });
-                                        }
-                                        throw e;
-                                });
-                        };
-                        if (this._sCsrfToken) {
-                                return fnTry(this._sCsrfToken);
-                        }
-                        return this._fetchCsrf(sBasic).then(function (sNew) {
-                                that._sCsrfToken = sNew;
-                                return fnTry(sNew);
+                                return d.Json || "";
                         });
                 },
 
@@ -1335,7 +1294,7 @@ sap.ui.define([
                                 for (var k = 0; k < a.length; k++) { if (a[k].UserId.toUpperCase() === oUser.UserId.toUpperCase()) { i = k; break; } }
                                 var oRow = {
                                         UserId: oUser.UserId, UserName: oUser.UserName || "", Role: oUser.Role || "USER",
-                                        Active: oUser.Active || "X", PwdHash: this._sha256Sync("zai#" + (oUser.Password || "123456"))
+                                        Active: oUser.Active === undefined ? "X" : oUser.Active, PwdHash: this._sha256Sync("zai#" + (oUser.Password || "123456"))
                                 };
                                 if (i >= 0) { a[i] = oRow; } else { a.push(oRow); }
                                 this._mockSaveUsers();
@@ -1345,7 +1304,8 @@ sap.ui.define([
                                 UserId: oUser.UserId || "",
                                 UserName: oUser.UserName || "",
                                 Role: oUser.Role || "USER",
-                                Active: oUser.Active || "X"
+                                // 20261019：停用传空串，原 `|| "X"` 把空串改回 "X"，停用从未生效
+                                Active: oUser.Active === undefined ? "X" : oUser.Active
                         }, true).then(function () { return true; });
                 },
 
@@ -1374,8 +1334,9 @@ sap.ui.define([
                                 return Promise.resolve(true);
                         }
                         var aNames = (aRoles || []).map(function (r) { return r.name; });
+                        // 20261019（FE-02）：失败不再吞成 false，抛出后端原因（BE-08 的拒绝理由要能被看到）
                         return this._v8Call("SaveRoles", { Roles: JSON.stringify(aNames) }, true)
-                                .then(function () { return true; }).catch(function () { return false; });
+                                .then(function () { return true; });
                 },
 
                 /** 泡泡提示词：读（mock 读 zaiChat-quickPrompts；backend PromptsList） */
@@ -1412,8 +1373,9 @@ sap.ui.define([
                                 return Promise.resolve(true);
                         }
                         var aOut = (aPrompts || []).map(function (p) { return { title: p.title, prompt: p.prompt }; });
+                        // 20261019（FE-02）：同 saveRolesData，失败抛出后端原因
                         return this._v8Call("SavePrompts", { Prompts: JSON.stringify(aOut) }, true)
-                                .then(function () { return true; }).catch(function () { return false; });
+                                .then(function () { return true; });
                 }
         };
 

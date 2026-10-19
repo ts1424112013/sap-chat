@@ -7,7 +7,8 @@
     "start": "node --env-file-if-exists=.env server.js",
     "test": "node --env-file-if-exists=.env test-cases.js",
     "test:eval": "node agent-eval-tests.js",
-    "test:protocol": "node task-protocol-tests.js"
+    "test:protocol": "node task-protocol-tests.js",
+    "test:frontend": "node frontend-tests.js"
   },
   "dependencies": {
     "express": "^4.18.2",

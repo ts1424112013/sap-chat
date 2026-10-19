@@ -91,7 +91,8 @@ sap.ui.define([
                         var oRB = this.getView().getModel("i18n").getResourceBundle();
                         var sId = (oSettings.getProperty("/newUserId") || "").trim();
                         if (!sId) {
-                                MessageToast.show(oRB.getText("sapLoginRequired"));
+                                // 20261019（FE-13）：这里只缺账号，原来误用了登录框的"用户名与密码均必填"
+                                MessageToast.show(oRB.getText("userIdRequired"));
                                 return;
                         }
                         ChatService.saveUserData({
@@ -106,8 +107,9 @@ sap.ui.define([
                                 oSettings.setProperty("/newUserPwd", "");
                                 that._refreshUserTable();
                                 MessageToast.show(oRB.getText("userAdded"));
-                        }).catch(function () {
-                                MessageToast.show(oRB.getText("errService"));
+                        }).catch(function (oErr) {
+                                // 20261019（FE-02）：显示后端原话（如"SU01 中不存在用户 …"），不再一律"服务调用失败"
+                                MessageToast.show(Formatter.escapeHtml((oErr && oErr.message) || oRB.getText("errService")));
                         });
                 },
 
@@ -117,9 +119,15 @@ sap.ui.define([
                         var oRB = this.getView().getModel("i18n").getResourceBundle();
                         var sId = oEvent.getSource().data("userId");
                         if (!sId) { return; }
-                        ChatService.saveUserData({ UserId: sId, Active: "" }).then(function () {
+                        // 20261019：停用时带上原姓名与角色 —— 后端按传入值整行 UPDATE，只传 UserId 会把
+                        // 姓名清空、角色改成 USER（saveUserData 的默认值）
+                        var oRow = (this.getView().getModel("settings").getProperty("/userList") || [])
+                                .filter(function (u) { return u.UserId === sId; })[0] || {};
+                        ChatService.saveUserData({ UserId: sId, UserName: oRow.UserName || "", Role: oRow.RoleRaw || "USER", Active: "" }).then(function () {
                                 that._refreshUserTable();
                                 MessageToast.show(oRB.getText("userDeleted"));
+                        }).catch(function (oErr) {
+                                MessageToast.show(Formatter.escapeHtml((oErr && oErr.message) || oRB.getText("errService")));
                         });
                 },
 

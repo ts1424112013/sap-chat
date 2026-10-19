@@ -354,7 +354,7 @@ sap.ui.define([
                                 (oCfg.path || oSettings.getProperty("/path") || "/sap/opu/odata/sap/ZAI_CHAT_SRV/") +
                                 "$metadata";
                         var oAbort = new AbortController();
-                        var iTimer = setTimeout(function () { oAbort.abort(); }, oCfg.probeTimeoutMs || 4000);
+                        var iTimer = setTimeout(function () { oAbort.abort(); }, oCfg.probeTimeoutMs || 12000);
                         fetch(sUrl, { method: "GET", credentials: "omit", signal: oAbort.signal })
                                 .then(function (oResp) {
                                         clearTimeout(iTimer);
@@ -1732,6 +1732,8 @@ sap.ui.define([
                                 that._iPrevBlockCount = -1;
                                 // 约 160 帧打完，每帧至少 2 字符（长文自动加速）
                                 var iChunk = Math.max(2, Math.ceil(iLen / 160));
+                                // 20261019（FE-10）：点消息区可跳过动画（_maybeSkipStream 置位，下一帧直接打完）
+                                var sSkipTip = that._rb().getText("streamSkipTip");
 
                                 var fnTick = function () {
                                         // 令牌失效 → 会话已切换/新建，立即终止
@@ -1739,7 +1741,7 @@ sap.ui.define([
                                                 fnResolve();
                                                 return;
                                         }
-                                        iPos = Math.min(iLen, iPos + iChunk);
+                                        iPos = that._sStreamSkip === sToken ? iLen : Math.min(iLen, iPos + iChunk);
                                         var bDone = iPos >= iLen;
                                         var sPart = sAnswer.substring(0, iPos);
                                         var sHtml = Formatter.markdownToHtml(sPart);
@@ -1762,6 +1764,7 @@ sap.ui.define([
                                                 // Markdown 输出再次经过白名单清洗；流式光标是内部安全标记，
                                                 // 清洗后仍保留在允许的 span 之外时由 CSS 正常显示。
                                                 oBodyDom.innerHTML = Formatter.sanitizeHtml(sHtml);
+                                                oBodyDom.title = bDone ? "" : sSkipTip;
                                                 if (!bDone) {
                                                         // 新块淡入：仅当出现新的顶级块（段落/列表/代码块）时，
                                                         // 对最后一块加 tokenIn 动画；光标不算块
@@ -2613,7 +2616,9 @@ sap.ui.define([
                 /** 持久化泡泡（管理员改动后；同步重渲染首页泡泡） */
                 _saveQuickPrompts: function () {
                         var aList = this.getView().getModel("chat").getProperty("/quickPrompts");
-                        ChatService.savePromptsData(aList);
+                        ChatService.savePromptsData(aList).catch(function (oErr) {
+                                MessageToast.show(Formatter.escapeHtml((oErr && oErr.message) || String(oErr)));
+                        });
                         this._renderHeroBubbles();
                 },
 
@@ -2786,7 +2791,9 @@ sap.ui.define([
                 },
 
                 _saveRoles: function () {
-                        ChatService.saveRolesData(this.getView().getModel("chat").getProperty("/roles"));
+                        ChatService.saveRolesData(this.getView().getModel("chat").getProperty("/roles")).catch(function (oErr) {
+                                MessageToast.show(Formatter.escapeHtml((oErr && oErr.message) || String(oErr)));
+                        });
                 },
 
                 /** 首页与对话态两个下拉框统一刷新（首位固定「不使用角色」） */
@@ -3549,6 +3556,7 @@ sap.ui.define([
                         document.body.addEventListener("click", function (oEv) {
                                 var oBtn = oEv.target && oEv.target.closest ? oEv.target.closest("button[data-act]") : null;
                                 if (!oBtn) {
+                                        that._maybeSkipStream(oEv.target);
                                         return;
                                 }
                                 var oHost = oBtn.closest("[data-uid]");
@@ -3556,6 +3564,19 @@ sap.ui.define([
                                         that._onDataAction(oBtn, oHost.getAttribute("data-uid"));
                                 }
                         });
+                },
+
+                /** 20261019（FE-10）：打字动画进行中，点消息区的非交互位置 = 跳过动画，直接显示全文 */
+                _maybeSkipStream: function (oTarget) {
+                        if (!this._sStreamToken || !oTarget || !oTarget.closest) {
+                                return;
+                        }
+                        var oScroll = this.byId("chatScroll");
+                        var oDom = oScroll && oScroll.getDomRef();
+                        if (!oDom || !oDom.contains(oTarget) || oTarget.closest("a, button, input, textarea, select")) {
+                                return;
+                        }
+                        this._sStreamSkip = this._sStreamToken;
                 },
 
                 _onDataAction: function (oBtn, sUid) {

@@ -22,8 +22,9 @@ window.ZAI_CONFIG = {
         /* OData 服务路径（与 SEGW 发布的服务一致） */
         path: "/sap/opu/odata/sap/ZAI_CHAT_SRV/",
 
-        /* 启动探测超时（毫秒） */
-        probeTimeoutMs: 4000,
+        /* 启动探测超时（毫秒）。20261019（FE-10）：4000 → 12000，网关冷启动时首个
+           $metadata 可能超过 4 秒，原值会误判为后端不可用而降级成演示模式 */
+        probeTimeoutMs: 12000,
 
         /* ── UI5 框架来源与主题（内网部署关键项）────────────────────
          * ui5Src 三选一：
