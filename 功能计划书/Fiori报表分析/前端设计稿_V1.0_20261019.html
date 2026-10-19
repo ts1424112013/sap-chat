@@ -193,6 +193,46 @@ table.md tr.sum td { font-weight: 600; background: var(--bg); }
 .dock .inputCard textarea { height: 30px; overflow: hidden; }
 .legend { display: flex; gap: 14px; font-size: .74rem; color: var(--sub); margin-top: 4px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+/* 报表执行（TCode）目录 / 运行卡 / 对比页 */
+.dsBar { overflow-x: auto; white-space: nowrap; }
+.dsGrp { font-size: 11px; color: var(--sub); margin-left: 8px; }
+.scene[data-go] { cursor: pointer; }
+.scene[data-go]:hover { border-color: var(--accent); color: var(--accent); }
+.tc { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 11px; font-weight: 500; padding: 0 6px; border-radius: 5px; background: var(--hover); color: var(--text-2); }
+.bdJob { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
+.bdOff { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--hover); color: var(--sub); }
+.catRow.off { opacity: .5; cursor: not-allowed; }
+.catRow.off:hover { background: transparent; }
+.catNote { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sub); padding: 0 16px 10px; flex-wrap: wrap; }
+.runBtn { font-size: .74rem; padding: .38rem .75rem; }
+.divider { display: flex; align-items: center; gap: 10px; font-size: .74rem; color: var(--sub); }
+.divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.runCard { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); padding: .75rem .95rem; }
+.runHead { display: flex; justify-content: space-between; font-size: .84rem; font-weight: 600; }
+.runHead .runTime { color: var(--sub); font-weight: 400; }
+.runSteps { display: flex; align-items: center; gap: 8px; margin: .65rem 0 .45rem; font-size: .78rem; color: var(--text-2); flex-wrap: wrap; }
+.runStep { display: inline-flex; align-items: center; gap: 6px; }
+.runStep i { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--line-strong); }
+.runStep.st-done i { background: var(--ok); border-color: var(--ok); }
+.runStep.st-on { color: var(--accent); font-weight: 600; }
+.runStep.st-on i { border-color: var(--accent); background: var(--accent-soft); }
+.runLine { flex: 0 0 36px; height: 2px; background: var(--line-strong); }
+.runLine.on { background: var(--ok); }
+.runMsg { font-size: .74rem; color: var(--sub); }
+.runActs { display: flex; gap: 6px; margin-top: .55rem; }
+.cmp { width: min(calc(100% - 3rem), 1120px); margin: 0 auto; padding: 22px 0 40px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.cmpCol h4 { margin: 0 0 8px; display: flex; align-items: center; gap: 8px; font-size: .95rem; }
+.cmpCol .catalog { width: 100%; margin-top: 0; }
+.cmpCol .catList { max-height: none; }
+.cmpCol .catRow { pointer-events: none; }
+.cmpWide { grid-column: 1 / -1; }
+table.cmpTbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .82rem; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+table.cmpTbl th, table.cmpTbl td { padding: 9px 14px; text-align: left; vertical-align: top; border-top: 1px solid var(--line); }
+table.cmpTbl tr:first-child th, table.cmpTbl tr:first-child td { border-top: none; }
+table.cmpTbl thead th { background: var(--hover); color: var(--text-2); font-weight: 600; font-size: .78rem; }
+table.cmpTbl tbody th { width: 7rem; color: var(--sub); font-weight: 500; }
+table.cmpTbl td.same { background: var(--accent-soft); color: var(--text); }
+@media (max-width: 1000px) { .cmp { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 1000px) { .side { display: none; } }
 @media (max-width: 640px) { .field { grid-template-columns: minmax(0, 1fr); row-gap: .2rem; } .rMeta .pc { display: none; } }
 </style>
@@ -200,12 +240,18 @@ table.md tr.sum td { font-weight: 600; background: var(--bg); }
 <body>
 
 <div class="dsBar">
-  <b>设计稿 · Fiori 报表场景</b>
+  <b>设计稿</b>
+  <span class="dsGrp">Fiori 报表</span>
   <button class="dsTab on" data-s="1">1 报表目录</button>
   <button class="dsTab" data-s="2">2 填参数</button>
   <button class="dsTab" data-s="3">3 取数结果</button>
   <button class="dsTab" data-s="4">4 模型分析</button>
-  <span class="dsNote">可以直接点界面走流程；除 shipment報表 外均为示例报表</span>
+  <span class="dsGrp">报表执行（TCode）</span>
+  <button class="dsTab" data-s="5">5 报表目录</button>
+  <button class="dsTab" data-s="6">6 点选之后</button>
+  <span class="dsGrp">对比</span>
+  <button class="dsTab" data-s="7">7 两个目录对比</button>
+  <span class="dsNote">可以直接点界面走流程；除 shipment報表、ZDPMM702 外均为示例</span>
   <span class="dsSp"></span>
   <button class="dsTab" id="themeBtn">深色</button>
 </div>
@@ -221,6 +267,10 @@ table.md tr.sum td { font-weight: 600; background: var(--bg); }
       <div class="sessT"><i class="ti ti-bulb" style="color:var(--accent)"></i>10 月 HHZZ 出货</div>
       <div class="sessM">10-19 14:20<span>Fiori 报表</span><span class="pill ok">已完成</span></div>
     </div>
+    <div class="sess" id="sessTc" style="display:none">
+      <div class="sessT"><i class="ti ti-bulb" style="color:var(--accent)"></i>执行 ZDPMM702</div>
+      <div class="sessM">10-19 14:35<span>报表执行</span><span class="pill" style="background:var(--accent-soft);color:var(--accent)">运行中</span></div>
+    </div>
     <div class="sess">
       <div class="sessT"><i class="ti ti-bulb" style="color:var(--accent)"></i>hi</div>
       <div class="sessM">10-11 11:07<span>代码分析</span><span class="pill ok">已完成</span></div>
@@ -235,7 +285,7 @@ table.md tr.sum td { font-weight: 600; background: var(--bg); }
   <section class="main">
     <div class="top">
       <button class="iconBtn"><i class="ti ti-menu-2"></i></button>
-      <span class="crumb">✦ Agent · Fiori 报表</span>
+      <span class="crumb" id="crumb">✦ Agent · Fiori 报表</span>
       <span style="flex:1"></span>
       <span class="modelSel">智能路由（按任务自动选…）<i class="ti ti-chevron-down"></i></span>
       <button class="iconBtn" id="themeBtn2"><i class="ti ti-moon"></i></button>
@@ -251,7 +301,7 @@ table.md tr.sum td { font-weight: 600; background: var(--bg); }
           <h1 class="heroTitle">今天想让 Agent 做什么?</h1>
           <p class="heroSub">从报表目录选报表、填参数、实时取数；需要时再交给模型分析</p>
           <div class="scenes">
-            <span class="scene"><i class="ti ti-file-text"></i>报表执行</span>
+            <span class="scene" data-go="5" title="切到报表执行（TCode）"><i class="ti ti-file-text"></i>报表执行</span>
             <span class="scene on"><i class="ti ti-chart-line"></i>Fiori 报表</span>
             <span class="scene"><i class="ti ti-database"></i>数据分析</span>
             <span class="scene"><i class="ti ti-code"></i>代码分析</span>
@@ -322,6 +372,115 @@ table.md tr.sum td { font-weight: 600; background: var(--bg); }
         <div class="dock"><div class="inputCard"><textarea placeholder="继续追问，例如「按 region 下钻」「和 9 月对比」"></textarea><div class="inputFoot"><button class="iconBtn"><i class="ti ti-paperclip"></i></button><button class="send"><i class="ti ti-send"></i></button></div></div></div>
       </div>
 
+      <!-- 5 报表执行（TCode）目录 -->
+      <div class="screen" id="s5">
+        <div class="hero">
+          <img class="heroMark lg" alt="">
+          <h1 class="heroTitle">今天想让 Agent 做什么?</h1>
+          <p class="heroSub">选报表、填参数、后台执行；结果出来后可以直接追问分析</p>
+          <div class="scenes">
+            <span class="scene on"><i class="ti ti-file-text"></i>报表执行</span>
+            <span class="scene" data-go="1" title="切到 Fiori 报表"><i class="ti ti-chart-line"></i>Fiori 报表</span>
+            <span class="scene"><i class="ti ti-database"></i>数据分析</span>
+            <span class="scene"><i class="ti ti-code"></i>代码分析</span>
+            <span class="scene auto"><i class="ti ti-bulb"></i>自动</span>
+          </div>
+          <div class="inputCard">
+            <textarea placeholder="要执行哪张报表？例如「执行 ZDPMM702」；也可以直接在下方目录里点选"></textarea>
+            <div class="inputFoot"><button class="iconBtn"><i class="ti ti-paperclip"></i></button><button class="send"><i class="ti ti-send"></i></button></div>
+          </div>
+          <div class="catalog">
+            <div class="catHead">
+              <h3><i class="ti ti-layout-list" style="color:var(--accent)"></i>报表目录</h3>
+              <span class="cnt" id="tcCnt"></span>
+              <label class="catSearch"><i class="ti ti-search"></i><input id="tcQ" placeholder="搜报表名、TCode"></label>
+            </div>
+            <div class="catNote"><i class="ti ti-info-circle"></i>单选：点一张报表会发出「执行 TCode」，确认参数后才提交后台作业</div>
+            <div class="catList" id="tcList"></div>
+            <div class="catFoot">
+              <span class="picked">数据来自现有 ReportDefinitions 接口；业务分类等报表多了再加</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6 报表执行：点选之后（现有流程） -->
+      <div class="screen" id="s6">
+        <div class="conv">
+          <div class="u" id="s6User"></div>
+          <div class="a">
+            <img class="lg" alt="">
+            <div class="aBody">
+              <div class="sender">Agent</div>
+              <p class="aText" id="s6Text"></p>
+              <div class="askCard">
+                <div class="askHead"><i class="ti ti-adjustments-horizontal"></i><span class="askTitle" id="tcAskTitle"></span><span class="askSub" id="tcAskSub"></span></div>
+                <div class="askFields" id="tcAskBody"></div>
+                <div class="askActs">
+                  <button class="btnP"><i class="ti ti-player-play"></i>提交后台运行</button>
+                  <button class="dtBtn" data-go="5">返回目录</button>
+                  <span class="dtHint">从这里开始是现有流程，界面不变</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="divider">提交之后（现有的运行卡，不变）</div>
+          <div class="a">
+            <img class="lg" alt="">
+            <div class="aBody">
+              <div class="sender">Agent</div>
+              <div class="runCard">
+                <div class="runHead"><span>报表运行 a1b2c3d4</span><span class="runTime">42 秒</span></div>
+                <div class="runSteps"><span class="runStep st-done"><i></i>已提交</span><span class="runLine on"></span><span class="runStep st-on"><i></i>运行中</span><span class="runLine"></span><span class="runStep"><i></i>结果就绪</span></div>
+                <div class="runMsg">后台作业 ZAI_RPT_A1B2C3D4 · 第 8/100 次查询</div>
+                <div class="runActs"><button class="dtBtn">立即刷新</button><button class="dtBtn">停止跟踪</button></div>
+              </div>
+              <p class="dtHint" style="margin:8px 2px 0">结果就绪后显示数据表，可以切图表、导出，也可以直接追问分析（现有功能）</p>
+            </div>
+          </div>
+        </div>
+        <div class="dock"><div class="inputCard"><textarea placeholder="结果出来后可以接着追问，例如「哪个工厂的 MIH 需求最大」"></textarea><div class="inputFoot"><button class="iconBtn"><i class="ti ti-paperclip"></i></button><button class="send"><i class="ti ti-send"></i></button></div></div></div>
+      </div>
+
+      <!-- 7 两个目录对比 -->
+      <div class="screen" id="s7">
+        <div class="cmp">
+          <div class="cmpCol">
+            <h4><i class="ti ti-chart-line" style="color:var(--accent)"></i>Fiori 报表的目录</h4>
+            <div class="catalog">
+              <div class="catHead"><h3><i class="ti ti-layout-list" style="color:var(--accent)"></i>报表目录</h3><span class="cnt">7 张已登记</span></div>
+              <div class="bizTabs"><span class="bizTab">全部<small>7</small></span><span class="bizTab on">销量分析<small>4</small></span><span class="bizTab">采购<small>2</small></span><span class="bizTab">生产<small>1</small></span></div>
+              <div class="catList" id="cmpFiori"></div>
+              <div class="catFoot"><span class="picked">已选 <b>2</b> 张：shipment報表、出货单价趋势</span><button class="btnP">填参数（2 张）<i class="ti ti-arrow-right"></i></button></div>
+            </div>
+          </div>
+          <div class="cmpCol">
+            <h4><i class="ti ti-file-text" style="color:var(--warn)"></i>报表执行（TCode）的目录</h4>
+            <div class="catalog">
+              <div class="catHead"><h3><i class="ti ti-layout-list" style="color:var(--accent)"></i>报表目录</h3><span class="cnt">5 张已登记</span></div>
+              <div class="catNote"><i class="ti ti-info-circle"></i>单选：点一张会发出「执行 TCode」</div>
+              <div class="catList" id="cmpTc"></div>
+              <div class="catFoot"><span class="picked">业务分类等报表多了再加</span></div>
+            </div>
+          </div>
+          <div class="cmpWide">
+            <table class="cmpTbl">
+              <thead><tr><th></th><th>Fiori 报表</th><th>报表执行（TCode）</th></tr></thead>
+              <tbody>
+                <tr><th>选择方式</th><td>可以多选，共同参数只填一次</td><td>单选，一次跑一张（后台作业要排队）</td></tr>
+                <tr><th>业务分类</th><td>有：销量分析 / 采购 / 生产…</td><td>先不加，报表多了再给 ZAI_RPT_DEF 加分类列（和 Fiori 用同一套）</td></tr>
+                <tr><th>每行显示</th><td>报表名、说明、业务分类、参数个数</td><td>报表名、TCode、说明、「后台作业」；未开放执行的灰掉</td></tr>
+                <tr><th>点了之后</th><td>弹出参数卡 → 同步取数 → 用户决定是否交给模型分析</td><td>自动发「执行 TCode」→ 现有参数卡 → 提交后台作业 → 轮询 → 结果</td></tr>
+                <tr><th>取数方式</th><td>服务器内部调用 OData，秒级返回</td><td>SUBMIT 后台作业，按作业排队时间</td></tr>
+                <tr><th>目录数据</th><td>新建：ZAI_FRPT_* 登记表 + 新 SEGW 接口</td><td>现有 ReportDefinitions 接口（前端还没用上）</td></tr>
+                <tr><th>后端改动</th><td>新开发</td><td>不用改</td></tr>
+                <tr><th>两边共用</th><td class="same" colspan="2">同一个目录组件（用配置区分单选 / 多选、显示哪些标记）、搜索框、结果表格和图表、导出、追问分析</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
     </div>
   </section>
 </div>
@@ -356,16 +515,31 @@ function go(n) {
   document.querySelectorAll(".dsTab[data-s]").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-s") === String(n)); });
   $("s1").classList.toggle("on", n === 1);
   $("s2").classList.toggle("on", n === 2);
-  $("s3").classList.toggle("on", n >= 3);
-  $("sessNew").style.display = n === 1 ? "none" : "";
-  $("sessNew").classList.toggle("cur", n !== 1);
+  $("s3").classList.toggle("on", n === 3 || n === 4);
+  $("s5").classList.toggle("on", n === 5);
+  $("s6").classList.toggle("on", n === 6);
+  $("s7").classList.toggle("on", n === 7);
+  var fioriRun = n >= 2 && n <= 4;
+  $("sessNew").style.display = fioriRun ? "" : "none";
+  $("sessNew").classList.toggle("cur", fioriRun);
+  $("sessTc").style.display = n === 6 ? "" : "none";
+  $("sessTc").classList.toggle("cur", n === 6);
+  $("crumb").textContent = n === 7 ? "✦ 设计对比 · 两个报表目录" : (n >= 5 ? "✦ Agent · 报表执行" : "✦ Agent · Fiori 报表");
   if (!picked().length) { sel.shp = true; }
   if (n === 2) { renderParams(); }
-  if (n >= 3) { analyzed = n === 4; renderResults(); }
+  if (n === 3 || n === 4) { analyzed = n === 4; renderResults(); }
+  if (n === 6) { renderTcRun(); }
   document.querySelector(".body").scrollTop = 0;
 }
 
 /* ---------- 1 报表目录 ---------- */
+function fioriRowHtml(r, on) {
+  return '<div class="catRow' + (on ? " sel" : "") + '" data-r="' + r.id + '">' +
+    '<span class="cb">' + (on ? '<i class="ti ti-check"></i>' : "") + '</span>' +
+    '<span class="rIcon"><i class="ti ' + r.icon + '"></i></span>' +
+    '<span class="rMain"><span class="rName">' + esc(r.name) + (r.real ? "" : ' <span class="tagEx">示例</span>') + '</span><span class="rDesc" style="display:block">' + esc(r.desc) + '</span></span>' +
+    '<span class="rMeta"><span class="pc">' + (r.own.length + COMMON.length) + ' 个参数</span><span class="biz">' + r.biz + '</span></span></div>';
+}
 function renderCatalog() {
   var q = $("catQ").value.trim().toLowerCase();
   var bizList = ["全部", "销量分析", "采购", "生产"];
@@ -380,19 +554,14 @@ function renderCatalog() {
   var html = "", last = "";
   rows.forEach(function (r) {
     if (biz === "全部" && r.biz !== last) { html += '<div class="catGroup">' + r.biz + '</div>'; last = r.biz; }
-    var on = !!sel[r.id];
-    html += '<div class="catRow' + (on ? " sel" : "") + '" data-r="' + r.id + '">' +
-      '<span class="cb">' + (on ? '<i class="ti ti-check"></i>' : "") + '</span>' +
-      '<span class="rIcon"><i class="ti ' + r.icon + '"></i></span>' +
-      '<span class="rMain"><span class="rName">' + esc(r.name) + (r.real ? "" : ' <span class="tagEx">示例</span>') + '</span><span class="rDesc" style="display:block">' + esc(r.desc) + '</span></span>' +
-      '<span class="rMeta"><span class="pc">' + (r.own.length + COMMON.length) + ' 个参数</span><span class="biz">' + r.biz + '</span></span></div>';
+    html += fioriRowHtml(r, !!sel[r.id]);
   });
   $("catList").innerHTML = html || '<div style="padding:22px;text-align:center;color:var(--sub);font-size:13px">没有匹配的报表，换个关键词试试</div>';
   var p = picked();
   $("picked").innerHTML = p.length ? '已选 <b>' + p.length + '</b> 张：' + p.map(function (r) { return esc(r.name); }).join("、") : '还没选报表，可以多选';
   $("toParams").innerHTML = (p.length > 1 ? "填参数（" + p.length + " 张）" : "填参数") + '<i class="ti ti-arrow-right"></i>';
-  document.querySelectorAll(".bizTab").forEach(function (b) { b.onclick = function () { biz = b.getAttribute("data-b"); renderCatalog(); }; });
-  document.querySelectorAll(".catRow").forEach(function (el) {
+  document.querySelectorAll("#bizTabs .bizTab").forEach(function (b) { b.onclick = function () { biz = b.getAttribute("data-b"); renderCatalog(); }; });
+  document.querySelectorAll("#catList .catRow").forEach(function (el) {
     el.onclick = function () { var id = el.getAttribute("data-r"); if (sel[id]) { delete sel[id]; } else { sel[id] = true; } $("catErr").textContent = ""; renderCatalog(); };
   });
 }
@@ -500,6 +669,58 @@ function analysisHtml(p) {
     '<div class="follow"><button>按 region 下钻</button><button>和 9 月对比</button><button>看各 site 排名</button></div></div></div>';
 }
 
+/* ---------- 5/6 报表执行（TCode） ---------- */
+var TCODES = [
+  { tc: "ZDPMM702", name: "MIH 需求报表", desc: "按工厂、机种汇总 MIH 需求", prog: "ZRMM_IDP_0702", exec: true, real: true,
+    params: [{ label: "工厂", req: true, ph: "例如 1000" }, { label: "机种", ph: "可多值，逗号分隔；范围用 ~" }] },
+  { tc: "ZMM015", name: "库存账龄报表", desc: "按工厂、物料组看库存账龄分布", prog: "示例", exec: true,
+    params: [{ label: "工厂", req: true, ph: "例如 1000" }, { label: "物料组", ph: "全部" }] },
+  { tc: "ZSD021", name: "销售订单未交明细", desc: "按客户列出未交货的订单行", prog: "示例", exec: true,
+    params: [{ label: "销售组织", req: true, ph: "例如 1000" }, { label: "客户", ph: "全部" }] },
+  { tc: "ZPP030", name: "工单完工汇总", desc: "按产线汇总工单完工数量", prog: "示例", exec: false, params: [] },
+  { tc: "ZFI008", name: "应收账龄", desc: "按客户看应收账款账龄", prog: "示例", exec: true,
+    params: [{ label: "公司代码", req: true, ph: "例如 1000" }] }
+];
+var tcSel = "ZDPMM702";
+function tcRowHtml(t) {
+  return '<div class="catRow' + (t.exec ? "" : " off") + '" data-tc="' + t.tc + '" title="' + (t.exec ? "点击发出「执行 " + t.tc + "」" : "这张报表还没开放执行") + '">' +
+    '<span class="rIcon"><i class="ti ti-file-text"></i></span>' +
+    '<span class="rMain"><span class="rName">' + esc(t.name) + ' <span class="tc">' + t.tc + '</span>' + (t.real ? "" : ' <span class="tagEx">示例</span>') + '</span><span class="rDesc" style="display:block">' + esc(t.desc) + '</span></span>' +
+    '<span class="rMeta">' + (t.exec ? '<span class="pc">' + t.params.length + ' 个参数</span><span class="bdJob">后台作业</span><button class="dtBtn runBtn"><i class="ti ti-player-play"></i>执行</button>' : '<span class="bdOff">暂未开放</span>') + '</span></div>';
+}
+function renderTc() {
+  var q = $("tcQ").value.trim().toLowerCase();
+  var rows = TCODES.filter(function (t) { return !q || (t.tc + t.name + t.desc).toLowerCase().indexOf(q) >= 0; });
+  $("tcCnt").textContent = TCODES.length + " 张已登记";
+  $("tcList").innerHTML = rows.map(tcRowHtml).join("") || '<div style="padding:22px;text-align:center;color:var(--sub);font-size:13px">没有匹配的报表，换个关键词试试</div>';
+  document.querySelectorAll("#tcList .catRow").forEach(function (el) {
+    el.onclick = function () {
+      var t = TCODES.filter(function (x) { return x.tc === el.getAttribute("data-tc"); })[0];
+      if (!t.exec) { return; }
+      tcSel = t.tc; go(6);
+    };
+  });
+}
+$("tcQ").oninput = renderTc;
+function renderTcRun() {
+  var t = TCODES.filter(function (x) { return x.tc === tcSel; })[0];
+  $("s6User").innerHTML = "执行 " + t.tc + '<div class="uSub">来自报表目录（点选后自动发出）</div>';
+  $("s6Text").textContent = "请确认「" + t.name + "（" + t.tc + "）」的参数，确认后提交后台运行：";
+  $("tcAskTitle").textContent = t.tc + " · " + t.name;
+  $("tcAskSub").textContent = t.prog;
+  $("tcAskBody").innerHTML = t.params.map(function (p) {
+    return '<div class="field"><span class="fLabel">' + esc(p.label) + (p.req ? " <i>*</i>" : "") + '</span><input class="inp" placeholder="' + esc(p.ph || "") + '"></div>';
+  }).join("");
+}
+
+/* ---------- 7 对比 ---------- */
+function renderCompare() {
+  $("cmpFiori").innerHTML = REPORTS.filter(function (r) { return r.biz === "销量分析"; }).map(function (r) {
+    return fioriRowHtml(r, r.id === "shp" || r.id === "prc");
+  }).join("");
+  $("cmpTc").innerHTML = TCODES.slice(0, 4).map(tcRowHtml).join("");
+}
+
 /* ---------- 切换与主题 ---------- */
 document.querySelectorAll(".dsTab[data-s]").forEach(function (b) { b.onclick = function () { go(parseInt(b.getAttribute("data-s"), 10)); }; });
 document.addEventListener("click", function (e) { var t = e.target.closest("[data-go]"); if (t) { go(parseInt(t.getAttribute("data-go"), 10)); } });
@@ -510,7 +731,10 @@ function toggleTheme() {
 }
 $("themeBtn").onclick = toggleTheme;
 $("themeBtn2").onclick = toggleTheme;
+document.querySelectorAll("img.lg").forEach(function (img) { img.src = LOGO; });
 renderCatalog();
+renderTc();
+renderCompare();
 </script>
 </body>
 </html>
