@@ -1,0 +1,30 @@
+<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
+
+        <!-- 权限申请：一次写操作（申请 / 批量代加）的逐条结果。用户对话框与管理页的「批量代加」共用 -->
+        <VBox class="authResult" visible="{= ${auth>/result/lines}.length > 0 }">
+                <MessageStrip text="{auth>/result/summary}" type="Information" showIcon="true" class="sapUiTinyMarginBottom"/>
+                <Table items="{auth>/result/lines}" fixedLayout="false" contextualWidth="Auto">
+                        <columns>
+                                <Column><Text text="{i18n>authColUser}"/></Column>
+                                <Column><Text text="{i18n>authColTcode}"/></Column>
+                                <Column><Text text="{i18n>authColWerks}"/></Column>
+                                <Column minScreenWidth="Tablet" demandPopin="true"><Text text="{i18n>authColTable}"/></Column>
+                                <Column><Text text="{i18n>authColStatus}"/></Column>
+                                <Column><Text text="{i18n>authColMessage}"/></Column>
+                        </columns>
+                        <items>
+                                <ColumnListItem>
+                                        <cells>
+                                                <Text text="{auth>targetUser}" wrapping="false"/>
+                                                <Text text="{auth>tcode}" wrapping="false"/>
+                                                <Text text="{auth>werks}" wrapping="false"/>
+                                                <Text text="{auth>tabname}" wrapping="false"/>
+                                                <ObjectStatus text="{auth>statusText}" state="{auth>statusState}" class="authNoWrap"/>
+                                                <Text text="{auth>message}"/>
+                                        </cells>
+                                </ColumnListItem>
+                        </items>
+                </Table>
+        </VBox>
+
+</core:FragmentDefinition>

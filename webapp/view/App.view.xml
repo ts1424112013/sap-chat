@@ -75,6 +75,7 @@
                                                                         <Text text="{settings>/userName}" class="sideUserName" wrapping="false"/>
                                                                         <ObjectStatus id="modeBadge" class="modeBadge"/>
                                                                 </VBox>
+                                                                <Button icon="sap-icon://key" type="Transparent" press=".onOpenAuth" tooltip="{i18n>authApply}" class="sideSetBtn"/>
                                                                 <Button icon="sap-icon://action-settings" type="Transparent" press=".onOpenSettings" tooltip="{i18n>settings}" class="sideSetBtn"/>
                                                         </HBox>
                                                 </VBox>

@@ -1,0 +1,81 @@
+<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core" xmlns:f="sap.ui.layout.form">
+
+        <!-- ======================= 申请权限（用户入口）：申请 / 我的申请 ======================= -->
+        <Dialog id="authDialog" title="{i18n>authApply}" contentWidth="52rem" resizable="true" draggable="true" class="authDialog">
+                <content>
+                        <VBox class="authPanel" busy="{auth>/busy}">
+                                <MessageStrip text="{auth>/notice}" type="Error" showIcon="true" visible="{= !!${auth>/notice} }" class="sapUiTinyMarginBottom"/>
+
+                                <IconTabBar expandable="false" headerBackgroundDesign="Transparent" upperCase="false">
+                                        <items>
+
+                                                <!-- 申请 -->
+                                                <IconTabFilter text="{i18n>authTabApply}" key="apply">
+                                                        <f:SimpleForm editable="true" layout="ResponsiveGridLayout" labelSpanL="3" labelSpanM="3" emptySpanL="1" emptySpanM="1">
+                                                                <f:content>
+                                                                        <Label text="{i18n>authTcode}" required="true"/>
+                                                                        <Input value="{auth>/form/tcode}" placeholder="{i18n>authTcodePh}" maxLength="20"/>
+                                                                        <Label text="{i18n>authWerks}" required="true"/>
+                                                                        <Input value="{auth>/form/werks}" placeholder="{i18n>authWerksPh}"/>
+                                                                        <Label text="{i18n>authReason}" required="true"/>
+                                                                        <TextArea value="{auth>/form/reason}" placeholder="{i18n>authReasonPh}" maxLength="255" rows="2" width="100%"/>
+                                                                </f:content>
+                                                        </f:SimpleForm>
+                                                        <Button text="{i18n>authSubmit}" type="Emphasized" press=".onAuthSubmit"/>
+                                                        <core:Fragment fragmentName="zai.chat.view.AuthResult" type="XML"/>
+                                                </IconTabFilter>
+
+                                                <!-- 我的申请 -->
+                                                <IconTabFilter text="{i18n>authTabMine}" key="mine">
+                                                        <Button text="{i18n>authRefresh}" icon="sap-icon://refresh" press=".onAuthRefreshMine"/>
+                                                        <Table items="{auth>/mine/rows}" noDataText="{i18n>authNoRequests}" fixedLayout="false" contextualWidth="Auto" class="sapUiTinyMarginTop">
+                                                                <columns>
+                                                                        <Column><Text text="{i18n>authColTcode}"/></Column>
+                                                                        <Column><Text text="{i18n>authColWerks}"/></Column>
+                                                                        <Column minScreenWidth="Tablet" demandPopin="true"><Text text="{i18n>authColTable}"/></Column>
+                                                                        <Column><Text text="{i18n>authColStatus}"/></Column>
+                                                                        <Column><Text text="{i18n>authColMessage}"/></Column>
+                                                                        <Column minScreenWidth="Tablet" demandPopin="true"><Text text="{i18n>authColTime}"/></Column>
+                                                                </columns>
+                                                                <items>
+                                                                        <ColumnListItem>
+                                                                                <cells>
+                                                                                        <Text text="{auth>tcode}" wrapping="false"/>
+                                                                                        <Text text="{auth>werks}" wrapping="false"/>
+                                                                                        <Text text="{auth>tabname}" wrapping="false"/>
+                                                                                        <ObjectStatus text="{auth>statusText}" state="{auth>statusState}" class="authNoWrap"/>
+                                                                                        <Text text="{auth>message}"/>
+                                                                                        <Text text="{auth>createdAtText}" wrapping="false"/>
+                                                                                </cells>
+                                                                        </ColumnListItem>
+                                                                </items>
+                                                        </Table>
+                                                        <HBox alignItems="Center" justifyContent="SpaceBetween" class="sapUiSmallMarginTop">
+                                                                <Text text="{= ${auth>/mine/rows}.length ? (${auth>/mine/skip} + 1) + ' - ' + (${auth>/mine/skip} + ${auth>/mine/rows}.length) + ' / ' + ${auth>/mine/total} : '0' }"/>
+                                                                <HBox>
+                                                                        <Button text="{i18n>authPrev}" press=".onAuthPage" enabled="{= ${auth>/mine/skip} > 0 }">
+                                                                                <customData>
+                                                                                        <core:CustomData key="list" value="mine"/>
+                                                                                        <core:CustomData key="delta" value="-50"/>
+                                                                                </customData>
+                                                                        </Button>
+                                                                        <Button text="{i18n>authNext}" press=".onAuthPage" enabled="{= ${auth>/mine/skip} + 50 &lt; ${auth>/mine/total} }">
+                                                                                <customData>
+                                                                                        <core:CustomData key="list" value="mine"/>
+                                                                                        <core:CustomData key="delta" value="50"/>
+                                                                                </customData>
+                                                                        </Button>
+                                                                </HBox>
+                                                        </HBox>
+                                                </IconTabFilter>
+
+                                        </items>
+                                </IconTabBar>
+                        </VBox>
+                </content>
+                <buttons>
+                        <Button text="{i18n>close}" press=".onCloseAuth"/>
+                </buttons>
+        </Dialog>
+
+</core:FragmentDefinition>

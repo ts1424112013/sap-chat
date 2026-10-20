@@ -811,3 +811,10 @@
 .rptResultTable th {
         background: rgba(128, 128, 128, 0.12);
 }
+
+/* 权限自助申请：对话框与设置页签（仅作用于本功能） */
+.authPanel { padding: .25rem 0; }
+.authFilters { gap: .4rem; margin-bottom: .5rem; }
+.authFilters .sapMInputBase, .authFilters .sapMSlt { max-width: 11rem; }
+.authResult { margin-top: .9rem; }
+.authNoWrap .sapMObjStatusText { white-space: nowrap; }

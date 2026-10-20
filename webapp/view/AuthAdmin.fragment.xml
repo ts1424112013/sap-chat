@@ -1,0 +1,190 @@
+<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core" xmlns:f="sap.ui.layout.form">
+
+        <!-- ======================= 设置 → 权限申请（仅 ADMIN）：记录 / 批量代加 / 权限表 / 规则 ======================= -->
+        <VBox class="authPanel" busy="{auth>/busy}">
+
+                <HBox alignItems="Center" justifyContent="SpaceBetween">
+                        <Label text="{i18n>authEnabled}"/>
+                        <Switch state="{auth>/enabled}" change=".onAuthEnabledChange"/>
+                </HBox>
+                <MessageStrip text="{auth>/notice}" type="Error" showIcon="true" visible="{= !!${auth>/notice} }" class="sapUiTinyMarginTop"/>
+                <MessageStrip text="{i18n>authDisabled}" type="Information" showIcon="true" visible="{= !${auth>/enabled} }" class="sapUiTinyMarginTop"/>
+
+                <IconTabBar expandable="false" headerBackgroundDesign="Transparent" upperCase="false">
+                        <items>
+
+                                <!-- 申请记录：筛选 / 审批 / 驳回 / 撤销 -->
+                                <IconTabFilter text="{i18n>authTabRecords}" key="records">
+                                        <HBox wrap="Wrap" alignItems="Center" class="authFilters">
+                                                <Select selectedKey="{auth>/admin/status}">
+                                                        <items>
+                                                                <core:Item key="" text="{i18n>authAllStatus}"/>
+                                                                <core:Item key="PENDING" text="{i18n>authStatusPENDING}"/>
+                                                                <core:Item key="DONE" text="{i18n>authStatusDONE}"/>
+                                                                <core:Item key="EXISTS" text="{i18n>authStatusEXISTS}"/>
+                                                                <core:Item key="REJECTED" text="{i18n>authStatusREJECTED}"/>
+                                                                <core:Item key="FAILED" text="{i18n>authStatusFAILED}"/>
+                                                                <core:Item key="REVOKED" text="{i18n>authStatusREVOKED}"/>
+                                                        </items>
+                                                </Select>
+                                                <Input value="{auth>/admin/user}" placeholder="{i18n>authFilterUserPh}" maxLength="12"/>
+                                                <Input value="{auth>/admin/tcode}" placeholder="{i18n>authTcodePh}" maxLength="20"/>
+                                                <Button text="{i18n>authRefresh}" icon="sap-icon://refresh" press=".onAuthRefreshAdmin"/>
+                                        </HBox>
+                                        <Input value="{auth>/admin/note}" placeholder="{i18n>authNotePh}" maxLength="255" width="100%"/>
+                                        <Table items="{auth>/admin/rows}" noDataText="{i18n>authNoRequests}" fixedLayout="false" contextualWidth="Auto" popinLayout="GridSmall" class="sapUiTinyMarginTop">
+                                                <columns>
+                                                        <Column><Text text="{i18n>authColUser}"/></Column>
+                                                        <Column><Text text="{i18n>authColTcode}"/></Column>
+                                                        <Column><Text text="{i18n>authColWerks}"/></Column>
+                                                        <Column minScreenWidth="Large" demandPopin="true"><Text text="{i18n>authColTable}"/></Column>
+                                                        <Column><Text text="{i18n>authColStatus}"/></Column>
+                                                        <Column minScreenWidth="XXLarge" demandPopin="true"><Text text="{i18n>authColChannel}"/></Column>
+                                                        <Column minScreenWidth="XXLarge" demandPopin="true"><Text text="{i18n>authColReason}"/></Column>
+                                                        <Column><Text text="{i18n>authColMessage}"/></Column>
+                                                        <Column minScreenWidth="XXLarge" demandPopin="true"><Text text="{i18n>authColTime}"/></Column>
+                                                        <Column><Text text="{i18n>authColActions}"/></Column>
+                                                </columns>
+                                                <items>
+                                                        <ColumnListItem>
+                                                                <cells>
+                                                                        <Text text="{auth>targetUser}" wrapping="false"/>
+                                                                        <Text text="{auth>tcode}" wrapping="false"/>
+                                                                        <Text text="{auth>werks}" wrapping="false"/>
+                                                                        <Text text="{auth>tabname}" wrapping="false"/>
+                                                                        <ObjectStatus text="{auth>statusText}" state="{auth>statusState}" class="authNoWrap"/>
+                                                                        <Text text="{auth>channelText}"/>
+                                                                        <Text text="{auth>reason}"/>
+                                                                        <Text text="{auth>message}"/>
+                                                                        <Text text="{auth>createdAtText}" wrapping="false"/>
+                                                                        <HBox wrap="Wrap">
+                                                                                <Button text="{i18n>authApprove}" type="Accept" visible="{auth>canDecide}" press=".onAuthApprove"/>
+                                                                                <Button text="{i18n>authReject}" type="Reject" visible="{auth>canDecide}" press=".onAuthReject"/>
+                                                                                <Button text="{i18n>authRevoke}" type="Transparent" visible="{auth>canRevoke}" press=".onAuthRevoke"/>
+                                                                        </HBox>
+                                                                </cells>
+                                                        </ColumnListItem>
+                                                </items>
+                                        </Table>
+                                        <HBox alignItems="Center" justifyContent="SpaceBetween" class="sapUiSmallMarginTop">
+                                                <Text text="{= ${auth>/admin/rows}.length ? (${auth>/admin/skip} + 1) + ' - ' + (${auth>/admin/skip} + ${auth>/admin/rows}.length) + ' / ' + ${auth>/admin/total} : '0' }"/>
+                                                <HBox>
+                                                        <Button text="{i18n>authPrev}" press=".onAuthPage" enabled="{= ${auth>/admin/skip} > 0 }">
+                                                                <customData>
+                                                                        <core:CustomData key="list" value="admin"/>
+                                                                        <core:CustomData key="delta" value="-50"/>
+                                                                </customData>
+                                                        </Button>
+                                                        <Button text="{i18n>authNext}" press=".onAuthPage" enabled="{= ${auth>/admin/skip} + 50 &lt; ${auth>/admin/total} }">
+                                                                <customData>
+                                                                        <core:CustomData key="list" value="admin"/>
+                                                                        <core:CustomData key="delta" value="50"/>
+                                                                </customData>
+                                                        </Button>
+                                                </HBox>
+                                        </HBox>
+                                </IconTabFilter>
+
+                                <!-- 批量代加：过渡期把邮件里的申请一次处理完（不走审批，规则 BLOCK 也不拦） -->
+                                <IconTabFilter text="{i18n>authTabBatch}" key="batch">
+                                        <f:SimpleForm editable="true" layout="ResponsiveGridLayout" labelSpanL="3" labelSpanM="3" emptySpanL="1" emptySpanM="1">
+                                                <f:content>
+                                                        <Label text="{i18n>authUsers}" required="true"/>
+                                                        <TextArea value="{auth>/batch/users}" placeholder="{i18n>authUsersPh}" rows="3" width="100%"/>
+                                                        <Label text="{i18n>authTcode}" required="true"/>
+                                                        <Input value="{auth>/batch/tcode}" placeholder="{i18n>authTcodePh}" maxLength="20"/>
+                                                        <Label text="{i18n>authWerks}" required="true"/>
+                                                        <Input value="{auth>/batch/werks}" placeholder="{i18n>authBatchWerksPh}"/>
+                                                        <Label text="{i18n>authReason}" required="true"/>
+                                                        <TextArea value="{auth>/batch/reason}" placeholder="{i18n>authReasonPh}" maxLength="255" rows="2" width="100%"/>
+                                                </f:content>
+                                        </f:SimpleForm>
+                                        <Button text="{i18n>authBatchSubmit}" type="Emphasized" press=".onAuthBatchAdd"/>
+                                        <core:Fragment fragmentName="zai.chat.view.AuthResult" type="XML"/>
+                                </IconTabFilter>
+
+                                <!-- 权限表配置：登记一张权限表并确认字段映射 -->
+                                <IconTabFilter text="{i18n>authTabTables}" key="tables">
+                                        <MessageStrip text="{i18n>authTableHint}" type="Information" showIcon="true" class="sapUiTinyMarginBottom"/>
+                                        <List items="{auth>/tables}" mode="SingleSelectMaster" selectionChange=".onAuthPickTable" noDataText="{i18n>authNoTables}">
+                                                <StandardListItem title="{auth>tabname}" description="{auth>descr}" info="{= ${auth>active} === 'X' ? ${i18n>authOn} : ${i18n>authOff} }"/>
+                                        </List>
+                                        <f:SimpleForm editable="true" layout="ResponsiveGridLayout" labelSpanL="3" labelSpanM="3" emptySpanL="1" emptySpanM="1">
+                                                <f:content>
+                                                        <Label text="{i18n>authColTable}"/>
+                                                        <Input value="{auth>/editTable/tabname}" placeholder="{i18n>authTablePh}" maxLength="30"/>
+                                                        <Button text="{i18n>authDescribe}" press=".onAuthDescribe"/>
+                                                        <Label text="{i18n>authDescr}"/>
+                                                        <Input value="{auth>/editTable/descr}" maxLength="60"/>
+                                                        <Label text="{i18n>authDiscover}"/>
+                                                        <CheckBox selected="{auth>/editTable/discover}" text="{i18n>authDiscoverTip}"/>
+                                                        <Label text="{i18n>authActive}"/>
+                                                        <CheckBox selected="{auth>/editTable/active}"/>
+                                                </f:content>
+                                        </f:SimpleForm>
+                                        <ScrollContainer horizontal="true" vertical="false" width="100%">
+                                                <Table items="{auth>/editTable/fields}" noDataText="{i18n>authDescribeFirst}" width="48rem">
+                                                        <columns>
+                                                                <Column><Text text="{i18n>authFldName}"/></Column>
+                                                                <Column width="4rem"><Text text="{i18n>authFldKey}"/></Column>
+                                                                <Column width="5rem"><Text text="{i18n>authFldType}"/></Column>
+                                                                <Column width="4rem"><Text text="{i18n>authFldLen}"/></Column>
+                                                                <Column width="12rem"><Text text="{i18n>authFldMap}"/></Column>
+                                                                <Column width="10rem"><Text text="{i18n>authFldConst}"/></Column>
+                                                        </columns>
+                                                        <items>
+                                                                <ColumnListItem>
+                                                                        <cells>
+                                                                                <Text text="{auth>fieldname}"/>
+                                                                                <Text text="{= ${auth>keyflag} === 'X' ? '●' : '' }"/>
+                                                                                <Text text="{auth>datatype}"/>
+                                                                                <Text text="{auth>leng}"/>
+                                                                                <Select selectedKey="{auth>mapType}" items="{path: 'auth>/mapTypes', templateShareable: false}">
+                                                                                        <core:Item key="{auth>key}" text="{auth>text}"/>
+                                                                                </Select>
+                                                                                <Input value="{auth>constVal}" maxLength="60" enabled="{= ${auth>mapType} === 'CONST' }"/>
+                                                                        </cells>
+                                                                </ColumnListItem>
+                                                        </items>
+                                                </Table>
+                                        </ScrollContainer>
+                                        <Button text="{i18n>authSaveTable}" type="Emphasized" press=".onAuthSaveTable" class="sapUiSmallMarginTop"/>
+                                </IconTabFilter>
+
+                                <!-- 事务码规则：事务码（可带 *）→ 写哪张表、自动 / 审批 / 禁止自助 -->
+                                <IconTabFilter text="{i18n>authTabRules}" key="rules">
+                                        <MessageStrip text="{i18n>authRuleHint}" type="Information" showIcon="true" class="sapUiTinyMarginBottom"/>
+                                        <List items="{auth>/rules}" mode="SingleSelectMaster" selectionChange=".onAuthPickRule" noDataText="{i18n>authNoRules}">
+                                                <StandardListItem title="{auth>tcodePat}" description="{auth>tabname}" info="{auth>ruleMode}"/>
+                                        </List>
+                                        <f:SimpleForm editable="true" layout="ResponsiveGridLayout" labelSpanL="3" labelSpanM="3" emptySpanL="1" emptySpanM="1">
+                                                <f:content>
+                                                        <Label text="{i18n>authPattern}"/>
+                                                        <Input value="{auth>/editRule/tcodePat}" placeholder="{i18n>authPatternPh}" maxLength="20"/>
+                                                        <Label text="{i18n>authColTable}"/>
+                                                        <Input value="{auth>/editRule/tabname}" placeholder="{i18n>authRuleTablePh}" maxLength="30"/>
+                                                        <Label text="{i18n>authRuleMode}"/>
+                                                        <Select selectedKey="{auth>/editRule/ruleMode}">
+                                                                <items>
+                                                                        <core:Item key="AUTO" text="{i18n>authModeAUTO}"/>
+                                                                        <core:Item key="APPROVE" text="{i18n>authModeAPPROVE}"/>
+                                                                        <core:Item key="BLOCK" text="{i18n>authModeBLOCK}"/>
+                                                                </items>
+                                                        </Select>
+                                                        <Label text="{i18n>authAllowAll}"/>
+                                                        <CheckBox selected="{auth>/editRule/allowAll}"/>
+                                                        <Label text="{i18n>authActive}"/>
+                                                        <CheckBox selected="{auth>/editRule/active}"/>
+                                                </f:content>
+                                        </f:SimpleForm>
+                                        <HBox>
+                                                <Button text="{i18n>authSaveRule}" type="Emphasized" press=".onAuthSaveRule"/>
+                                                <Button text="{i18n>authDeleteRule}" type="Reject" press=".onAuthDeleteRule" class="sapUiTinyMarginBegin"/>
+                                        </HBox>
+                                </IconTabFilter>
+
+                        </items>
+                </IconTabBar>
+        </VBox>
+
+</core:FragmentDefinition>

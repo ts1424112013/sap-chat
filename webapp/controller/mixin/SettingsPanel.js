@@ -23,6 +23,7 @@ sap.ui.define([
                  * ========================================================= */
 
                 onOpenSettings: function () {
+                        this._authModel();   // 设置里有「权限申请」页签：绑定它的视图模型 "auth" 要先存在
                         var that = this;
                         if (!this._oSettingsDialog) {
                                 this._oSettingsDialog = sap.ui.xmlfragment(this.getView().getId(), "zai.chat.view.SettingsDialog", this);

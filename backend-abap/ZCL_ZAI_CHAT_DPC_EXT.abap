@@ -77,6 +77,14 @@
 *   需同时重贴 CHAT_SERVICE V2.4(先激活 CHAT_SERVICE)
 *   ★ 重贴后核对标记: sessions_get_entityset 内有 iv_search = lv_search
 *   与 is_paging-skip
+* V15.4 20261020(权限自助申请): 新增 9 个函数导入分支 AUTHSUBMIT / AUTHBATCHADD /
+*   AUTHDECIDE / AUTHREVOKE / AUTHTABLESAVE / AUTHRULESAVE / AUTHLIST /
+*   AUTHTABLEDESCRIBE / AUTHCONFIG, 都调 ZCL_AI_AUTH_SERVICE 的同名类型化方法,
+*   统一经 GenericResult 输出(Success=无 error / Message / ResultJson=camelCase
+*   且不压缩空值); 新私有方法 auth_reply。需先激活 ZCL_AI_AUTH_SERVICE, 并在
+*   SEGW 建 9 个 FI(全部返回 GenericResult、参数全 Edm.String), 见
+*   backend-abap/00_对象清单与部署顺序_20261019.md 第七节。其余分支不变
+*   ★ 重贴后核对标记: 搜 auth_reply 代码区应有 9 处调用 + 1 处实现 + 1 处声明(头部注释另有 2 处)
 *=======================================================================
 * V15(P1~P3) 20261007: Agent 多业务任务与报表分析接口
 *   新增函数导入分支(全部旁路, 不改既有分支; SEGW 未建 metadata 前
@@ -177,6 +185,14 @@ CLASS zcl_zai_chat_dpc_ext DEFINITION
       IMPORTING is_result   TYPE ty_generic_result
       RETURNING VALUE(rs)   TYPE ty_generic_odata.
 
+    " V15.4: 权限申请服务的返回 → GenericResult(iv_error 非空 = 失败, Message 取它;
+    " 成功时 Message 取 iv_message; ResultJson = iv_data 的 camelCase JSON, 不压缩空值)
+    CLASS-METHODS auth_reply
+      IMPORTING iv_error    TYPE string
+                iv_message  TYPE string
+                iv_data     TYPE any
+      RETURNING VALUE(rs)   TYPE ty_generic_result.
+
     " V15: TASKS 返回行(TaskItem)
     TYPES: BEGIN OF ty_task_item,
              task_id     TYPE string,
@@ -217,6 +233,92 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
     ENDLOOP.
 
     CASE to_upper( iv_action_name ).
+
+      " ===============================================================
+      " V15.4: 事务码权限自助申请(9 个 FI; 服务内部再校验开关与角色)
+      " ===============================================================
+      WHEN 'AUTHSUBMIT'.
+        DATA(ls_au1) = zcl_ai_auth_service=>submit(
+                         iv_tcode      = v8_param( it_parameter = it_parameter iv_name = 'Tcode' )
+                         iv_werks_list = v8_param( it_parameter = it_parameter iv_name = 'WerksList' )
+                         iv_reason     = v8_param( it_parameter = it_parameter iv_name = 'Reason' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_au1-error iv_message = ls_au1-summary iv_data = ls_au1 ) )
+                          CHANGING cr_data = er_data ).
+
+      WHEN 'AUTHBATCHADD'.
+        DATA(ls_au2) = zcl_ai_auth_service=>admin_batch_add(
+                         iv_users      = v8_param( it_parameter = it_parameter iv_name = 'Users' )
+                         iv_tcode      = v8_param( it_parameter = it_parameter iv_name = 'Tcode' )
+                         iv_werks_list = v8_param( it_parameter = it_parameter iv_name = 'WerksList' )
+                         iv_reason     = v8_param( it_parameter = it_parameter iv_name = 'Reason' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_au2-error iv_message = ls_au2-summary iv_data = ls_au2 ) )
+                          CHANGING cr_data = er_data ).
+
+      WHEN 'AUTHDECIDE'.
+        DATA(ls_au3) = zcl_ai_auth_service=>decide(
+                         iv_req_id  = v8_param( it_parameter = it_parameter iv_name = 'ReqId' )
+                         iv_approve = v8_param( it_parameter = it_parameter iv_name = 'Approve' )
+                         iv_message = v8_param( it_parameter = it_parameter iv_name = 'Message' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_au3-error iv_message = ls_au3-summary iv_data = ls_au3 ) )
+                          CHANGING cr_data = er_data ).
+
+      WHEN 'AUTHREVOKE'.
+        DATA(ls_au4) = zcl_ai_auth_service=>revoke(
+                         iv_req_id  = v8_param( it_parameter = it_parameter iv_name = 'ReqId' )
+                         iv_message = v8_param( it_parameter = it_parameter iv_name = 'Message' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_au4-error iv_message = ls_au4-summary iv_data = ls_au4 ) )
+                          CHANGING cr_data = er_data ).
+
+      WHEN 'AUTHTABLESAVE'.
+        DATA(ls_au5) = zcl_ai_auth_service=>save_table(
+                         iv_tabname   = v8_param( it_parameter = it_parameter iv_name = 'Tabname' )
+                         iv_descr     = v8_param( it_parameter = it_parameter iv_name = 'Descr' )
+                         iv_discover  = v8_param( it_parameter = it_parameter iv_name = 'Discover' )
+                         iv_active    = v8_param( it_parameter = it_parameter iv_name = 'Active' )
+                         iv_fmap_json = v8_param( it_parameter = it_parameter iv_name = 'FmapJson' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_au5-error iv_message = ls_au5-message iv_data = ls_au5 ) )
+                          CHANGING cr_data = er_data ).
+
+      WHEN 'AUTHRULESAVE'.
+        DATA(ls_au6) = zcl_ai_auth_service=>save_rule(
+                         iv_tcode_pat = v8_param( it_parameter = it_parameter iv_name = 'TcodePat' )
+                         iv_tabname   = v8_param( it_parameter = it_parameter iv_name = 'Tabname' )
+                         iv_rule_mode = v8_param( it_parameter = it_parameter iv_name = 'RuleMode' )
+                         iv_allow_all = v8_param( it_parameter = it_parameter iv_name = 'AllowAll' )
+                         iv_active    = v8_param( it_parameter = it_parameter iv_name = 'Active' )
+                         iv_delete    = v8_param( it_parameter = it_parameter iv_name = 'Delete' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_au6-error iv_message = ls_au6-message iv_data = ls_au6 ) )
+                          CHANGING cr_data = er_data ).
+
+      WHEN 'AUTHLIST'.
+        DATA(ls_au7) = zcl_ai_auth_service=>list_requests(
+                         iv_status = v8_param( it_parameter = it_parameter iv_name = 'Status' )
+                         iv_user   = v8_param( it_parameter = it_parameter iv_name = 'User' )
+                         iv_tcode  = v8_param( it_parameter = it_parameter iv_name = 'Tcode' )
+                         iv_top    = v8_param( it_parameter = it_parameter iv_name = 'Top' )
+                         iv_skip   = v8_param( it_parameter = it_parameter iv_name = 'Skip' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_au7-error iv_message = `` iv_data = ls_au7 ) )
+                          CHANGING cr_data = er_data ).
+
+      WHEN 'AUTHTABLEDESCRIBE'.
+        DATA(ls_au8) = zcl_ai_auth_service=>describe_table(
+                         iv_tabname = v8_param( it_parameter = it_parameter iv_name = 'Tabname' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_au8-error iv_message = `` iv_data = ls_au8 ) )
+                          CHANGING cr_data = er_data ).
+
+      WHEN 'AUTHCONFIG'.
+        DATA(ls_au9) = zcl_ai_auth_service=>get_config( ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_au9-error iv_message = `` iv_data = ls_au9 ) )
+                          CHANGING cr_data = er_data ).
 
       WHEN 'ANALYZECODE'.
         DATA: ls_result TYPE zcl_ai_chat_service=>ty_analyze_result.
@@ -856,6 +958,19 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
     rs-needsinput        = is_agent-needs_input.
     rs-pendingparamsjson = is_agent-pending_params_json.
     rs-artifactrefsjson  = is_agent-artifact_refs_json.
+
+  ENDMETHOD.
+
+
+  METHOD auth_reply.
+
+    " V15.4: 失败 = Success 空 + Message 取 error; 成功 = Success X + Message 取一句话汇总。
+    " ResultJson 始终带结构(失败时是空结构), compress=false 让 total=0 / 空数组也有键
+    rs-success     = COND #( WHEN iv_error IS INITIAL THEN 'X' ELSE '' ).
+    rs-message     = COND #( WHEN iv_error IS NOT INITIAL THEN iv_error ELSE iv_message ).
+    rs-result_json = /ui2/cl_json=>serialize( data        = iv_data
+                                              compress    = abap_false
+                                              pretty_name = /ui2/cl_json=>pretty_mode-camel_case ).
 
   ENDMETHOD.
 

@@ -23,8 +23,9 @@ sap.ui.define([
         "zai/chat/controller/mixin/SceneModels",
         "zai/chat/controller/mixin/SettingsPanel",
         "zai/chat/controller/mixin/EvalPanel",
-        "zai/chat/controller/mixin/RunTracker"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, SceneModels, SettingsPanel, EvalPanel, RunTracker) {
+        "zai/chat/controller/mixin/RunTracker",
+        "zai/chat/controller/mixin/AuthPanel"
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel) {
         "use strict";
 
         /**
@@ -3775,5 +3776,5 @@ sap.ui.define([
                 hasText: function (s) {
                         return !!(s && s.length);
                 }
-        }, SceneModels, SettingsPanel, EvalPanel, RunTracker));
+        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel));
 });

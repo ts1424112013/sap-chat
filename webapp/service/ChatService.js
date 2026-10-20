@@ -5,8 +5,9 @@ sap.ui.define([
         "sap/ui/model/FilterOperator",
         "sap/ui/model/Sorter",
         "zai/chat/service/TraceService",
-        "zai/chat/service/MockBackend"
-], function (Log, ODataModel, Filter, FilterOperator, Sorter, TraceService, MockBackend) {
+        "zai/chat/service/MockBackend",
+        "zai/chat/service/AuthMockBackend"
+], function (Log, ODataModel, Filter, FilterOperator, Sorter, TraceService, MockBackend, AuthMockBackend) {
         "use strict";
 
         /**
@@ -660,6 +661,33 @@ sap.ui.define([
                         });
                         return aQ.length ? "?" + aQ.join("&") : "";
                 },
+
+                /**
+                  * 20261020：事务码权限自助申请的 9 个 FI（设计：功能计划书/权限自助申请/01-方案与开发计划_V1.3）。
+                  * 都走 _taskCall（GenericResult 契约、POST 参数放 URL、带 CSRF）；成功时返回已解析的 ResultJson
+                  * （字段是 camelCase：reqId / targetUser / statusText 由界面层再加），失败抛 Error(后端原话)。
+                  * 演示模式走 AuthMockBackend（语义与后端一一对应）。
+                  */
+                _authCall: function (sAction, oParams, bPost) {
+                        if (this._sConfig.mode === "mock") {
+                                return this._mockAuthCall(sAction, oParams || {});
+                        }
+                        return this._taskCall(sAction, oParams || {}, bPost).then(function (oRes) {
+                                if (!oRes.success) {
+                                        throw new Error(oRes.message || "权限服务调用失败");
+                                }
+                                return oRes.result || {};
+                        });
+                },
+                authSubmit: function (o) { return this._authCall("AuthSubmit", o, true); },
+                authBatchAdd: function (o) { return this._authCall("AuthBatchAdd", o, true); },
+                authDecide: function (o) { return this._authCall("AuthDecide", o, true); },
+                authRevoke: function (o) { return this._authCall("AuthRevoke", o, true); },
+                authTableSave: function (o) { return this._authCall("AuthTableSave", o, true); },
+                authRuleSave: function (o) { return this._authCall("AuthRuleSave", o, true); },
+                authList: function (o) { return this._authCall("AuthList", o, false); },
+                authTableDescribe: function (o) { return this._authCall("AuthTableDescribe", o, false); },
+                authConfig: function () { return this._authCall("AuthConfig", {}, false); },
 
                 /** 会话任务列表 → Promise<[TaskItem]>（能力未开/失败 → []） */
                 getTasks: function (sSessionId) {
@@ -1380,7 +1408,7 @@ sap.ui.define([
         };
 
         // 20261011（FE-09）：演示模式实现在 service/MockBackend（mixin，_mock* 等方法）
-        Object.assign(Service, MockBackend);
+        Object.assign(Service, MockBackend, AuthMockBackend);
 
         return Service;
 });
