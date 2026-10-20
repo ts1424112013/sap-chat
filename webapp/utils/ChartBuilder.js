@@ -103,7 +103,7 @@ sap.ui.define([
                         oYBox.addItem(new Item({ key: String(i), text: ChartRenderer.colLabel(oDs, i) }));
                 });
                 var oAgg = selectOf([
-                        { key: "none", text: "不汇总（逐行）" }, { key: "sum", text: "按 X 求和" },
+                        { key: "none", text: "不汇总" }, { key: "sum", text: "按 X 求和" },
                         { key: "avg", text: "按 X 平均" }, { key: "count", text: "按 X 计数" }
                 ], c.agg, function (e) { c.agg = e.getParameter("selectedItem").getKey(); fnUpdate(); });
                 var oSort = selectOf([

@@ -383,14 +383,15 @@ body, body.sapUiBody { background: var(--bg) !important; }
 /* —— 图表配置面板 —— */
 .chartBuilderDlg .sapMDialogSection { padding: 0 !important; }
 .cbBody { align-items: stretch; }
-.cbForm { width: 19rem; flex: 0 0 19rem !important; padding: 1rem 1.1rem; border-right: 1px solid var(--line); gap: .2rem; }
+.cbForm { width: 21rem; flex: 0 0 21rem !important; padding: 1rem 1.1rem; border-right: 1px solid var(--line); gap: .2rem; }
 .cbRow { gap: .6rem; }
 .cbRow > .sapMFlexItem { flex: 1 1 0 !important; min-width: 0 !important; }
 .cbField { margin-bottom: .55rem; width: 100%; }
 .cbLabel { font-size: .74rem !important; color: var(--sub) !important; margin-bottom: .2rem; }
 .cbTypes { gap: .35rem; }
 .cbTypes > .sapMFlexItem { flex: 0 0 calc(33.33% - .24rem) !important; }
-.cbType { width: 100% !important; }
+/* Horizon 把 sapMBtn 外层固定为 2.75rem 高且带上下内边距；内层方块 3.4rem 会溢出外层，换行后第二行压住第一行（20261020 修） */
+.cbType.sapMBtn { width: 100% !important; height: auto !important; padding: 0 !important; }
 .cbType .sapMBtnContent { line-height: 1.2; }
 .cbForm > .sapMFlexItem, .cbField > .sapMFlexItem { width: 100%; }
 .cbPreview > .sapMFlexItem { width: 100%; }

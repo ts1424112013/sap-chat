@@ -580,6 +580,12 @@ body.sapUiBody {
 [data-theme="dark"] .sapMDialogTitle {
         background: var(--surface-solid) !important;
 }
+/* 20261020：标准标题栏里 sapMDialogTitle 落在标题文字控件上，铺白底会盖住标题栏底部分隔线
+   （「生成图表」等对话框标题左侧分隔线断开）；亮色下标题栏本身已是白底，标题文字不再铺底。
+   暗色维持上面的规则（暗色对话框底色另见暗色补层） */
+html:not([data-theme="dark"]) .sapMTitle.sapMDialogTitle {
+        background: transparent !important;
+}
 
 /* 登录框（V8）：居中徽标 + 圆角输入 + 全宽登录按钮 */
 .appLoginBody { padding: 0 1.6rem 1.2rem !important; }

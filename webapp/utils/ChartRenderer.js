@@ -243,7 +243,11 @@ sap.ui.define(["zai/chat/utils/Formatter"], function (Formatter) {
                                         s += '<circle cx="' + f(cx(j)) + '" cy="' + f(Y(val)) + '" r="' + (n > 30 ? 2 : 3.4) + '" fill="' + col + '" class="gcDot"><title>' +
                                                 esc(aLab[j] + " · " + o.name + ": " + fmt(val)) + "</title></circle>";
                                         if (c.showValues && n <= 16 && aSer.length === 1) {
-                                                s += '<text x="' + f(cx(j)) + '" y="' + f(Y(val) - 9) + '" class="gcText gcC gcVal">' + fmt(val) + "</text>";
+                                                // 低谷点（比两侧都低）标签放到点下方，免得压在两段折线的交汇处；下方贴近 X 轴时仍放上方
+                                                var vPrev = j > 0 ? o.values[j - 1] : null, vNext = j < n - 1 ? o.values[j + 1] : null;
+                                                var bValley = (vPrev !== null || vNext !== null) && (vPrev === null || vPrev > val) && (vNext === null || vNext > val);
+                                                var yLab = bValley && Y(val) + 17 <= y0 - 3 ? Y(val) + 17 : Y(val) - 9;
+                                                s += '<text x="' + f(cx(j)) + '" y="' + f(yLab) + '" class="gcText gcC gcVal">' + fmt(val) + "</text>";
                                         }
                                 });
                         });
