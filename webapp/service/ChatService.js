@@ -6,8 +6,9 @@ sap.ui.define([
         "sap/ui/model/Sorter",
         "zai/chat/service/TraceService",
         "zai/chat/service/MockBackend",
-        "zai/chat/service/AuthMockBackend"
-], function (Log, ODataModel, Filter, FilterOperator, Sorter, TraceService, MockBackend, AuthMockBackend) {
+        "zai/chat/service/AuthMockBackend",
+        "zai/chat/service/FioriMockBackend"
+], function (Log, ODataModel, Filter, FilterOperator, Sorter, TraceService, MockBackend, AuthMockBackend, FioriMockBackend) {
         "use strict";
 
         /**
@@ -707,10 +708,77 @@ sap.ui.define([
                 /** 登记报表与参数 Schema → Promise<[Definition]>（能力未开 → []） */
                 getReportDefinitions: function () {
                         if (this._sConfig.mode === "mock") {
-                                return Promise.resolve([]);
+                                return this._mockReportDefs().then(function (o) { return o.defs; });
                         }
                         return this._taskCall("ReportDefinitions", {}, false)
                                 .then(function (o) { return (o.success && o.result) || []; });
+                },
+
+                /**
+                  * 20261020：「报表执行」场景的报表目录 → Promise<{defs, message}>。
+                  * 与 getReportDefinitions 同一个接口，但带回后端说明（如"报表读取能力未开启"），接口失败时抛错
+                  * （目录显示原因 + 重试）。注意 ReportDefinitions 的 ResultJson 没设 pretty_name，键是大写
+                  * （REPORT_ID / TCODE / NAME / EXEC_ENABLED / PARAMS），目录按大小写都认。
+                  */
+                getReportCatalog: function () {
+                        if (this._sConfig.mode === "mock") {
+                                return this._mockReportDefs();
+                        }
+                        return this._taskCall("ReportDefinitions", {}, false).then(function (o) {
+                                if (!o.success) {
+                                        throw new Error(o.message || "报表目录加载失败");
+                                }
+                                return { defs: Array.isArray(o.result) ? o.result : [], message: o.message || "" };
+                        });
+                },
+
+                /**
+                  * 20261020：Fiori 报表（设计：功能计划书/Fiori报表分析/01-方案与开发计划）。三个 FI 都走 _taskCall
+                  * （GenericResult 契约、POST 参数放 URL、带 CSRF），ResultJson 是 camelCase；失败抛后端原话。
+                  * 演示模式走 FioriMockBackend（语义与 ZCL_AI_FIORI_REPORT_SERVICE 对应）。
+                  */
+                _fioriCall: function (sAction, oParams, bPost) {
+                        if (this._sConfig.mode === "mock") {
+                                return this._mockFioriCall(sAction, oParams || {});
+                        }
+                        return this._taskCall(sAction, oParams || {}, bPost).then(function (o) {
+                                if (!o.success) {
+                                        throw new Error(o.message || "Fiori 报表服务调用失败");
+                                }
+                                var r = o.result || {};
+                                if (!r.message && o.message) {
+                                        r.message = o.message;
+                                }
+                                return r;
+                        });
+                },
+
+                /** Fiori 报表目录 → Promise<{defs, message}>（FIORI_ENABLED 未开：defs 为空 + 说明） */
+                getFioriReportDefs: function () {
+                        return this._fioriCall("FioriReportDefs", {}, false).then(function (r) {
+                                return { defs: r.reports || [], message: r.message || "" };
+                        });
+                },
+
+                /**
+                  * 同步取数（幂等：同一 ClientRequestId 返回同一结果）
+                  * @param {object} o {sessionId, taskId, reportId, paramsJson, clientRequestId}
+                  * @returns {Promise<{artifactId, runId, reportId, label, schemaJson, rowsJson, rowCount, truncated,
+                  *          elapsedMs, analyzeEnabled, analyzed, message}>}
+                  */
+                runFioriReport: function (o) {
+                        return this._fioriCall("RunFioriReport", {
+                                SessionId: o.sessionId,
+                                TaskId: o.taskId || "",
+                                ReportId: o.reportId,
+                                ParamsJson: o.paramsJson || "{}",
+                                ClientRequestId: o.clientRequestId
+                        }, true);
+                },
+
+                /** 重新读取历史结果（结构同 runFioriReport） */
+                getFioriReportResult: function (sArtifactId) {
+                        return this._fioriCall("FioriReportResult", { ArtifactId: sArtifactId }, false);
                 },
 
                 /**
@@ -1027,11 +1095,12 @@ sap.ui.define([
 
                 /**
                   * 20261011：Agent 可用模型白名单（ZAI_CHAT_CFG；后端同口径强制校验）
-                  * 键：ALL=AGENT_MODELS（全部场景）/ REPORT / DATA / INVENTORY / CODE（场景专属，优先）
+                  * 键：ALL=AGENT_MODELS（全部场景）/ REPORT / FIORI / DATA / INVENTORY / CODE（场景专属，优先；
+                  * 20261020 加 FIORI = AGENT_MODELS_FIORI）
                   * @returns {Promise<object>} {ALL:[ids], REPORT:[ids], ...}；空数组 = 不限制
                   */
                 AGENT_MODEL_KEYS: {
-                        ALL: "AGENT_MODELS", REPORT: "AGENT_MODELS_RPT", DATA: "AGENT_MODELS_DATA",
+                        ALL: "AGENT_MODELS", REPORT: "AGENT_MODELS_RPT", FIORI: "AGENT_MODELS_FIORI", DATA: "AGENT_MODELS_DATA",
                         INVENTORY: "AGENT_MODELS_INV", CODE: "AGENT_MODELS_CODE"
                 },
 
@@ -1408,7 +1477,7 @@ sap.ui.define([
         };
 
         // 20261011（FE-09）：演示模式实现在 service/MockBackend（mixin，_mock* 等方法）
-        Object.assign(Service, MockBackend, AuthMockBackend);
+        Object.assign(Service, MockBackend, AuthMockBackend, FioriMockBackend);
 
         return Service;
 });

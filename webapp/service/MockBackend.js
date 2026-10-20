@@ -173,6 +173,12 @@ sap.ui.define([], function () {
                   */
                 _mockSendAgent: function (oPayload) {
                         var Service = this;   // 混入 ChatService 后 this 即服务对象
+                        // 20261020：「Fiori 报表」会话走 FioriMockBackend（选报表 → 参数卡 → 分析闸门）
+                        var oKnown = Service._mockStore().sessions.filter(function (s) { return s.SessionId === oPayload.sessionId; })[0];
+                        var sSceneNow = String((oKnown && oKnown.AgentType) || oPayload.scene || "").toUpperCase();
+                        if (sSceneNow === "FIORI" && Service._mockFioriAgent) {
+                                return Service._mockFioriAgent(oPayload);
+                        }
                         return new Promise(function (fnResolve) {
                                 setTimeout(function () {
                                         var sQ = (oPayload.question || "").toLowerCase();
@@ -288,7 +294,7 @@ sap.ui.define([], function () {
                                                         CreatedAt: sNow,
                                                         ChangedAt: sNow,
                                                         Mode: "AGENT",                    // V13：通用 Agent 会话
-                                                        AgentType: /^(REPORT|DATA|INVENTORY|CODE)$/.test(String(oPayload.scene || "").toUpperCase())
+                                                        AgentType: /^(REPORT|FIORI|DATA|INVENTORY|CODE)$/.test(String(oPayload.scene || "").toUpperCase())
                                                                 ? String(oPayload.scene).toUpperCase() : "GENERAL",
                                                         Status: "COMPLETED"
                                                 });

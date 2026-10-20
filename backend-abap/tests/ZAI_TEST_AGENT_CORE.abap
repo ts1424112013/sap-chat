@@ -6,13 +6,14 @@
 *&   ZCL_AI_AGENT_GUARD   parse_model_json(BE-01) / parse_flat_json(BE-02)
 *&   ZCL_AI_REPORT_SERVICE parse_flat_kv(BE-11)
 *&   ZCL_AI_LLM_CLIENT    is_retryable(BE-07)
-*&   ZCL_AI_INTENT_ROUTER normalize_scene / quick_route 场景收窄
+*&   ZCL_AI_INTENT_ROUTER normalize_scene / quick_route 场景收窄(V1.1 加 FIORI 场景)
 *& 用法: SE38 新建可执行程序 ZAI_TEST_AGENT_CORE, 贴入本源码, 激活, F8。
 *&       每次 SE24 重贴上述类后跑一遍, 末行"全部通过"才进回归。
 *& 依赖: AGENT_GUARD V1.1.4 / REPORT_SERVICE V1.0.12 / LLM_CLIENT V1.3。
 *&       在旧版本上跑, 对应用例会失败 —— 正好用来确认重贴是否到位。
 *& 只读: 不写任何表; quick_route 可能按会话 ZAI_TEST 读 ZAI_TASK(无数据也不影响)
 *& V1.0 20261019
+*& V1.1 20261020: 加「Fiori 报表」场景 4 项(需要 INTENT_ROUTER V1.0.6; 共 29 项)
 *&---------------------------------------------------------------------*
 REPORT zai_test_agent_core.
 
@@ -136,6 +137,14 @@ START-OF-SELECTION.
   lcl_t=>check( iv_name = `库存场景: 查表 → 场景外` iv_ok = ls_int-out_of_scene iv_info = ls_int-reason ).
   ls_int = zcl_ai_intent_router=>quick_route( iv_question = `执行 ZDPMM702` iv_session_id = `ZAI_TEST` iv_scene = `CODE` ).
   lcl_t=>check( iv_name = `代码场景: 执行报表 → 场景外` iv_ok = ls_int-out_of_scene iv_info = ls_int-reason ).
+  " V1.1: Fiori 报表场景(INTENT_ROUTER V1.0.6)
+  lcl_t=>check( iv_name = `FIORI 是显式场景` iv_ok = xsdbool( zcl_ai_intent_router=>normalize_scene( `fiori` ) = `FIORI` ) ).
+  ls_int = zcl_ai_intent_router=>quick_route( iv_question = `选择报表：shipment報表` iv_session_id = `ZAI_TEST` iv_scene = `FIORI` ).
+  lcl_t=>check( iv_name = `Fiori 场景: 选择报表 → FIORI 意图` iv_ok = xsdbool( ls_int-out_of_scene = abap_false AND ls_int-module_id = `FIORI` ) iv_info = |{ ls_int-module_id } / { ls_int-reason }| ).
+  ls_int = zcl_ai_intent_router=>quick_route( iv_question = `执行 ZDPMM702` iv_session_id = `ZAI_TEST` iv_scene = `FIORI` ).
+  lcl_t=>check( iv_name = `Fiori 场景: 执行 TCode → 场景外` iv_ok = ls_int-out_of_scene iv_info = ls_int-reason ).
+  ls_int = zcl_ai_intent_router=>quick_route( iv_question = `表 MARD 的字段` iv_session_id = `ZAI_TEST` iv_scene = `FIORI` ).
+  lcl_t=>check( iv_name = `Fiori 场景: 查表 → 场景外` iv_ok = ls_int-out_of_scene iv_info = ls_int-reason ).
 
   SKIP.
   IF lcl_t=>gv_fail = 0.

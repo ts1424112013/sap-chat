@@ -6,8 +6,9 @@ sap.ui.define([
         "sap/m/Input",
         "sap/m/DatePicker",
         "sap/m/Button",
+        "sap/m/ToggleButton",
         "sap/ui/core/Icon"
-], function (VBox, HBox, Text, Label, Input, DatePicker, Button, Icon) {
+], function (VBox, HBox, Text, Label, Input, DatePicker, Button, ToggleButton, Icon) {
         "use strict";
 
         /**
@@ -18,7 +19,26 @@ sap.ui.define([
          * 键盘：↑↓ / Tab 切换选项，1~9 直选，Enter 确认（输入框内回车不抢占）
          * 状态：open → busy（提交中）→ done / cancelled（折叠为一行结论）
          * 卡片只负责交互与收集，业务动作由控制器 onAction(oAsk, oPick) 执行。
+         * 20261020（Fiori 报表）：参数 data_type = ENUM 时按 enum_json（[{key,text}]）渲染成可点选的标签，
+         * multi_value 决定单选 / 多选，提交值为选项 key 逗号拼接；oAsk.values 可预填（重跑时带上次的参数）。
          */
+
+        /** ENUM 选项：enum_json 可以是 JSON 字符串或数组；坏数据返回 [] */
+        function enumOptions(oP) {
+                var a = oP && oP.enum_json;
+                if (typeof a === "string") {
+                        try { a = a ? JSON.parse(a) : []; } catch (e) { a = []; }
+                }
+                return (Array.isArray(a) ? a : []).filter(function (o) {
+                        return o && o.key !== undefined && o.key !== null && String(o.key) !== "";
+                }).map(function (o) {
+                        return { key: String(o.key), text: String(o.text || o.key) };
+                });
+        }
+
+        function isEnum(oP) {
+                return String((oP && oP.data_type) || "").toUpperCase() === "ENUM" && enumOptions(oP).length > 0;
+        }
 
         function dateDisplay(s) {
                 return /^\d{8}$/.test(s) ? s.substring(0, 4) + "-" + s.substring(4, 6) + "-" + s.substring(6, 8) : s;
@@ -35,8 +55,15 @@ sap.ui.define([
                 return String(s || "").split(/[,，、;；|｜\s]+/).filter(Boolean).join(",");
         }
 
-        /** 提交后回显：范围 "从 ~ 至"，多值 "a、b"，日期转 yyyy-MM-dd */
+        /** 提交后回显：范围 "从 ~ 至"，多值 "a、b"，日期转 yyyy-MM-dd，ENUM 显示选项文字 */
         function valueDisplay(oP, sVal) {
+                if (isEnum(oP)) {
+                        var aOpt = enumOptions(oP);
+                        return String(sVal || "").split(",").filter(Boolean).map(function (k) {
+                                var o = aOpt.filter(function (x) { return x.key === k; })[0];
+                                return o ? o.text : k;
+                        }).join("、");
+                }
                 return String(sVal || "").split(",").map(dateDisplay).join(isRange(oP) ? " ~ " : "、");
         }
 
@@ -51,7 +78,7 @@ sap.ui.define([
                                 ? new DatePicker({ value: sV, valueFormat: "yyyyMMdd", displayFormat: "yyyy-MM-dd", placeholder: sPh || "选择日期", width: "100%" })
                                 : new Input({ value: sV, placeholder: sPh || (bMulti ? "可填多个，用逗号或空格分隔" : ""), width: "100%" });
                 };
-                var oRec = { id: sId, label: oP.label || sId, required: oP.required === true, range: isRange(oP), multi: bMulti };
+                var oRec = { id: sId, label: oP.label || sId, required: oP.required === true, range: !isEnum(oP) && isRange(oP), multi: bMulti };
                 // 校验失败重绘后保留红框提示（必填且为空）
                 var fnMark = function (oCtl) {
                         if (bMarkErr && oRec.required && !sVal) {
@@ -60,7 +87,28 @@ sap.ui.define([
                         return oCtl;
                 };
                 var oCtl;
-                if (oRec.range) {
+                if (isEnum(oP)) {
+                        // 标签式选项：单选时点一个会取消其他
+                        var aSel = sVal ? sVal.split(",") : [];
+                        oRec.enumBtns = enumOptions(oP).map(function (o) {
+                                return new ToggleButton({
+                                        text: o.text,
+                                        pressed: aSel.indexOf(o.key) >= 0,
+                                        press: function (e) {
+                                                if (!bMulti && e.getParameter("pressed")) {
+                                                        oRec.enumBtns.forEach(function (b) {
+                                                                if (b !== e.getSource()) { b.setPressed(false); }
+                                                        });
+                                                }
+                                        }
+                                }).data("key", o.key).addStyleClass("askEnumBtn");
+                        });
+                        oCtl = new HBox({ wrap: "Wrap", items: oRec.enumBtns }).addStyleClass("askEnum");
+                        if (bMarkErr && oRec.required && !sVal) {
+                                oCtl.addStyleClass("askEnumErr");
+                        }
+                        oRec.enumBox = oCtl;
+                } else if (oRec.range) {
                         var aPart = sVal.split(",");
                         oRec.low = fnMark(fnMk(aPart[0] || "", "从"));
                         oRec.high = fnMark(fnMk(aPart[1] || "", "至"));
@@ -85,6 +133,16 @@ sap.ui.define([
                 var mOut = {}, aMissing = [];
                 aRecs.forEach(function (r) {
                         var sV;
+                        if (r.enumBtns) {
+                                sV = r.enumBtns.filter(function (b) { return b.getPressed(); })
+                                        .map(function (b) { return b.data("key"); }).join(",");
+                                mOut[r.id] = sV;
+                                r.enumBox.toggleStyleClass("askEnumErr", r.required && !sV);
+                                if (r.required && !sV) {
+                                        aMissing.push(r.label);
+                                }
+                                return;
+                        }
                         if (r.range) {
                                 var sLo = (r.low.getValue() || "").trim(), sHi = (r.high.getValue() || "").trim();
                                 sV = sLo && sHi ? sLo + "," + sHi : (sLo || sHi);
@@ -249,6 +307,8 @@ sap.ui.define([
                                 oDom.setAttribute("aria-label", oAsk.title);
                                 oDom.onkeydown = function (ev) {
                                         if (bBusy || ev.isComposing || ev.keyCode === 229) { return; }
+                                        // ENUM 标签上的回车 / 空格交给按钮自己（切换选中），不提交卡片
+                                        if (ev.target.closest && ev.target.closest(".askEnum")) { return; }
                                         var bInField = ev.target !== oDom && /INPUT|TEXTAREA/.test(ev.target.tagName);
                                         var bFreeField = oFree && oFree.getDomRef() && oFree.getDomRef().contains(ev.target);
                                         if (ev.key === "Enter" && (!bInField || bFreeField)) {
@@ -281,7 +341,8 @@ sap.ui.define([
                                         var bTyping = oAct && oAct.tagName === "TEXTAREA" && (oAct.value || "").trim();
                                         if (!bTyping) {
                                                 setTimeout(function () {
-                                                        if (aRecs.length) { (aRecs[0].input || aRecs[0].low).focus(); } else { oDom.focus(); }
+                                                        var oFirst = aRecs.length && (aRecs[0].input || aRecs[0].low || (aRecs[0].enumBtns || [])[0]);
+                                                        if (oFirst) { oFirst.focus(); } else { oDom.focus(); }
                                                 }, 60);
                                         }
                                 }
@@ -329,5 +390,5 @@ sap.ui.define([
                 };
         }
 
-        return { render: render, detectChoices: detectChoices, dateDisplay: dateDisplay, valueDisplay: valueDisplay };
+        return { render: render, detectChoices: detectChoices, dateDisplay: dateDisplay, valueDisplay: valueDisplay, enumOptions: enumOptions };
 });

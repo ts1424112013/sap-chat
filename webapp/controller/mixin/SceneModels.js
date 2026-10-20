@@ -26,17 +26,20 @@ sap.ui.define([
                  * ========================================================= */
                 /** 20261011（FE-11）：文案在 i18n（scene<KEY> / scene<KEY>Sub / scene<KEY>Ph /
                   * scene<KEY>Chip1..n），由 _sceneDef 按当前语言解析 */
+                /** 20261020（Fiori 报表分析 §3.2）：新增「Fiori 报表」（FIORI），隐藏「库存查询」——只去掉按钮，
+                  * 后端 INVENTORY 场景与库存工具保留；旧的库存会话照样能打开（前端按「自动」显示），
+                  * 「自动」里问库存照样能答。REPORT / FIORI 的首页是报表目录（CatalogPanel），不用 chips */
                 SCENES: [
-                        { key: "REPORT", icon: "sap-icon://document-text", chips: 3 },
+                        { key: "REPORT", icon: "sap-icon://document-text", chips: 0 },
+                        { key: "FIORI", icon: "sap-icon://line-chart", chips: 0 },
                         { key: "DATA", icon: "sap-icon://database", chips: 3 },
-                        { key: "INVENTORY", icon: "sap-icon://product", chips: 3 },
                         { key: "CODE", icon: "sap-icon://syntax", chips: 3 },
                         { key: "AUTO", icon: "sap-icon://lightbulb", chips: 0 }
                 ],
 
                 _normScene: function (s) {
                         var v = String(s || "").toUpperCase();
-                        return ["REPORT", "DATA", "INVENTORY", "CODE"].indexOf(v) >= 0 ? v : "AUTO";
+                        return ["REPORT", "FIORI", "DATA", "CODE"].indexOf(v) >= 0 ? v : "AUTO";
                 },
 
                 /** 场景定义（文案已解析）：{key, icon, text, sub, ph, chips[]}；AUTO 无占位与示例 */

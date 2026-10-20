@@ -24,8 +24,10 @@ sap.ui.define([
         "zai/chat/controller/mixin/SettingsPanel",
         "zai/chat/controller/mixin/EvalPanel",
         "zai/chat/controller/mixin/RunTracker",
-        "zai/chat/controller/mixin/AuthPanel"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel) {
+        "zai/chat/controller/mixin/AuthPanel",
+        "zai/chat/controller/mixin/CatalogPanel",
+        "zai/chat/controller/mixin/FioriPanel"
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, CatalogPanel, FioriPanel) {
         "use strict";
 
         /**
@@ -51,6 +53,9 @@ sap.ui.define([
          *   SettingsPanel 设置对话框 / 模型管理
          *   EvalPanel     Agent 测评对话框
          *   RunTracker    报表运行跟踪（步骤条）
+         *   AuthPanel     事务码权限自助申请（20261020）
+         *   CatalogPanel  「报表执行」/「Fiori 报表」场景首页的报表目录（20261020）
+         *   FioriPanel    Fiori 报表取数、结果与「交给模型分析」（20261020）
          * 新增方法前先看是否属于这几块；方法名不能与 mixin 重复（后者会覆盖）。
          * =====================================================================
          */
@@ -2646,7 +2651,9 @@ sap.ui.define([
                         var oRB = this._rb();
                         var bAgent = this.getView().getModel("chat").getProperty("/workspaceMode") === "AGENT";
                         var oSc = bAgent ? this._sceneDef(this._curScene()) : null;
-                        var aList = bAgent
+                        // 20261020：「报表执行」「Fiori 报表」首页是报表目录（CatalogPanel），不再放示例按钮
+                        this._renderCatalog();
+                        var aList = (bAgent && this._catScene(oSc.key)) ? [] : bAgent
                                 ? ((oSc && oSc.chips.length)
                                         ? oSc.chips.map(function (s) { return { title: s, prompt: s }; })
                                         : [1, 2, 3, 4].map(function (i) {
@@ -3301,7 +3308,30 @@ sap.ui.define([
                         this._setTaskBadge(oTask.module, oTask.status, oTask.taskId);
                         var oEntry = (oChatModel.getProperty("/messages") || [])[iAssistantIdx];
                         var oRB = this._rb();
-                        if (oEntry && oTask.needsInput && aPending.length) {
+                        // 20261020：Fiori 报表的待填参数（kind = FIORI）→ 同样的内联卡，按钮是「取数」，可带预填值
+                        var bFiori = !!(oPendingObj && oPendingObj.kind === "FIORI");
+                        if (oEntry && oTask.needsInput && aPending.length && bFiori) {
+                                oEntry.ask = {
+                                        kind: "params",
+                                        fiori: true,
+                                        state: "open",
+                                        title: oRB.getText("fioriParamsTitle"),
+                                        subtitle: oPendingObj.report_name || oPendingObj.report_id || "",
+                                        params: aPending,
+                                        values: jQuery.extend({}, oPendingObj.values || {}),
+                                        options: [
+                                                { key: "submit", label: oRB.getText("fioriSubmit"), desc: oRB.getText("fioriSubmitDesc") },
+                                                { key: "cancel", label: oRB.getText("fioriCancel"), desc: oRB.getText("fioriCancelDesc") }
+                                        ],
+                                        freePh: oRB.getText("fioriFreePh"),
+                                        taskId: oTask.taskId,
+                                        reportId: oPendingObj.report_id || "",
+                                        module: oTask.module,
+                                        sessionId: sSessionId,
+                                        sel: 0,
+                                        autoFocus: true
+                                };
+                        } else if (oEntry && oTask.needsInput && aPending.length) {
                                 oEntry.ask = {
                                         kind: "params",
                                         state: "open",
@@ -3504,6 +3534,10 @@ sap.ui.define([
                 _submitReportFromCard: function (sUid, oAsk, oPick) {
                         var that = this;
                         var oRB = this._rb();
+                        if (oAsk.fiori) {
+                                this._fioriSubmit(sUid, oAsk, oPick);   // 20261020：Fiori 报表同步取数（FioriPanel）
+                                return;
+                        }
                         if (oPick.missing && oPick.missing.length) {
                                 oAsk.error = oRB.getText("askMissing", [oPick.missing.join(oRB.getText("listSep"))]);
                                 this._renderAsk(sUid);
@@ -3588,6 +3622,10 @@ sap.ui.define([
                                 return;
                         }
                         var oEntry = oHit.entry;
+                        if (sAct === "fiori-analyze") {
+                                this._fioriAnalyze(oEntry);   // 20261020：Fiori 结果的分析闸门（FioriPanel）
+                                return;
+                        }
                         if (sAct === "run-refresh" || sAct === "run-stop") {
                                 if (!this._oRun || this._oRun.uid !== sUid) {
                                         MessageToast.show(this._rb().getText("runNotTracked"));
@@ -3776,5 +3814,5 @@ sap.ui.define([
                 hasText: function (s) {
                         return !!(s && s.length);
                 }
-        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel));
+        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, CatalogPanel, FioriPanel));
 });

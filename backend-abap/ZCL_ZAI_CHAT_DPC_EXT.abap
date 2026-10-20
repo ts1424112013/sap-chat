@@ -85,6 +85,14 @@
 *   SEGW 建 9 个 FI(全部返回 GenericResult、参数全 Edm.String), 见
 *   backend-abap/00_对象清单与部署顺序_20261019.md 第七节。其余分支不变
 *   ★ 重贴后核对标记: 搜 auth_reply 代码区应有 9 处调用 + 1 处实现 + 1 处声明(头部注释另有 2 处)
+* V15.5 20261020(Fiori 报表分析): 新增 3 个函数导入分支 FIORIREPORTDEFS /
+*   RUNFIORIREPORT / FIORIREPORTRESULT, 调 ZCL_AI_FIORI_REPORT_SERVICE 的
+*   list_defs / run / get_result, 输出同样经 auth_reply(改名不值得, 它就是通用
+*   的"类型化返回 → GenericResult"; ResultJson camelCase、不压缩空值)。需先
+*   激活 ZCL_AI_FIORI_REPORT_SERVICE, 并在 SEGW 建 3 个 FI(返回 GenericResult,
+*   参数全 Edm.String; RunFioriReport 为 POST), 见部署清单第七节 7.3。其余不变
+*   ★ 重贴后核对标记: 搜 auth_reply 代码区应有 12 处调用(权限 9 + Fiori 3)
+*   + 1 处实现 + 1 处声明; 搜 zcl_ai_fiori_report_service 代码区应有 3 处
 *=======================================================================
 * V15(P1~P3) 20261007: Agent 多业务任务与报表分析接口
 *   新增函数导入分支(全部旁路, 不改既有分支; SEGW 未建 metadata 前
@@ -187,6 +195,7 @@ CLASS zcl_zai_chat_dpc_ext DEFINITION
 
     " V15.4: 权限申请服务的返回 → GenericResult(iv_error 非空 = 失败, Message 取它;
     " 成功时 Message 取 iv_message; ResultJson = iv_data 的 camelCase JSON, 不压缩空值)
+    " V15.5: Fiori 报表的 3 个 FI 也用它(通用的类型化返回 → GenericResult)
     CLASS-METHODS auth_reply
       IMPORTING iv_error    TYPE string
                 iv_message  TYPE string
@@ -318,6 +327,33 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
         DATA(ls_au9) = zcl_ai_auth_service=>get_config( ).
         copy_data_to_ref( EXPORTING is_data = to_generic_odata(
                             auth_reply( iv_error = ls_au9-error iv_message = `` iv_data = ls_au9 ) )
+                          CHANGING cr_data = er_data ).
+
+      " ===============================================================
+      " V15.5: Fiori 报表(3 个 FI; 开关 / 用户 / 归属在服务内校验)
+      " ===============================================================
+      WHEN 'FIORIREPORTDEFS'.
+        DATA(ls_fdefs) = zcl_ai_fiori_report_service=>list_defs( ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_fdefs-error iv_message = ls_fdefs-message iv_data = ls_fdefs ) )
+                          CHANGING cr_data = er_data ).
+
+      WHEN 'RUNFIORIREPORT'.
+        DATA(ls_frun) = zcl_ai_fiori_report_service=>run(
+                          iv_task_id     = v8_param( it_parameter = it_parameter iv_name = 'TaskId' )
+                          iv_session_id  = v8_param( it_parameter = it_parameter iv_name = 'SessionId' )
+                          iv_report_id   = v8_param( it_parameter = it_parameter iv_name = 'ReportId' )
+                          iv_params_json = v8_param( it_parameter = it_parameter iv_name = 'ParamsJson' )
+                          iv_request_id  = v8_param( it_parameter = it_parameter iv_name = 'ClientRequestId' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_frun-error iv_message = ls_frun-message iv_data = ls_frun ) )
+                          CHANGING cr_data = er_data ).
+
+      WHEN 'FIORIREPORTRESULT'.
+        DATA(ls_fres) = zcl_ai_fiori_report_service=>get_result(
+                          iv_artifact_id = v8_param( it_parameter = it_parameter iv_name = 'ArtifactId' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_fres-error iv_message = ls_fres-message iv_data = ls_fres ) )
                           CHANGING cr_data = er_data ).
 
       WHEN 'ANALYZECODE'.

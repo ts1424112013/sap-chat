@@ -226,8 +226,11 @@ sap.ui.define([
                         this.getView().getModel("chat").setProperty("/messages/" + oHit.index + "/runHtml", s);
                 },
 
-                /** READY 结果 → 新一条回复（数据表 + 工具条；用户可自行生成图表） */
-                _pushReportResult: function (oRes, sRunId) {
+                /** READY 结果 → 新一条回复（数据表 + 工具条；用户可自行生成图表）
+                  * 20261020：可选 oOpt（Fiori 报表结果复用同一套表格逻辑）——
+                  * oOpt.text(iTotal, oDs) 换正文；oOpt.decorate(oEntry, oDs, iTotal) 推入前补字段（如分析闸门 runHtml）
+                  * @returns {object} 推入的消息条目 */
+                _pushReportResult: function (oRes, sRunId, oOpt) {
                         var oRB = this._rb();
                         var aCols = [], aRaw = [];
                         try {
@@ -253,8 +256,9 @@ sap.ui.define([
                         };
                         var iTotal = parseInt(oRes.rowCount, 10) || oDs.rows.length;
                         oDs.truncated = iTotal > oDs.rows.length;
-                        var sText = oRB.getText("runResultText", [String(sRunId || "").substring(0, 8), iTotal,
-                                oDs.truncated ? oRB.getText("runResultSample", [oDs.rows.length]) : ""]) +
+                        var sText = (oOpt && oOpt.text) ? oOpt.text(iTotal, oDs) :
+                                oRB.getText("runResultText", [String(sRunId || "").substring(0, 8), iTotal,
+                                        oDs.truncated ? oRB.getText("runResultSample", [oDs.rows.length]) : ""]) +
                                 (iTotal === 0 ? "\n\n" + oRB.getText("runResultZero") : "");
                         var oEntry = this._buildEntry("assistant", sText, "", "");
                         if ((this.getView().getModel("chat").getProperty("/currentSession") || {}).mode === "AGENT") {
@@ -264,10 +268,14 @@ sap.ui.define([
                                 oEntry.analysis = { summary: "", findings: [], charts: [], datasets: [oDs] };
                                 oEntry.extraHtml = this._extraHtml(oEntry);
                         }
+                        if (oOpt && oOpt.decorate) {
+                                oOpt.decorate(oEntry, oDs, iTotal);
+                        }
                         var oChat = this.getView().getModel("chat");
                         oChat.getProperty("/messages").push(oEntry);
                         oChat.setProperty("/messages", oChat.getProperty("/messages").slice());
                         this._scrollToBottom();
+                        return oEntry;
                 }
         };
 });

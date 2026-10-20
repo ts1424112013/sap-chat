@@ -110,6 +110,20 @@
 *   基于 V15.2.1; 依赖 LLM_CLIENT V1.3(可选参数, 老版本也能激活)
 * ★ 重贴后核对标记: 主循环有 lv_switched 与 pick_fallback_model( 调用;
 *   PRIVATE SECTION 有 pick_fallback_model 声明
+* V15.4 20261020(Fiori 报表分析, 设计: 功能计划书/Fiori报表分析 §4.5) ——
+*   ① 「Fiori 报表」场景(INTENT_ROUTER V1.0.6 的 FIORI): 场景外诉求沿用原
+*     out_of_scene 提示; 其余交给 ZCL_AI_FIORI_REPORT_SERVICE=>agent_turn
+*     (确定性, 不调模型): CARD = 参数卡(建/取 FIORI 任务 → WAITING_INPUT +
+*     待填参数 JSON, kind=FIORI) / ANSWER = 确定性回答(选择卡、闸门提示、场景
+*     说明) / ANALYZE = 用户已同意 → 结果上下文(后端统计 + 受控行数)作为
+*     lv_art_ctx 注入, 不加载工具, 走原分析链路
+*   ② 分析闸门在 FIORI 服务里: 用户没点「交给模型分析」/没明确说分析之前,
+*     数据不进模型
+*   ③ 任务层未开(TASK_CONTEXT_ENABLED)时 FIORI 场景如实说明, 不回落通用回答
+*   ④ 工具域: FIORI = 通用(无工具); 模型白名单键 AGENT_MODELS_FIORI
+*   依赖: INTENT_ROUTER V1.0.6 / ZCL_AI_FIORI_REPORT_SERVICE V1.0; 其余逻辑不变
+* ★ 重贴后核对标记: 有 zcl_ai_fiori_report_service=>agent_turn( 调用与
+*   ls_fturn-kind; agent_model_allowed 内有 'AGENT_MODELS_FIORI'
 *=======================================================================
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
@@ -388,6 +402,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         lv_domain = zcl_ai_domain_cards=>gc_dom_inventory.
       WHEN zcl_ai_intent_router=>gc_scene_code.
         lv_domain = zcl_ai_domain_cards=>gc_dom_code.
+      WHEN zcl_ai_intent_router=>gc_scene_fiori.
+        lv_domain = zcl_ai_domain_cards=>gc_dom_general.   " V15.4: Fiori 报表走确定性流程, 分析不用工具
     ENDCASE.
 
     " V15.2: 模型按场景白名单选取(手动选了不允许的模型 → 明确拒绝)
@@ -442,6 +458,23 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           lv_art_mode TYPE abap_bool.
     CLEAR: lv_art_ctx, lv_art_task, lv_art_lbl, lv_art_err, lv_art_mode.
 
+    " V15.4: Fiori 报表依赖任务层(参数卡、结果登记都挂在任务上); 未开时如实说明
+    IF lv_task_on = abap_false AND lv_scene = zcl_ai_intent_router=>gc_scene_fiori.
+      finish_det(
+        EXPORTING iv_session_id = iv_session_id
+                  iv_question   = iv_question
+                  iv_answer     = |「Fiori 报表」场景需要先开启任务上下文能力(ZAI_CHAT_CFG 的 TASK_CONTEXT_ENABLED), | &&
+                                  |请联系管理员。|
+                  iv_model_id   = CONV string( ls_cfg-model_id )
+                  iv_task_id    = ''
+                  iv_module     = zcl_ai_fiori_report_service=>gc_module
+                  iv_task_sts   = ''
+                  iv_summary    = '任务层未开启'
+                  iv_label      = 'Fiori 报表场景'
+        IMPORTING es_result     = es_result ).
+      RETURN.
+    ENDIF.
+
     IF lv_task_on = abap_true.
       ls_route = zcl_ai_intent_router=>quick_route(
                      iv_question   = iv_question
@@ -464,6 +497,73 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                     iv_label      = '场景边界'
           IMPORTING es_result     = es_result ).
         RETURN.
+      ENDIF.
+
+      " ---- V15.4: Fiori 报表场景(确定性处理; 只有用户同意后结果数据才进模型) ----
+      IF lv_scene = zcl_ai_intent_router=>gc_scene_fiori.
+        DATA(ls_fturn) = zcl_ai_fiori_report_service=>agent_turn(
+                           iv_session_id        = iv_session_id
+                           iv_question          = iv_question
+                           iv_focus_artifact_id = iv_focus_artifact_id ).
+        IF ls_fturn-kind = zcl_ai_fiori_report_service=>gc_turn_analyze.
+          " 用户已同意: 结果上下文(后端统计 + 受控行数)注入, 不加载工具, 走下方模型链路
+          lv_art_ctx  = ls_fturn-context.
+          lv_art_lbl  = ls_fturn-label.
+          lv_art_mode = abap_true.
+          lv_domain   = zcl_ai_domain_cards=>gc_dom_general.
+          IF ls_fturn-task_id IS NOT INITIAL.
+            ls_task = zcl_ai_task_service=>get_task_owned(
+                        iv_task_id = ls_fturn-task_id iv_session_id = iv_session_id ).
+            IF ls_task-task_id IS NOT INITIAL.
+              zcl_ai_task_service=>update_status(
+                iv_task_id = ls_task-task_id
+                iv_version = ls_task-current_version
+                iv_status  = zcl_ai_task_service=>gc_st_analyzing ).
+              ls_task = zcl_ai_task_service=>get_task_owned(
+                          iv_task_id = ls_task-task_id iv_session_id = iv_session_id ).
+            ENDIF.
+          ENDIF.
+        ELSE.
+          " 参数卡 / 确定性回答: 不调模型
+          DATA lv_ftask TYPE string.
+          CLEAR lv_ftask.
+          IF ls_fturn-kind = zcl_ai_fiori_report_service=>gc_turn_card.
+            DATA(ls_fpick) = zcl_ai_task_service=>pick_or_create(
+                iv_session_id = iv_session_id
+                iv_task_id    = ''
+                iv_module_id  = zcl_ai_fiori_report_service=>gc_module
+                iv_intent     = zcl_ai_fiori_report_service=>gc_intent
+                iv_title      = |Fiori 报表 { ls_fturn-report_name }| ).
+            IF ls_fpick-task_id IS NOT INITIAL.
+              ls_task = zcl_ai_task_service=>get_task_owned(
+                          iv_task_id = ls_fpick-task_id iv_session_id = iv_session_id ).
+              IF ls_task-task_id IS NOT INITIAL.
+                zcl_ai_task_service=>update_status(
+                  iv_task_id = ls_task-task_id
+                  iv_version = ls_task-current_version
+                  iv_status  = zcl_ai_task_service=>gc_st_waiting_input
+                  iv_pending = ls_fturn-pending_json ).
+                lv_ftask = ls_task-task_id.
+              ENDIF.
+            ENDIF.
+          ENDIF.
+          finish_det(
+            EXPORTING iv_session_id = iv_session_id
+                      iv_question   = iv_question
+                      iv_answer     = ls_fturn-answer
+                      iv_model_id   = CONV string( ls_cfg-model_id )
+                      iv_task_id    = lv_ftask
+                      iv_module     = zcl_ai_fiori_report_service=>gc_module
+                      iv_task_sts   = ''
+                      iv_summary    = ls_fturn-summary
+                      iv_label      = ls_fturn-label
+            IMPORTING es_result     = es_result ).
+          IF lv_ftask IS NOT INITIAL.
+            es_result-needs_input         = 'X'.
+            es_result-pending_params_json = ls_fturn-pending_json.
+          ENDIF.
+          RETURN.
+        ENDIF.
       ENDIF.
 
       " ---- V15.1: 对话式结果分析(ANALYZE_ARTIFACT) ----
@@ -1518,6 +1618,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       WHEN lv_scene = zcl_ai_intent_router=>gc_scene_data      THEN 'AGENT_MODELS_DATA'
       WHEN lv_scene = zcl_ai_intent_router=>gc_scene_inventory THEN 'AGENT_MODELS_INV'
       WHEN lv_scene = zcl_ai_intent_router=>gc_scene_code      THEN 'AGENT_MODELS_CODE'
+      WHEN lv_scene = zcl_ai_intent_router=>gc_scene_fiori     THEN 'AGENT_MODELS_FIORI'   " V15.4
       ELSE `` ).
     DATA lv_list TYPE string.
     CLEAR lv_list.

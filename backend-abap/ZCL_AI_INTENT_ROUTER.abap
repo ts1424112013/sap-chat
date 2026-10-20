@@ -43,6 +43,15 @@
 *   走代码; 场景外的诉求置 out_of_scene(由 AGENT_SERVICE 如实提示换场景);
 *   原 quick_route 主体原样改名为私有 route_auto; ty_intent 末尾加 out_of_scene;
 *   validate_plan 允许 object_kind = PROGRAM
+* V1.0.6  20261020: 「Fiori 报表」场景(设计: 功能计划书/Fiori报表分析 §4.5) ——
+*   常量 gc_scene_fiori = 'FIORI' / gc_int_fiori = 'FIORI_REPORT';
+*   normalize_scene / scene_label 认 FIORI; apply_scene 加 FIORI 分支:
+*   「选择报表：」开头 → Fiori 报表意图(不再判别执行 / 查表); 执行 TCode → out_of_scene
+*   (提示去「报表执行」); 查表 / SQL → out_of_scene(提示去「数据分析」);
+*   其余 → Fiori 报表意图(找报表 / 追问 / 分析, 由 ZCL_AI_FIORI_REPORT_SERVICE
+*   确定性处理)。module_id 用 'FIORI'(不改 TASK_SERVICE 常量); 其余场景不变
+*   ★ 重贴后核对标记: apply_scene 内有 WHEN gc_scene_fiori; normalize_scene
+*   的 WHEN 列表含 gc_scene_fiori
 * ★ 重贴后核对标记: quick_route 中 "表+表名" 规则必须在执行/继续规则
 *   之前(防 "分析表 ZTEST_DATA" 因 Z 开头误判 REPORT); 偏移/长度
 *   已全部先落中间变量(§2.1-2); 规则 4b 在 TCode 块之后、规则 5 之前;
@@ -70,7 +79,11 @@ CLASS zcl_ai_intent_router DEFINITION
                gc_scene_report    TYPE string VALUE 'REPORT',
                gc_scene_data      TYPE string VALUE 'DATA',
                gc_scene_inventory TYPE string VALUE 'INVENTORY',
-               gc_scene_code      TYPE string VALUE 'CODE'.
+               gc_scene_code      TYPE string VALUE 'CODE',
+               gc_scene_fiori     TYPE string VALUE 'FIORI'.    " V1.0.6
+
+    " V1.0.6: Fiori 报表意图(module_id 同为 'FIORI'; 不走 validate_plan, 不由模型产出)
+    CONSTANTS gc_int_fiori TYPE string VALUE 'FIORI_REPORT'.
 
     CONSTANTS: gc_act_create  TYPE string VALUE 'CREATE_TASK',
                gc_act_resume  TYPE string VALUE 'RESUME_TASK',
@@ -182,7 +195,8 @@ CLASS zcl_ai_intent_router IMPLEMENTATION.
     rv = to_upper( iv_agent_type ).
     CONDENSE rv NO-GAPS.
     CASE rv.
-      WHEN gc_scene_report OR gc_scene_data OR gc_scene_inventory OR gc_scene_code.
+      WHEN gc_scene_report OR gc_scene_data OR gc_scene_inventory OR gc_scene_code
+        OR gc_scene_fiori.   " V1.0.6
         " 显式场景
       WHEN OTHERS.
         rv = gc_scene_auto.   " 空 / GENERAL / AUTO / 未知 → 原混合路由
@@ -203,6 +217,8 @@ CLASS zcl_ai_intent_router IMPLEMENTATION.
         rv = '库存查询'.
       WHEN gc_scene_code.
         rv = '代码分析'.
+      WHEN gc_scene_fiori.
+        rv = 'Fiori 报表'.
       WHEN OTHERS.
         rv = '自动'.
     ENDCASE.
@@ -335,6 +351,29 @@ CLASS zcl_ai_intent_router IMPLEMENTATION.
           cs_intent-object_kind = 'NONE'.
         ENDIF.
         cs_intent-reason = |代码分析场景|.
+
+      WHEN gc_scene_fiori.
+        " ---- V1.0.6 Fiori 报表: 目录点选 / 找报表 / 追问 / 分析, 全部交给
+        "      ZCL_AI_FIORI_REPORT_SERVICE=>agent_turn 确定性处理 ----
+        FIND REGEX '^\s*选择报表' IN iv_question.
+        IF sy-subrc <> 0.
+          IF lv_exec = abap_true.
+            cs_intent-out_of_scene = abap_true.
+            cs_intent-reason = |执行 TCode 报表属于「报表执行」场景|.
+            RETURN.
+          ENDIF.
+          IF cs_intent-object_kind = 'TABLE'.
+            cs_intent-out_of_scene = abap_true.
+            cs_intent-reason = |查表/写 SQL 属于「数据分析」场景|.
+            RETURN.
+          ENDIF.
+        ENDIF.
+        CLEAR cs_intent.
+        cs_intent-module_id   = gc_scene_fiori.
+        cs_intent-intent_code = gc_int_fiori.
+        cs_intent-action      = gc_act_create.
+        cs_intent-object_kind = 'NONE'.
+        cs_intent-reason      = |Fiori 报表场景|.
 
     ENDCASE.
 

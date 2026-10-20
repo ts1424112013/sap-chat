@@ -523,3 +523,66 @@ body, body.sapUiBody { background: var(--bg) !important; }
         .askOptDesc { display: none; }
         .heroTitle { font-size: 1.45rem !important; }
 }
+
+/* ==================== 20261020：报表目录（「报表执行」「Fiori 报表」首页）==================== */
+/* 有目录时首页从上往下排（目录较高，居中会把标题挤出可视区） */
+.heroArea:has(.catalog) { justify-content: flex-start !important; padding-top: 5vh !important; padding-bottom: 2rem !important; }
+.catalogHost { width: min(100%, var(--content-max)); align-items: stretch !important; }
+.catalogHost > .sapMFlexItem { width: 100%; }
+.catalog { width: 100%; margin-top: 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-1); overflow: hidden; text-align: left; }
+.catalog .catHead { display: flex; align-items: center; gap: 10px; padding: 12px 16px 10px; flex-wrap: wrap; }
+.catalog .catHead h3 { margin: 0; font-size: .95rem; font-weight: 700; display: flex; align-items: center; gap: 6px; color: var(--text); }
+.catalog .catHead h3 svg { color: var(--accent); }
+.catalog .cnt { font-size: 12px; color: var(--sub); }
+.catalog .catSearch { margin-left: auto; display: flex; align-items: center; gap: 6px; height: 32px; width: 240px; max-width: 100%; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--sub); box-sizing: border-box; }
+.catalog .catSearch:focus-within { border-color: var(--accent); box-shadow: var(--ring); }
+.catalog .catSearch input { border: none; outline: none; background: transparent; width: 100%; font-size: 13px; color: var(--text); font-family: inherit; }
+.catalog .bizTabs { display: flex; gap: 6px; padding: 0 16px 10px; flex-wrap: wrap; }
+.catalog .bizTab { height: 28px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text-2); font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-family: inherit; }
+.catalog .bizTab small { font-size: 11px; color: var(--sub); }
+.catalog .bizTab.on { background: var(--accent-soft); border-color: transparent; color: var(--accent); font-weight: 600; }
+.catalog .bizTab.on small { color: var(--accent); }
+.catalog .catNote { font-size: 12px; color: var(--sub); padding: 0 16px 10px; }
+.catalog .catList { border-top: 1px solid var(--line); padding: 6px 8px; max-height: 300px; overflow: auto; }
+.catalog .catGroup { font-size: 11.5px; color: var(--sub); padding: 8px 10px 4px; letter-spacing: .03em; }
+.catalog .catEmpty { font-size: 13px; color: var(--sub); padding: 14px 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.catalog .catRow { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 10px; cursor: pointer; outline: none; }
+.catalog .catRow[hidden], .catalog .catGroup[hidden], .catalog .catEmpty[hidden] { display: none; }
+.catalog .catRow:hover, .catalog .catRow:focus-visible { background: var(--hover); }
+.catalog .catRow:focus-visible { box-shadow: var(--ring); }
+.catalog .catRow.off { opacity: .5; cursor: not-allowed; }
+.catalog .catRow.off:hover { background: transparent; }
+.catalog .rIcon { width: 32px; height: 32px; flex: none; border-radius: 9px; background: var(--hover); color: var(--text-2); display: flex; align-items: center; justify-content: center; }
+.catalog .catRow:hover .rIcon { background: var(--accent-soft); color: var(--accent); }
+.catalog .rMain { flex: 1; min-width: 0; }
+.catalog .rName { font-size: .88rem; font-weight: 600; display: flex; align-items: center; gap: 6px; color: var(--text); min-width: 0; }
+.catalog .rTitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catalog .rDesc { font-size: .78rem; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.catalog .tc { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 11px; font-weight: 500; padding: 0 6px; border-radius: 5px; background: var(--hover); color: var(--text-2); flex: none; }
+.catalog .rMeta { display: flex; align-items: center; gap: 8px; flex: none; font-size: 11.5px; color: var(--sub); }
+.catalog .biz { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--hover); color: var(--text-2); }
+.catalog .bdJob { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: rgba(245, 165, 36, .14); color: #A16207; }
+.catalog .bdOff { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--hover); color: var(--sub); }
+.catalog .catPick { flex: none; }
+@media (max-width: 640px) {
+        .catalog .rMeta span:not(.bdOff) { display: none; }
+        .catalog .catSearch { width: 100%; margin-left: 0; }
+}
+[data-theme="dark"] .catalog .bdJob { color: #FACC15; }
+
+/* ==================== 20261020：Fiori 结果的分析闸门 ==================== */
+.fioriGate { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: .5rem 0 .25rem; padding: .6rem .8rem; border: 1px dashed var(--line-strong); border-radius: 12px; background: var(--bg); }
+.fioriGate .fgLock { font-size: .8rem; color: var(--text-2); display: inline-flex; align-items: center; gap: 6px; }
+.fioriGate .fgLock::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--sub); flex: none; }
+.fioriGate.fgSent .fgLock::before { background: var(--accent); }
+.fioriGate.fgOff { border-style: solid; }
+.fioriGate .fgHint { font-size: .75rem; color: var(--sub); }
+
+/* ==================== 20261020：参数卡的 ENUM 标签（Fiori「維度」等）==================== */
+.askEnum { gap: .4rem; }
+.askEnum > .sapMFlexItem { margin: 0 !important; }
+.askEnumBtn .sapMBtnInner { border-radius: 999px !important; min-height: 1.9rem !important; height: 1.9rem !important; padding: 0 .8rem !important; border: 1px solid var(--line) !important; background: var(--surface) !important; box-shadow: none !important; }
+.askEnumBtn .sapMBtnText { font-size: .8rem !important; color: var(--text-2) !important; }
+.askEnumBtn.sapMToggleBtnPressed .sapMBtnInner, .askEnumBtn .sapMToggleBtnPressed { background: var(--accent-soft) !important; border-color: var(--accent) !important; }
+.askEnumBtn.sapMToggleBtnPressed .sapMBtnText, .askEnumBtn .sapMToggleBtnPressed .sapMBtnText { color: var(--accent) !important; font-weight: 600; }
+.askEnumErr .askEnumBtn .sapMBtnInner { border-color: var(--danger, #DC2626) !important; }

@@ -193,6 +193,8 @@
                                                                 <!-- V16：建议标签（输入卡下方一行，点击填入输入框；替代原漂浮泡泡，
                                                                      对话 = 快捷指令，Agent = 示例问题；控制器 _renderHeroBubbles 渲染） -->
                                                                 <HBox id="bubbleField" class="heroChips" wrap="Wrap" justifyContent="Center"/>
+                                                                <!-- 20261020：报表目录（「报表执行」「Fiori 报表」场景的空会话首页；CatalogPanel 渲染，其余场景隐藏） -->
+                                                                <VBox id="catalogHost" class="catalogHost" width="100%" visible="false"/>
                                                         </VBox>
 
                                                         <!-- ============ 对话态：消息列表 ============ -->

@@ -108,6 +108,11 @@
                                                                         items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
                                                                         <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
                                                                 </MultiComboBox>
+                                                                <Label text="{i18n>agentModelsFiori}" class="agentModelLbl"/>
+                                                                <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/FIORI}"
+                                                                        items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
+                                                                        <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
+                                                                </MultiComboBox>
                                                                 <Label text="{i18n>agentModelsData}" class="agentModelLbl"/>
                                                                 <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/DATA}"
                                                                         items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
