@@ -204,6 +204,172 @@ sap.ui.define([
                 return Array.prototype.filter.call(oRoot.querySelectorAll(".catRow"), function (el) { return !el.hidden; });
         }
 
+        /* ---------------------------------------------------------------------
+         * 20261020：收起 / 展开动画（Web Animations API）
+         *  · 展开：卡片按最终尺寸排好版，用 clip-path 从胶囊的形状放开（不改宽高 → 文字不重排、不抖）；
+         *    内容稍后淡入，前几行依次上浮；收起按钮的箭头从朝下转到朝上
+         *  · 收起：卡片先裁回胶囊形状再换成胶囊；胶囊箭头从朝上转回朝下
+         *  · 首页其余部分（标题 / 场景 / 输入框）用 FLIP：切换前后各量一次位置，从旧位置滑到新位置
+         *    （首页有展开的目录时从上往下排、否则居中，见 .heroArea:has(.catalog)）
+         *  · 系统「减少动态效果」或浏览器不支持时直接切换；动画期间忽略重复点击
+         * --------------------------------------------------------------------- */
+        var EASE = "cubic-bezier(.22, 1, .36, 1)";   // 与 style.css 的 --ease 一致
+        var DUR = 420;
+
+        function canAnimate(el) {
+                return !!(el && el.animate) &&
+                        !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+        }
+
+        /** 首页里参与位移的块（hero 的直接子节点）及其当前顶边位置 */
+        function heroKids(oRoot) {
+                var oHero = oRoot && oRoot.closest ? oRoot.closest(".heroArea") : null;
+                return oHero ? Array.prototype.slice.call(oHero.children) : [];
+        }
+
+        function tops(aEls) {
+                return aEls.map(function (el) { return el.getBoundingClientRect().top; });
+        }
+
+        /** FLIP：从切换前的位置滑到现在的位置 */
+        function flip(aEls, aBefore, aAfter) {
+                aEls.forEach(function (el, i) {
+                        var dy = aBefore[i] - aAfter[i];
+                        if (Math.abs(dy) > 0.5) {
+                                el.animate([{ transform: "translateY(" + dy + "px)" }, { transform: "none" }], { duration: DUR, easing: EASE });
+                        }
+                });
+        }
+
+        /** 切换：改状态、记偏好、重绘；返回重绘后的新 DOM（HTML 控件重绘会换掉根节点） */
+        function swap(cfg, st) {
+                st.collapsed = !st.collapsed;
+                if (cfg.onToggle) {
+                        cfg.onToggle(st.collapsed);
+                }
+                if (cfg.onRedraw) {
+                        cfg.onRedraw();
+                }
+                return st.dom ? st.dom() : null;
+        }
+
+        /** 展开后焦点给搜索框（没有搜索框就给收起按钮）；收起后给胶囊 */
+        function focusAfter(oDom, st) {
+                var oFocus = oDom && (oDom.querySelector(st.collapsed ? ".catToggle" : ".catQ") || oDom.querySelector(".catFold"));
+                if (oFocus) {
+                        oFocus.focus({ preventScroll: true });
+                }
+        }
+
+        function toggle(oRoot, cfg, st) {
+                if (st.animating) {
+                        return;
+                }
+                if (!canAnimate(oRoot)) {
+                        focusAfter(swap(cfg, st), st);
+                        return;
+                }
+                st.animating = true;
+                var fnDone = function () { st.animating = false; };
+                if (st.collapsed) {
+                        animateOpen(oRoot, cfg, st, fnDone);
+                } else {
+                        animateClose(oRoot, cfg, st, fnDone);
+                }
+        }
+
+        function animateOpen(oRoot, cfg, st, fnDone) {
+                var aKids = heroKids(oRoot);
+                var aBefore = tops(aKids);
+                var oPill = oRoot.querySelector(".catToggle");
+                var rP = oPill ? oPill.getBoundingClientRect() : null;
+                if (rP) {
+                        st.pillW = rP.width;
+                        st.pillH = rP.height;
+                }
+                var oDom = swap(cfg, st);
+                var aAfter = tops(aKids);
+                var oCard = oDom && oDom.querySelector(".catalog");
+                // 先量完再开动画（动画开始后量到的位置会带上位移）
+                var rC = oCard ? oCard.getBoundingClientRect() : null;
+                var iHost = oDom ? aKids.indexOf(closestKid(oDom, aKids)) : -1;
+                var dyHost = iHost >= 0 ? aBefore[iHost] - aAfter[iHost] : 0;
+                flip(aKids, aBefore, aAfter);
+                if (oCard && rC && rP) {
+                        var t = Math.max(0, rP.top - (rC.top + dyHost));
+                        var l = Math.max(0, rP.left - rC.left);
+                        var r = Math.max(0, rC.right - rP.right);
+                        var b = Math.max(0, rC.bottom + dyHost - rP.bottom);
+                        // 终点外扩 12px：动画期间也不裁掉卡片阴影，结束后撤掉 clip 时不跳
+                        oCard.animate([
+                                { clipPath: "inset(" + t + "px " + r + "px " + b + "px " + l + "px round " + (rP.height / 2) + "px)" },
+                                { clipPath: "inset(-12px -12px -12px -12px round 28px)" }
+                        ], { duration: DUR, easing: EASE });
+                        Array.prototype.forEach.call(oCard.children, function (el) {
+                                el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 60, easing: "ease-out", fill: "backwards" });
+                        });
+                        Array.prototype.slice.call(oCard.querySelectorAll(".catRow, .catGroup"), 0, 10).forEach(function (el, i) {
+                                el.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
+                                        { duration: 300, delay: 140 + i * 30, easing: EASE, fill: "backwards" });
+                        });
+                        var oChev = oCard.querySelector(".catFold svg");
+                        if (oChev) {
+                                oChev.animate([{ transform: "rotate(180deg)" }, { transform: "none" }], { duration: DUR, easing: EASE });
+                        }
+                }
+                focusAfter(oDom, st);
+                window.setTimeout(fnDone, DUR + 40);
+        }
+
+        function animateClose(oRoot, cfg, st, fnDone) {
+                var oCard = oRoot.querySelector(".catalog");
+                if (!oCard) {
+                        focusAfter(swap(cfg, st), st);
+                        fnDone();
+                        return;
+                }
+                var rC = oCard.getBoundingClientRect();
+                var pw = Math.min(st.pillW || 190, rC.width), ph = st.pillH || 34;
+                var l = Math.max(0, (rC.width - pw) / 2), b = Math.max(0, rC.height - ph);
+                Array.prototype.forEach.call(oCard.children, function (el) {
+                        el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 150, easing: "ease-in", fill: "forwards" });
+                });
+                var oShrink = oCard.animate([
+                        { clipPath: "inset(-12px -12px -12px -12px round 28px)" },
+                        { clipPath: "inset(0px " + l + "px " + b + "px " + l + "px round " + (ph / 2) + "px)" }
+                ], { duration: 260, easing: "cubic-bezier(.4, 0, .2, 1)", fill: "forwards" });
+                // 页面在后台时动画时间线会暂停、onfinish 迟迟不来 → 定时兜底，两者谁先到都只走一次
+                var bNext = false;
+                var fnNext = function () {
+                        if (bNext) {
+                                return;
+                        }
+                        bNext = true;
+                        var aKids = heroKids(oCard);
+                        var aBefore = tops(aKids);
+                        var oDom = swap(cfg, st);
+                        flip(aKids, aBefore, tops(aKids));
+                        var oChev = oDom && oDom.querySelector(".catToggle .ctChev");
+                        if (oChev) {
+                                oChev.animate([{ transform: "rotate(180deg)" }, { transform: "none" }], { duration: DUR, easing: EASE });
+                        }
+                        focusAfter(oDom, st);
+                        window.setTimeout(fnDone, DUR + 40);
+                };
+                oShrink.onfinish = fnNext;
+                window.setTimeout(fnNext, 260 + 80);
+        }
+
+        /** oDom 落在哪个首页子块里 */
+        function closestKid(oDom, aKids) {
+                for (var i = 0; i < aKids.length; i++) {
+                        if (aKids[i].contains(oDom)) {
+                                return aKids[i];
+                        }
+                }
+                return null;
+        }
+
         /** 渲染后挂事件（每次 HTML 控件重新渲染都会重挂） */
         function bind(oRoot, cfg, st) {
                 var fnPick = function (el) {
@@ -219,18 +385,7 @@ sap.ui.define([
                 oRoot.onclick = function (ev) {
                         var t = ev.target;
                         if (t.closest(".catToggle, .catFold")) {
-                                st.collapsed = !st.collapsed;
-                                if (cfg.onToggle) {
-                                        cfg.onToggle(st.collapsed);
-                                }
-                                if (cfg.onRedraw) {
-                                        cfg.onRedraw();
-                                }
-                                // 展开后焦点给搜索框（没有搜索框就给收起按钮）；收起后给胶囊
-                                var oFocus = oRoot.querySelector(st.collapsed ? ".catToggle" : ".catQ") || oRoot.querySelector(".catFold");
-                                if (oFocus) {
-                                        oFocus.focus({ preventScroll: true });
-                                }
+                                toggle(oRoot, cfg, st);
                                 return;
                         }
                         if (t.closest(".catRetry")) {
@@ -298,6 +453,7 @@ sap.ui.define([
         function create(cfg) {
                 var st = { status: "loading", items: [], message: "", query: "", category: "", collapsed: !!cfg.collapsed };
                 var oCtl = new HTML({ preferDOM: false, sanitizeContent: false });
+                st.dom = function () { return oCtl.getDomRef(); };   // 重绘会换掉根节点，动画 / 焦点要取最新的
                 var fnRedraw = function () {
                         oCtl.setContent('<div class="catalogHostInner">' + html(cfg, st) + "</div>");
                         // 已渲染时 setContent 直接替换 DOM、不触发 afterRendering → 这里自己重挂事件
