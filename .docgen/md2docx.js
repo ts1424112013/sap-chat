@@ -296,9 +296,11 @@ const codeCellMargins = { top: 100, bottom: 100, left: 180, right: 120 };
 function renderBlocks(blocks) {
   const out = [];
   let h1Seen = 0;
+  let pendingSpacer = null; // 表格/代码块后的间隙段: 延迟压入, 文档结尾的丢弃(避免尾随空白页)
   for (let idx = 0; idx < blocks.length; idx++) {
     const b = blocks[idx];
     const nextIsTable = blocks[idx + 1] && blocks[idx + 1].type === "table";
+    if (pendingSpacer) { out.push(pendingSpacer); pendingSpacer = null; }
     switch (b.type) {
       case "heading": {
         const lvl = [HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3, HeadingLevel.HEADING_4][b.level - 1] || HeadingLevel.HEADING_3;
@@ -356,7 +358,7 @@ function renderBlocks(blocks) {
             })],
           })],
         }));
-        out.push(new Paragraph({ spacing: { after: 60 }, children: [] })); // 表后间隙
+        pendingSpacer = new Paragraph({ spacing: { after: 60 }, children: [] }); // 表后间隙
         break;
       }
       case "table": {
@@ -399,7 +401,7 @@ function renderBlocks(blocks) {
           },
           rows,
         }));
-        out.push(new Paragraph({ spacing: { after: 60 }, children: [] }));
+        pendingSpacer = new Paragraph({ spacing: { after: 60 }, children: [] });
         break;
       }
       case "ul": {
@@ -561,14 +563,24 @@ const covers = {
     title: "SAP AI 对话助手 后端实施文档",
     subtitle: "SE11 建表 → SEGW 建模 → SE24 粘类 → SM59/SICF → 验证清单 → 传输发布",
     englishLabel: "BACKEND IMPLEMENTATION",
-    metaLines: ["文档编号: 03", ...META_COMMON],
+    metaLines: [
+      "文档编号: 03",
+      "更新时间: 2026-10-21",
+      "当前版本: 后端 10-19 合并部署批（权限自助申请 · Fiori 报表 · 长文本通道修 414）",
+      "适用环境: S/4HANA 760 · SAP 网关 client 470（SAP_BASIS 以现场实测为准）",
+    ],
     footerLeft: "SAP AI CHAT", footerRight: "docs/03",
   },
   "04-前端实施文档": {
     title: "SAP AI 对话助手 前端实施文档",
     subtitle: "构建 → 打包 → SE38 上传(全量/增量) → SICF → 验证 → 回滚 → Git 管理",
     englishLabel: "FRONTEND IMPLEMENTATION",
-    metaLines: ["文档编号: 04", ...META_COMMON],
+    metaLines: [
+      "文档编号: 04",
+      "更新时间: 2026-10-21",
+      "当前版本: 前端 10-19 合并部署批（报表目录 · 权限自助 · Fiori 报表 · 模型选择 · 长文本通道）",
+      "适用环境: S/4HANA 760 · SAP 网关 client 470（SAP_BASIS 以现场实测为准）",
+    ],
     footerLeft: "SAP AI CHAT", footerRight: "docs/04",
   },
 };
