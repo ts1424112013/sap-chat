@@ -599,41 +599,44 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .sideAuthBadge { position: absolute !important; right: .65rem; top: 50%; transform: translateY(-50%); min-width: 1.15rem; height: 1.15rem; padding: 0 .32rem; box-sizing: border-box; border-radius: 999px; background: #DC2626; color: #FFFFFF !important; font-size: .68rem !important; font-weight: 700; line-height: 1.15rem !important; text-align: center; pointer-events: none; }
 [data-theme="dark"] .sideAuthBadge { background: #EF4444; }
 
-/* ==================== 20261020：权限审批对话框（侧栏「权限审批」，独立设计）==================== */
-.apvDialog { --apv-red: #DC2626; --apv-red-soft: rgba(220, 38, 38, .08); --apv-green: #15803D; --apv-green-soft: rgba(34, 197, 94, .12); }
+/* ==================== 20261020：权限审批对话框（侧栏「权限审批」，独立设计）====================
+   不用 UI5 标题栏 / 底栏；根节点 = 固定头部 + 可滚动内容区（对话框 contentHeight 固定，verticalScrolling=false） */
+.apvDialog { --apv-red: #DC2626; --apv-red-soft: rgba(220, 38, 38, .08); --apv-green: #16A34A; --apv-green-soft: rgba(34, 197, 94, .12); border-radius: 18px !important; overflow: hidden; }
 [data-theme="dark"] .apvDialog { --apv-red: #F87171; --apv-red-soft: rgba(248, 113, 113, .12); --apv-green: #4ADE80; --apv-green-soft: rgba(74, 222, 128, .12); }
-.apvDialog .sapMIBar, .apvDialog .sapMDialogTitle, .apvDialog .sapMDialogSubHeader, .apvDialog .sapMDialogFooter { background: var(--surface) !important; box-shadow: none !important; border: none !important; }
-.apvDialog .sapMDialogSection { background: var(--bg) !important; }
-.apvDialog .sapMDialogScrollCont { padding: 0 !important; }
+.apvDialog, .apvDialog .sapMDialogSection { background: var(--surface) !important; }
+.apvDialog .sapMDialogScrollCont { height: 100%; padding: 0 !important; box-sizing: border-box; }
+.apvRoot { display: flex; flex-direction: column; height: 100%; }
 
-/* 头部（一行，放进 UI5 标准标题高度）：图标块 + 标题 + 待处理胶囊 + 刷新 / 关闭 */
-.apvHeadBar { padding: 0 .55rem 0 1.15rem !important; gap: .55rem; }
-.apvHeadIcon { display: inline-flex !important; align-items: center; justify-content: center; width: 1.85rem; height: 1.85rem; border-radius: 9px; background: var(--accent-soft); color: var(--accent) !important; font-size: .9rem !important; flex: none; }
-.apvTitle { font-size: 1rem !important; font-weight: 700 !important; color: var(--text) !important; }
-.apvSub { font-size: .72rem !important; font-weight: 600; padding: .12rem .55rem; border-radius: 999px; background: var(--hover); color: var(--sub) !important; }
-.apvSub[data-busy="yes"] { background: var(--apv-red-soft); color: var(--apv-red) !important; }
-.apvIconBtn .sapMBtnIcon { color: var(--sub) !important; }
-.apvIconBtn:hover .sapMBtnIcon { color: var(--text) !important; }
+/* 头部：标题 + 一句状态；右侧 管理 / 刷新 / 关闭；下划线页签贴着分隔线 */
+.apvHead { flex: none; padding: 1.15rem 1rem 0 1.4rem; border-bottom: 1px solid var(--line); }
+.apvHeadRow { gap: .15rem; }
+.apvHeadText { padding-top: .1rem; }
+.apvTitle { font-size: 1.12rem !important; font-weight: 700 !important; color: var(--text) !important; letter-spacing: .01em; }
+.apvSub { display: block !important; margin-top: .2rem; font-size: .8rem !important; color: var(--sub) !important; }
+.apvSub[data-busy="yes"] { color: var(--apv-red) !important; font-weight: 600; }
+.apvHeadBtn .sapMBtnInner { height: 2rem !important; min-height: 2rem !important; min-width: 2rem !important; padding: 0 .45rem !important; border-radius: 8px !important; background: transparent !important; border: none !important; box-shadow: none !important; }
+.apvHeadBtn .sapMBtnIcon { color: var(--sub) !important; font-size: .92rem !important; }
+.apvHeadBtn .sapMBtnText { color: var(--text-2) !important; font-size: .8rem !important; font-weight: 500; }
+.apvHeadBtn:hover .sapMBtnInner { background: var(--hover) !important; }
+.apvHeadBtn:hover .sapMBtnIcon, .apvHeadBtn:hover .sapMBtnText { color: var(--text) !important; }
+.apvManageBtn { margin-right: .25rem; }
+.apvTabs { display: flex !important; gap: 1.5rem; margin-top: .9rem; }
+.apvTabBtn { height: auto !important; }
+.apvTabBtn .sapMBtnInner { position: relative; height: 2.4rem !important; min-height: 2.4rem !important; padding: 0 .1rem !important; border-radius: 0 !important; background: transparent !important; border: none !important; box-shadow: none !important; }
+.apvTabBtn .sapMBtnText { font-size: .86rem !important; font-weight: 500; color: var(--sub) !important; }
+.apvTabBtn:hover .sapMBtnText { color: var(--text) !important; }
+.apvTabBtn[data-on="yes"] .sapMBtnText { color: var(--text) !important; font-weight: 600; }
+.apvTabBtn[data-on="yes"] .sapMBtnInner::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; border-radius: 2px; background: var(--accent); }
+.apvTabBtn.sapMFocusable:focus .sapMBtnInner, .apvTabBtn:focus .sapMBtnInner { outline-offset: -2px; }
 
-/* 页签：分段胶囊 */
-.apvDialog .sapMDialogSubHeader { border-bottom: 1px solid var(--line) !important; }
-.apvTabsBar { padding: 0 1.15rem !important; height: 100% !important; }
-.apvSeg { display: inline-flex !important; gap: 2px; padding: 3px; border-radius: 10px; background: var(--hover); }
-.apvSegBtn { height: 1.85rem !important; }
-.apvSegBtn .sapMBtnInner { height: 1.85rem !important; min-height: 1.85rem !important; padding: 0 1rem !important; border-radius: 8px !important; background: transparent !important; border: none !important; box-shadow: none !important; }
-.apvSegBtn .sapMBtnText { font-size: .82rem !important; font-weight: 500; color: var(--text-2) !important; }
-.apvSegBtn:hover .sapMBtnText { color: var(--text) !important; }
-.apvSegBtn[data-on="yes"] .sapMBtnInner { background: var(--surface) !important; box-shadow: 0 1px 2px rgba(17, 24, 39, .1) !important; }
-.apvSegBtn[data-on="yes"] .sapMBtnText { color: var(--text) !important; font-weight: 600; }
-[data-theme="dark"] .apvSegBtn[data-on="yes"] .sapMBtnInner { background: var(--line-strong) !important; box-shadow: none !important; }
-
-/* 内容区 */
-.apvBody { padding: .9rem 1.15rem 1.1rem; min-height: 14rem; }
-.apvStrip { margin-bottom: .7rem !important; border-radius: 10px !important; }
+/* 内容区（只有这里滚动） */
+.apvScroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex !important; flex-direction: column; padding: 1rem 1.4rem 1.3rem; }
+.apvPane { flex: 1 0 auto; display: flex !important; flex-direction: column; }
+.apvStrip { flex: none; margin-bottom: .75rem !important; border-radius: 10px !important; }
 .apvCards { gap: .7rem; }
 
 /* 申请卡片 */
-.apvCard { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: .9rem 1rem .85rem; box-shadow: var(--shadow-1); transition: border-color .15s, box-shadow .15s; }
+.apvCard { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: .95rem 1rem .85rem; transition: border-color .15s, box-shadow .15s; }
 .apvCard:hover { border-color: var(--line-strong); box-shadow: var(--shadow-2); }
 .apvCard[data-mode="approve"] { border-color: var(--accent); box-shadow: var(--ring); }
 .apvCard[data-mode="reject"] { border-color: var(--apv-red); box-shadow: 0 0 0 3px var(--apv-red-soft); }
@@ -682,28 +685,27 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .apvCard[data-mode="reject"] .apvBtnGo .sapMBtnText { color: #FFFFFF !important; }
 .apvCard[data-mode="reject"] .apvBtnGo.sapMBtnDisabled { opacity: .45; }
 
-/* 空状态 */
-.apvEmpty { padding: 2.6rem 1rem 2.3rem; text-align: center; }
-.apvEmptyIcon { display: inline-flex !important; align-items: center; justify-content: center; width: 3.6rem; height: 3.6rem; border-radius: 50%; background: var(--apv-green-soft); color: var(--apv-green) !important; font-size: 1.5rem !important; }
-.apvEmptyIconMuted { background: var(--hover); color: var(--sub) !important; }
-.apvEmptyTitle { margin-top: .85rem; font-size: .95rem !important; font-weight: 600 !important; color: var(--text) !important; }
-.apvEmptySub { margin-top: .3rem; font-size: .78rem !important; color: var(--sub) !important; }
+/* 空状态：在内容区上下居中，图标带两圈淡光晕 */
+.apvEmpty { margin: auto 0; padding: 1rem 1rem 1.6rem; text-align: center; }
+.apvEmptyIcon { display: inline-flex !important; align-items: center; justify-content: center; width: 3.4rem; height: 3.4rem; border-radius: 50%; background: var(--apv-green-soft); color: var(--apv-green) !important; font-size: 1.35rem !important; box-shadow: 0 0 0 .55rem rgba(34, 197, 94, .06), 0 0 0 1.1rem rgba(34, 197, 94, .03); }
+.apvEmptyIconMuted { background: var(--hover); color: var(--sub) !important; box-shadow: 0 0 0 .55rem rgba(138, 147, 162, .07), 0 0 0 1.1rem rgba(138, 147, 162, .035); }
+.apvEmptyTitle { margin-top: 1.6rem; font-size: 1rem !important; font-weight: 600 !important; color: var(--text) !important; }
+.apvEmptySub { margin-top: .35rem; max-width: 24rem; text-align: center !important; font-size: .8rem !important; line-height: 1.55 !important; color: var(--sub) !important; }
+.apvEmptyLink { margin-top: .55rem; }
+.apvEmptyLink .sapMBtnInner { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 .4rem !important; }
+.apvEmptyLink .sapMBtnText, .apvEmptyLink .sapMBtnIcon { color: var(--accent) !important; font-size: .8rem !important; font-weight: 500; }
+.apvEmptyLink .sapMBtnIcon { font-size: .65rem !important; margin-left: .2rem; }
+.apvEmptyLink:hover .sapMBtnText { text-decoration: underline; }
 
 /* 最近处理 */
-.apvDoneHint { display: block !important; font-size: .74rem !important; color: var(--sub) !important; margin: 0 0 .55rem .1rem; }
 .apvDoneList { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .apvDoneList:empty { display: none; }
 .apvDoneList > .sapMFlexItem:not(:last-child) { border-bottom: 1px solid var(--line); }
-.apvDoneRow { padding: .6rem .85rem; gap: .7rem; }
+.apvDoneRow { padding: .65rem .9rem; gap: .7rem; }
 .apvDoneMain { font-size: .84rem !important; font-weight: 600 !important; color: var(--text) !important; }
 .apvDoneSub { font-size: .74rem !important; color: var(--sub) !important; }
+.apvDoneHint { display: block !important; text-align: center; font-size: .74rem !important; color: var(--sub) !important; margin-top: .75rem; }
 .apvStatus { flex: none; font-size: .72rem !important; font-weight: 600 !important; padding: .16rem .6rem; border-radius: 999px; background: var(--hover); color: var(--sub) !important; }
 .apvStatus[data-status="DONE"] { background: var(--apv-green-soft); color: var(--apv-green) !important; }
 .apvStatus[data-status="EXISTS"] { background: var(--accent-soft); color: var(--accent) !important; }
 .apvStatus[data-status="REJECTED"], .apvStatus[data-status="FAILED"] { background: var(--apv-red-soft); color: var(--apv-red) !important; }
-
-/* 底部：管理入口 + 关闭 */
-.apvFoot { border-top: 1px solid var(--line) !important; padding: 0 .75rem !important; }
-.apvManageBtn .sapMBtnText { color: var(--text-2) !important; font-size: .8rem !important; }
-.apvManageBtn .sapMBtnIcon { color: var(--sub) !important; }
-.apvManageBtn:hover .sapMBtnText, .apvManageBtn:hover .sapMBtnIcon { color: var(--accent) !important; }

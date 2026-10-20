@@ -136,10 +136,16 @@ sap.ui.define([
                                         oModel.setProperty("/apv/total", n);
                                         that._authSetPending(n);
                                 })
-                                : ChatService.authList({ Top: String(DONE_TOP), Skip: "0" }).then(function (r) {
-                                        oModel.setProperty("/apv/done", that._apvDecorate((r.requests || []).filter(function (x) {
+                                : Promise.all([
+                                        ChatService.authList({ Top: String(DONE_TOP), Skip: "0" }),
+                                        ChatService.authList({ Status: "PENDING", Top: "1", Skip: "0" })   // 头部条数与角标也跟着刷新
+                                ]).then(function (a) {
+                                        var n = Number(a[1].total) || 0;
+                                        oModel.setProperty("/apv/done", that._apvDecorate((a[0].requests || []).filter(function (x) {
                                                 return x.status !== "PENDING";
                                         })));
+                                        oModel.setProperty("/apv/total", n);
+                                        that._authSetPending(n);
                                 });
                         return p.catch(function (e) {
                                 oModel.setProperty("/apv/notice", (e && e.message) || String(e));
