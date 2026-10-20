@@ -11,7 +11,7 @@ sap.ui.define([
          * 审批是 IT 天天打开的界面，单独设计（AuthApprove 片段），不复用 AuthAdmin 的四页签面板：
          *   · 待审批：一张申请一张卡片，批准 / 驳回在卡片内展开确认（驳回原因必填）
          *   · 最近处理：最近 30 条已处理记录，只读
-         *   · 底部「管理」→ AuthPanel 的 AuthAdminDialog（批量代加 / 权限表 / 规则 / 全部记录与撤销）
+         *   · 右上「管理」→ AuthPanel 的 AuthAdminDialog（批量代加 / 权限表 / 规则 / 全部记录与撤销）
          * 数据放在视图模型 "auth" 的 /apv 下（换账号时随 auth 模型一起重建）；
          * 后端调用与 AuthPanel 相同（ChatService.authList / authDecide），语义不变。
          * 方法名统一 Apv / _apv 前缀（红线 8）。
@@ -93,7 +93,7 @@ sap.ui.define([
                         }
                 },
 
-                /** 底部「管理」：关掉审批框，打开完整管理（四页签） */
+                /** 右上「管理」：关掉审批框，打开完整管理（四页签） */
                 onApvManage: function () {
                         this.onApvClose();
                         this.onOpenAuthAdmin();
