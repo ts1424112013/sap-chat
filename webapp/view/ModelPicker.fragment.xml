@@ -1,0 +1,30 @@
+<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
+
+        <!-- ======================= 模型选择（输入框里的模型胶囊打开；会话级，见 SceneModels「会话级模型」） ======================= -->
+        <ResponsivePopover id="modelPicker" placement="Top" showHeader="false" showArrow="false" contentWidth="20rem"
+                horizontalScrolling="false" class="modelPickerPop">
+                <content>
+                        <VBox class="mpBody">
+                                <Text text="{i18n>modelPickTitle}" class="mpHead"/>
+                                <List items="{path: 'chat>/modelsView', templateShareable: false}" showSeparators="None" backgroundDesign="Transparent"
+                                        noDataText="{i18n>modelPickEmpty}" class="mpList">
+                                        <CustomListItem type="Active" press=".onModelPick" class="mpItem">
+                                                <customData>
+                                                        <core:CustomData key="on" value="{= ${chat>ModelId} === ${chat>/currentModel} ? 'yes' : 'no' }" writeToDom="true"/>
+                                                </customData>
+                                                <HBox alignItems="Center" class="mpRow">
+                                                        <VBox class="mpText">
+                                                                <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                                                <Text text="{chat>ModelName}" class="mpName" wrapping="false"/>
+                                                                <Text text="{chat>pickDesc}" visible="{= !!${chat>pickDesc} }" class="mpDesc" wrapping="false"/>
+                                                        </VBox>
+                                                        <core:Icon src="sap-icon://accept" visible="{= ${chat>ModelId} === ${chat>/currentModel} }" class="mpCheck"/>
+                                                </HBox>
+                                        </CustomListItem>
+                                </List>
+                                <Text text="{i18n>modelPickHint}" class="mpHint"/>
+                        </VBox>
+                </content>
+        </ResponsivePopover>
+
+</core:FragmentDefinition>

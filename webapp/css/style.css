@@ -1559,10 +1559,6 @@ html:not(.zai-keynav) [id$="newChatBtn"]:focus .sapMBtnHoverable {
                 padding: .4rem .8rem;
         }
 
-        [id$="modelSelect"] {
-                width: 8.5rem;
-        }
-
         .heroArea {
                 padding: 1rem .8rem;
         }

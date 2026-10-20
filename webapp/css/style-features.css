@@ -509,24 +509,6 @@
                 0 1px 3px rgba(45, 122, 179, .08) !important;
 }
 
-/* 顶栏模型选择器弱化为信息胶囊，避免抢过模式和会话标题 */
-.topBar .modelSelect,
-.topBar .modelSelect .sapMInputBaseContentWrapper {
-        border-radius: 999px !important;
-}
-
-.topBar .modelSelect {
-        min-width: 10rem;
-        max-width: 13rem;
-        margin-right: .2rem;
-}
-
-.topBar .modelSelect .sapMInputBaseInner {
-        font-size: .78rem !important;
-        font-weight: 600;
-        padding-left: .8rem !important;
-    }
-
 .topModeBadge {
         display: inline-flex;
         align-items: center;
@@ -605,10 +587,6 @@
         .sideBar {
                 min-width: 15.5rem;
                 max-width: 15.5rem;
-        }
-
-        .topBar .modelSelect {
-                display: none;
         }
 }
 

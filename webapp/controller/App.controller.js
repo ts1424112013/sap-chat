@@ -84,6 +84,7 @@ sap.ui.define([
                                 sessionId: "",
                                 input: "",
                                 currentModel: "",
+                                currentModelName: "",           // 20261020：输入框模型胶囊上的文字（SceneModels._syncModelLabel）
                                 busy: false,
                                 models: [],
                                 messages: [],
@@ -401,6 +402,8 @@ sap.ui.define([
                         this._updateModeBadge();
                         // V8：权限分流（按钮可见性/设置页编辑能力）
                         this._syncAdminUi();
+                        // 20261020：会话级模型按账号记在本地 —— 登录后按这个账号重新取当前会话的模型
+                        this._applySessionModel();
                         // 20261020：侧栏「权限审批」待审批角标（仅 ADMIN 实际查询）
                         this._authWatchStart();
                         var oUser = ChatService.getAppUser();
@@ -717,14 +720,20 @@ sap.ui.define([
 
                         ChatService.getModels().then(function (aModels) {
                                 // V10：列表首位注入「智能路由」虚拟项（后端 ModelId=AUTO 时按任务类型自动选模型）
-                                var aList = (aModels || []).filter(function (m) { return m.ModelId !== "AUTO"; });
+                                // 20261020：pickDesc = 模型选择弹出列表里的说明行
+                                var oRB = that._rb();
+                                var aList = (aModels || []).filter(function (m) { return m.ModelId !== "AUTO"; }).map(function (m) {
+                                        m.pickDesc = m.ModelDesc || m.ModelType || "";
+                                        return m;
+                                });
                                 aList.unshift({
                                         ModelId: "AUTO",
-                                        ModelName: that.getView().getModel("i18n").getResourceBundle().getText("modelAutoRoute"),
+                                        ModelName: oRB.getText("modelAutoShort"),
+                                        pickDesc: oRB.getText("modelAutoDesc"),
                                         IsActive: "X"
                                 });
                                 oChatModel.setProperty("/models", aList);
-                                // 默认选中「智能路由」；用户上次手动选过具体模型则保持
+                                // 默认「智能路由」；当前会话记住的模型由 _applySessionModel 设置（20261020 会话级）
                                 if (!oChatModel.getProperty("/currentModel")) {
                                         oChatModel.setProperty("/currentModel", "AUTO");
                                 }
@@ -876,6 +885,7 @@ sap.ui.define([
 
                         var sText = oCfg.displayText;
                         var sModelId = oChatModel.getProperty("/currentModel") || "";
+                        this._rememberSessionModel(sSessionId, sModelId);   // 20261020：这个会话以后打开还用这个模型
 
                         // 确保左侧历史列表出现当前会话（Agent 任务置进行中）
                         this._ensureSessionEntry(sSessionId, sText, oCfg.mode,
@@ -1489,6 +1499,8 @@ sap.ui.define([
                         // 空的 Agent 对话不显示任务信息入口，首次发送后再显示。
                         oChat.setProperty("/agentInfoVisible",
                                 sMode === "AGENT" && !!oCtx.id && oCtx.status !== "IDLE");
+                        // 20261020：模型是会话级的 —— 换成这个会话记住的模型
+                        this._applySessionModel();
                 },
 
                 /** 模式外观同步：分段按钮选中态（纯 CSS）/ 顶栏徽标（仅 对话|Agent）/
@@ -3186,20 +3198,6 @@ sap.ui.define([
                                 MessageToast.show(oRB.getText("copyFail"));
                         }
                         document.body.removeChild(oTA);
-                },
-
-                /** 右上角切换大模型（V10：AUTO=智能路由，按任务类型由后端自动选模型） */
-                onModelChange: function (oEvent) {
-                        var sKey = oEvent.getSource().getSelectedKey();
-                        var oChatModel = this.getView().getModel("chat");
-                        var oRB = this.getView().getModel("i18n").getResourceBundle();
-                        var oSel = oChatModel.getProperty("/models").filter(function (m) { return m.ModelId === sKey; })[0];
-                        var sName = oSel ? oSel.ModelName : sKey;
-                        if (sKey === "AUTO") {
-                                MessageToast.show(oRB.getText("toastAutoRouteOn"));
-                        } else {
-                                MessageToast.show(oRB.getText("toastModelChanged") + sName);
-                        }
                 },
 
                 /** 新会话（V13：随当前模式直接新建 —— CHAT=新对话；AGENT=新通用 Agent 会话） */

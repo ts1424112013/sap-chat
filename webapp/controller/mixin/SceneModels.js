@@ -11,7 +11,8 @@ sap.ui.define([
          * App 控制器拆分块：Agent 会话场景与模型白名单
          * =====================================================================
          * 场景定义（SCENES）与选择条、按场景过滤模型下拉、Agent 可用模型白名单的
-         * 读取/保存，以及对话页"转到 Agent 场景"的建议与跳转。
+         * 读取/保存，以及对话页"转到 Agent 场景"的建议与跳转；
+         * 20261020：会话级模型选择（输入框里的模型胶囊 + ModelPicker 弹出列表）。
          * 以 mixin 方式并入 zai.chat.controller.App（方法里的 this 就是控制器）；
          * 20261011（改进清单 FE-09）从 App.controller.js 原样搬出，逻辑未改。
          * =====================================================================
@@ -138,6 +139,88 @@ sap.ui.define([
                         var sCur = oChat.getProperty("/currentModel");
                         if (sCur && aView.length && !aView.some(function (m) { return m.ModelId === sCur; })) {
                                 oChat.setProperty("/currentModel", "AUTO");
+                        }
+                        this._syncModelLabel();
+                },
+
+                /* =========================================================
+                 * 20261020：会话级模型 —— 模型选择从顶栏移到输入框，每个对话各自记住。
+                 * 记在浏览器本地（按账号分开）：zaiChat.sessModel.<账号> = {会话 ID: 模型 ID}；
+                 * 没有记录的会话（新会话 / 旧会话）用「上次选的模型」zaiChat.lastModel.<账号>，
+                 * 再没有就是智能路由（AUTO）。不依赖后端 ZAI_CHAT_SESS.MODEL_ID 的口径。
+                 * ========================================================= */
+
+                _modelUserKey: function () {
+                        return ((ChatService.getAppUser() || {}).userId || "-").toUpperCase();
+                },
+
+                _sessModelMap: function () {
+                        try {
+                                return JSON.parse(window.localStorage.getItem("zaiChat.sessModel." + this._modelUserKey()) || "{}") || {};
+                        } catch (e) {
+                                return {};
+                        }
+                },
+
+                _lastModel: function () {
+                        try {
+                                return window.localStorage.getItem("zaiChat.lastModel." + this._modelUserKey()) || "";
+                        } catch (e) {
+                                return "";
+                        }
+                },
+
+                /** 记下某个会话用的模型（最近的放最后，最多留 300 个会话） */
+                _rememberSessionModel: function (sSid, sModel) {
+                        if (!sSid || !sModel) {
+                                return;
+                        }
+                        var m = this._sessModelMap();
+                        delete m[sSid];
+                        m[sSid] = sModel;
+                        var aKeys = Object.keys(m);
+                        aKeys.slice(0, Math.max(0, aKeys.length - 300)).forEach(function (k) { delete m[k]; });
+                        try {
+                                window.localStorage.setItem("zaiChat.sessModel." + this._modelUserKey(), JSON.stringify(m));
+                        } catch (e) { /* 存不了就只在本次有效 */ }
+                },
+
+                /** 当前会话变了（_setSessionContext / 登录后）：换成这个会话记住的模型 */
+                _applySessionModel: function () {
+                        var oChat = this.getView().getModel("chat");
+                        var sSid = (oChat.getProperty("/currentSession") || {}).id || "";
+                        oChat.setProperty("/currentModel", (sSid && this._sessModelMap()[sSid]) || this._lastModel() || "AUTO");
+                        this._syncModelList();   // 校验 Agent 场景白名单，并刷新胶囊上的模型名
+                },
+
+                /** 输入框模型胶囊上的文字（智能路由用短名） */
+                _syncModelLabel: function () {
+                        var oChat = this.getView().getModel("chat");
+                        var sCur = oChat.getProperty("/currentModel") || "AUTO";
+                        var oHit = (oChat.getProperty("/models") || []).filter(function (m) { return m.ModelId === sCur; })[0];
+                        oChat.setProperty("/currentModelName", oHit ? oHit.ModelName : (sCur === "AUTO" ? this._rb().getText("modelAutoShort") : sCur));
+                },
+
+                onOpenModelPicker: function (oEvent) {
+                        if (!this._oModelPicker) {
+                                this._oModelPicker = sap.ui.xmlfragment(this.getView().getId(), "zai.chat.view.ModelPicker", this);
+                                this.getView().addDependent(this._oModelPicker);
+                        }
+                        this._oModelPicker.openBy(oEvent.getSource());
+                },
+
+                /** 选中一个模型：只改当前对话，并作为之后新对话的默认 */
+                onModelPick: function (oEvent) {
+                        var sKey = oEvent.getSource().getBindingContext("chat").getProperty("ModelId");
+                        var oChat = this.getView().getModel("chat");
+                        oChat.setProperty("/currentModel", sKey);
+                        this._rememberSessionModel((oChat.getProperty("/currentSession") || {}).id, sKey);
+                        try {
+                                window.localStorage.setItem("zaiChat.lastModel." + this._modelUserKey(), sKey);
+                        } catch (e) { /* 忽略 */ }
+                        this._syncModelLabel();
+                        if (this._oModelPicker) {
+                                this._oModelPicker.close();
                         }
                 },
 

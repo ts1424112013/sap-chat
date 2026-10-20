@@ -167,7 +167,6 @@ body, body.sapUiBody { background: var(--bg) !important; }
         animation: galePulse 1.2s ease-in-out infinite;
 }
 @keyframes galePulse { 0%, 100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1); } }
-.topBar .modelSelect { min-width: 9rem !important; }
 .topBar .sapMComboBox { border-color: var(--line) !important; background: var(--surface) !important; }
 .topMenuBtn .sapMBtnInner { border: none !important; background: transparent !important; box-shadow: none !important; }
 .topMenuBtn .sapMBtnIcon { color: var(--text-2) !important; }
@@ -710,3 +709,33 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .apvStatus[data-status="DONE"] { background: var(--apv-green-soft); color: var(--apv-green) !important; }
 .apvStatus[data-status="EXISTS"] { background: var(--accent-soft); color: var(--accent) !important; }
 .apvStatus[data-status="REJECTED"], .apvStatus[data-status="FAILED"] { background: var(--apv-red-soft); color: var(--apv-red) !important; }
+
+/* ==================== 20261020：输入框里的模型选择（会话级）==================== */
+.modelPill { margin-left: .2rem; min-width: 0; }
+.modelPill .sapMBtnInner { display: inline-flex !important; align-items: center; max-width: 15rem; height: 1.95rem !important; min-height: 1.95rem !important; padding: 0 .7rem 0 .6rem !important; border-radius: 999px !important; border: 1px solid var(--line) !important; background: transparent !important; box-shadow: none !important; }
+.modelPill .sapMBtnIcon { font-size: .82rem !important; color: var(--accent) !important; margin: 0 .35rem 0 0 !important; width: auto !important; }
+.modelPill .sapMBtnContent { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 !important; }
+.modelPill .sapMBtnText, .modelPill .sapMBtnContent bdi { font-size: .78rem !important; font-weight: 500; color: var(--text-2) !important; }
+.modelPill .sapMBtnInner::after { content: ""; flex: none; width: .34rem; height: .34rem; margin: 0 0 .18rem .5rem; border-right: 1.5px solid var(--sub); border-bottom: 1.5px solid var(--sub); transform: rotate(45deg); }
+.modelPill:hover .sapMBtnInner { background: var(--hover) !important; border-color: var(--line-strong) !important; }
+.modelPill:hover .sapMBtnContent bdi { color: var(--text) !important; }
+@media (max-width: 599px) { .modelPill .sapMBtnInner { max-width: 9rem; } }
+
+/* 弹出列表 */
+.modelPickerPop { border-radius: 14px !important; overflow: hidden; box-shadow: 0 10px 32px rgba(17, 24, 39, .14), 0 2px 6px rgba(17, 24, 39, .06) !important; }
+.modelPickerPop, .modelPickerPop .sapMPopoverCont, .modelPickerPop .sapMPopoverScroll { background: var(--surface) !important; }
+.mpBody { padding: .45rem; }
+.mpHead { display: block !important; padding: .35rem .6rem .45rem; font-size: .72rem !important; font-weight: 600 !important; letter-spacing: .02em; color: var(--sub) !important; }
+.mpList, .mpList .sapMListUl { background: transparent !important; }
+.mpList .sapMLIB { background: transparent !important; border: none !important; border-radius: 10px; padding: 0 !important; min-height: 0 !important; margin: 1px 0; }
+.mpList .sapMLIB:hover, .mpList .sapMLIB.sapMLIBActive { background: var(--hover) !important; }
+.mpList .sapMLIB[data-on="yes"] { background: var(--accent-soft) !important; }
+.mpList .sapMLIB .sapMLIBContent, .mpList .sapMCLI .sapMLIBContent { padding: 0 !important; width: 100%; }
+.mpList .sapMLIB:focus::after, .mpList .sapMLIB.sapMLIBFocusable:focus::after { border-radius: 10px; }
+.mpRow { padding: .55rem .65rem; gap: .6rem; width: 100%; box-sizing: border-box; }
+.mpText { min-width: 0; }
+.mpName { font-size: .85rem !important; font-weight: 600 !important; color: var(--text) !important; }
+.mpDesc { display: block !important; margin-top: .12rem; font-size: .72rem !important; color: var(--sub) !important; }
+.mpList .sapMLIB[data-on="yes"] .mpName { color: var(--accent) !important; }
+.mpCheck { flex: none; font-size: .85rem !important; color: var(--accent) !important; }
+.mpHint { display: block !important; margin-top: .35rem; padding: .55rem .6rem .25rem; border-top: 1px solid var(--line); font-size: .7rem !important; color: var(--sub) !important; }

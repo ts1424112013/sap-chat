@@ -110,18 +110,6 @@
                                                                 <ToolbarSpacer/>
                                                                 <!-- V16：运行指示（生成中 / Agent 运行中 / 报表后台执行中） -->
                                                                 <Text text="{chat>/activityText}" visible="{= ${chat>/activityText} !== '' }" class="activityPill"/>
-                                                                <ComboBox id="modelSelect"
-                                                                        width="13rem"
-                                                                        placeholder="{i18n>selectModel}"
-                                                                        tooltip="{i18n>selectModel}"
-                                                                        items="{path: 'chat>/modelsView', templateShareable: false}"
-                                                                        selectedKey="{chat>/currentModel}"
-                                                                        change=".onModelChange"
-                                                                        class="modelSelect">
-                                                                        <items>
-                                                                                <core:Item key="{chat>ModelId}" text="{chat>ModelName}"/>
-                                                                        </items>
-                                                                </ComboBox>
                                                                         <!-- V12：Agent 任务信息入口（仅 Agent 任务会话可见） -->
                                                                         <Button id="agentInfoBtn" icon="sap-icon://information" type="Transparent"
                                                                                 tooltip="{i18n>agentInfoBtn}" press=".onAgentTaskInfo"
@@ -182,6 +170,9 @@
                                                                                         <Button id="roleMngHero" icon="sap-icon://user-edit" type="Transparent"
                                                                                                 tooltip="{i18n>roleManage}" press=".onOpenRoleManage" class="roleMngBtn"/>
                                                                                 </HBox>
+                                                                                <!-- 20261020：模型选择（会话级，每个对话各自记住；对话 / Agent 两模式都显示） -->
+                                                                                <Button id="modelBtnHero" icon="sap-icon://ai" text="{chat>/currentModelName}" tooltip="{i18n>modelPickTip}"
+                                                                                        type="Transparent" press=".onOpenModelPicker" class="modelPill"/>
                                                                                 <!-- V9.3：文本附件上传 + 发送；
                                                                                      V13：Agent 模式下附件按钮保留（作为上下文）
                                                                                      20261012：inputActions 恒靠右（Agent 模式左侧角色区隐藏时不再被挤到左下角） -->
@@ -257,6 +248,9 @@
                                                                                         <Button id="roleMngDock" icon="sap-icon://user-edit" type="Transparent"
                                                                                                 tooltip="{i18n>roleManage}" press=".onOpenRoleManage" class="roleMngBtn"/>
                                                                                 </HBox>
+                                                                                <!-- 20261020：模型选择（会话级） -->
+                                                                                <Button id="modelBtnDock" icon="sap-icon://ai" text="{chat>/currentModelName}" tooltip="{i18n>modelPickTip}"
+                                                                                        type="Transparent" press=".onOpenModelPicker" class="modelPill"/>
                                                                                 <!-- V9.3：文本附件上传（V13：Agent 模式保留 —— 附件作为任务上下文拼入提问）
                                                                                      20261012：inputActions 恒靠右 -->
                                                                                 <HBox alignItems="Center" class="inputActions">
