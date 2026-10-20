@@ -6,7 +6,7 @@
  * fetch 换成按调用顺序回放的假实现，覆盖：
  *   Formatter（转义 / 白名单清洗 / Markdown）、TraceService.normalizeResult、
  *   ChartRenderer.analyze、ChatService 的 FI 通道（CSRF 重试 FE-01、V8 失败判断 FE-02、
- *   POST 参数位置 FE-08、OData 字符串字面量转义）。
+ *   POST 参数位置 FE-08、OData 字符串字面量转义）、长文本通道（20261021，AnalyzeCode 414）。
  */
 const fs = require('fs');
 const path = require('path');
@@ -179,6 +179,52 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   await ChatService._v8Call('SaveConfig', { ConfigKey: 'K', ConfigValue: 'V' }, true);
   const cfgCalls = fetchLog.filter((c) => /SaveConfig/.test(c.url));
   check('V8 POST 403 重试后 URL 只有一个 ?', cfgCalls.length === 2 && countOf(cfgCalls[1].url, '?') === 1, cfgCalls.map((c) => c.url).join(' | '));
+
+  // 20261021：长文本通道（AnalyzeCode 414）—— 假 OData 模型记录 create / callFunction
+  console.log('\n━━ ChatService · 长文本通道（414）');
+  function fakeModel(bHasSet, oOpt) {
+    const o = oOpt || {};
+    const log = { creates: [], calls: [] };
+    const m = {
+      log,
+      metadataLoaded: () => Promise.resolve(),
+      getServiceMetadata: () => ({ dataServices: { schema: [{ entityContainer: [{ entitySet: bHasSet ? [{ name: 'Sessions' }, { name: 'ChatTexts' }] : [{ name: 'Sessions' }] }] }] } }),
+      create: (sPath, oData, mp) => { log.creates.push({ path: sPath, data: oData }); if (o.createFail) { mp.error({ statusCode: 500, message: 'boom' }); } else { mp.success({ TextId: 'T' + log.creates.length, Content: '' }); } },
+      callFunction: (sFi, mp) => {
+        log.calls.push({ fi: sFi, params: mp.urlParameters });
+        if (o.taskMissing && sFi === '/AnalyzeTask') { mp.error({ statusCode: 404, message: 'not found' }); return; }
+        mp.success({ Answer: 'ok', Status: 'OK' });
+      }
+    };
+    return m;
+  }
+  ChatService.setConfig({ mode: 'backend', host: '', path: '/p/' });
+  const origGetModel = ChatService._getModel;
+  const longQ = '请审查这段代码：\n' + 'DATA lv_x TYPE string. " 中文注释\n'.repeat(120);
+  let fm = fakeModel(true);
+  ChatService._getModel = () => fm;
+  await ChatService.send({ sessionId: 'S1', question: '短问题', modelId: 'AUTO' });
+  check('短问题：不走暂存，原文作为 Question', fm.log.creates.length === 0 && fm.log.calls[0].params.Question === '短问题');
+  check('判定按 URL 编码后的长度（长代码超过 LONG_Q_LIMIT）', encodeURIComponent(longQ).length > ChatService.LONG_Q_LIMIT);
+  fm = fakeModel(true);
+  await ChatService.send({ sessionId: 'S1', question: longQ, modelId: 'AUTO' });
+  check('长问题：先 POST /ChatTexts（正文在请求体）', fm.log.creates.length === 1 && fm.log.creates[0].path === '/ChatTexts' && fm.log.creates[0].data.Content === longQ);
+  check('长问题：AnalyzeCode 的 Question 换成 @@ZAI_TEXT:<TextId>', fm.log.calls.length === 1 && fm.log.calls[0].fi === '/AnalyzeCode' && fm.log.calls[0].params.Question === '@@ZAI_TEXT:T1', JSON.stringify(fm.log.calls[0]));
+  fm = fakeModel(true, { taskMissing: true });
+  ChatService._taskApiAvailable = null;
+  await ChatService.sendTask({ sessionId: 'S1', question: longQ, modelId: 'AUTO' });
+  check('Agent：AnalyzeTask 也走暂存', fm.log.calls[0].fi === '/AnalyzeTask' && fm.log.calls[0].params.Question === '@@ZAI_TEXT:T1');
+  check('Agent：回退 AnalyzeAgent 时复用同一引用、不再存第二次', fm.log.creates.length === 1 && fm.log.calls[1].fi === '/AnalyzeAgent' && fm.log.calls[1].params.Question === '@@ZAI_TEXT:T1', JSON.stringify(fm.log));
+  ChatService._taskApiAvailable = null;
+  fm = fakeModel(false);
+  err = null;
+  try { await ChatService.send({ sessionId: 'S1', question: longQ }); } catch (e) { err = e; }
+  check('后端没有 ChatTexts：给可读提示、不调函数导入', err && /长文本通道/.test(err.message) && fm.log.calls.length === 0, err ? err.message : '没有抛错');
+  fm = fakeModel(true, { createFail: true });
+  err = null;
+  try { await ChatService.send({ sessionId: 'S1', question: longQ }); } catch (e) { err = e; }
+  check('暂存失败：报错带原因、不调函数导入', err && /长文本暂存失败/.test(err.message) && fm.log.calls.length === 0, err ? err.message : '没有抛错');
+  ChatService._getModel = origGetModel;
 
   ChatService.setConfig({ mode: 'mock' });
   resetFetch([]);

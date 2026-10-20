@@ -81,6 +81,14 @@
 *   ★ 重贴后核对标记: get_sessions 内有 lv_want_mode 与 NS lv_query;
 *   v8_update_session 内有 lv_pin = 'N'; v8_save_roles / v8_save_prompts
 *   内各有 lv_shape <> '[]'; v8_save_prompts 内有 DELETE FROM zai_chat_prompt
+* V2.5 20261021: 送给模型的历史限长(无 SE11 / SEGW 改动) —— 前端 + DPC_EXT V15.6
+*   的长文本通道修好 AnalyzeCode 414 后, 贴过的长代码 / 附件会随最近 10 条历史
+*   原样反复送给模型, 容易超出模型上下文。get_history: 单条超过 gc_hist_msg_max
+*   只留开头并注明已截断; 从最近一条往前累计, 超过 gc_hist_total_max 后更早的
+*   不再带(至少保留最近一条)。本轮问题不在历史里(analyze 先取历史、后存本轮),
+*   不受影响; ZAI_CHAT_MSG 里存的仍是全文
+*   ★ 重贴后核对标记: 常量区有 gc_hist_msg_max 与 gc_hist_total_max;
+*   get_history 内有 INSERT ls_msg INTO lt_keep INDEX 1
 *         read_program_meta: TRDIRT 的程序名字段是 NAME 而非 PROGNAME
 *         (PROGNAME 是 REPOSRC 的字段, 原代码两处混用导致
 *         "Unknown column name PROGNAME", 并连带 LV_T 内联声明失败报
@@ -180,7 +188,9 @@ CLASS zcl_ai_chat_service DEFINITION
     TYPES tt_sessions TYPE STANDARD TABLE OF ty_session_out WITH DEFAULT KEY.
 
     CONSTANTS: gc_max_history TYPE i VALUE 10,    " 送入大模型的上下文条数
-               gc_store_max   TYPE i VALUE 100.   " 每会话最多保留的消息条数
+               gc_store_max   TYPE i VALUE 100,   " 每会话最多保留的消息条数
+               gc_hist_msg_max   TYPE i VALUE 6000,    " V2.5: 单条历史送给模型的字符上限
+               gc_hist_total_max TYPE i VALUE 16000.   " V2.5: 历史合计字符上限(从最近往前累计)
 
     " 读取模型配置列表
     CLASS-METHODS get_models
@@ -1114,8 +1124,9 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
 
     DATA: lt_hist  TYPE tt_dbmsg,
           ls_msg   TYPE zcl_ai_llm_client=>ty_message,
-          lv_lines TYPE i,
-          lv_idx   TYPE i.
+          lt_keep  TYPE zcl_ai_llm_client=>tt_messages,
+          lv_len   TYPE i,
+          lv_total TYPE i.
 
     CLEAR et_messages.
 
@@ -1136,18 +1147,26 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
       INTO CORRESPONDING FIELDS OF TABLE @lt_hist
       UP TO @gc_max_history ROWS.
 
-    lv_lines = lines( lt_hist ).
-
-    DO lv_lines TIMES.
-      lv_idx = lv_lines - sy-index + 1.
-      READ TABLE lt_hist INTO DATA(ls_hist) INDEX lv_idx.
-      IF sy-subrc <> 0.
-        EXIT.
-      ENDIF.
+    " V2.5: lt_hist 是最近的在前 —— 从最近往前累计长度; 单条过长只留开头;
+    " 合计超过 gc_hist_total_max 后更早的不再带(至少保留最近一条)。
+    " 头插 lt_keep → 结果仍是时间正序
+    LOOP AT lt_hist INTO DATA(ls_hist).
       ls_msg-role    = ls_hist-role.
       ls_msg-content = ls_hist-content.
-      APPEND ls_msg TO et_messages.
-    ENDDO.
+      lv_len = strlen( ls_msg-content ).
+      IF lv_len > gc_hist_msg_max.
+        ls_msg-content = |{ substring( val = ls_msg-content len = gc_hist_msg_max ) }\n| &&
+                         |…(这条历史较长, 已截断, 只保留前 { gc_hist_msg_max } 字)|.
+        lv_len = gc_hist_msg_max.
+      ENDIF.
+      IF lv_total + lv_len > gc_hist_total_max AND lt_keep IS NOT INITIAL.
+        EXIT.
+      ENDIF.
+      lv_total = lv_total + lv_len.
+      INSERT ls_msg INTO lt_keep INDEX 1.
+    ENDLOOP.
+
+    et_messages = lt_keep.
 
   ENDMETHOD.
 

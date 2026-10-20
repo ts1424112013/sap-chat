@@ -362,12 +362,14 @@ sap.ui.define([
                         }
                         var that = this;
                         var oModel = this._getModel();
-                        return new Promise(function (fnResolve, fnReject) {
+                        // 20261021：问题太长时先走长文本通道（见 _prepareQuestion），否则网关 414
+                        return this._prepareQuestion(oPayload.question).then(function (sQuestion) {
+                          return new Promise(function (fnResolve, fnReject) {
                                 oModel.callFunction("/AnalyzeCode", {
                                         method: "POST",
                                         urlParameters: {
                                                 SessionId: oPayload.sessionId,
-                                                Question: oPayload.question,
+                                                Question: sQuestion,
                                                 ModelId: oPayload.modelId || "",
                                                 ProgramName: oPayload.programName || ""
                                         },
@@ -388,6 +390,7 @@ sap.ui.define([
                                                 fnReject(new Error(that._fmtError(oError)));
                                         }
                                 });
+                          });
                         });
                 },
 
@@ -409,12 +412,13 @@ sap.ui.define([
                         }
                         var that = this;
                         var oModel = this._getModel();
-                        return new Promise(function (fnResolve, fnReject) {
+                        return this._prepareQuestion(oPayload.question).then(function (sQuestion) {
+                          return new Promise(function (fnResolve, fnReject) {
                                 oModel.callFunction("/AnalyzeAgent", {
                                         method: "POST",
                                         urlParameters: {
                                                 SessionId: oPayload.sessionId,
-                                                Question: oPayload.question,
+                                                Question: sQuestion,
                                                 ModelId: oPayload.modelId || ""
                                         },
                                         success: function (oData) {
@@ -439,6 +443,7 @@ sap.ui.define([
                                                 fnReject(new Error(that._fmtError(oError)));
                                         }
                                 });
+                          });
                         });
                 },
 
@@ -504,7 +509,9 @@ sap.ui.define([
                         if (oPayload.scene && this._fiHasParam("AnalyzeTask", "Scene")) {
                                 mParams.Scene = oPayload.scene;
                         }
-                        return new Promise(function (fnResolve, fnReject) {
+                        return this._prepareQuestion(oPayload.question).then(function (sQuestion) {
+                          mParams.Question = sQuestion;
+                          return new Promise(function (fnResolve, fnReject) {
                                 oModel.callFunction("/AnalyzeTask", {
                                         method: "POST",
                                         urlParameters: mParams,
@@ -540,13 +547,15 @@ sap.ui.define([
                                                         /未知.*函数导入|not found|HTTP 404/i.test(sMsg);
                                                 if (bNotFound && that._taskApiAvailable !== true) {
                                                         that._taskApiAvailable = false;
-                                                        that.sendAgent(oPayload).then(fnResolve, fnReject);
+                                                        // 已暂存过的长文本直接用引用，不再存一次
+                                                        that.sendAgent(Object.assign({}, oPayload, { question: sQuestion })).then(fnResolve, fnReject);
                                                         return;
                                                 }
                                                 that._maybeAuthFail(oError);
                                                 fnReject(new Error(sMsg));
                                         }
                                 });
+                          });
                         });
                 },
 
@@ -1250,6 +1259,60 @@ sap.ui.define([
                                 });
                         });
                         return bHit;
+                },
+
+                /* =================================================================
+                 * 20261021：长文本通道（AnalyzeCode 414）
+                 * OData V2 函数导入的参数全在 URL 查询串里，问题（尤其贴代码 / 附件）URL 编码后
+                 * 中文 ×9、空格换行引号 ×3，几百行代码就超过网关 / ICM 的 URL 上限 → HTTP 414。
+                 * 编码后超过 LONG_Q_LIMIT 时：先把正文 POST 到实体集 ChatTexts（请求体不受 URL 长度
+                 * 限制）拿回 TextId，再用 "@@ZAI_TEXT:<TextId>" 作为 Question 调原来的函数导入；
+                 * DPC_EXT V15.6 解析参数时换回原文（只认本人存的、用一次即删）。
+                 * 后端没有 ChatTexts（还没部署）时直接给可读提示，不再发出去换一个 414。
+                 * ================================================================= */
+                LONG_Q_LIMIT: 3000,
+                LONG_Q_PREFIX: "@@ZAI_TEXT:",
+
+                /** → Promise<string>：短问题原样；长问题暂存后返回引用 */
+                _prepareQuestion: function (sQuestion) {
+                        var s = sQuestion || "";
+                        if (encodeURIComponent(s).length <= this.LONG_Q_LIMIT) {
+                                return Promise.resolve(s);
+                        }
+                        var that = this;
+                        var oModel = this._getModel();
+                        return Promise.resolve(oModel.metadataLoaded ? oModel.metadataLoaded(true) : null).then(function () {
+                                if (!that._hasEntitySet("ChatTexts")) {
+                                        throw new Error("内容太长（超过网关 URL 长度上限），后端还没有部署长文本通道（ChatTexts），请缩短或分段发送");
+                                }
+                                return new Promise(function (fnResolve, fnReject) {
+                                        oModel.create("/ChatTexts", { TextId: "", Content: s }, {
+                                                success: function (oData) {
+                                                        var oRoot = (oData && oData.d) || oData || {};
+                                                        if (!oRoot.TextId) {
+                                                                fnReject(new Error("长文本暂存失败：后端没有返回编号"));
+                                                                return;
+                                                        }
+                                                        fnResolve(that.LONG_Q_PREFIX + oRoot.TextId);
+                                                },
+                                                error: function (oError) {
+                                                        that._maybeAuthFail(oError);
+                                                        fnReject(new Error("长文本暂存失败：" + that._fmtError(oError)));
+                                                }
+                                        });
+                                });
+                        });
+                },
+
+                /** 服务 metadata 里有没有某个实体集 */
+                _hasEntitySet: function (sName) {
+                        var oMeta = null;
+                        try { oMeta = this._getModel().getServiceMetadata(); } catch (e) { oMeta = null; }
+                        return ((oMeta && oMeta.dataServices && oMeta.dataServices.schema) || []).some(function (oSchema) {
+                                return (oSchema.entityContainer || []).some(function (oEc) {
+                                        return (oEc.entitySet || []).some(function (oEs) { return oEs.name === sName; });
+                                });
+                        });
                 },
 
                 /** 20261011：是否 403（CSRF 失效）—— 兼容 "HTTP 403" 与 "HTTP 403 - <响应体>" 两种错误格式 */

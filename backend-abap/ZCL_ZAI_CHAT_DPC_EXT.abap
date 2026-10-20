@@ -93,6 +93,20 @@
 *   参数全 Edm.String; RunFioriReport 为 POST), 见部署清单第七节 7.3。其余不变
 *   ★ 重贴后核对标记: 搜 auth_reply 代码区应有 12 处调用(权限 9 + Fiori 3)
 *   + 1 处实现 + 1 处声明; 搜 zcl_ai_fiori_report_service 代码区应有 3 处
+* V15.6 20261021(修 AnalyzeCode HTTP 414): 长文本通道 ——
+*   OData V2 函数导入的参数全在 URL 查询串里, 贴代码 / 附件时 URL 编码后超过
+*   网关 / ICM 的 URL 上限, 返回 414。前端(ChatService._prepareQuestion)在问题
+*   编码后超过 3000 字符时先 POST /ChatTexts(正文在请求体, 不受 URL 长度限制),
+*   拿回 TextId, 再用 "@@ZAI_TEXT:<TextId>" 作为 Question 调 AnalyzeCode /
+*   AnalyzeAgent / AnalyzeTask; 本类 EXECUTE_ACTION 解析完参数后经 resolve_text
+*   换回原文(只认本人存的, 读到即删), 三个 FI 的分支与返回结构都不变。
+*   需先 SE11 建表 ZAI_CHAT_TEXT, SEGW 建 EntityType ChatText(TextId 键 /
+*   Content, ABAP 字段名 TEXTID / CONTENT) + EntitySet ChatTexts(只开 Creatable)
+*   并 Generate, 见部署清单第八节。不要把 POST /ChatTexts 放进 $batch(本方法有
+*   COMMIT WORK, changeset 内不允许)
+*   ★ 重贴后核对标记: 定义区有 chattexts_create_entity REDEFINITION 与
+*   resolve_text; EXECUTE_ACTION 参数循环后有 find( val = lv_question
+*   sub = gc_text_prefix ) = 0
 *=======================================================================
 * V15(P1~P3) 20261007: Agent 多业务任务与报表分析接口
 *   新增函数导入分支(全部旁路, 不改既有分支; SEGW 未建 metadata 前
@@ -136,6 +150,9 @@ CLASS zcl_zai_chat_dpc_ext DEFINITION
     " V1.3.0: GET /AgentCapabilities - 数据分析能力目录(计划 §5)
     METHODS agentcapabilitie_get_entityset REDEFINITION.
 
+    " V15.6: POST /ChatTexts - 长文本通道(问题太长时先暂存正文, 返回 TextId)
+    METHODS chattexts_create_entity REDEFINITION.
+
     " V2.0: 读取 Function Import 的指定参数(大小写不敏感, 未传返回空)
     METHODS v8_param
       IMPORTING it_parameter TYPE /iwbep/t_mgw_name_value_pair
@@ -143,6 +160,16 @@ CLASS zcl_zai_chat_dpc_ext DEFINITION
       RETURNING VALUE(rv)    TYPE string.
 
   PRIVATE SECTION.
+
+    " V15.6: 长文本通道 —— Question 以此前缀开头时, 后面是 ChatTexts 的 TextId
+    CONSTANTS: gc_text_prefix TYPE string VALUE '@@ZAI_TEXT:',
+               gc_text_max    TYPE i VALUE 1000000.   " 单条长文本字符上限
+
+    " V15.6: "@@ZAI_TEXT:<TextId>" → 暂存的原文(只认本人存的, 读到即删)
+    METHODS resolve_text
+      IMPORTING iv_question TYPE string
+      RETURNING VALUE(rv)   TYPE string
+      RAISING   /iwbep/cx_mgw_busi_exception.
 
     " V15: 结构化接口统一返回的服务侧结构(分支内填充, 输出前经
     " to_generic_odata 转无下划线结构再 copy_data_to_ref)
@@ -240,6 +267,12 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
         WHEN 'PROGRAMNAME'.  lv_prog     = ls_param-value.
       ENDCASE.
     ENDLOOP.
+
+    " V15.6: 长文本通道 —— 前端把太长的问题先存进 ChatTexts, 这里只收到引用, 换回原文
+    " (AnalyzeCode / AnalyzeAgent / AnalyzeTask 共用 lv_question, 一处换完即可)
+    IF find( val = lv_question sub = gc_text_prefix ) = 0.
+      lv_question = resolve_text( lv_question ).
+    ENDIF.
 
     CASE to_upper( iv_action_name ).
 
@@ -959,6 +992,84 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
 
       APPEND ls_row TO et_entityset.
     ENDLOOP.
+
+  ENDMETHOD.
+
+
+  METHOD chattexts_create_entity.
+
+    " V15.6: POST /ChatTexts —— 长文本通道(见类头)。正文在请求体里, 不受 URL 长度限制;
+    " 返回 TextId, 前端再用 "@@ZAI_TEXT:<TextId>" 调 AnalyzeCode / AnalyzeAgent / AnalyzeTask。
+    " SEGW: EntityType ChatText(TextId 键 / Content, 都是 Edm.String; ABAP 字段名 TEXTID / CONTENT)
+    DATA: ls_in   TYPE zcl_zai_chat_mpc=>ts_chattext,
+          ls_row  TYPE zai_chat_text,
+          lv_yday TYPE d,
+          lv_old  TYPE zai_chat_text-created_at.
+
+    io_data_provider->read_entry_data( IMPORTING es_data = ls_in ).
+
+    IF ls_in-content IS INITIAL.
+      RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+        EXPORTING
+          textid  = /iwbep/cx_mgw_busi_exception=>business_error
+          message = '长文本内容为空'.
+    ENDIF.
+    IF strlen( ls_in-content ) > gc_text_max.
+      RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+        EXPORTING
+          textid  = /iwbep/cx_mgw_busi_exception=>business_error
+          message = |内容超过 { gc_text_max } 字符上限, 请分段发送|.
+    ENDIF.
+
+    " 顺手清掉本人一天前没用掉的(发送中途失败 / 关页面留下的)
+    lv_yday = sy-datum - 1.
+    lv_old  = |{ lv_yday }{ sy-uzeit }|.
+    DELETE FROM zai_chat_text WHERE owner = @sy-uname AND created_at < @lv_old.
+
+    TRY.
+        ls_row-text_id = cl_system_uuid=>create_uuid_c32_static( ).
+      CATCH cx_uuid_error.
+        RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+          EXPORTING
+            textid  = /iwbep/cx_mgw_busi_exception=>business_error
+            message = '生成长文本编号失败'.
+    ENDTRY.
+    ls_row-owner      = sy-uname.
+    ls_row-created_at = |{ sy-datum }{ sy-uzeit }|.
+    ls_row-content    = ls_in-content.
+    INSERT zai_chat_text FROM @ls_row.
+    IF sy-subrc <> 0.
+      RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+        EXPORTING
+          textid  = /iwbep/cx_mgw_busi_exception=>business_error
+          message = '长文本暂存失败(写 ZAI_CHAT_TEXT)'.
+    ENDIF.
+    " 下一个请求(AnalyzeCode 等)要读到它 —— 显式提交(本请求不在 $batch 里)
+    COMMIT WORK.
+
+    er_entity-textid = ls_row-text_id.   " 不回传正文
+
+  ENDMETHOD.
+
+
+  METHOD resolve_text.
+
+    " V15.6: "@@ZAI_TEXT:<TextId>" → ChatTexts 暂存的原文。只认本人存的; 读到即删(一次性),
+    " 删除随本次请求的 COMMIT WORK 一起提交(对话 / Agent 服务里都有)
+    DATA(lv_id) = to_upper( condense( substring( val = iv_question off = strlen( gc_text_prefix ) ) ) ).
+
+    SELECT SINGLE content FROM zai_chat_text
+      WHERE text_id = @lv_id
+        AND owner   = @sy-uname
+      INTO @rv.
+    IF sy-subrc <> 0.
+      RAISE EXCEPTION TYPE /iwbep/cx_mgw_busi_exception
+        EXPORTING
+          textid  = /iwbep/cx_mgw_busi_exception=>business_error
+          message = |长文本 { lv_id } 不存在或已失效, 请重新发送|.
+    ENDIF.
+
+    DELETE FROM zai_chat_text WHERE text_id = @lv_id.
 
   ENDMETHOD.
 
