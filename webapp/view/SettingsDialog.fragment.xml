@@ -18,7 +18,7 @@
                         </Toolbar>
                 </customHeader>
                 <content>
-                        <IconTabBar id="settingsTabs" headerBackgroundDesign="Transparent" upperCase="false" select=".onSettingsTabSelect">
+                        <IconTabBar id="settingsTabs" headerBackgroundDesign="Transparent" upperCase="false">
                                 <items>
                                         <!-- ========== 页签1：连接配置 ========== -->
                                         <IconTabFilter icon="sap-icon://world" text="{i18n>tabConnection}" key="connection">
@@ -231,11 +231,6 @@
                                                                 <Button text="{i18n>userAdd}" icon="sap-icon://add" type="Emphasized" press=".onAddUser"/>
                                                         </HBox>
                                                 </VBox>
-                                        </IconTabFilter>
-
-                                        <!-- ========== 页签：权限申请（仅管理员；内容见 AuthAdmin 片段） ========== -->
-                                        <IconTabFilter icon="sap-icon://key" text="{i18n>authAdmin}" key="auth" visible="{settings>/isAdmin}">
-                                                <core:Fragment fragmentName="zai.chat.view.AuthAdmin" type="XML"/>
                                         </IconTabFilter>
                                 </items>
                         </IconTabBar>

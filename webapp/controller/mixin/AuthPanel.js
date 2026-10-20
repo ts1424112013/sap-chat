@@ -10,9 +10,11 @@ sap.ui.define([
          * =====================================================================
          * App 控制器块：事务码权限自助申请
          * =====================================================================
-         * 两个入口（设计：功能计划书/权限自助申请/01-方案与开发计划_V1.3）：
-         *   ① 侧栏底部钥匙图标 → 「申请权限」对话框（AuthDialog）：申请 / 我的申请
-         *   ② 设置 → 「权限申请」页签（AuthAdmin，仅 ADMIN）：申请记录与审批撤销 / 批量代加 / 权限表配置 / 事务码规则
+         * 入口都在侧栏会话列表下方（设计：功能计划书/权限自助申请/01-方案与开发计划_V1.3）：
+         *   ① 「申请权限」→ 对话框 AuthDialog：申请 / 我的申请
+         *   ② 「权限审批」（仅 ADMIN）→ 审批对话框（见 AuthApprove mixin）；入口上的红色角标 = 待审批条数
+         *      （登录后、每 2 分钟、切回页面时查一次；条数变多时弹提示）
+         *   ③ 审批对话框底部「管理」→ AuthAdminDialog（内容 AuthAdmin）：全部记录与撤销 / 批量代加 / 权限表配置 / 事务码规则
          * 数据都在视图模型 "auth" 里；所有后端调用经 ChatService.auth*（失败抛 Error(后端原话)，
          * 这里统一显示在对话框 / 页签顶部的红色提示条）。
          * 以 mixin 并入 zai.chat.controller.App，方法名统一 auth / _auth 前缀，避免与其他块重名（红线 8）。
@@ -20,6 +22,7 @@ sap.ui.define([
          */
 
         var PAGE = 50;
+        var PENDING_POLL_MS = 120000;
         var STATUS_STATE = { DONE: "Success", EXISTS: "Information", PENDING: "Warning", FAILED: "Error", REJECTED: "Error", REVOKED: "None" };
 
         /** CHAR14 yyyymmddhhmmss → "yyyy-mm-dd hh:mm:ss"（不是 14 位数字就原样显示） */
@@ -139,6 +142,7 @@ sap.ui.define([
                         this._authRun(function () {
                                 return ChatService.authSubmit({ Tcode: f.tcode.trim().toUpperCase(), WerksList: f.werks, Reason: f.reason.trim() }).then(function (oRes) {
                                         that._authShowResult(oRes);
+                                        that._authCheckPending();   // ADMIN 给自己申请到待审批时，角标立刻更新
                                         return that._authLoadMine(true);
                                 });
                         });
@@ -169,19 +173,72 @@ sap.ui.define([
                 },
 
                 /* =========================================================
-                 * 管理入口：设置 → 权限申请（仅 ADMIN）
+                 * 待审批提醒（仅 ADMIN）：侧栏「权限审批」角标 + 条数变多时的提示
                  * ========================================================= */
 
-                /** 设置对话框切页签：进入「权限申请」时刷新；顺带把对话框放宽（表格多列） */
-                onSettingsTabSelect: function (oEvent) {
-                        var sKey = oEvent.getParameter("key"), that = this, oModel = this._authModel();
-                        if (this._oSettingsDialog) {
-                                this._oSettingsDialog.setContentWidth(sKey === "auth" ? "64rem" : "40rem");
+                /** 登录后调用（_afterAppLogin）；定时器与页面可见性监听只装一次，换账号也复用。
+                 *  条数放在 settings 模型（/authPending），侧栏启动时就能绑定；"上次查到的条数"放控制器上 */
+                _authWatchStart: function () {
+                        var that = this;
+                        this._iAuthPendingSeen = -1;   // -1 = 本次登录还没查过（查到有待审批就提示一次）
+                        this.getView().getModel("settings").setProperty("/authPending", 0);
+                        if (!this._iAuthPendingTimer) {
+                                this._iAuthPendingTimer = window.setInterval(function () {
+                                        if (!document.hidden) {
+                                                that._authCheckPending();
+                                        }
+                                }, PENDING_POLL_MS);
+                                document.addEventListener("visibilitychange", function () {
+                                        if (!document.hidden) {
+                                                that._authCheckPending();
+                                        }
+                                });
                         }
-                        if (sKey !== "auth") {
-                                return;
+                        // 稍后再查：错开登录欢迎提示和登录时的一批请求
+                        window.setTimeout(function () { that._authCheckPending(); }, 1500);
+                },
+
+                /** 查待审批条数（只取 1 行看 total）；失败不打扰（比如后端还没部署这个功能） */
+                _authCheckPending: function () {
+                        var oUser = ChatService.getAppUser();
+                        if (!oUser || !ChatService.isAdmin()) {
+                                return Promise.resolve();
                         }
+                        var that = this, sUser = oUser.userId;
+                        return ChatService.authList({ Status: "PENDING", Top: "1", Skip: "0" }).then(function (r) {
+                                if ((ChatService.getAppUser() || {}).userId !== sUser) {
+                                        return;   // 查询期间换了账号
+                                }
+                                var n = Number(r.total) || 0, nSeen = that._iAuthPendingSeen;
+                                that._authSetPending(n);
+                                if (n > 0 && (nSeen < 0 || n > nSeen)) {
+                                        MessageToast.show(that._rb().getText(nSeen < 0 ? "authPendingToast" : "authPendingNewToast", [n]), { duration: 5000 });
+                                }
+                        }).catch(function () { /* 静默 */ });
+                },
+
+                /** 写角标（不提示）：审批对话框加载待审批列表时也用它，免得刚处理完又弹"新申请" */
+                _authSetPending: function (n) {
+                        var oSettings = this.getView().getModel("settings");
+                        this._iAuthPendingSeen = n;
+                        oSettings.setProperty("/authPending", n);
+                        oSettings.setProperty("/authPendingTip", this._rb().getText("authPendingTip", [n]));
+                },
+
+                /* =========================================================
+                 * 管理入口：审批对话框底部「管理」→ 四页签管理对话框（仅 ADMIN）
+                 * ========================================================= */
+
+                /** 打开即刷新 */
+                onOpenAuthAdmin: function () {
+                        var that = this, oModel = this._authModel();
                         oModel.setProperty("/notice", "");
+                        oModel.setProperty("/result", { lines: [], summary: "" });
+                        if (!this._oAuthAdminDialog) {
+                                this._oAuthAdminDialog = sap.ui.xmlfragment(this.getView().getId(), "zai.chat.view.AuthAdminDialog", this);
+                                this.getView().addDependent(this._oAuthAdminDialog);
+                        }
+                        this._oAuthAdminDialog.open();
                         this._authRun(function () {
                                 var pEnabled = ChatService.getMode() === "mock"
                                         ? Promise.resolve(ChatService._mockAuthEnabled())
@@ -192,6 +249,20 @@ sap.ui.define([
                                         return that._authLoadAdmin(true);
                                 });
                         });
+                },
+
+                onCloseAuthAdmin: function () {
+                        if (this._oAuthAdminDialog) {
+                                this._oAuthAdminDialog.close();
+                        }
+                },
+
+                /** 退出登录时关掉权限对话框、清掉角标（下一位用户不该看到） */
+                _authCloseAll: function () {
+                        this.onCloseAuth();
+                        this.onCloseAuthAdmin();
+                        this.onApvClose();
+                        this.getView().getModel("settings").setProperty("/authPending", 0);
                 },
 
                 onAuthEnabledChange: function (oEvent) {
@@ -227,6 +298,8 @@ sap.ui.define([
                         return ChatService.authList({ Status: a.status, User: a.user, Tcode: a.tcode, Top: String(PAGE), Skip: String(oModel.getProperty("/admin/skip")) }).then(function (r) {
                                 oModel.setProperty("/admin/rows", that._authDecorate(r.requests));
                                 oModel.setProperty("/admin/total", r.total || 0);
+                                // 审批 / 驳回 / 撤销 / 批量代加 / 刷新之后，角标跟着更新
+                                that._authCheckPending();
                         });
                 },
 

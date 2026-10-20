@@ -1,0 +1,146 @@
+<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
+
+        <!-- ======================= 权限审批（侧栏「权限审批」，仅 ADMIN；常用，独立设计，不复用 AuthAdmin） =======================
+             待审批：一张申请一张卡片，批准 / 驳回在卡片内确认（不弹二层对话框）；最近处理：只读列表。
+             批量代加 / 权限表 / 规则 / 全部记录与撤销 → 底部「管理」打开 AuthAdminDialog。 -->
+        <Dialog id="authApproveDialog" contentWidth="38rem" contentHeight="32rem" resizable="true" draggable="true" class="apvDialog">
+                <customHeader>
+                        <Toolbar design="Transparent" class="apvHeadBar">
+                                <core:Icon src="sap-icon://approvals" class="apvHeadIcon"/>
+                                <Title level="H3" text="{i18n>authAdmin}" class="apvTitle"/>
+                                <Text text="{auth>/apv/subtitle}" class="apvSub">
+                                        <customData>
+                                                <core:CustomData key="busy" value="{= ${auth>/apv/total} > 0 ? 'yes' : 'no' }" writeToDom="true"/>
+                                        </customData>
+                                </Text>
+                                <ToolbarSpacer/>
+                                <Button icon="sap-icon://refresh" type="Transparent" tooltip="{i18n>authRefresh}" press=".onApvRefresh" class="apvIconBtn"/>
+                                <Button icon="sap-icon://decline" type="Transparent" tooltip="{i18n>close}" press=".onApvClose" class="apvIconBtn"/>
+                        </Toolbar>
+                </customHeader>
+                <subHeader>
+                        <Toolbar design="Transparent" class="apvTabsBar">
+                                <HBox renderType="Bare" class="apvSeg">
+                                        <Button text="{i18n>apvTabPending}" type="Transparent" press=".onApvTab" class="apvSegBtn">
+                                                <customData>
+                                                        <core:CustomData key="tab" value="pending"/>
+                                                        <core:CustomData key="on" value="{= ${auth>/apv/tab} === 'pending' ? 'yes' : 'no' }" writeToDom="true"/>
+                                                </customData>
+                                        </Button>
+                                        <Button text="{i18n>apvTabDone}" type="Transparent" press=".onApvTab" class="apvSegBtn">
+                                                <customData>
+                                                        <core:CustomData key="tab" value="done"/>
+                                                        <core:CustomData key="on" value="{= ${auth>/apv/tab} === 'done' ? 'yes' : 'no' }" writeToDom="true"/>
+                                                </customData>
+                                        </Button>
+                                </HBox>
+                        </Toolbar>
+                </subHeader>
+                <content>
+                        <VBox class="apvBody" busy="{auth>/apv/loading}" busyIndicatorDelay="200">
+                                <MessageStrip text="{auth>/apv/notice}" type="Error" showIcon="true" visible="{= !!${auth>/apv/notice} }" class="apvStrip"/>
+                                <MessageStrip text="{i18n>apvDisabled}" type="Warning" showIcon="true" visible="{= !${auth>/enabled} }" class="apvStrip"/>
+
+                                <!-- ===== 待审批：卡片 ===== -->
+                                <VBox visible="{= ${auth>/apv/tab} === 'pending' }">
+                                        <VBox items="{path: 'auth>/apv/rows', templateShareable: false}" class="apvCards">
+                                                <VBox class="apvCard" busy="{auth>busy}" busyIndicatorDelay="0">
+                                                        <customData>
+                                                                <core:CustomData key="mode" value="{= ${auth>mode} || 'idle' }" writeToDom="true"/>
+                                                        </customData>
+                                                        <HBox alignItems="Start" class="apvCardTop">
+                                                                <Text text="{auth>initials}" class="apvAvatar">
+                                                                        <customData>
+                                                                                <core:CustomData key="hue" value="{auth>hue}" writeToDom="true"/>
+                                                                        </customData>
+                                                                </Text>
+                                                                <VBox class="apvMain">
+                                                                        <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                                                        <HBox alignItems="Baseline" justifyContent="SpaceBetween">
+                                                                                <Text text="{auth>targetUser}" class="apvUser" wrapping="false"/>
+                                                                                <Text text="{auth>timeText}" class="apvTime" wrapping="false"/>
+                                                                        </HBox>
+                                                                        <HBox wrap="Wrap" alignItems="Center" class="apvChips">
+                                                                                <Text text="{auth>tcode}" class="apvChip apvChipTcode" wrapping="false"/>
+                                                                                <Text text="{auth>werksText}" class="apvChip" wrapping="false"/>
+                                                                                <Text text="{auth>tabname}" class="apvTabname" wrapping="false"/>
+                                                                        </HBox>
+                                                                </VBox>
+                                                        </HBox>
+                                                        <Text text="{auth>reason}" visible="{= !!${auth>reason} }" class="apvReason"/>
+                                                        <Text text="{auth>message}" visible="{= !!${auth>message} }" class="apvHint"/>
+                                                        <Text text="{auth>error}" visible="{= !!${auth>error} }" class="apvError"/>
+
+                                                        <!-- 默认：两个按钮 -->
+                                                        <HBox justifyContent="End" class="apvActions" visible="{= !${auth>mode} }">
+                                                                <Button text="{i18n>apvReject}" press=".onApvAsk" class="apvBtn apvBtnReject">
+                                                                        <customData><core:CustomData key="mode" value="reject"/></customData>
+                                                                </Button>
+                                                                <Button text="{i18n>apvApprove}" icon="sap-icon://accept" type="Emphasized" press=".onApvAsk" class="apvBtn apvBtnApprove">
+                                                                        <customData><core:CustomData key="mode" value="approve"/></customData>
+                                                                </Button>
+                                                        </HBox>
+
+                                                        <!-- 确认：卡片内展开（批准说明可选，驳回原因必填） -->
+                                                        <VBox class="apvConfirm" visible="{= !!${auth>mode} }">
+                                                                <Text text="{auth>confirmText}" class="apvConfirmText"/>
+                                                                <TextArea value="{auth>note}" rows="2" width="100%" maxLength="255" valueLiveUpdate="true"
+                                                                        placeholder="{= ${auth>mode} === 'reject' ? ${i18n>apvNotePhReject} : ${i18n>apvNotePhApprove} }" class="apvNote"/>
+                                                                <HBox justifyContent="End" class="apvActions">
+                                                                        <Button text="{i18n>cancel}" type="Transparent" press=".onApvCancel" class="apvBtn"/>
+                                                                        <Button text="{= ${auth>mode} === 'reject' ? ${i18n>apvDoReject} : ${i18n>apvDoApprove} }"
+                                                                                type="{= ${auth>mode} === 'reject' ? 'Reject' : 'Emphasized' }"
+                                                                                enabled="{= ${auth>mode} !== 'reject' || !!${auth>note} }"
+                                                                                press=".onApvConfirm" class="apvBtn apvBtnGo"/>
+                                                                </HBox>
+                                                        </VBox>
+                                                </VBox>
+                                        </VBox>
+
+                                        <!-- 空状态 -->
+                                        <VBox alignItems="Center" class="apvEmpty" visible="{= !${auth>/apv/loading} &amp;&amp; ${auth>/apv/rows}.length === 0 }">
+                                                <core:Icon src="sap-icon://complete" class="apvEmptyIcon"/>
+                                                <Text text="{i18n>apvEmptyTitle}" class="apvEmptyTitle"/>
+                                                <Text text="{i18n>apvEmptySub}" class="apvEmptySub"/>
+                                        </VBox>
+                                </VBox>
+
+                                <!-- ===== 最近处理：只读列表 ===== -->
+                                <VBox visible="{= ${auth>/apv/tab} === 'done' }">
+                                        <Text text="{i18n>apvDoneHint}" class="apvDoneHint"/>
+                                        <VBox items="{path: 'auth>/apv/done', templateShareable: false}" class="apvDoneList">
+                                                <HBox alignItems="Center" class="apvDoneRow">
+                                                        <Text text="{auth>initials}" class="apvAvatar apvAvatarSm">
+                                                                <customData>
+                                                                        <core:CustomData key="hue" value="{auth>hue}" writeToDom="true"/>
+                                                                </customData>
+                                                        </Text>
+                                                        <VBox class="apvMain">
+                                                                <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                                                <Text text="{= ${auth>targetUser} + '  ·  ' + ${auth>tcode} + '  ·  ' + ${auth>werksText} }" class="apvDoneMain" wrapping="false"/>
+                                                                <Text text="{auth>doneSub}" class="apvDoneSub" wrapping="false"/>
+                                                        </VBox>
+                                                        <Text text="{auth>statusText}" class="apvStatus" wrapping="false">
+                                                                <customData>
+                                                                        <core:CustomData key="status" value="{auth>status}" writeToDom="true"/>
+                                                                </customData>
+                                                        </Text>
+                                                </HBox>
+                                        </VBox>
+                                        <VBox alignItems="Center" class="apvEmpty" visible="{= !${auth>/apv/loading} &amp;&amp; ${auth>/apv/done}.length === 0 }">
+                                                <core:Icon src="sap-icon://history" class="apvEmptyIcon apvEmptyIconMuted"/>
+                                                <Text text="{i18n>apvDoneEmpty}" class="apvEmptyTitle"/>
+                                        </VBox>
+                                </VBox>
+                        </VBox>
+                </content>
+                <footer>
+                        <Toolbar design="Transparent" class="apvFoot">
+                                <Button icon="sap-icon://action-settings" text="{i18n>apvManage}" type="Transparent" press=".onApvManage" class="apvManageBtn"/>
+                                <ToolbarSpacer/>
+                                <Button text="{i18n>close}" press=".onApvClose"/>
+                        </Toolbar>
+                </footer>
+        </Dialog>
+
+</core:FragmentDefinition>

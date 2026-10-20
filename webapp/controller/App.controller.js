@@ -25,9 +25,10 @@ sap.ui.define([
         "zai/chat/controller/mixin/EvalPanel",
         "zai/chat/controller/mixin/RunTracker",
         "zai/chat/controller/mixin/AuthPanel",
+        "zai/chat/controller/mixin/AuthApprove",
         "zai/chat/controller/mixin/CatalogPanel",
         "zai/chat/controller/mixin/FioriPanel"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, CatalogPanel, FioriPanel) {
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel) {
         "use strict";
 
         /**
@@ -54,6 +55,7 @@ sap.ui.define([
          *   EvalPanel     Agent 测评对话框
          *   RunTracker    报表运行跟踪（步骤条）
          *   AuthPanel     事务码权限自助申请（20261020）
+         *   AuthApprove   侧栏「权限审批」对话框（20261020）
          *   CatalogPanel  「报表执行」/「Fiori 报表」场景首页的报表目录（20261020）
          *   FioriPanel    Fiori 报表取数、结果与「交给模型分析」（20261020）
          * 新增方法前先看是否属于这几块；方法名不能与 mixin 重复（后者会覆盖）。
@@ -140,7 +142,10 @@ sap.ui.define([
                                 sessionId: "",
                                 agentSessionId: oSaved.agentSessionId || "",   // V12：Agent 当前任务
                                 workspaceMode: oSaved.workspaceMode || "CHAT", // V12：上次工作模式
-                                modelList: []
+                                modelList: [],
+                                isAdmin: false,         // 登录后由 _syncAdminUi 设置
+                                authPending: 0,         // 20261020：侧栏「权限审批」角标（待审批条数）
+                                authPendingTip: ""
                         });
                         this.getView().setModel(oSettingsModel, "settings");
 
@@ -396,6 +401,8 @@ sap.ui.define([
                         this._updateModeBadge();
                         // V8：权限分流（按钮可见性/设置页编辑能力）
                         this._syncAdminUi();
+                        // 20261020：侧栏「权限审批」待审批角标（仅 ADMIN 实际查询）
+                        this._authWatchStart();
                         var oUser = ChatService.getAppUser();
                         // V16：侧栏底部用户信息（头像缩写取账号，SAP 账号均为拉丁字母）
                         var oSettings = this.getView().getModel("settings");
@@ -3814,5 +3821,5 @@ sap.ui.define([
                 hasText: function (s) {
                         return !!(s && s.length);
                 }
-        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, CatalogPanel, FioriPanel));
+        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel));
 });

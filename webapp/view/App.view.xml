@@ -67,6 +67,16 @@
                                                                 </layoutData>
                                                         </List>
 
+                                                        <!-- 20261020：权限入口（会话列表与用户卡之间）：申请权限（所有人）/ 权限审批（仅 ADMIN，红色角标 = 待审批条数） -->
+                                                        <VBox class="sideAuth">
+                                                                <Button icon="sap-icon://key" text="{i18n>authApply}" type="Transparent" press=".onOpenAuth" width="100%" class="sideAuthBtn"/>
+                                                                <HBox renderType="Bare" class="sideAuthRow" visible="{settings>/isAdmin}">
+                                                                        <Button icon="sap-icon://approvals" text="{i18n>authAdmin}" type="Transparent" press=".onOpenAuthApprove" width="100%"
+                                                                                tooltip="{= ${settings>/authPending} > 0 ? ${settings>/authPendingTip} : ${i18n>authAdmin} }" class="sideAuthBtn"/>
+                                                                        <Text text="{= ${settings>/authPending} > 99 ? '99+' : String(${settings>/authPending}) }" visible="{= ${settings>/authPending} > 0 }" class="sideAuthBadge"/>
+                                                                </HBox>
+                                                        </VBox>
+
                                                         <!-- V16：底部用户卡（头像 · 姓名 · 连接状态 · 设置） -->
                                                         <HBox class="sideFoot" alignItems="Center">
                                                                 <Avatar initials="{settings>/userInitials}" displaySize="XS" backgroundColor="Accent6" class="sideAvatar"/>
@@ -75,7 +85,6 @@
                                                                         <Text text="{settings>/userName}" class="sideUserName" wrapping="false"/>
                                                                         <ObjectStatus id="modeBadge" class="modeBadge"/>
                                                                 </VBox>
-                                                                <Button icon="sap-icon://key" type="Transparent" press=".onOpenAuth" tooltip="{i18n>authApply}" class="sideSetBtn"/>
                                                                 <Button icon="sap-icon://action-settings" type="Transparent" press=".onOpenSettings" tooltip="{i18n>settings}" class="sideSetBtn"/>
                                                         </HBox>
                                                 </VBox>
