@@ -666,6 +666,13 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .apvReason { display: block !important; margin: .75rem 0 0 3rem; padding: .5rem .75rem; border-left: 3px solid var(--line-strong); border-radius: 0 8px 8px 0; background: var(--bg); font-size: .84rem !important; line-height: 1.5 !important; color: var(--text) !important; }
 .apvHint { display: block !important; margin: .45rem 0 0 3rem; font-size: .74rem !important; color: var(--sub) !important; }
 .apvError { display: block !important; margin: .45rem 0 0 3rem; font-size: .78rem !important; color: var(--apv-red) !important; }
+/* 20261020：处理成功后盖在卡片上的结果标记（AuthApprove._apvAnimateDone 插入，随后卡片退场） */
+.apvCard { position: relative; }
+.apvDoneMark { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; gap: .6rem; border-radius: inherit; background: var(--surface); background: color-mix(in srgb, var(--surface) 88%, transparent); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+.apvDoneMark i { width: 2.4rem; height: 2.4rem; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--apv-green-soft); color: var(--apv-green); box-shadow: 0 0 0 .45rem rgba(34, 197, 94, .06); }
+.apvDoneMark span { font-size: .95rem; font-weight: 700; color: var(--apv-green); }
+.apvDoneMark.rej i { background: var(--apv-red-soft); color: var(--apv-red); box-shadow: 0 0 0 .45rem rgba(220, 38, 38, .05); }
+.apvDoneMark.rej span { color: var(--apv-red); }
 
 /* 头像：按账号固定底色 */
 .apvAvatar { display: inline-flex !important; align-items: center; justify-content: center; flex: none; width: 2.25rem; height: 2.25rem; border-radius: 50%; font-size: .76rem !important; font-weight: 700 !important; letter-spacing: .02em; line-height: 1 !important; background: #DBEAFE; color: #1D4ED8 !important; }
@@ -701,7 +708,7 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .apvCard[data-mode="reject"] .apvBtnGo.sapMBtnDisabled { opacity: .45; }
 
 /* 空状态：在内容区上下居中，图标带两圈淡光晕 */
-.apvEmpty { margin: auto 0; padding: 1rem 1rem 1.6rem; text-align: center; }
+.apvEmpty { margin: auto 0; padding: 1rem 1rem 1.6rem; text-align: center; animation: fadeUp .35s var(--ease) both; }
 .apvEmptyIcon { display: inline-flex !important; align-items: center; justify-content: center; width: 3.4rem; height: 3.4rem; border-radius: 50%; background: var(--apv-green-soft); color: var(--apv-green) !important; font-size: 1.35rem !important; box-shadow: 0 0 0 .55rem rgba(34, 197, 94, .06), 0 0 0 1.1rem rgba(34, 197, 94, .03); }
 .apvEmptyIconMuted { background: var(--hover); color: var(--sub) !important; box-shadow: 0 0 0 .55rem rgba(138, 147, 162, .07), 0 0 0 1.1rem rgba(138, 147, 162, .035); }
 .apvEmptyTitle { margin-top: 1.6rem; font-size: 1rem !important; font-weight: 600 !important; color: var(--text) !important; }

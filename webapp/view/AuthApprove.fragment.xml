@@ -52,6 +52,7 @@
                                                         <VBox class="apvCard" busy="{auth>busy}" busyIndicatorDelay="0">
                                                                 <customData>
                                                                         <core:CustomData key="mode" value="{= ${auth>mode} || 'idle' }" writeToDom="true"/>
+                                                                        <core:CustomData key="reqid" value="{auth>reqId}" writeToDom="true"/>
                                                                 </customData>
                                                                 <HBox alignItems="Start" class="apvCardTop">
                                                                         <Text text="{auth>initials}" class="apvAvatar">

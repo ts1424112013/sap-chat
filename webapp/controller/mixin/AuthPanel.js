@@ -220,9 +220,23 @@ sap.ui.define([
                 /** 写角标（不提示）：审批对话框加载待审批列表时也用它，免得刚处理完又弹"新申请" */
                 _authSetPending: function (n) {
                         var oSettings = this.getView().getModel("settings");
+                        var nOld = oSettings.getProperty("/authPending");
                         this._iAuthPendingSeen = n;
                         oSettings.setProperty("/authPending", n);
                         oSettings.setProperty("/authPendingTip", this._rb().getText("authPendingTip", [n]));
+                        // 20261020：条数变了（处理掉一条 / 新来一条）角标轻弹一下
+                        if (n > 0 && n !== nOld) {
+                                window.setTimeout(function () {
+                                        var el = document.querySelector(".sideAuthBadge");
+                                        if (el && el.animate && !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) {
+                                                el.animate([
+                                                        { transform: "translateY(-50%) scale(1)" },
+                                                        { transform: "translateY(-50%) scale(1.32)" },
+                                                        { transform: "translateY(-50%) scale(1)" }
+                                                ], { duration: 380, easing: "cubic-bezier(.34, 1.56, .64, 1)" });
+                                        }
+                                }, 40);
+                        }
                 },
 
                 /* =========================================================

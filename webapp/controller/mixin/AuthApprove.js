@@ -20,6 +20,23 @@ sap.ui.define([
 
         var DONE_TOP = 30;
         var HUES = 6;
+        var EASE = "cubic-bezier(.22, 1, .36, 1)";   // 与 style.css 的 --ease 一致
+
+        /** 处理成功后卡片上的结果标记图标（对勾带描线动画用的 class="draw"） */
+        var MARK_SVG = {
+                ok: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path class="draw" d="M5 12.5l4.5 4.5L19 7.5" stroke-dasharray="24" stroke-dashoffset="0"/></svg>',
+                no: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg>'
+        };
+
+        function canAnimate() {
+                return !!(document.body && document.body.animate) &&
+                        !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+        }
+
+        function cardSel(sReqId) {
+                var s = String(sReqId || "");
+                return '.apvCard[data-reqid="' + (window.CSS && CSS.escape ? CSS.escape(s) : s.replace(/["\\]/g, "\\$&")) + '"]';
+        }
 
         /** CHAR14 yyyymmddhhmmss → "mm-dd hh:mm"（不是 14 位数字就原样显示） */
         function fmtShort(s) {
@@ -123,12 +140,14 @@ sap.ui.define([
                         }).catch(function () { /* 读不到就不提示 */ });
                 },
 
-                /** 加载当前页签；待审批页顺带校正侧栏角标 */
-                _apvLoad: function () {
+                /** 加载当前页签；待审批页顺带校正侧栏角标。bSilent：不显示加载遮罩、失败不提示（处理完卡片后的后台对账） */
+                _apvLoad: function (bSilent) {
                         var that = this, oModel = this._apvModel(), oRB = this._rb();
                         var bPending = oModel.getProperty("/apv/tab") === "pending";
-                        oModel.setProperty("/apv/loading", true);
-                        oModel.setProperty("/apv/notice", "");
+                        if (!bSilent) {
+                                oModel.setProperty("/apv/loading", true);
+                                oModel.setProperty("/apv/notice", "");
+                        }
                         var p = bPending
                                 ? ChatService.authList({ Status: "PENDING", Top: "50", Skip: "0" }).then(function (r) {
                                         var n = Number(r.total) || 0;
@@ -148,12 +167,109 @@ sap.ui.define([
                                         that._authSetPending(n);
                                 });
                         return p.catch(function (e) {
-                                oModel.setProperty("/apv/notice", (e && e.message) || String(e));
+                                if (!bSilent) {
+                                        oModel.setProperty("/apv/notice", (e && e.message) || String(e));
+                                }
                         }).then(function () {
-                                var n = oModel.getProperty("/apv/total");
-                                oModel.setProperty("/apv/subtitle", n > 0 ? oRB.getText("apvSubCount", [n]) : oRB.getText("apvSubNone"));
-                                oModel.setProperty("/apv/loading", false);
+                                that._apvSubtitle();
+                                if (!bSilent) {
+                                        oModel.setProperty("/apv/loading", false);
+                                }
                         });
+                },
+
+                _apvSubtitle: function () {
+                        var oModel = this._apvModel(), n = oModel.getProperty("/apv/total"), oRB = this._rb();
+                        oModel.setProperty("/apv/subtitle", n > 0 ? oRB.getText("apvSubCount", [n]) : oRB.getText("apvSubNone"));
+                },
+
+                /* ---------------------------------------------------------
+                 * 20261020：处理成功后的卡片动画
+                 *  ① 卡片上盖结果标记（绿色对勾描线「已批准」/ 红色「已驳回」），停留 0.65 秒
+                 *  ② 卡片上移、缩小、淡出
+                 *  ③ 从列表移除这一行，下面的卡片 FLIP 滑上来补位；条数与角标同步减一
+                 *  ④ 补位结束后静默刷新一次与后端对账
+                 * 用定时器串步骤（页面在后台时动画时间线会停，定时器仍会走）；
+                 * 卡片按 data-reqid 找 DOM（同时处理多张时下标会变）。
+                 * --------------------------------------------------------- */
+                _apvAnimateDone: function (sReqId, bApprove) {
+                        var that = this;
+                        var oDom = document.querySelector(cardSel(sReqId));
+                        if (!oDom) {
+                                this._apvRemoveRow(sReqId);
+                                return;
+                        }
+                        var oMark = document.createElement("div");
+                        oMark.className = "apvDoneMark" + (bApprove ? "" : " rej");
+                        oMark.innerHTML = "<i>" + (bApprove ? MARK_SVG.ok : MARK_SVG.no) + "</i><span></span>";
+                        oMark.querySelector("span").textContent = this._rb().getText(bApprove ? "apvDoneApprove" : "apvDoneReject");
+                        oDom.appendChild(oMark);
+                        oMark.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: "ease-out" });
+                        oMark.querySelector("i").animate([{ transform: "scale(.55)" }, { transform: "none" }],
+                                { duration: 420, easing: "cubic-bezier(.34, 1.56, .64, 1)" });
+                        var oPath = oMark.querySelector("path.draw");
+                        if (oPath) {
+                                oPath.animate([{ strokeDashoffset: 24 }, { strokeDashoffset: 0 }], { duration: 320, delay: 100, easing: "ease-out", fill: "backwards" });
+                        }
+                        window.setTimeout(function () {
+                                var oNow = document.querySelector(cardSel(sReqId));
+                                if (oNow) {
+                                        oNow.animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(-6px) scale(.97)" }],
+                                                { duration: 220, easing: "cubic-bezier(.4, 0, 1, 1)", fill: "forwards" });
+                                }
+                                window.setTimeout(function () { that._apvRemoveRow(sReqId); }, 230);
+                        }, 650);
+                },
+
+                /** 卡片当前位置：{reqId: {el, top}} */
+                _apvCardTops: function () {
+                        var m = {};
+                        Array.prototype.forEach.call(document.querySelectorAll(".apvCards .apvCard[data-reqid]"), function (el) {
+                                m[el.getAttribute("data-reqid")] = { el: el, top: el.getBoundingClientRect().top };
+                        });
+                        return m;
+                },
+
+                _apvRemoveRow: function (sReqId) {
+                        var that = this, oModel = this._apvModel();
+                        var aRows = (oModel.getProperty("/apv/rows") || []).slice();
+                        var i = aRows.map(function (x) { return x.reqId; }).indexOf(sReqId);
+                        if (i < 0) {
+                                this._apvLoad(true);
+                                return;
+                        }
+                        var mBefore = this._apvCardTops();
+                        // UI5 可能原地复用卡片 DOM：先撤掉这张的退场动画 / 结果标记，免得留到接替它的下一张上
+                        var oOld = document.querySelector(cardSel(sReqId));
+                        if (oOld) {
+                                oOld.getAnimations().forEach(function (a) { a.cancel(); });
+                                Array.prototype.forEach.call(oOld.querySelectorAll(".apvDoneMark"), function (el) { el.remove(); });
+                        }
+                        aRows.splice(i, 1);
+                        oModel.setProperty("/apv/rows", aRows);
+                        var n = Math.max(0, (Number(oModel.getProperty("/apv/total")) || 0) - 1);
+                        oModel.setProperty("/apv/total", n);
+                        this._apvSubtitle();
+                        this._authSetPending(n);
+                        var fnFlip = function () {
+                                var mAfter = that._apvCardTops();
+                                Object.keys(mAfter).forEach(function (id) {
+                                        var dy = mBefore[id] ? mBefore[id].top - mAfter[id].top : 0;
+                                        if (Math.abs(dy) > 0.5) {
+                                                mAfter[id].el.animate([{ transform: "translateY(" + dy + "px)" }, { transform: "none" }], { duration: 340, easing: EASE });
+                                        }
+                                });
+                                // 补位结束后静默对账（总数 / 期间新来的申请）
+                                window.setTimeout(function () { that._apvLoad(true); }, 380);
+                        };
+                        // 同步渲染后再量新位置（Core.applyChanges 在 1.130 仍可用；没有就等下一轮渲染）
+                        var oCore = sap.ui.getCore();
+                        if (oCore.applyChanges) {
+                                oCore.applyChanges();
+                                fnFlip();
+                        } else {
+                                window.setTimeout(fnFlip, 0);
+                        }
                 },
 
                 _apvCtx: function (oEvent) {
@@ -180,7 +296,7 @@ sap.ui.define([
                         oCtx.getModel().setProperty(oCtx.getPath() + "/mode", "");
                 },
 
-                /** 确认：调后端 → 成功提示并刷新（卡片消失、角标减一）；失败把后端原话写在卡片里 */
+                /** 确认：调后端 → 成功后卡片动画退场（不支持动画时提示并刷新）；失败把后端原话写在卡片里 */
                 onApvConfirm: function (oEvent) {
                         var that = this, oCtx = this._apvCtx(oEvent), oModel = oCtx.getModel(), sPath = oCtx.getPath(), r = oCtx.getObject();
                         var bApprove = r.mode === "approve", sNote = (r.note || "").trim();
@@ -191,9 +307,18 @@ sap.ui.define([
                         oModel.setProperty(sPath + "/busy", true);
                         oModel.setProperty(sPath + "/error", "");
                         ChatService.authDecide({ ReqId: r.reqId, Approve: bApprove ? "X" : "", Message: sNote }).then(function (oRes) {
-                                MessageToast.show(oRes.summary || that._rb().getText("authDone"));
-                                return that._apvLoad();
-                        }).catch(function (e) {
+                                if (!canAnimate()) {
+                                        MessageToast.show(oRes.summary || that._rb().getText("authDone"));
+                                        that._apvLoad();
+                                        return;
+                                }
+                                var iRow = (oModel.getProperty("/apv/rows") || []).map(function (x) { return x.reqId; }).indexOf(r.reqId);
+                                if (iRow >= 0) {
+                                        oModel.setProperty("/apv/rows/" + iRow + "/busy", false);   // 确认面板不收起（免得卡片先变矮），结果标记直接盖上去
+                                }
+                                // 等撤掉 busy 遮罩的重绘落地，再盖结果标记
+                                window.setTimeout(function () { that._apvAnimateDone(r.reqId, bApprove); }, 30);
+                        }, function (e) {
                                 // 刷新期间列表可能已重建：只在这一行还在原位时写回错误
                                 if (oModel.getProperty(sPath + "/reqId") === r.reqId) {
                                         oModel.setProperty(sPath + "/busy", false);
