@@ -564,9 +564,24 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .catalog .bdJob { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: rgba(245, 165, 36, .14); color: #A16207; }
 .catalog .bdOff { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--hover); color: var(--sub); }
 .catalog .catPick { flex: none; }
+/* 20261020：可收起 —— 收起态是输入框下方一个胶囊；展开态标题栏最右是收起按钮 */
+.catalogMini { display: flex; justify-content: center; margin-top: 1rem; }
+.catToggle { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow-1); color: var(--text-2); font-family: inherit; font-size: 13px; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.catToggle > svg:first-child { color: var(--accent); }
+.catToggle .ctTitle { font-weight: 600; color: var(--text); }
+.catToggle .ctCnt { font-size: 12px; color: var(--sub); }
+.catToggle .ctChev { color: var(--sub); margin-left: 1px; }
+.catToggle:hover { border-color: var(--accent); box-shadow: var(--shadow-2); }
+.catToggle:hover .ctTitle, .catToggle:hover .ctChev { color: var(--accent); }
+.catToggle:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+.catalog .catFold { flex: none; width: 30px; height: 30px; margin-right: -6px; border: none; border-radius: 8px; background: transparent; color: var(--sub); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.catalog .catFold:hover { background: var(--hover); color: var(--text); }
+.catalog .catFold:focus-visible { outline: none; box-shadow: var(--ring); }
+.catalog .catHead > h3 + .catFold, .catalog .catHead > .cnt + .catFold { margin-left: auto; }
 @media (max-width: 640px) {
         .catalog .rMeta span:not(.bdOff) { display: none; }
-        .catalog .catSearch { width: 100%; margin-left: 0; }
+        .catalog .catSearch { width: 100%; margin-left: 0; order: 5; }
+        .catalog .catFold { margin-left: auto; }
 }
 [data-theme="dark"] .catalog .bdJob { color: #FACC15; }
 

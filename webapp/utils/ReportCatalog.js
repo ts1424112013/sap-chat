@@ -17,7 +17,9 @@ sap.ui.define([
          * categories: null = 不显示分类页签；数组 = 分类页签（「全部」自动加在最前）
          * status: "loading" | "ready" | "error"（ready 且 items 为空 = 空清单）
          * texts: { title, searchPh, footNote, empty, loadFail, retry, loading, all, noMatch,
-         *          params, pick, offTip, pickTip }
+         *          params, pick, offTip, pickTip, expand, collapse }
+         * 20261020：collapsible = true 时可收起（collapsed = 初始状态）；收起态是一个「报表目录 · 共 N 张」胶囊，
+         * 点开恢复完整目录，标题栏右侧有收起按钮；每次切换回调 onToggle(collapsed)。
          * 纯函数 filterItems / rowHtml / html 单独导出，供 Node 测试。
          * =====================================================================
          */
@@ -29,7 +31,9 @@ sap.ui.define([
                 doc: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
                 chart: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M5 15l4-5 4 3 6-7"/></svg>',
                 search: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
-                list: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg>'
+                list: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg>',
+                down: '<svg class="ctChev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
+                up: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>'
         };
 
         function norm(s) {
@@ -117,6 +121,15 @@ sap.ui.define([
         function html(cfg, st) {
                 var t = cfg.texts || {};
                 var aItems = st.items || [];
+                // 20261020：可收起（cfg.collapsible）。收起态只是输入框下方一个胶囊；根节点不用 .catalog，
+                // 首页因此保持居中（.heroArea:has(.catalog) 只在展开时生效）
+                if (cfg.collapsible && st.collapsed) {
+                        var sCnt = st.status === "ready" && aItems.length ? fmt(t.count || "共 {0} 张", [aItems.length])
+                                : st.status === "loading" ? (t.loading || "") : "";
+                        return '<div class="catalogMini"><button type="button" class="catToggle" aria-expanded="false" title="' + esc(t.expand || "") + '">' +
+                                ICONS.list + '<span class="ctTitle">' + esc(t.title) + "</span>" +
+                                (sCnt ? '<span class="ctCnt">' + esc(sCnt) + "</span>" : "") + ICONS.down + "</button></div>";
+                }
                 var mCnt = countByCategory(aItems);
                 var bTabs = !!(cfg.categories && cfg.categories.length) && st.status === "ready" && aItems.length > 0;
                 var s = '<div class="catalog" role="region" aria-label="' + esc(t.title) + '">' +
@@ -125,6 +138,9 @@ sap.ui.define([
                         (st.status === "ready" && aItems.length
                                 ? '<label class="catSearch">' + ICONS.search +
                                   '<input type="search" class="catQ" value="' + esc(st.query || "") + '" placeholder="' + esc(t.searchPh) + '" aria-label="' + esc(t.searchPh) + '"></label>'
+                                : "") +
+                        (cfg.collapsible
+                                ? '<button type="button" class="catFold" aria-expanded="true" title="' + esc(t.collapse || "") + '" aria-label="' + esc(t.collapse || "") + '">' + ICONS.up + "</button>"
                                 : "") +
                         "</div>";
                 if (bTabs) {
@@ -202,6 +218,21 @@ sap.ui.define([
                 };
                 oRoot.onclick = function (ev) {
                         var t = ev.target;
+                        if (t.closest(".catToggle, .catFold")) {
+                                st.collapsed = !st.collapsed;
+                                if (cfg.onToggle) {
+                                        cfg.onToggle(st.collapsed);
+                                }
+                                if (cfg.onRedraw) {
+                                        cfg.onRedraw();
+                                }
+                                // 展开后焦点给搜索框（没有搜索框就给收起按钮）；收起后给胶囊
+                                var oFocus = oRoot.querySelector(st.collapsed ? ".catToggle" : ".catQ") || oRoot.querySelector(".catFold");
+                                if (oFocus) {
+                                        oFocus.focus({ preventScroll: true });
+                                }
+                                return;
+                        }
                         if (t.closest(".catRetry")) {
                                 if (cfg.onRetry) {
                                         cfg.onRetry();
@@ -265,7 +296,7 @@ sap.ui.define([
           * @returns {sap.ui.core.HTML} 控件；状态更新用 ReportCatalog.update(oCtl, {status, items, message})
           */
         function create(cfg) {
-                var st = { status: "loading", items: [], message: "", query: "", category: "" };
+                var st = { status: "loading", items: [], message: "", query: "", category: "", collapsed: !!cfg.collapsed };
                 var oCtl = new HTML({ preferDOM: false, sanitizeContent: false });
                 var fnRedraw = function () {
                         oCtl.setContent('<div class="catalogHostInner">' + html(cfg, st) + "</div>");

@@ -140,6 +140,12 @@ async function rejects(name, promise, re) {
   check('「全部」页签按分类分组', (tabs.match(/class="catGroup"/g) || []).length === 2);
   const one = RC.html({ texts: T, categories: ['销量分析', '采购'] }, { status: 'ready', items: items.slice(0, 3), query: '', category: '采购' });
   check('选中某个分类时不分组、行上显示分类标签', one.indexOf('catGroup') < 0 && one.indexOf('class="biz"') >= 0);
+  const TF = Object.assign({ count: '共 {0} 张', expand: '展开', collapse: '收起' }, T);
+  const mini = RC.html({ texts: TF, collapsible: true }, { status: 'ready', items: items.slice(0, 3), collapsed: true });
+  check('收起态：只有胶囊（catToggle + 张数），不渲染 .catalog 与报表行', mini.indexOf('catalogMini') >= 0 && mini.indexOf('catToggle') >= 0 && mini.indexOf('共 3 张') >= 0 && mini.indexOf('class="catalog"') < 0 && mini.indexOf('catRow') < 0);
+  const open = RC.html({ texts: TF, collapsible: true }, { status: 'ready', items: items.slice(0, 3), collapsed: false });
+  check('展开态：完整目录 + 标题栏收起按钮', open.indexOf('class="catalog"') >= 0 && open.indexOf('catFold') >= 0 && (open.match(/class="catRow/g) || []).length === 3);
+  check('不可收起时忽略 collapsed、也没有收起按钮', RC.html({ texts: TF }, { status: 'ready', items: items.slice(0, 3), collapsed: true }).indexOf('catFold') < 0 && RC.html({ texts: TF }, { status: 'ready', items: items.slice(0, 3), collapsed: true }).indexOf('catRow') >= 0);
 
   /* ---------------- 2) CatalogPanel 映射 ---------------- */
   console.log('\n━━ CatalogPanel 字段映射');

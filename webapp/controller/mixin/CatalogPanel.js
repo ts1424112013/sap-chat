@@ -66,9 +66,29 @@ sap.ui.define([
                                 oHost.removeAllItems();   // 不销毁：另一个场景的目录留在缓存里
                                 oHost.addItem(oCat.ctl);
                         }
+                        // 收起 / 展开是全局偏好：另一个场景里改过的，切过来时跟上
+                        var bFold = this._catFolded();
+                        if (oCat.ctl.data("catState").collapsed !== bFold) {
+                                ReportCatalog.update(oCat.ctl, { collapsed: bFold });
+                        }
                         if (!oCat.loaded && !oCat.loading) {
                                 this._catLoad(sScene);
                         }
+                },
+
+                /** 20261020：目录默认收起；用户展开过就记住（本地，两个场景共用） */
+                _catFolded: function () {
+                        try {
+                                return window.localStorage.getItem("zaiChat.catalogOpen") !== "X";
+                        } catch (e) {
+                                return true;
+                        }
+                },
+
+                _catOnToggle: function (bCollapsed) {
+                        try {
+                                window.localStorage.setItem("zaiChat.catalogOpen", bCollapsed ? "" : "X");
+                        } catch (e) { /* 忽略 */ }
                 },
 
                 /** 目录配置（文案按场景取 i18n） */
@@ -78,6 +98,9 @@ sap.ui.define([
                         return {
                                 icon: bF ? "chart" : "doc",
                                 categories: null,
+                                collapsible: true,
+                                collapsed: this._catFolded(),
+                                onToggle: this._catOnToggle.bind(this),
                                 texts: {
                                         title: oRB.getText("catTitle"),
                                         count: oRB.getText("catCount"),
@@ -92,7 +115,9 @@ sap.ui.define([
                                         params: oRB.getText("catParams"),
                                         pick: oRB.getText(bF ? "catPickFiori" : "catPickReport"),
                                         pickTip: oRB.getText(bF ? "catPickTipFiori" : "catPickTipReport"),
-                                        offTip: oRB.getText("catOffTip")
+                                        offTip: oRB.getText("catOffTip"),
+                                        expand: oRB.getText("catExpand"),
+                                        collapse: oRB.getText("catCollapse")
                                 },
                                 onPick: this._catOnPick.bind(this, sScene),
                                 onRetry: this._catLoad.bind(this, sScene)
