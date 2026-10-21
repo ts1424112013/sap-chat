@@ -623,21 +623,24 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .apvRoot { display: flex; flex-direction: column; height: 100%; }
 
 /* 头部：标题 + 一句状态；右侧 管理 / 刷新 / 关闭；下划线页签贴着分隔线 */
-.apvHead { flex: none; padding: 1.15rem 1rem 0 1.4rem; border-bottom: 1px solid var(--line); }
+/* 20261022：头部收紧 131px → 约 108px（用户反馈「头很空旷」）：上边距 / 页签上方留白 / 页签行高都缩一档，
+   页签与头部按钮去掉 UI5 外层上下 .25rem 内边距（原来页签行实高 46px、× 比标题中线低 8px、下划线离分隔线 4px） */
+.apvHead { flex: none; padding: 1rem .85rem 0 1.4rem; border-bottom: 1px solid var(--line); }
 .apvHeadRow { gap: .15rem; }
 .apvHeadText { padding-top: .1rem; }
-.apvTitle { font-size: 1.12rem !important; font-weight: 700 !important; color: var(--text) !important; letter-spacing: .01em; }
-.apvSub { display: block !important; margin-top: .2rem; font-size: .8rem !important; color: var(--sub) !important; }
+.apvTitle { font-size: 1.12rem !important; line-height: 1.35 !important; font-weight: 700 !important; color: var(--text) !important; letter-spacing: .01em; }
+.apvSub { display: block !important; margin-top: .15rem; font-size: .8rem !important; color: var(--sub) !important; }
 .apvSub[data-busy="yes"] { color: var(--apv-red) !important; font-weight: 600; }
+.apvHeadBtn { height: 2rem !important; padding: 0 !important; margin-top: -.15rem; }
 .apvHeadBtn .sapMBtnInner { height: 2rem !important; min-height: 2rem !important; min-width: 2rem !important; padding: 0 .45rem !important; border-radius: 8px !important; background: transparent !important; border: none !important; box-shadow: none !important; }
 .apvHeadBtn .sapMBtnIcon { color: var(--sub) !important; font-size: .92rem !important; }
 .apvHeadBtn .sapMBtnText { color: var(--text-2) !important; font-size: .8rem !important; font-weight: 500; }
 .apvHeadBtn:hover .sapMBtnInner { background: var(--hover) !important; }
 .apvHeadBtn:hover .sapMBtnIcon, .apvHeadBtn:hover .sapMBtnText { color: var(--text) !important; }
 .apvManageBtn { margin-right: .25rem; }
-.apvTabs { display: flex !important; gap: 1.5rem; margin-top: .9rem; }
-.apvTabBtn { height: auto !important; }
-.apvTabBtn .sapMBtnInner { position: relative; height: 2.4rem !important; min-height: 2.4rem !important; padding: 0 .1rem !important; border-radius: 0 !important; background: transparent !important; border: none !important; box-shadow: none !important; }
+.apvTabs { display: flex !important; gap: 1.5rem; margin-top: .55rem; }
+.apvTabBtn { height: auto !important; padding: 0 !important; }
+.apvTabBtn .sapMBtnInner { position: relative; height: 2.25rem !important; min-height: 2.25rem !important; padding: 0 .1rem !important; border-radius: 0 !important; background: transparent !important; border: none !important; box-shadow: none !important; }
 .apvTabBtn .sapMBtnText { font-size: .86rem !important; font-weight: 500; color: var(--sub) !important; }
 .apvTabBtn:hover .sapMBtnText { color: var(--text) !important; }
 .apvTabBtn[data-on="yes"] .sapMBtnText { color: var(--text) !important; font-weight: 600; }
@@ -763,7 +766,7 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .aplFoot > .sapMFlexItem:last-child { margin-left: auto; }   /* 页脚只剩主按钮（左边的次要按钮不显示）时仍靠右；FlexBox 会给每个子元素包一层 .sapMFlexItem */
 
 /* ==================== 20261021：权限管理对话框（审批对话框右上「管理」；外壳同上，.adm* 是它自己的部件）==================== */
-.admEnable { gap: .5rem; margin-right: .35rem; }
+.admEnable { gap: .5rem; margin-right: .35rem; height: 2rem; margin-top: -.15rem; }   /* 20261022：与头部按钮同高同位，跟标题中线对齐 */
 .admEnableText { font-size: .78rem !important; color: var(--text-2) !important; }
 /* 状态 / 处理方式胶囊（与目录页签同一套：圆角胶囊，选中浅蓝底） */
 .admPills { gap: .4rem; margin-bottom: .75rem; }
