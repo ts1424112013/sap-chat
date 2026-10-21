@@ -34,9 +34,25 @@
 *         (S_BTCH_JOB JOBACTION=RELE / S_BTCH_ADM)时 JOB_CLOSE 不抛异常, 只把
 *         作业留在"已计划(P)", 原先仍提示"已立即启动"; 现判失败、删除空作业,
 *         消息写明缺哪个权限
+* V1.1    20261021: ALV 通用采集 —— 报表程序零改动 ——
+*         ① 作业步骤由「直接 SUBMIT 业务报表(靠程序端 P_AICAP/P_RUNID 落表)」
+*         改为 SUBMIT ZAI_RPT_RUNNER(SE38); 运行器在作业内调 run_captured:
+*         读运行记录 -> build_seltab -> ZCL_AI_ALV_CAPTURE=>run(SUBMIT 业务报表
+*         AND RETURN, 抑制 ALV 显示, 取回 ALV 输出表) -> 写 ZAI_RPT_RESULT;
+*         ② ZAI_RPT_RESULT 约定: LINE_INDEX=0 为元数据行({"__meta__":true,
+*         "total","stored","note","columns":[...]}, columns 在最后), 1.. 为数据行;
+*         read_result 见元数据行就用其列标题/总行数, 没有(旧程序端落表)走原逻辑;
+*         ③ poll: 作业完成(F)但运行记录 ERROR_CODE=CAPTURE → FAILED(采集阶段
+*         失败原因由运行器写入 ERROR_MESSAGE, 前端步骤条直接显示);
+*         ④ 回退开关 ZAI_CHAT_CFG 键 REPORT_CAPTURE_LEGACY='X' → 仍走旧口径
+*         (直接 SUBMIT 业务报表 + P_RUNID, 要求程序端有 ai_capture);
+*         ⑤ P_AICAP='X' 仍下发(无该参数的程序自动忽略), 程序可选用它把空数据/缺参
+*         的 MESSAGE 升级为 TYPE 'E' 让作业取消; P_RUNID 只在回退口径下发
+*         (新口径下 ZRMM_IDP_0702 的 ai_capture 因 P_RUNID 为空自动失效, 不会双写)
 * ★ 重贴后核对标记: JOB_CLOSE 处 strtimmed = 'X'; 两处 JOB_CLOSE 都有
 *   job_was_released = lv_released; 全文无 SUBMIT (iv_program);
-*   read_result 输出以 {"columns": 开头
+*   read_result 输出以 {"columns": 开头; submit 内有 lv_runner / ZAI_RPT_RUNNER;
+*   PUBLIC SECTION 有 run_captured
 *=======================================================================
 CLASS zcl_ai_report_exec_sap DEFINITION
   PUBLIC
@@ -64,13 +80,23 @@ CLASS zcl_ai_report_exec_sap DEFINITION
                 ev_row_count     TYPE i
                 ev_message       TYPE string.
 
+    " V1.1: 后台作业入口(ZAI_RPT_RUNNER 调用)。读运行记录 -> 采集 ALV -> 落 ZAI_RPT_RESULT;
+    " 失败原因写 ZAI_RPT_RUN.ERROR_CODE='CAPTURE' / ERROR_MESSAGE, 由 poll 判 FAILED
+    CLASS-METHODS run_captured
+      IMPORTING iv_report_run_id TYPE string.
+
   PRIVATE SECTION.
     CLASS-METHODS build_seltab
       IMPORTING iv_report_run_id TYPE string
                 iv_program       TYPE string
                 iv_params_json   TYPE string
+                iv_legacy        TYPE abap_bool DEFAULT abap_false
       EXPORTING et_seltab        TYPE rsparams_tt
                 ev_err           TYPE string.
+
+    CLASS-METHODS fail_run
+      IMPORTING iv_report_run_id TYPE string
+                iv_message       TYPE string.
 
     " V1.0e: 删除未能释放的作业(JOB_OPEN 后失败时调用; 失败静默)
     CLASS-METHODS drop_job
@@ -95,7 +121,12 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
           lv_delayed TYPE abap_bool,
           lv_sdldate TYPE tbtcjob-sdlstrtdt,
           lv_sdltime TYPE tbtcjob-sdlstrttm,
-          lv_released TYPE btch0000-char1.
+          lv_released TYPE btch0000-char1,
+          lv_legacy  TYPE abap_bool,
+          lv_runner  TYPE progname VALUE 'ZAI_RPT_RUNNER',
+          lv_rexists TYPE trdir-name,
+          lt_rsel    TYPE rsparams_tt,
+          ls_rsel    TYPE rsparams.
     CLEAR: ev_status, ev_message.
 
     " V1.0a: SUBMIT 动态程序名必须是字符型定长(PROGNAME), 不能用 string
@@ -106,11 +137,26 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
       RETURN.
     ENDIF.
 
+    " V1.1: 默认走通用 ALV 采集(作业步骤 = ZAI_RPT_RUNNER); LEGACY='X' 回退旧口径
+    lv_legacy = xsdbool( zcl_ai_task_service=>read_cfg_str( 'REPORT_CAPTURE_LEGACY' ) = 'X' ).
+    IF lv_legacy = abap_false.
+      SELECT SINGLE name FROM trdir
+        WHERE name = @lv_runner
+        INTO @lv_rexists.
+      IF sy-subrc <> 0.
+        ev_status  = zcl_ai_report_service=>gc_run_failed.
+        ev_message = 'ALV 采集运行器程序 ZAI_RPT_RUNNER 未部署(SE38 新建), 本次未提交'.
+        RETURN.
+      ENDIF.
+    ENDIF.
+
     " V1.0e: 先构建选择参数再开作业 —— 参数失败时不在 SM37 留下空作业
+    " V1.1: 新口径下选择参数由运行器在作业内重建; 这里仍先建一遍只为提前拦错
     build_seltab(
       EXPORTING iv_report_run_id = iv_report_run_id
                 iv_program       = iv_program
                 iv_params_json   = iv_params_json
+                iv_legacy        = lv_legacy
       IMPORTING et_seltab        = lt_seltab
                 ev_err           = lv_err ).
     IF lv_err IS NOT INITIAL.
@@ -142,9 +188,23 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
     ENDIF.
 
     " 程序名 = 登记事实源(非用户输入); 参数 = 登记白名单(seltab, 无字符串拼接)
-    SUBMIT (lv_prog) VIA JOB lv_jobname NUMBER lv_jobcnt
-      WITH SELECTION-TABLE lt_seltab
-      AND RETURN.
+    " V1.1: 新口径作业步骤是运行器, 只带运行号; 业务报表名/参数由运行器读运行记录
+    IF lv_legacy = abap_true.
+      SUBMIT (lv_prog) VIA JOB lv_jobname NUMBER lv_jobcnt
+        WITH SELECTION-TABLE lt_seltab
+        AND RETURN.
+    ELSE.
+      CLEAR ls_rsel.
+      ls_rsel-selname = 'P_RUNID'.
+      ls_rsel-kind    = 'P'.
+      ls_rsel-sign    = 'I'.
+      ls_rsel-option  = 'EQ'.
+      ls_rsel-low     = iv_report_run_id.
+      APPEND ls_rsel TO lt_rsel.
+      SUBMIT (lv_runner) VIA JOB lv_jobname NUMBER lv_jobcnt
+        WITH SELECTION-TABLE lt_rsel
+        AND RETURN.
+    ENDIF.
     IF sy-subrc <> 0.
       lv_rc = sy-subrc.
       drop_job( iv_jobname = lv_jobname iv_jobcnt = lv_jobcnt ).
@@ -223,8 +283,10 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
     IF lv_delayed = abap_true.
       ev_message = |已提交真实作业 { lv_jobname }/{ lv_jobcnt }(当前无空闲后台进程, | &&
                    |已排入释放队列, 由调度器自动启动)|.
-    ELSE.
+    ELSEIF lv_legacy = abap_true.
       ev_message = |已提交真实作业 { lv_jobname }/{ lv_jobcnt }(立即启动, 程序端自动落结果表)|.
+    ELSE.
+      ev_message = |已提交真实作业 { lv_jobname }/{ lv_jobcnt }(立即启动, 作业内自动采集 ALV 结果)|.
     ENDIF.
   ENDMETHOD.
 
@@ -235,7 +297,8 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
     " TIMEOUT 语义不变: RUNNING 只表示未到终态, 不代表作业已停止
     DATA: lv_jobname TYPE zai_rpt_run-sap_job_name,
           lv_jobcnt  TYPE zai_rpt_run-sap_job_number,
-          lv_sts     TYPE tbtco-status.
+          lv_sts     TYPE tbtco-status,
+          lv_ecode   TYPE zai_rpt_run-error_code.
     CLEAR: ev_status, ev_message.
 
     SELECT SINGLE sap_job_name, sap_job_number
@@ -271,7 +334,17 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
         ev_message = |作业 { lv_jobname } 处于"已计划"(未释放)状态, 不会自动执行; | &&
                      |请在 SM37 释放该作业, 或检查 JOB_CLOSE 启动条件|.
       WHEN 'F'.
-        ev_status = zcl_ai_report_service=>gc_run_ready.
+        " V1.1: 作业正常结束不等于采集成功 —— 运行器把采集阶段的失败写在
+        " ZAI_RPT_RUN.ERROR_CODE='CAPTURE'(旧口径无此标记, 照原逻辑判 READY)
+        SELECT SINGLE error_code FROM zai_rpt_run
+          WHERE report_run_id = @iv_report_run_id
+          INTO @lv_ecode.
+        IF sy-subrc = 0 AND lv_ecode = 'CAPTURE'.
+          ev_status  = zcl_ai_report_service=>gc_run_failed.
+          ev_message = 'ALV 结果采集失败(见运行记录 ERROR_MESSAGE)'.
+        ELSE.
+          ev_status = zcl_ai_report_service=>gc_run_ready.
+        ENDIF.
       WHEN 'A'.
         ev_status  = zcl_ai_report_service=>gc_run_failed.
         ev_message = '后台作业被取消(SM37 状态 A), 请查看作业日志'.
@@ -295,7 +368,20 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
           lv_k      TYPE string,
           lt_m      TYPE match_result_tab,
           ls_m      TYPE match_result,
-          ls_sub    TYPE submatch_result.
+          ls_sub    TYPE submatch_result,
+          lv_meta   TYPE string,
+          lv_has_meta TYPE abap_bool,
+          lv_tot_s  TYPE string,
+          lv_note   TYPE string,
+          lv_total  TYPE i,
+          lv_stored TYPE i,
+          lv_trunc  TYPE string,
+          lv_moff   TYPE i,
+          lv_mlen   TYPE i,
+          lv_mstart TYPE i,
+          lv_mclen  TYPE i,
+          lv_mcols  TYPE string,
+          ls        TYPE zai_rpt_result.
     CLEAR: ev_schema_json, ev_summary_json, ev_rows_json, ev_row_count, ev_message.
 
     SELECT SINGLE sap_job_name FROM zai_rpt_run
@@ -306,35 +392,74 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
       WHERE run_id = @iv_report_run_id
       ORDER BY line_index
       INTO TABLE @DATA(lt).
-    ev_row_count = lines( lt ).
+
+    " V1.1: 通用采集写的元数据行(LINE_INDEX 最小的那行, 键 __meta__)先摘出来,
+    " 数据行计数/样例都不含它; 没有元数据行 = 旧程序端落表, 走下面原逻辑
+    lv_has_meta = abap_false.
+    READ TABLE lt INTO DATA(ls_first) INDEX 1.
+    IF sy-subrc = 0 AND ls_first-row_json CP '{"__meta__"*'.
+      lv_meta     = ls_first-row_json.
+      lv_has_meta = abap_true.
+      DELETE lt INDEX 1.
+    ENDIF.
+    lv_stored    = lines( lt ).
+    ev_row_count = lv_stored.
+
+    IF lv_has_meta = abap_true.
+      FIND REGEX '"total":(\d+)' IN lv_meta SUBMATCHES lv_tot_s.
+      IF sy-subrc = 0 AND lv_tot_s IS NOT INITIAL.
+        lv_total = lv_tot_s.
+      ELSE.
+        lv_total = lv_stored.
+      ENDIF.
+      ev_row_count = lv_total.
+      FIND REGEX '"note":"((?:[^"\\]|\\.)*)"' IN lv_meta SUBMATCHES lv_note.
+
+      " columns 是元数据行最后一个键: 取 "columns": 之后到末尾 } 之前的数组原文
+      FIND '"columns":' IN lv_meta MATCH OFFSET lv_moff MATCH LENGTH lv_mlen.
+      IF sy-subrc = 0.
+        lv_mstart = lv_moff + lv_mlen.
+        lv_mclen  = strlen( lv_meta ) - lv_mstart - 1.
+        IF lv_mclen > 0.
+          lv_mcols = substring( val = lv_meta off = lv_mstart len = lv_mclen ).
+        ENDIF.
+      ENDIF.
+      IF lv_mcols IS INITIAL.
+        lv_mcols = '[]'.
+      ENDIF.
+      ev_schema_json = '{"columns":' && lv_mcols && '}'.
+    ENDIF.
 
     " schema: 每行 JSON 的键并集(按首次出现顺序; 键 = 程序字段名大写)
     " V1.0b: 子匹配只有偏移/长度, 必须按偏移从原串截取
-    LOOP AT lt INTO DATA(ls).
-      lv_row = ls-row_json.
-      CLEAR lt_m.
-      FIND ALL OCCURRENCES OF REGEX `"([A-Za-z_0-9]+)"\s*:` IN lv_row
-        RESULTS lt_m.
-      LOOP AT lt_m INTO ls_m.
-        READ TABLE ls_m-submatches INTO ls_sub INDEX 1.
-        IF sy-subrc <> 0 OR ls_sub-length <= 0.
-          CONTINUE.
-        ENDIF.
-        lv_k = substring( val = lv_row off = ls_sub-offset len = ls_sub-length ).
-        READ TABLE lt_keys TRANSPORTING NO FIELDS WITH KEY table_line = lv_k.
-        IF sy-subrc <> 0.
-          APPEND lv_k TO lt_keys.
-        ENDIF.
+    " V1.1: 有元数据行时列已定(含 ALV 列标题), 不再逐行扫键
+    IF lv_has_meta = abap_false.
+      LOOP AT lt INTO ls.
+        lv_row = ls-row_json.
+        CLEAR lt_m.
+        FIND ALL OCCURRENCES OF REGEX `"([A-Za-z_0-9]+)"\s*:` IN lv_row
+          RESULTS lt_m.
+        LOOP AT lt_m INTO ls_m.
+          READ TABLE ls_m-submatches INTO ls_sub INDEX 1.
+          IF sy-subrc <> 0 OR ls_sub-length <= 0.
+            CONTINUE.
+          ENDIF.
+          lv_k = substring( val = lv_row off = ls_sub-offset len = ls_sub-length ).
+          READ TABLE lt_keys TRANSPORTING NO FIELDS WITH KEY table_line = lv_k.
+          IF sy-subrc <> 0.
+            APPEND lv_k TO lt_keys.
+          ENDIF.
+        ENDLOOP.
       ENDLOOP.
-    ENDLOOP.
 
-    " V1.0e: 与 MOCK 同契约 {"columns":[{name,label}]}(前端读 .columns)
-    LOOP AT lt_keys INTO lv_k.
-      lv_seg = |\{"name":"{ lv_k }","label":"{ lv_k }"\}|.
-      lv_cols = COND #( WHEN lv_cols IS INITIAL THEN lv_seg
-                        ELSE lv_cols && ',' && lv_seg ).
-    ENDLOOP.
-    ev_schema_json = '{"columns":[' && lv_cols && ']}'.
+      " V1.0e: 与 MOCK 同契约 {"columns":[{name,label}]}(前端读 .columns)
+      LOOP AT lt_keys INTO lv_k.
+        lv_seg = |\{"name":"{ lv_k }","label":"{ lv_k }"\}|.
+        lv_cols = COND #( WHEN lv_cols IS INITIAL THEN lv_seg
+                          ELSE lv_cols && ',' && lv_seg ).
+      ENDLOOP.
+      ev_schema_json = '{"columns":[' && lv_cols && ']}'.
+    ENDIF.
 
     " rows 拼接: 样例行按 MAX_ROWS 截断展示, 计数如实(与 MOCK 同语义)
     lv_i = 0.
@@ -348,7 +473,15 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
     ENDLOOP.
     ev_rows_json = '[' && lv_rows && ']'.
 
-    ev_summary_json = |\{"total_rows":{ ev_row_count },"source":"JOB { lv_jobname }"\}|.
+    IF lv_has_meta = abap_true.
+      " V1.1: 总行数以采集到的 ALV 总数为准; 入库行数封顶时 truncated=true;
+      " note 非空 = 报表没走到 ALV(无数据 / 无权限 STOP / 提前结束), 供前端与模型如实说明
+      lv_trunc = COND #( WHEN lv_total > lv_stored THEN `true` ELSE `false` ).
+      ev_summary_json = |\{"total_rows":{ lv_total },"stored_rows":{ lv_stored },| &&
+                        |"truncated":{ lv_trunc },"note":"{ lv_note }","source":"JOB { lv_jobname }"\}|.
+    ELSE.
+      ev_summary_json = |\{"total_rows":{ ev_row_count },"source":"JOB { lv_jobname }"\}|.
+    ENDIF.
   ENDMETHOD.
 
 
@@ -427,11 +560,15 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
     ls_sel-low     = 'X'.
     APPEND ls_sel TO et_seltab.
 
-    CLEAR ls_sel.
-    ls_sel-selname = 'P_RUNID'.
-    ls_sel-kind    = 'P'.
-    ls_sel-low     = iv_report_run_id.
-    APPEND ls_sel TO et_seltab.
+    " V1.1: P_RUNID 只在回退口径(LEGACY)下发 —— 新口径由运行器统一落表,
+    " 不下发即让程序端旧 ai_capture(P_RUNID 为空直接 RETURN)自动失效, 避免双写
+    IF iv_legacy = abap_true.
+      CLEAR ls_sel.
+      ls_sel-selname = 'P_RUNID'.
+      ls_sel-kind    = 'P'.
+      ls_sel-low     = iv_report_run_id.
+      APPEND ls_sel TO et_seltab.
+    ENDIF.
 
     " 登记参数: 按 param_id 从参数快照取值, 按 ABAP_NAME/SEL_KIND 提交
     LOOP AT lt_p INTO DATA(ls_p).
@@ -509,6 +646,148 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
         APPEND ls_sel TO et_seltab.
       ENDLOOP.
     ENDLOOP.
+  ENDMETHOD.
+
+
+  METHOD run_captured.
+    " 作业内执行(ZAI_RPT_RUNNER -> 这里): 程序名/参数只信运行记录(创建时已冻结),
+    " 并复核登记与归属 —— 手工运行运行器也无法借它跑任意程序或别人的运行
+    CONSTANTS lc_max_store TYPE i VALUE 20000.
+    DATA: ls_run    TYPE zai_rpt_run,
+          lv_prog   TYPE progname,
+          lv_defprog TYPE zai_rpt_def-progname,
+          lt_seltab TYPE rsparams_tt,
+          lv_err    TYPE string,
+          lv_captured TYPE abap_bool,
+          lv_total  TYPE i,
+          lt_cols   TYPE zcl_ai_alv_capture=>tt_col,
+          lt_rows   TYPE string_table,
+          lv_seg    TYPE string,
+          lv_cols   TYPE string,
+          lv_note   TYPE string,
+          lv_meta   TYPE string,
+          lv_total_s TYPE string,
+          lv_stored_s TYPE string,
+          lt_res    TYPE STANDARD TABLE OF zai_rpt_result,
+          ls_res    TYPE zai_rpt_result,
+          lv_idx    TYPE i,
+          lv_row    TYPE string.
+
+    SELECT SINGLE * FROM zai_rpt_run
+      WHERE report_run_id = @iv_report_run_id
+      INTO @ls_run.
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+
+    IF ls_run-created_by <> sy-uname.
+      fail_run( iv_report_run_id = iv_report_run_id
+                iv_message       = '运行不属于当前作业用户, 已拒绝采集' ).
+      RETURN.
+    ENDIF.
+
+    lv_prog = to_upper( ls_run-progname ).
+    SELECT SINGLE progname FROM zai_rpt_def
+      WHERE report_id = @ls_run-report_id
+        AND active = 'X'
+        AND exec_enabled = 'X'
+      INTO @lv_defprog.
+    IF sy-subrc <> 0 OR lv_prog IS INITIAL OR to_upper( lv_defprog ) <> lv_prog.
+      fail_run( iv_report_run_id = iv_report_run_id
+                iv_message       = '报表登记已停用 / 未开放执行 / 程序名与登记不一致, 已拒绝采集' ).
+      RETURN.
+    ENDIF.
+
+    build_seltab(
+      EXPORTING iv_report_run_id = iv_report_run_id
+                iv_program       = CONV string( ls_run-progname )
+                iv_params_json   = ls_run-params_json
+                iv_legacy        = abap_false
+      IMPORTING et_seltab        = lt_seltab
+                ev_err           = lv_err ).
+    IF lv_err IS NOT INITIAL.
+      fail_run( iv_report_run_id = iv_report_run_id
+                iv_message       = |选择参数构建失败: { lv_err }| ).
+      RETURN.
+    ENDIF.
+
+    zcl_ai_alv_capture=>run(
+      EXPORTING iv_program  = lv_prog
+                it_seltab   = lt_seltab
+                iv_max_rows = lc_max_store
+      IMPORTING ev_captured = lv_captured
+                ev_total    = lv_total
+                et_cols     = lt_cols
+                et_rows     = lt_rows
+                ev_error    = lv_err ).
+    IF lv_err IS NOT INITIAL.
+      fail_run( iv_report_run_id = iv_report_run_id
+                iv_message       = lv_err ).
+      RETURN.
+    ENDIF.
+
+    IF lv_captured = abap_false.
+      lv_note = '报表没有输出 ALV 数据: 可能是该条件下无数据、无工厂/组织权限被程序拦截、或程序提前结束(详见 SM37 作业日志)'.
+    ENDIF.
+
+    LOOP AT lt_cols INTO DATA(ls_col).
+      lv_seg = '{"name":"' && zcl_ai_report_service=>json_escape( ls_col-name ) &&
+               '","label":"' && zcl_ai_report_service=>json_escape( ls_col-label ) && '"}'.
+      lv_cols = COND #( WHEN lv_cols IS INITIAL THEN lv_seg
+                        ELSE lv_cols && ',' && lv_seg ).
+    ENDLOOP.
+
+    lv_total_s  = |{ lv_total }|.
+    lv_stored_s = |{ lines( lt_rows ) }|.
+    lv_meta = '{"__meta__":true,"total":' && lv_total_s &&
+              ',"stored":' && lv_stored_s &&
+              ',"note":"' && zcl_ai_report_service=>json_escape( lv_note ) &&
+              '","columns":[' && lv_cols && ']}'.
+
+    CLEAR ls_res.
+    ls_res-mandt      = sy-mandt.
+    ls_res-run_id     = iv_report_run_id.
+    ls_res-line_index = 0.
+    ls_res-row_json   = lv_meta.
+    APPEND ls_res TO lt_res.
+
+    LOOP AT lt_rows INTO lv_row.
+      lv_idx = lv_idx + 1.
+      CLEAR ls_res.
+      ls_res-mandt      = sy-mandt.
+      ls_res-run_id     = iv_report_run_id.
+      ls_res-line_index = lv_idx.
+      ls_res-row_json   = lv_row.
+      APPEND ls_res TO lt_res.
+    ENDLOOP.
+
+    DELETE FROM zai_rpt_result WHERE run_id = @iv_report_run_id.
+    INSERT zai_rpt_result FROM TABLE @lt_res.
+    IF sy-subrc <> 0.
+      ROLLBACK WORK.
+      fail_run( iv_report_run_id = iv_report_run_id
+                iv_message       = '采集结果写入 ZAI_RPT_RESULT 失败' ).
+      RETURN.
+    ENDIF.
+    COMMIT WORK AND WAIT.
+
+    zcl_ai_report_mock=>add_step(
+      iv_report_run_id = iv_report_run_id
+      iv_task_id       = CONV string( ls_run-task_id )
+      iv_phase         = 'CAPTURE'
+      iv_status        = 'OK'
+      iv_summary       = |ALV 采集: 捕获={ lv_captured } 总行数={ lv_total } 入库={ lv_stored_s } 列={ lines( lt_cols ) }| ).
+  ENDMETHOD.
+
+
+  METHOD fail_run.
+    DATA lv_msg TYPE zai_rpt_run-error_message.
+    lv_msg = iv_message.
+    DELETE FROM zai_rpt_result WHERE run_id = @iv_report_run_id.
+    UPDATE zai_rpt_run SET error_code    = 'CAPTURE',
+                           error_message = @lv_msg
+      WHERE report_run_id = @iv_report_run_id.
+    COMMIT WORK.
   ENDMETHOD.
 
 
