@@ -23,9 +23,15 @@
 *         ZCL_AI_CHAT_SERVICE(v8_get_role) / 四张 ZAI_FRPT_* 表
 * 安装:   SE24 -> 创建类 -> 源代码粘帖 (ABAP 7.50 语法, 755 适用)
 * V1.0    20261020: 首版(G1 单张报表 + G2 统计与分析闸门; G3 多选/登记助手未做)
-* ★ 重贴后核对标记: 有 METHOD agent_turn / compute_stats / url_encode;
+* V1.0.1  20261021: 修登记导入永远报 "reportId / paramId 必填"(10-21 部署问题 7):
+*         CHAR 30 字段直接做 CN 校验, 尾部空格不在允许字符里 → 合法值也被拒;
+*         改为先转 string 再校验. 导入额外给出: 参数一览、未映射提醒、
+*         按默认值预演的 $filter 与请求 URI(ty_ack 新增 uri / shape / shape_cfg,
+*         ZAI_FRPT_MAINT 据此试取一次); URI 拼法抽成 build_uri(run 同用)
+* ★ 重贴后核对标记: 有 METHOD agent_turn / compute_stats / url_encode / build_uri;
 *   agent_turn 内有 UPDATE zai_frpt_run SET analyzed = 'X';
-*   run 内有 zcl_ai_odata_client=>get( 与 zcl_ai_odata_shaper=>shape(
+*   run 内有 zcl_ai_odata_client=>get( 与 zcl_ai_odata_shaper=>shape(;
+*   save_def_json 内有 lv_txt = ls_def-report_id.
 *=======================================================================
 CLASS zcl_ai_fiori_report_service DEFINITION
   PUBLIC
@@ -104,8 +110,11 @@ CLASS zcl_ai_fiori_report_service DEFINITION
            END OF ty_turn.
 
     TYPES: BEGIN OF ty_ack,
-             message TYPE string,
-             error   TYPE string,
+             message   TYPE string,
+             error     TYPE string,
+             uri       TYPE string,    " save_def_json: 按默认值预演的请求 URI(不带主机; 默认值不全时为空)
+             shape     TYPE string,
+             shape_cfg TYPE string,
            END OF ty_ack.
 
     TYPES tt_param TYPE STANDARD TABLE OF zai_frpt_param WITH DEFAULT KEY.
@@ -207,6 +216,11 @@ CLASS zcl_ai_fiori_report_service DEFINITION
     CLASS-METHODS default_values
       IMPORTING it_params TYPE tt_param
       RETURNING VALUE(rt) TYPE zcl_ai_odata_shaper=>tt_kv.
+    " 请求 URI(不带主机): 服务路径 / 实体集 ? $format & $filter(已编码) & $expand & 固定项 & sap-client
+    CLASS-METHODS build_uri
+      IMPORTING is_def    TYPE zai_frpt_def
+                iv_filter TYPE string
+      RETURNING VALUE(rv) TYPE string.
     CLASS-METHODS pending_json
       IMPORTING is_def    TYPE zai_frpt_def
                 it_params TYPE tt_param
@@ -713,7 +727,6 @@ CLASS zcl_ai_fiori_report_service IMPLEMENTATION.
           lv_err    TYPE string,
           lv_filter TYPE string,
           lv_uri    TYPE string,
-          lv_path   TYPE string,
           lv_art    TYPE string,
           lv_sum    TYPE string,
           lv_shape  TYPE string,
@@ -723,8 +736,7 @@ CLASS zcl_ai_fiori_report_service IMPLEMENTATION.
           lv_tmo    TYPE i,
           lv_bytes  TYPE i,
           lv_n      TYPE i,
-          lv_i      TYPE i,
-          lv_len    TYPE i.
+          lv_i      TYPE i.
 
     CLEAR rs.
     IF user_ok( ) = abap_false.
@@ -787,25 +799,7 @@ CLASS zcl_ai_fiori_report_service IMPLEMENTATION.
     ENDIF.
 
     " ---- 拼 URI(不带主机名; 模型不参与) ----
-    lv_path = ls_def-service_path.
-    lv_len = strlen( lv_path ).
-    IF lv_len > 1.
-      lv_i = lv_len - 1.
-      IF substring( val = lv_path off = lv_i len = 1 ) = '/'.
-        lv_path = substring( val = lv_path len = lv_i ).
-      ENDIF.
-    ENDIF.
-    lv_uri = lv_path && `/` && ls_def-entity_set && `?$format=json`.
-    IF lv_filter IS NOT INITIAL.
-      lv_uri = lv_uri && `&$filter=` && url_encode( lv_filter ).
-    ENDIF.
-    IF ls_def-expand_nav IS NOT INITIAL.
-      lv_uri = lv_uri && `&$expand=` && ls_def-expand_nav.
-    ENDIF.
-    IF ls_def-extra_query IS NOT INITIAL.
-      lv_uri = lv_uri && `&` && ls_def-extra_query.
-    ENDIF.
-    lv_uri = lv_uri && `&sap-client=` && sy-mandt.
+    lv_uri = build_uri( is_def = ls_def iv_filter = lv_filter ).
     ls_run-request_uri = lv_uri.
     rs-request_uri     = lv_uri.
 
@@ -1220,6 +1214,37 @@ CLASS zcl_ai_fiori_report_service IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD build_uri.
+
+    DATA: lv_path TYPE string,
+          lv_len  TYPE i,
+          lv_i    TYPE i.
+
+    " 服务路径末尾的 / 去掉(登记时允许带)
+    lv_path = is_def-service_path.
+    lv_len = strlen( lv_path ).
+    IF lv_len > 1.
+      lv_i = lv_len - 1.
+      IF substring( val = lv_path off = lv_i len = 1 ) = '/'.
+        lv_path = substring( val = lv_path len = lv_i ).
+      ENDIF.
+    ENDIF.
+    " CHAR 字段一律先 CONV string(去尾部空格), 不依赖 && 对定长字段的处理
+    rv = lv_path && `/` && CONV string( is_def-entity_set ) && `?$format=json`.
+    IF iv_filter IS NOT INITIAL.
+      rv = rv && `&$filter=` && url_encode( iv_filter ).
+    ENDIF.
+    IF is_def-expand_nav IS NOT INITIAL.
+      rv = rv && `&$expand=` && CONV string( is_def-expand_nav ).
+    ENDIF.
+    IF is_def-extra_query IS NOT INITIAL.
+      rv = rv && `&` && CONV string( is_def-extra_query ).
+    ENDIF.
+    rv = rv && `&sap-client=` && CONV string( sy-mandt ).
+
+  ENDMETHOD.
+
+
   METHOD pending_json.
 
     " 待填参数 JSON(与报表执行的格式并列, kind = FIORI 区分; 键与 AskCard 一致)
@@ -1587,12 +1612,24 @@ CLASS zcl_ai_fiori_report_service IMPLEMENTATION.
           lt_ids   TYPE tt_str,
           lt_ek    TYPE tt_str,
           lt_pids  TYPE zcl_ai_odata_shaper=>tt_int,
+          lt_act   TYPE tt_param,
+          lt_vals  TYPE zcl_ai_odata_shaper=>tt_kv,
+          lt_nomap TYPE tt_str,
+          lt_warn  TYPE tt_str,
+          lt_info  TYPE tt_str,
           lv_id    TYPE i,
           lv_pid   TYPE i,
+          lv_no    TYPE i,
           lv_txt   TYPE string,
           lv_kind  TYPE string,
           lv_pfx   TYPE string,
-          lv_err   TYPE string.
+          lv_err   TYPE string,
+          lv_filter TYPE string,
+          lv_ferr  TYPE string,
+          lv_line  TYPE string,
+          lv_map   TYPE string,
+          lv_dflt  TYPE string,
+          lv_nl    TYPE string.
 
     CLEAR rs.
     IF zcl_ai_chat_service=>v8_get_role( ) <> 'ADMIN'.
@@ -1641,8 +1678,12 @@ CLASS zcl_ai_fiori_report_service IMPLEMENTATION.
     ls_def-changed_by = sy-uname.
     ls_def-changed_at = now14( ).
 
-    IF ls_def-report_id IS INITIAL OR ls_def-report_id CN 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_'.
-      APPEND 'reportId 必填, 只能是大写字母、数字、下划线' TO lt_err.
+    " CHAR 30 字段带尾部空格, 直接 CN 会把空格算成非法字符 —— 先转 string 再校验
+    lv_txt = ls_def-report_id.
+    IF lv_txt IS INITIAL OR lv_txt CN 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_'.
+      lv_err = |reportId「{ lv_txt }」必填, 只能是大写字母、数字、下划线|.
+      APPEND lv_err TO lt_err.
+      CLEAR lv_err.
     ENDIF.
     IF ls_def-report_name IS INITIAL.
       APPEND 'reportName 必填' TO lt_err.
@@ -1688,6 +1729,7 @@ CLASS zcl_ai_fiori_report_service IMPLEMENTATION.
     lt_pids = lo->kids( lv_id ).
     LOOP AT lt_pids INTO lv_pid.
       CLEAR ls_par.
+      lv_no = lv_no + 1.
       ls_par-report_id     = ls_def-report_id.
       ls_par-param_id      = to_upper( lo->text( lo->child( iv_id = lv_pid iv_name = 'paramId' ) ) ).
       ls_par-display_label = lo->text( lo->child( iv_id = lv_pid iv_name = 'label' ) ).
@@ -1729,12 +1771,13 @@ CLASS zcl_ai_fiori_report_service IMPLEMENTATION.
         ls_par-data_type = 'CHAR'.
       ENDIF.
 
-      lv_pfx = |参数 { ls_par-param_id }: |.
+      lv_pfx = |第 { lv_no } 个参数 { ls_par-param_id }: |.
       CLEAR lv_err.
-      IF ls_par-param_id IS INITIAL OR ls_par-param_id CN 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_'.
-        lv_err = '参数 paramId 必填, 只能是大写字母、数字、下划线'.
+      " 同 reportId: 先转 string 再 CN(CHAR 30 的尾部空格会被当成非法字符)
+      lv_txt = ls_par-param_id.
+      IF lv_txt IS INITIAL OR lv_txt CN 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_'.
+        lv_err = |第 { lv_no } 个参数: paramId「{ lv_txt }」必填, 只能是大写字母、数字、下划线|.
       ELSE.
-        lv_txt = ls_par-param_id.
         READ TABLE lt_ids TRANSPORTING NO FIELDS WITH KEY table_line = lv_txt.
         IF sy-subrc = 0.
           lv_err = lv_pfx && 'paramId 重复'.
@@ -1765,7 +1808,7 @@ CLASS zcl_ai_fiori_report_service IMPLEMENTATION.
          AND ls_par-odata_prop IS NOT INITIAL.
         lv_err = lv_pfx && 'BT2 必须给 odataPropTo(终点属性)'.
       ENDIF.
-      lv_txt = |{ ls_par-odata_prop }{ ls_par-odata_prop_to }|.
+      lv_txt = CONV string( ls_par-odata_prop ) && CONV string( ls_par-odata_prop_to ).
       IF lv_err IS INITIAL AND lv_txt IS NOT INITIAL
          AND lv_txt CN 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_/'.
         lv_err = lv_pfx && 'odataProp 只含字母数字下划线和 /'.
@@ -1795,18 +1838,96 @@ CLASS zcl_ai_fiori_report_service IMPLEMENTATION.
       CONCATENATE LINES OF lt_err INTO rs-error SEPARATED BY cl_abap_char_utilities=>newline.
       RETURN.
     ENDIF.
-    IF iv_test = abap_true.
-      rs-message = |校验通过(测试运行, 未保存): 报表 { ls_def-report_id }, { lines( lt_par ) } 个参数|.
-      RETURN.
+
+    " ---- 按默认值预演 $filter 与 URI(与 run 同口径: 只用启用的参数, 按 sortNo 排) ----
+    LOOP AT lt_par INTO ls_par WHERE active = 'X'.
+      APPEND ls_par TO lt_act.
+    ENDLOOP.
+    SORT lt_act BY sort_no param_id.
+    lt_vals = default_values( lt_act ).
+    build_filter( EXPORTING it_params = lt_act it_values = lt_vals
+                  IMPORTING ev_filter = lv_filter ev_error = lv_ferr ).
+    rs-shape     = ls_def-shape.
+    rs-shape_cfg = ls_def-shape_cfg.
+    IF lv_ferr IS INITIAL.
+      rs-uri = build_uri( is_def = ls_def iv_filter = lv_filter ).
     ENDIF.
 
-    MODIFY zai_frpt_def FROM @ls_def.
-    DELETE FROM zai_frpt_param WHERE report_id = @ls_def-report_id.
-    IF lt_par IS NOT INITIAL.
-      INSERT zai_frpt_param FROM TABLE @lt_par.
+    IF iv_test = abap_false.
+      MODIFY zai_frpt_def FROM @ls_def.
+      DELETE FROM zai_frpt_param WHERE report_id = @ls_def-report_id.
+      IF lt_par IS NOT INITIAL.
+        INSERT zai_frpt_param FROM TABLE @lt_par.
+      ENDIF.
+      COMMIT WORK.
     ENDIF.
-    COMMIT WORK.
-    rs-message = |已保存: 报表 { ls_def-report_id }「{ ls_def-report_name }」, { lines( lt_par ) } 个参数|.
+
+    " ---- 回执: 结论 + 参数一览 + 提醒 + 预演(测试与保存都给, 方便和 F12 抓到的请求逐项对) ----
+    lv_nl = cl_abap_char_utilities=>newline.
+    lv_txt = COND #( WHEN iv_test = abap_true THEN `校验通过(测试运行, 未保存)` ELSE `已保存` ).
+    lv_line = |{ lv_txt }: 报表 { ls_def-report_id }「{ ls_def-report_name }」, { lines( lt_par ) } 个参数, 形状 { ls_def-shape }|.
+    APPEND lv_line TO lt_info.
+    APPEND `` TO lt_info.
+    APPEND `参数(paramId「标签」类型 运算 → OData 属性, 默认值):` TO lt_info.
+    LOOP AT lt_par INTO ls_par.
+      IF ls_par-odata_prop IS INITIAL.
+        lv_map = `(未映射: 只校验, 不进 $filter)`.
+        IF ls_par-active = 'X'.
+          lv_txt = ls_par-param_id.
+          APPEND lv_txt TO lt_nomap.
+        ENDIF.
+      ELSEIF ls_par-odata_prop_to IS INITIAL.
+        lv_map = ls_par-odata_prop.
+      ELSE.
+        lv_map = |{ ls_par-odata_prop } { ls_par-op_from } / { ls_par-odata_prop_to } { ls_par-op_to }|.
+      ENDIF.
+      CASE ls_par-default_type.
+        WHEN 'STATIC'.
+          lv_dflt = ls_par-default_value.
+        WHEN '' OR 'NONE'.
+          lv_dflt = `无`.
+        WHEN OTHERS.
+          lv_dflt = ls_par-default_type.
+      ENDCASE.
+      lv_line = |  { ls_par-param_id }「{ ls_par-display_label }」{ ls_par-data_type } { ls_par-filter_op } → { lv_map }, 默认 { lv_dflt }|.
+      IF ls_par-active <> 'X'.
+        lv_line = lv_line && `  (停用)`.
+      ENDIF.
+      APPEND lv_line TO lt_info.
+    ENDLOOP.
+
+    IF ls_def-active <> 'X'.
+      APPEND `active 不是 "X": 目录里不显示、也不能取数(要用时改成 "X" 再导入)` TO lt_warn.
+    ENDIF.
+    IF ls_def-analyze_enabled <> 'X'.
+      APPEND `analyzeEnabled 不是 "X": 取数结果不能「交给模型分析」` TO lt_warn.
+    ENDIF.
+    IF lt_nomap IS NOT INITIAL.
+      CONCATENATE LINES OF lt_nomap INTO lv_txt SEPARATED BY `, `.
+      lv_line = |参数 { lv_txt } 没填 odataProp: 只校验, 不进 $filter(F12 抓到属性名后补上)|.
+      APPEND lv_line TO lt_warn.
+    ENDIF.
+    IF lt_warn IS NOT INITIAL.
+      APPEND `` TO lt_info.
+      APPEND `提醒(不影响保存):` TO lt_info.
+      LOOP AT lt_warn INTO lv_txt.
+        lv_line = `  - ` && lv_txt.
+        APPEND lv_line TO lt_info.
+      ENDLOOP.
+    ENDIF.
+
+    APPEND `` TO lt_info.
+    APPEND `按默认值预演(实际取数时用参数卡上的值; 和 F12 抓到的请求逐项对):` TO lt_info.
+    IF lv_ferr IS NOT INITIAL.
+      lv_line = |  默认值不全, 没法预演: { lv_ferr }|.
+      APPEND lv_line TO lt_info.
+    ELSE.
+      lv_line = |  $filter(未编码): { COND string( WHEN lv_filter IS INITIAL THEN `(无)` ELSE lv_filter ) }|.
+      APPEND lv_line TO lt_info.
+      lv_line = |  URI: { rs-uri }|.
+      APPEND lv_line TO lt_info.
+    ENDIF.
+    CONCATENATE LINES OF lt_info INTO rs-message SEPARATED BY lv_nl.
 
   ENDMETHOD.
 

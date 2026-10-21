@@ -8,11 +8,16 @@
 *& 模式(单选):
 *&   P_LIST 列出已登记报表
 *&   P_IMP  导入: P_FILE 选 JSON 文件; P_TEST = X 只校验不保存(先跑一遍再去掉勾)
+*&          P_TRY = X 校验通过后按默认值真实取数一次(只读), 打印列 / 前 P_ROWS 行 /
+*&          后端统计, 直接和 Fiori 页面对数
 *&   P_EXP  导出: P_RID 报表编号; P_FILE 空 = 打印到屏幕, 填了 = 下载到该文件
 *&   P_SELF 离线自测: 参数 → $filter / URL 编码 / 后端统计, 不调 OData, 不写表
 *& JSON 格式见 backend-abap/fiori-reports/README.md, 模板 SHIPMENT.json
-*& 依赖: ZCL_AI_FIORI_REPORT_SERVICE V1.0(及四张 ZAI_FRPT_* 表)
+*& 依赖: ZCL_AI_FIORI_REPORT_SERVICE V1.0.1(ty_ack 带 uri / shape / shape_cfg)、
+*&       ZCL_AI_ODATA_CLIENT / ZCL_AI_ODATA_SHAPER(及四张 ZAI_FRPT_* 表)
 *& V1.0 20261020
+*& V1.1 20261021: 导入回执多行显示(参数一览 / 提醒 / 按默认值预演的 $filter 与 URI);
+*&      新增 P_TRY 试取一次 + P_ROWS; 选择屏幕自带中文说明(不用维护选择文本)
 *&---------------------------------------------------------------------*
 REPORT zai_frpt_maint LINE-SIZE 255.
 
@@ -20,13 +25,58 @@ DATA: gt_files TYPE filetable,
       gs_file  TYPE file_table,
       gv_rc    TYPE i.
 
-PARAMETERS: p_list RADIOBUTTON GROUP g1 DEFAULT 'X',
-            p_imp  RADIOBUTTON GROUP g1,
-            p_exp  RADIOBUTTON GROUP g1,
-            p_self RADIOBUTTON GROUP g1,
-            p_file TYPE localfile LOWER CASE,
-            p_rid  TYPE c LENGTH 30,
-            p_test AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN COMMENT /1(79) c_h1.
+SELECTION-SCREEN SKIP 1.
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS p_list RADIOBUTTON GROUP g1 DEFAULT 'X'.
+SELECTION-SCREEN COMMENT 3(70) c_list FOR FIELD p_list.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS p_imp RADIOBUTTON GROUP g1.
+SELECTION-SCREEN COMMENT 3(70) c_imp FOR FIELD p_imp.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS p_exp RADIOBUTTON GROUP g1.
+SELECTION-SCREEN COMMENT 3(70) c_exp FOR FIELD p_exp.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS p_self RADIOBUTTON GROUP g1.
+SELECTION-SCREEN COMMENT 3(70) c_self FOR FIELD p_self.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN SKIP 1.
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(20) c_file FOR FIELD p_file.
+PARAMETERS p_file TYPE localfile VISIBLE LENGTH 58 LOWER CASE.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(20) c_rid FOR FIELD p_rid.
+PARAMETERS p_rid TYPE c LENGTH 30.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN SKIP 1.
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS p_test AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN COMMENT 3(70) c_test FOR FIELD p_test.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS p_try AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN COMMENT 3(70) c_try FOR FIELD p_try.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(20) c_rows FOR FIELD p_rows.
+PARAMETERS p_rows TYPE i DEFAULT 10.
+SELECTION-SCREEN END OF LINE.
+
+INITIALIZATION.
+  c_h1   = 'Fiori 报表登记维护(格式见 backend-abap/fiori-reports/README.md)'.
+  c_list = '列出已登记报表'.
+  c_imp  = '导入登记 JSON(选下面的文件)'.
+  c_exp  = '导出登记 JSON(填报表编号; 不选文件 = 打印到屏幕)'.
+  c_self = '离线自测($filter / URL 编码 / 统计, 不调 OData)'.
+  c_file = 'JSON 文件(F4 选)'.
+  c_rid  = '报表编号(导出用)'.
+  c_test = '只校验不保存(先勾着跑, 没问题再去掉勾保存)'.
+  c_try  = '导入校验通过后按默认值试取一次(只读)'.
+  c_rows = '试取打印前几行'.
 
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
   CLEAR: gt_files, gv_rc.
@@ -52,6 +102,8 @@ CLASS lcl_m DEFINITION FINAL.
     CLASS-METHODS import.
     CLASS-METHODS export.
     CLASS-METHODS selftest.
+    CLASS-METHODS try_fetch
+      IMPORTING is_ack TYPE zcl_ai_fiori_report_service=>ty_ack.
     CLASS-METHODS check
       IMPORTING iv_name TYPE string
                 iv_ok   TYPE abap_bool
@@ -113,16 +165,98 @@ CLASS lcl_m IMPLEMENTATION.
       lv_json = substring( val = lv_json off = lv_off ).
     ENDIF.
 
+    WRITE: / '文件:', lv_file.
     ls_ack = zcl_ai_fiori_report_service=>save_def_json( iv_json = lv_json iv_test = p_test ).
     IF ls_ack-error IS NOT INITIAL.
-      WRITE: / '导入失败(未保存):' COLOR COL_NEGATIVE.
+      WRITE: / '导入失败(未保存), 按下面逐条改 JSON 后再导入:' COLOR COL_NEGATIVE.
       write_lines( ls_ack-error ).
+      RETURN.
+    ENDIF.
+
+    SKIP.
+    write_lines( ls_ack-message ).
+    SKIP.
+    IF p_test = abap_true.
+      WRITE: / '这是测试运行(未保存)。核对无误后去掉「只校验不保存」的勾, 再执行一次才会保存。' COLOR COL_TOTAL.
     ELSE.
-      WRITE: / ls_ack-message COLOR COL_POSITIVE.
-      IF p_test = abap_true.
-        WRITE: / '这是测试运行。确认无误后去掉 P_TEST 的勾再执行一次才会保存。'.
+      WRITE: / '已写入 ZAI_FRPT_DEF / ZAI_FRPT_PARAM。FIORI_ENABLED = X 且 active = X 时, 前端「Fiori 报表」目录可见。' COLOR COL_POSITIVE.
+    ENDIF.
+
+    IF p_try = abap_true.
+      IF ls_ack-uri IS INITIAL.
+        SKIP.
+        WRITE: / '试取跳过: 默认值不全(见上面"没法预演"), 补上默认值, 或保存后到前端填参数取数。'.
+      ELSE.
+        try_fetch( ls_ack ).
       ENDIF.
     ENDIF.
+
+  ENDMETHOD.
+
+  METHOD try_fetch.
+
+    DATA: ls_resp TYPE zcl_ai_odata_client=>ty_response,
+          ls_ds   TYPE zcl_ai_odata_shaper=>ty_dataset,
+          ls_col  TYPE zcl_ai_odata_shaper=>ty_column,
+          ls_row  TYPE zcl_ai_odata_shaper=>ty_row,
+          lv_line TYPE string,
+          lv_cell TYPE string,
+          lv_head TYPE string,
+          lv_n    TYPE i.
+
+    SKIP.
+    WRITE: / '==== 试取一次(按默认值, 只读, 不写表) ===='.
+    WRITE: / '用户:', sy-uname, '  客户端:', sy-mandt.
+    ls_resp = zcl_ai_odata_client=>get( iv_uri = is_ack-uri iv_timeout = 120 iv_max_bytes = 104857600 ).
+    WRITE: / 'HTTP:', ls_resp-http_code, ls_resp-reason.
+    WRITE: / '耗时(毫秒):', ls_resp-elapsed_ms, '  字节:', ls_resp-bytes, '  通道:', ls_resp-channel.
+    lv_n = strlen( ls_resp-body ).
+    IF lv_n > 2000.
+      lv_n = 2000.
+    ENDIF.
+    IF lv_n > 0.
+      lv_head = substring( val = ls_resp-body len = lv_n ).
+    ENDIF.
+    IF ls_resp-error IS NOT INITIAL.
+      WRITE: / '取数失败:' COLOR COL_NEGATIVE.
+      write_lines( ls_resp-error ).
+      IF lv_head IS NOT INITIAL.
+        WRITE: / '响应开头(前 2000 字符):'.
+        write_lines( lv_head ).
+      ENDIF.
+      RETURN.
+    ENDIF.
+
+    ls_ds = zcl_ai_odata_shaper=>shape( iv_json = ls_resp-body iv_shape = is_ack-shape iv_cfg = is_ack-shape_cfg ).
+    IF ls_ds-error IS NOT INITIAL.
+      WRITE: / '转换失败(检查 shape / shapeCfg):' COLOR COL_NEGATIVE.
+      write_lines( ls_ds-error ).
+      WRITE: / '响应开头(前 2000 字符):'.
+      write_lines( lv_head ).
+      RETURN.
+    ENDIF.
+
+    lv_n = lines( ls_ds-rows ).
+    WRITE: / '行数:', lv_n, '  总行数:', ls_ds-total, '  截断:', ls_ds-truncated.
+    WRITE: / '列(名称 / 标签 / 数值列):'.
+    LOOP AT ls_ds-columns INTO ls_col.
+      lv_line = |  { ls_col-name } / { ls_col-label } / { ls_col-is_numeric }|.
+      write_lines( lv_line ).
+    ENDLOOP.
+    WRITE: / '前', p_rows, '行:'.
+    LOOP AT ls_ds-rows INTO ls_row.
+      IF sy-tabix > p_rows.
+        EXIT.
+      ENDIF.
+      CLEAR lv_line.
+      LOOP AT ls_row-cells INTO lv_cell.
+        lv_line = lv_line && lv_cell && ` | `.
+      ENDLOOP.
+      write_lines( lv_line ).
+    ENDLOOP.
+    SKIP.
+    WRITE: / '后端统计(和 Fiori 页面对合计 / 占比):'.
+    write_lines( zcl_ai_fiori_report_service=>compute_stats( ls_ds ) ).
 
   ENDMETHOD.
 

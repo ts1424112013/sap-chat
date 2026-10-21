@@ -2,17 +2,43 @@
 
 用 SE38 `ZAI_FRPT_MAINT` 导入（`P_IMP`，先勾 `P_TEST` 校验，再去掉勾保存），导出用 `P_EXP`。只有 `ZAI_CHAT_USER` 角色为 ADMIN 的账号能保存。设计见 `功能计划书/Fiori报表分析/01-方案与开发计划`（§4.2 参数 → `$filter`，§4.3 返回结构，§5 表结构）。
 
-`SHIPMENT.json` 是 shipment 報表的模板：**各参数的 `odataProp` 还是空的**（属性名要从 F12 抓到的请求里抄），`active` 为空（目录里先不显示）。按下面"新增一张报表"的步骤填好再导入。
+`SHIPMENT.json` 是 shipment 報表的登记文件（2026-10-21 按真实抓包填）：維度 → `Group`，日期 → `BegDat` / `EndDat` 都用 `eq`，`active = "X"`；SITE / MODEL / REGION / BU 的 `odataProp` 还空着（只校验、不进 `$filter`），等从 `$metadata` 查到属性名再补。
+
+> 需要 `ZCL_AI_FIORI_REPORT_SERVICE` **V1.0.1** + `ZAI_FRPT_MAINT` **V1.1**（2026-10-21）。V1.0 有个 bug：不管 JSON 写得对不对，导入都报"reportId 必填 / paramId 必填"。
 
 ## 新增一张报表
 
-1. 在 Fiori 页面按 F12 → Network，点查询，找到 OData 请求（多数在 `$batch` 的 Payload 里，形如 `GET DynamiFIELDSet?$filter=...&$expand=...`）。
-2. 前面补上服务路径（`/sap/opu/odata/sap/<服务名>/`），用 SE38 `ZAI_TEST_ODATA_INTERNAL` 的 `P_U1..P_U4` 调一次：确认 HTTP 200、转换后的行和页面一致（同时完成 G0 验证）。
-3. 从 `$filter` 里抄出每个条件的属性名、运算符、值的写法，填进 `params`：
-   - `Site eq 'HHZZ'` → `odataProp: "Site"`、`filterOp: "IN"`（多值）或 `"EQ"`、`valueFmt: "STRING"`
-   - `BegDat ge datetime'2026-10-01T00:00:00' and EndDat le datetime'...'` → `odataProp: "BegDat"`、`odataPropTo: "EndDat"`、`filterOp: "BT2"`、`valueFmt: "DATETIME"`
-4. `active` 改成 `"X"`，导入（先 `P_TEST`）。
-5. 前端「Fiori 报表」目录里点这张报表 → 取数，和 Fiori 页面逐项对数。
+1. **抓请求**：在 Fiori 页面按 F12 → Network，点查询，找到 OData 请求（多数在 `$batch` 的 Payload 里，形如 `GET DynamiFIELDSet?$filter=...&$expand=...`）。把整行抄下来。
+2. **写登记文件**：复制 `SHIPMENT.json` 改一份（一张报表一个文件）。从抓到的请求里抄：
+   - 服务路径 → `servicePath`（`/sap/opu/odata/sap/<服务名>`）；`?` 前面的实体集 → `entitySet`；`$expand=` 后面 → `expandNav`。
+   - `$filter` 里每个条件 → 一个参数：
+     - `Site eq 'HHZZ'` → `odataProp: "Site"`、`filterOp: "IN"`（多值）或 `"EQ"`、`valueFmt: "STRING"`
+     - `BegDat ge datetime'2026-10-01T00:00:00' and EndDat le datetime'...'` → `odataProp: "BegDat"`、`odataPropTo: "EndDat"`、`filterOp: "BT2"`、`valueFmt: "DATETIME"`（两端都是 `eq` 就再写 `opFrom: "eq"`、`opTo: "eq"`）
+     - 日期如果是 `BegDat eq '20261001'` 这种不带 `datetime` 的，`valueFmt` 改成 `"STRING"`
+   - 还不知道属性名的参数，`odataProp` 先留空（只校验、不进 `$filter`）。
+   - 给必填参数配上默认值（`defaultType`），第 3 步才能预演和试取。
+3. **校验 + 试取**：SE38 `ZAI_FRPT_MAINT` → 选「导入登记 JSON」→ F4 选文件 → **勾着**「只校验不保存」和「试取一次」→ F8。看三段输出：
+   - **参数一览**：每个参数映射到哪个 OData 属性、默认值是什么；
+   - **按默认值预演**：拼出来的 `$filter` 和 URI —— 和第 1 步抓到的请求**逐项对**（属性名、`eq/ge/le`、值的写法）；
+   - **试取一次**：真实调用一次（只读），打印 HTTP 码、列、前几行和后端统计 —— 和 Fiori 页面同条件的数字对上。
+4. **保存**：去掉「只校验不保存」的勾，再 F8。选「列出已登记报表」确认。
+5. **前端**：`ZAI_CHAT_CFG` 里 `FIORI_ENABLED = X` 时，前端「Fiori 报表」目录里就能看到它（`active = "X"`）→ 点开取数，再和 Fiori 页面对一次。
+
+改已登记的报表：选「导出登记 JSON」，填报表编号，「JSON 文件」填一个保存路径（不填就打印到屏幕）→ 改 → 照第 3、4 步导回去（整份覆盖，参数以文件为准）。
+
+## 导入报错怎么看
+
+报错会一次列出全部问题，每条指明是哪个字段、读到的值是什么：
+
+| 报错 | 原因 |
+|---|---|
+| `reportId「」必填…` / `第 N 个参数: paramId「」必填…` | 键名写错（区分大小写，是 `reportId` / `paramId`），或值是空的 |
+| `reportId「ship-ment」…只能是大写字母、数字、下划线` | 值里有不允许的字符 |
+| `只有 ADMIN 可以维护 Fiori 报表登记` | 当前 SAP 账号在 `ZAI_CHAT_USER` 里的角色不是 ADMIN |
+| `不是合法 JSON` | 多了 / 少了逗号、引号、括号（可以先拿 JSON 校验工具检查） |
+| 预演里写"默认值不全, 没法预演" | 必填参数没有默认值 —— 补 `defaultType`，或者直接保存后到前端填参数 |
+| 试取 HTTP 400 / 404 | `$filter` 属性名或值的写法和服务要的不一样 —— 对着第 1 步抓到的请求改 |
+| 试取"转换失败" | `shape` / `shapeCfg` 和返回结构对不上 —— 看打印出来的"响应开头"对照 `shapeCfg` 的路径 |
 
 ## 字段
 
