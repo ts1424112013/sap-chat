@@ -161,6 +161,15 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   resetFetch([{ status: 200, json: { d: { UsersList: { Success: 'X', Json: '[{"UserId":"A"}]' } } } }]);
   v = await ChatService._v8Call('UsersList', null, false);
   check('FE-02：成功路径照常返回 Json', v === '[{"UserId":"A"}]');
+
+  // 20261021：用户列表 —— 后端 /ui2/cl_json 返回 ABAP 大写字段名，前端统一成驼峰
+  resetFetch([{ status: 200, json: { d: { UsersList: { Success: 'X', Json: '[{"USERID":"ZHANGSAN","USERNAME":"张三","ROLE":"ADMIN","ACTIVE":"X"},{"USERID":"LISI","USERNAME":"","ROLE":"USER","ACTIVE":""}]' } } } }]);
+  let users = await ChatService.getUsersData();
+  check('用户列表：读得出大写字段 USERID/USERNAME/ROLE/ACTIVE', users.length === 2 && users[0].UserId === 'ZHANGSAN' && users[0].UserName === '张三' && users[0].Role === 'ADMIN' && users[0].Active === 'X', JSON.stringify(users));
+  check('用户列表：停用用户 Active 为空串', users[1].UserId === 'LISI' && users[1].Active === '' && users[1].Role === 'USER', JSON.stringify(users[1]));
+  resetFetch([{ status: 200, json: { d: { UsersList: { Success: 'X', Json: '[{"UserId":"A","UserName":"甲","Role":"USER","Active":"X"}]' } } } }]);
+  users = await ChatService.getUsersData();
+  check('用户列表：驼峰字段照常读', users.length === 1 && users[0].UserId === 'A' && users[0].UserName === '甲' && users[0].Active === 'X', JSON.stringify(users));
   resetFetch([{ status: 200, json: { d: { Legacy: { Json: 'old' } } } }]);
   v = await ChatService._v8Call('Legacy', null, false);
   check('FE-02：旧后端没有 Success 字段时放行', v === 'old');
@@ -230,6 +239,8 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   resetFetch([]);
   r = await ChatService._taskCall('Tasks', {}, false);
   check('演示模式 _taskCall 不发请求', r.success === false && fetchLog.length === 0);
+  const mockUsers = await ChatService.getUsersData();
+  check('演示模式用户列表带一行只读的内置管理员', mockUsers.length >= 1 && mockUsers[0].UserId === 'ADMIN' && mockUsers[0].BuiltIn === true && fetchLog.length === 0, JSON.stringify(mockUsers));
 
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);

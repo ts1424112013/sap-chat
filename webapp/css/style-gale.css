@@ -870,3 +870,19 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .mpList .sapMLIB[data-on="yes"] .mpName { color: var(--accent) !important; }
 .mpCheck { flex: none; font-size: .85rem !important; color: var(--accent) !important; }
 .mpHint { display: block !important; margin-top: .35rem; padding: .55rem .6rem .25rem; border-top: 1px solid var(--line); font-size: .7rem !important; color: var(--sub) !important; }
+
+/* ==================== 设置 · 用户管理：开通表单（20261021） ====================
+   原来一行四个定宽框，提示文字和下拉被截断；改两列网格，输入框随宽度伸缩。
+   开通按钮固定在右列、右对齐：演示模式（有初始密码框）落在第三行，后端模式补在角色右边。 */
+.userAddGrid { display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .5rem .75rem; align-items: center; }
+.userAddGrid > .sapMInputBase, .userAddGrid > .sapMSlt { width: 100% !important; margin: 0 !important; }
+.userAddGrid > .userAddBtn { grid-column: 2; justify-self: end; margin: 0 !important; }
+@media (max-width: 479px) {
+        .userAddGrid { grid-template-columns: minmax(0, 1fr); }
+        .userAddGrid > .userAddBtn { grid-column: 1; }
+}
+
+/* ==================== 设置 · 连接：当前会话 ID 行（20261021） ==================== */
+.sessionIdRow { min-width: 0; gap: .5rem; }
+.sessionIdRow > .sessionIdText { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sessionIdRow > .sapMBtn { flex: none; }

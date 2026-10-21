@@ -1460,10 +1460,27 @@ sap.ui.define([
                 getUsersData: function () {
                         if (this._sConfig.mode === "mock") {
                                 var a = this._mockUsers().map(function (u) { return jQuery.extend({}, u, { PwdHash: "" }); });
+                                // 20261021：演示模式的内置管理员写死在登录逻辑里、不在 mock 用户表，
+                                // 列表补一行只读的（BuiltIn），否则开通前一直显示"暂无用户"
+                                var bHasAdmin = a.some(function (u) { return String(u.UserId || "").toUpperCase() === "ADMIN"; });
+                                if (!bHasAdmin) {
+                                        a.unshift({ UserId: "ADMIN", UserName: "管理员", Role: "ADMIN", Active: "X", BuiltIn: true });
+                                }
                                 return Promise.resolve(a);
                         }
                         return this._v8Call("UsersList", null, false).then(function (sJson) {
-                                try { return JSON.parse(sJson || "[]"); } catch (e) { return []; }
+                                var a;
+                                try { a = JSON.parse(sJson || "[]"); } catch (e) { a = []; }
+                                // 20261021：后端 /ui2/cl_json 默认保留 ABAP 字段名 [{USERID,USERNAME,ROLE,ACTIVE}]，
+                                // 原来直接按 UserId 读，SAP 上账号/姓名全空、人人显示 USER + 停用。统一成驼峰。
+                                return (Array.isArray(a) ? a : []).map(function (u) {
+                                        return {
+                                                UserId: u.UserId || u.USERID || "",
+                                                UserName: u.UserName || u.USERNAME || "",
+                                                Role: u.Role || u.ROLE || "USER",
+                                                Active: u.Active !== undefined ? u.Active : (u.ACTIVE || "")
+                                        };
+                                });
                         });
                 },
 

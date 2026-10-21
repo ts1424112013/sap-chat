@@ -18,7 +18,8 @@
                         </Toolbar>
                 </customHeader>
                 <content>
-                        <IconTabBar id="settingsTabs" headerBackgroundDesign="Transparent" upperCase="false">
+                        <!-- 20261021：expandable=false —— 默认再点一次当前页签会把内容区整个收起，看着像页面坏了 -->
+                        <IconTabBar id="settingsTabs" headerBackgroundDesign="Transparent" upperCase="false" expandable="false">
                                 <items>
                                         <!-- ========== 页签1：连接配置 ========== -->
                                         <IconTabFilter icon="sap-icon://world" text="{i18n>tabConnection}" key="connection">
@@ -56,11 +57,14 @@
                                                                         placeholder="/sap/opu/odata/sap/ZAI_CHAT_SRV/"
                                                                         editable="{settings>/isAdmin}"/>
                                                                 <Label text="{i18n>sessionId}"/>
-                                                                <HBox alignItems="Center" width="100%">
-                                                                        <Text text="{settings>/sessionId}" class="sessionText" wrapping="false"/>
-                                                                        <ToolbarSpacer/>
+                                                                <!-- 20261021：会话 ID 放不下时省略号截断（悬停看全），不再撑出单元格压住「重置会话」 -->
+                                                                <HBox alignItems="Center" justifyContent="SpaceBetween" width="100%" renderType="Bare" class="sessionIdRow">
+                                                                        <Text text="{settings>/sessionId}" tooltip="{settings>/sessionId}" class="sessionText sessionIdText" wrapping="false"/>
                                                                         <Button icon="sap-icon://refresh" text="{i18n>resetSession}" press=".onNewSession" type="Transparent"/>
                                                                 </HBox>
+                                                                <!-- 20261021：提示前补一个空 Label，让它单独占一行。
+                                                                     原来没有 Label，SimpleForm 把它和会话 ID 挤在同一行（4 + 3 栏），盖住了「重置会话」 -->
+                                                                <Label text=""/>
                                                                 <VBox>
                                                                         <Text text="{i18n>connectionHint}" class="hintText" wrapping="true"/>
                                                                         <!-- V8：普通用户提示（连接设置仅管理员可改） -->
@@ -189,9 +193,10 @@
                                                 visible="{settings>/isAdmin}">
                                                 <VBox class="sapUiSmallMargin">
                                                         <Text text="{i18n>usersHint}" class="hintText" wrapping="true"/>
+                                                        <!-- 20261021：加载失败时空表显示失败原因，不再一律"暂无用户" -->
                                                         <Table id="userTable"
                                                                 items="{settings>/userList}"
-                                                                noDataText="暂无用户"
+                                                                noDataText="{= ${settings>/userListError} || ${i18n>noUsers} }"
                                                                 growing="true">
                                                                 <columns>
                                                                         <Column width="9rem"><Text text="{i18n>colUserId}"/></Column>
@@ -207,7 +212,9 @@
                                                                                         <Text text="{settings>UserName}"/>
                                                                                         <Text text="{settings>Role}"/>
                                                                                         <ObjectStatus state="{settings>ActiveState}" text="{settings>IsActive}"/>
-                                                                                        <Button icon="sap-icon://decline" type="Transparent" press=".onDeleteUser" tooltip="{i18n>delSess}">
+                                                                                        <!-- 20261021：内置管理员、自己、已停用的行不给停用按钮 -->
+                                                                                        <Button icon="sap-icon://decline" type="Transparent" press=".onDeleteUser" tooltip="{i18n>userDisableTip}"
+                                                                                                visible="{settings>CanDisable}">
                                                                                                 <customData>
                                                                                                         <core:CustomData key="userId" value="{settings>UserId}"/>
                                                                                                 </customData>
@@ -216,20 +223,23 @@
                                                                         </ColumnListItem>
                                                                 </items>
                                                         </Table>
-                                                        <!-- 开通用户：SAP 用户名 + 姓名 + 初始密码 + 角色 -->
+                                                        <!-- 开通用户：SAP 用户名 + 姓名 + 初始密码 + 角色
+                                                             20261021：原来一行四个定宽框（9/8/11/7rem），提示文字和下拉都被截断；改两列网格随宽度伸缩。
+                                                             初始密码只在演示模式有用（SAP 上用户用自己的 SAP 密码登录，SaveUser 不收密码），后端模式隐藏。 -->
                                                         <Label text="{i18n>addUserTitle}" class="sapUiSmallMarginTop"/>
-                                                        <HBox alignItems="Center" wrap="Wrap" class="sapUiTinyMarginTop">
-                                                                <Input value="{settings>/newUserId}" placeholder="{i18n>addUserPh}" width="9rem" class="sapUiTinyMarginEnd" maxLength="40"/>
-                                                                <Input value="{settings>/newUserName}" placeholder="{i18n>addUserNamePh}" width="8rem" class="sapUiTinyMarginEnd" maxLength="40"/>
-                                                                <Input value="{settings>/newUserPwd}" placeholder="{i18n>addUserPwdPh}" width="11rem" class="sapUiTinyMarginEnd" type="Password" maxLength="40"/>
-                                                                <Select width="7rem" selectedKey="{settings>/newUserRole}" class="sapUiTinyMarginEnd">
+                                                        <VBox renderType="Bare" class="userAddGrid sapUiTinyMarginTop">
+                                                                <Input value="{settings>/newUserId}" placeholder="{i18n>addUserPh}" width="100%" maxLength="40"/>
+                                                                <Input value="{settings>/newUserName}" placeholder="{i18n>addUserNamePh}" width="100%" maxLength="40"/>
+                                                                <Input value="{settings>/newUserPwd}" placeholder="{i18n>addUserPwdPh}" width="100%" type="Password" maxLength="40"
+                                                                        visible="{= ${settings>/mode} === 'mock' }"/>
+                                                                <Select width="100%" selectedKey="{settings>/newUserRole}">
                                                                         <items>
-                                                                                <core:Item key="USER" text="USER · 使用者"/>
-                                                                                <core:Item key="ADMIN" text="ADMIN · 管理员"/>
+                                                                                <core:Item key="USER" text="{i18n>userRoleUserLabel}"/>
+                                                                                <core:Item key="ADMIN" text="{i18n>userRoleAdminLabel}"/>
                                                                         </items>
                                                                 </Select>
-                                                                <Button text="{i18n>userAdd}" icon="sap-icon://add" type="Emphasized" press=".onAddUser"/>
-                                                        </HBox>
+                                                                <Button text="{i18n>userAdd}" icon="sap-icon://add" type="Emphasized" press=".onAddUser" class="userAddBtn"/>
+                                                        </VBox>
                                                 </VBox>
                                         </IconTabFilter>
                                 </items>

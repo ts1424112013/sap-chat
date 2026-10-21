@@ -68,19 +68,28 @@ sap.ui.define([
                 _refreshUserTable: function () {
                         var oSettings = this.getView().getModel("settings");
                         var oRB = this._rb();
+                        var sMe = String((ChatService.getAppUser() || {}).userId || "").toUpperCase();
+                        oSettings.setProperty("/userListError", "");
                         ChatService.getUsersData().then(function (aUsers) {
                                 oSettings.setProperty("/userList", aUsers.map(function (u) {
+                                        var bActive = u.Active === "X";
                                         return {
                                                 UserId: u.UserId,
-                                                UserName: u.UserName || "",
+                                                UserName: u.BuiltIn ? (u.UserName || "") + " · " + oRB.getText("userBuiltInTag") : (u.UserName || ""),
                                                 Role: oRB.getText(u.Role === "ADMIN" ? "userRoleAdminLabel" : "userRoleUserLabel"),
                                                 RoleRaw: u.Role,
-                                                ActiveState: u.Active === "X" ? "Success" : "Error",
-                                                IsActive: oRB.getText(u.Active === "X" ? "userActive" : "userInactive")
+                                                ActiveState: bActive ? "Success" : "Error",
+                                                IsActive: oRB.getText(bActive ? "userActive" : "userInactive"),
+                                                // 20261021：内置管理员（演示模式写死）、自己（停用会把自己锁在门外）、已停用的不给停用按钮
+                                                CanDisable: bActive && !u.BuiltIn && String(u.UserId || "").toUpperCase() !== sMe
                                         };
                                 }));
-                        }).catch(function () {
+                        }).catch(function (oErr) {
+                                // 20261021：原来失败也静默显示"暂无用户"，看不出是没数据还是没读到
+                                var sMsg = oRB.getText("usersLoadFail", [(oErr && oErr.message) || oRB.getText("errService")]);
                                 oSettings.setProperty("/userList", []);
+                                oSettings.setProperty("/userListError", sMsg);
+                                MessageToast.show(Formatter.escapeHtml(sMsg));
                         });
                 },
 
