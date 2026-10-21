@@ -886,3 +886,107 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .sessionIdRow { min-width: 0; gap: .5rem; }
 .sessionIdRow > .sessionIdText { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sessionIdRow > .sapMBtn { flex: none; }
+
+/* ==================== 设置对话框 · 暗色（20261021） ====================
+   暗色只靠 html[data-theme=dark] + token，UI5 仍是亮色 Horizon 主题；原来设置对话框只吃到通用补层：
+   内容区白底、标题看不清、输入框被通用规则去掉边框后整个隐形。这里只在暗色下、只对 .settingsDlg 生效，亮色不变。
+   层次照亮色：头部 / 页签 / 底栏 = 面板色，内容区 = 画布色，表单卡片 / 表格 = 面板色，输入框 = 画布色 + 边框。 */
+[data-theme="dark"] .settingsDlg {
+        /* Horizon 里走变量的那部分规则：就地改映射 */
+        --sapBackgroundColor: var(--bg);
+        --sapGroup_ContentBackground: var(--surface-solid);
+        --sapGroup_TitleTextColor: var(--text);
+        --sapTextColor: var(--text);
+        --sapPageHeader_TextColor: var(--text);
+        --sapList_BorderColor: var(--line);
+        --sapList_TableFooterBorder: var(--line-strong);
+        --sapObjectHeader_Background: var(--surface-solid);
+        --sapObjectHeader_BorderColor: var(--line);
+        --sapPageFooter_BorderColor: var(--line);
+        --sapContent_HeaderShadow: none;
+        --sapButton_Background: var(--surface);
+        --sapButton_BorderColor: var(--line-strong);
+        --sapButton_TextColor: var(--accent);
+        --sapButton_IconColor: var(--accent);
+        --sapButton_Lite_TextColor: var(--accent);
+        --sapContent_Selected_ForegroundColor: var(--accent);
+}
+/* 写死颜色的那部分规则：逐个改到 token */
+[data-theme="dark"] .settingsDlg .sapMDialogFooter .sapMIBar,
+[data-theme="dark"] .settingsDlg .sapMDialogFooter .sapMTB { background: var(--surface-solid) !important; }
+[data-theme="dark"] .settingsDlg .sapMITBContent { background: var(--bg) !important; }
+[data-theme="dark"] .settingsDlg .sapUiFormResGrid.sapUiFormBackgrTranslucent,
+[data-theme="dark"] .settingsDlg .sapUiFormResGrid.sapUiFormBackgrSolid { background: var(--surface) !important; }
+[data-theme="dark"] .settingsDlg .dlgHeadTitle,
+[data-theme="dark"] .settingsDlg .sapMText,
+[data-theme="dark"] .settingsDlg .sapMITBText { color: var(--text) !important; }
+[data-theme="dark"] .settingsDlg .hintText,
+[data-theme="dark"] .settingsDlg .codeAclHint,
+[data-theme="dark"] .settingsDlg .sapMInputDescriptionText { color: var(--sub) !important; }
+
+/* 输入框 / 下拉 / 多选：通用暗色规则把边框去掉了，表单里要还回来 */
+[data-theme="dark"] .settingsDlg .sapMInputBaseContentWrapper,
+[data-theme="dark"] .settingsDlg .sapMSlt {
+        background: var(--bg) !important;
+        border: 1px solid var(--line-strong) !important;
+        box-shadow: none !important;
+}
+[data-theme="dark"] .settingsDlg .sapMInputBaseContentWrapper:hover,
+[data-theme="dark"] .settingsDlg .sapMSlt:hover { border-color: var(--sub) !important; }
+[data-theme="dark"] .settingsDlg .sapMFocus .sapMInputBaseContentWrapper,
+[data-theme="dark"] .settingsDlg .sapMInputBaseContentWrapper:focus-within,
+[data-theme="dark"] .settingsDlg .sapMSlt.sapMSltFocused,
+[data-theme="dark"] .settingsDlg .sapMSlt:focus-within { border-color: var(--accent) !important; box-shadow: var(--ring) !important; }
+[data-theme="dark"] .settingsDlg .sapMInputBaseInner,
+[data-theme="dark"] .settingsDlg .sapMSltLabel { background: transparent !important; color: var(--text) !important; }
+[data-theme="dark"] .settingsDlg .sapMInputBaseInner::placeholder { color: var(--sub) !important; }
+[data-theme="dark"] .settingsDlg .sapMSltArrow,
+[data-theme="dark"] .settingsDlg .sapMInputBaseIcon { background: transparent !important; color: var(--text-2) !important; }
+[data-theme="dark"] .settingsDlg .sapMInputBaseReadonlyWrapper,
+[data-theme="dark"] .settingsDlg .sapMSltDisabled,
+[data-theme="dark"] .settingsDlg .sapMSltReadonly { background: transparent !important; border-color: var(--line) !important; }
+
+/* 表格（模型 / 用户）：行、列头、空表 */
+[data-theme="dark"] .settingsDlg .sapMList,
+[data-theme="dark"] .settingsDlg .sapMListTbl,
+[data-theme="dark"] .settingsDlg .sapMLIB,
+[data-theme="dark"] .settingsDlg .sapMListNoData { background: var(--surface) !important; color: var(--text) !important; }
+[data-theme="dark"] .settingsDlg .sapMListTblHeader,
+[data-theme="dark"] .settingsDlg .sapMListTblHeaderCell { background: var(--hover) !important; color: var(--text-2) !important; border-color: var(--line) !important; }
+[data-theme="dark"] .settingsDlg .sapMLIB:hover { background: var(--hover) !important; }
+[data-theme="dark"] .settingsDlg .sapMListTblCell,
+[data-theme="dark"] .settingsDlg .sapMLIBShowSeparator > td { border-color: var(--line) !important; }
+[data-theme="dark"] .settingsDlg .sapMObjStatusSuccess .sapMObjStatusText { color: #4ADE80 !important; }
+[data-theme="dark"] .settingsDlg .sapMObjStatusError .sapMObjStatusText { color: #F87171 !important; }
+[data-theme="dark"] .settingsDlg .sapMObjStatusNone .sapMObjStatusText { color: var(--text-2) !important; }
+/* 分隔线 / 状态字：Horizon 写死浅灰线与白色字影，暗底上发亮 */
+[data-theme="dark"] .settingsDlg .sapMFooter-CTX { border-top-color: var(--line) !important; }
+[data-theme="dark"] .settingsDlg .sapMTBStandard { border-bottom-color: var(--line) !important; }
+[data-theme="dark"] .settingsDlg .sapMObjStatusText { text-shadow: none !important; }
+/* 模型表「测试」胶囊：style-patches 写死浅蓝边框和浅色悬停底 */
+[data-theme="dark"] .settingsDlg .testBtn .sapMBtnInner { border-color: rgba(107, 155, 255, .35) !important; }
+[data-theme="dark"] .settingsDlg .testBtn:hover .sapMBtnInner { background: rgba(107, 155, 255, .24) !important; }
+/* 多选框里已选的模型胶囊（Token）：Horizon 白底深字 */
+[data-theme="dark"] .settingsDlg .sapMToken { background: var(--hover) !important; border-color: var(--line-strong) !important; color: var(--text) !important; }
+[data-theme="dark"] .settingsDlg .sapMToken:hover { border-color: var(--sub) !important; }
+[data-theme="dark"] .settingsDlg .sapMTokenText,
+[data-theme="dark"] .settingsDlg .sapMTokenIcon { color: var(--text) !important; }
+/* 下拉框（sap.m.Select）的选项弹层挂在页面根部、不在对话框里，按对话框限定不到；
+   与 ComboBox 弹层（style-patches .sapMComboBoxBasePicker）一样全局处理，只在暗色下生效 */
+[data-theme="dark"] .sapMSltPicker,
+[data-theme="dark"] .sapMSltPicker .sapMPopoverCont,
+[data-theme="dark"] .sapMSltPicker .sapMSelectList { background: var(--surface-solid) !important; }
+[data-theme="dark"] .sapMSltPicker { border: 1px solid var(--line-strong) !important; box-shadow: 0 10px 32px rgba(0, 0, 0, .45) !important; }
+[data-theme="dark"] .sapMSltPicker .sapMSelectListItemBase { background: transparent !important; color: var(--text) !important; }
+[data-theme="dark"] .sapMSltPicker .sapMSelectListItemBaseHoverable:hover { background: var(--hover) !important; }
+[data-theme="dark"] .sapMSltPicker .sapMSelectListItemBaseSelected { background: var(--accent-soft) !important; color: var(--accent) !important; }
+/* ComboBox / MultiComboBox 弹层：style-patches 已给面板上了 token 底色，但 Horizon 的内容区 .sapMPopoverCont
+   还是白底，暗色下整块发白；多选的勾选框同样是白方块 */
+[data-theme="dark"] .sapMComboBoxBasePicker .sapMPopoverCont { background: transparent !important; }
+[data-theme="dark"] .sapMComboBoxBasePicker .sapMLIBContent,
+[data-theme="dark"] .sapMComboBoxBasePicker .sapMLIBContent .sapMLabel,
+[data-theme="dark"] .sapMComboBoxBasePicker .sapMLIBContent .sapMText,
+[data-theme="dark"] .sapMComboBoxBasePicker .sapMSLITitleOnly { color: var(--text) !important; }
+[data-theme="dark"] .sapMComboBoxBasePicker .sapMCbBg { background: var(--bg) !important; border-color: var(--line-strong) !important; }
+[data-theme="dark"] .sapMComboBoxBasePicker .sapMCbBg.sapMCbMarkChecked { border-color: var(--accent) !important; }
+[data-theme="dark"] .sapMComboBoxBasePicker .sapMCbMarkChecked::before { color: var(--accent) !important; }

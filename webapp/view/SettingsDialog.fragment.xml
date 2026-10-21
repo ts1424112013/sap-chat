@@ -4,7 +4,9 @@
         xmlns:core="sap.ui.core">
 
         <!-- ======================= 设置对话框：连接配置 + 模型管理 ======================= -->
+        <!-- 20261021：settingsDlg 供暗色补层限定范围（style-gale.css「设置对话框 · 暗色」） -->
         <Dialog id="settingsDialog"
+                class="settingsDlg"
                 contentWidth="40rem"
                 resizable="true"
                 draggable="true">
