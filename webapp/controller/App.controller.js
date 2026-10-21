@@ -1367,6 +1367,23 @@ sap.ui.define([
                 },
 
                 /**
+                 * 离开当前会话（打开另一个会话 / 新建 / 切工作区）：进行中的回复不再属于新会话 ——
+                 * 作废发送令牌、停等待动画并解除忙碌。只清令牌不解忙的话，迟到的响应因 fnIsCurrent() 为假被直接丢弃，
+                 * /busy 永远停在 true：新会话的发送键一直是「停止」，回车也发不出去。
+                 * 后端请求照常跑完入库，重新打开原会话可见。
+                 */
+                _releaseBusy: function () {
+                        this._sStreamToken = "";
+                        this._stopThinkingTicker();
+                        var oChatModel = this.getView().getModel("chat");
+                        if (oChatModel.getProperty("/busy")) {
+                                oChatModel.setProperty("/busy", false);
+                                this._setSendBtnBusy(false);
+                                this._syncActivity();
+                        }
+                },
+
+                /**
                  * V4.2/V5：发送按钮 忙碌/就绪 切换
                  * 忙碌：图标变方块（停止样式）+ 柔化蓝底（.sendBtnStop），按钮【保持可点】——
                  *       点击即停止生成（见 onSend 的忙碌分支），不再禁用；
@@ -1447,7 +1464,7 @@ sap.ui.define([
                   */
                 _switchWorkspace: function (sMode) {
                         var oChat = this.getView().getModel("chat");
-                        this._sStreamToken = "";   // 中断另一模式的流式输出
+                        this._releaseBusy();   // 中断另一模式的流式输出
                         oChat.setProperty("/workspaceMode", sMode);
 
                         var sId = this._mModeSession[sMode];
@@ -1631,7 +1648,7 @@ sap.ui.define([
                   */
                 _loadHistoryFor: function (sSid, bAgentTask) {
                         var that = this;
-                        this._sStreamToken = "";
+                        this._releaseBusy();
                         ChatService.getHistory(sSid).then(function (aRows) {
                                 // 过期响应守卫：会话已被再次切换时丢弃本次结果
                                 var oCtxNow = that.getView().getModel("chat").getProperty("/currentSession") || {};
@@ -3209,7 +3226,7 @@ sap.ui.define([
                 /** 切到当前工作模式下的一个空会话（新建 / 删除当前会话后复位） */
                 _startNewSession: function () {
                         // 中断进行中的流式输出
-                        this._sStreamToken = "";
+                        this._releaseBusy();
                         var oSession = this.getView().getModel("session");
                         var oChat = this.getView().getModel("chat");
 
