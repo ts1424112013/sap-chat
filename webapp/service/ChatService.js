@@ -682,7 +682,28 @@ sap.ui.define([
                         if (this._sConfig.mode === "mock") {
                                 return this._mockAuthCall(sAction, oParams || {});
                         }
-                        return this._taskCall(sAction, oParams || {}, bPost).then(function (oRes) {
+                        // 20261021：后端 SEGW 的 FI 参数未设 Nullable（全部必填），URL 里只要缺一个参数，
+                        // 网关就 404 "Invalid Function Import Parameter '<参数名>'"（$metadata 看不出必填性）。
+                        // 对策：权限系 FI 恒定全参数发送——调用方没给的键补空串（后端空串语义 = 不过滤/默认值，
+                        // AUTH_SERVICE.list_requests 实测兼容）。参数清单必须与模型声明严格一致；
+                        // 清单之外的调用方键一律丢弃，顺带防拼错键名。
+                        var mAuthParams = {
+                                AuthSubmit:        ["Tcode", "WerksList", "Reason"],
+                                AuthBatchAdd:      ["Users", "Tcode", "WerksList", "Reason"],
+                                AuthDecide:        ["ReqId", "Approve", "Message"],
+                                AuthRevoke:        ["ReqId", "Message"],
+                                AuthTableSave:     ["Tabname", "Descr", "Discover", "Active", "FmapJson"],
+                                AuthRuleSave:      ["TcodePat", "Tabname", "RuleMode", "AllowAll", "Active", "Delete"],
+                                AuthList:          ["Status", "User", "Tcode", "Top", "Skip"],
+                                AuthTableDescribe: ["Tabname"]
+                        };
+                        var aKeys = mAuthParams[sAction] || [];
+                        var oFull = {};
+                        for (var i = 0; i < aKeys.length; i++) {
+                                var v = oParams ? oParams[aKeys[i]] : undefined;
+                                oFull[aKeys[i]] = (v === undefined || v === null) ? "" : v;
+                        }
+                        return this._taskCall(sAction, oFull, bPost).then(function (oRes) {
                                 if (!oRes.success) {
                                         throw new Error(oRes.message || "权限服务调用失败");
                                 }
