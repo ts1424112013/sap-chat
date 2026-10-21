@@ -565,8 +565,8 @@ const covers = {
     englishLabel: "BACKEND IMPLEMENTATION",
     metaLines: [
       "文档编号: 03",
-      "更新时间: 2026-10-21",
-      "当前版本: 后端 10-19 合并部署批（权限自助申请 · Fiori 报表 · 长文本通道修 414）",
+      "更新时间: 2026-10-22",
+      "当前版本: 后端 10-19 合并部署批 + 〇-C 报表执行 ALV 通用采集（待现场验证）",
       "适用环境: S/4HANA 760 · SAP 网关 client 470（SAP_BASIS 以现场实测为准）",
     ],
     footerLeft: "SAP AI CHAT", footerRight: "docs/03",
@@ -577,8 +577,8 @@ const covers = {
     englishLabel: "FRONTEND IMPLEMENTATION",
     metaLines: [
       "文档编号: 04",
-      "更新时间: 2026-10-21",
-      "当前版本: 前端 10-19 合并部署批（报表目录 · 权限自助 · Fiori 报表 · 模型选择 · 长文本通道）",
+      "更新时间: 2026-10-22",
+      "当前版本: 前端 10-19 合并部署批 + 〇-C 10-22 前端修复包（权限对话框 · 设置 · 发送键）",
       "适用环境: S/4HANA 760 · SAP 网关 client 470（SAP_BASIS 以现场实测为准）",
     ],
     footerLeft: "SAP AI CHAT", footerRight: "docs/04",
