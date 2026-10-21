@@ -829,6 +829,10 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .admFldEmpty { padding: .2rem 0 .9rem; }
 .admFootHint { min-width: 0; margin-right: .75rem; }
 .admPager { gap: .4rem; }
+/* 自绘小按钮的文字居中：UI5 把 .sapMBtnContent 的行高固定为 34px，比 28~32px 高的按钮还高，字会整体偏下；
+   让内容区按自身高度、在按钮里垂直居中（图标 + 文字的按钮也一并对齐） */
+.admPill .sapMBtnInner, .admLink .sapMBtnInner, .admOutlineBtn .sapMBtnInner, .apvBtn .sapMBtnInner, .apvHeadBtn .sapMBtnInner, .apvTabBtn .sapMBtnInner { align-items: center; }
+.admPill .sapMBtnContent, .admLink .sapMBtnContent, .admOutlineBtn .sapMBtnContent, .apvBtn .sapMBtnContent, .apvHeadBtn .sapMBtnContent, .apvTabBtn .sapMBtnContent { line-height: normal; }
 .apvStatus[data-status="OFF"] { background: var(--hover); color: var(--sub) !important; }
 .apvStatus[data-status="PENDING"] { background: rgba(245, 165, 36, .14); color: #A16207 !important; }
 [data-theme="dark"] .apvStatus[data-status="PENDING"] { color: #FACC15 !important; }
