@@ -51,6 +51,7 @@ sap.ui.define([
                                 busy: false,
                                 notice: "",
                                 enabled: true,
+                                tab: "apply",
                                 form: { tcode: "", werks: "", reason: "" },
                                 result: { lines: [], summary: "" },
                                 mine: { rows: [], total: 0, skip: 0 },
@@ -97,6 +98,9 @@ sap.ui.define([
                                 x.statusState = STATUS_STATE[r.status] || "None";
                                 x.channelText = oRB.getText(r.channel === "ADMIN" ? "authChannelAdmin" : "authChannelSelf");
                                 x.createdAtText = fmtTime(r.createdAt);
+                                x.werksText = !r.werks ? oRB.getText("apvWerksNone")
+                                        : r.werks === "ALL" ? oRB.getText("apvWerksAll") : oRB.getText("apvWerks", [r.werks]);
+                                x.mineSub = [r.message || "", fmtTime(r.createdAt)].filter(Boolean).join("  ·  ");
                                 x.canDecide = r.status === "PENDING";
                                 x.canRevoke = r.revocable === "X";
                                 return x;
@@ -115,6 +119,7 @@ sap.ui.define([
 
                 onOpenAuth: function () {
                         var that = this, oModel = this._authModel();
+                        oModel.setProperty("/tab", "apply");
                         oModel.setProperty("/notice", "");
                         oModel.setProperty("/result", { lines: [], summary: "" });
                         oModel.setProperty("/mine", { rows: [], total: 0, skip: 0 });
@@ -125,6 +130,11 @@ sap.ui.define([
                         this._oAuthDialog.open();
                         // 功能没开时这里就会拿到"尚未启用"，显示在提示条里
                         this._authRun(function () { return that._authLoadMine(true); });
+                },
+
+                /** 申请 / 我的申请 页签（按钮的自定义数据 tab） */
+                onAuthTab: function (oEvent) {
+                        this._authModel().setProperty("/tab", oEvent.getSource().data("tab"));
                 },
 
                 onCloseAuth: function () {

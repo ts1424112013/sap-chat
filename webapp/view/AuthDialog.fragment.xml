@@ -1,81 +1,148 @@
-<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core" xmlns:f="sap.ui.layout.form">
+<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
 
-        <!-- ======================= 申请权限（用户入口）：申请 / 我的申请 ======================= -->
-        <Dialog id="authDialog" title="{i18n>authApply}" contentWidth="52rem" resizable="true" draggable="true" class="authDialog">
+        <!-- ======================= 申请权限（侧栏「申请权限」，所有登录用户；独立设计，与权限审批同一套外观） =======================
+             不用 UI5 标题栏 / 底栏 / IconTabBar / SimpleForm：头部（标题 + 一句说明 + 刷新 / 关闭 + 下划线页签）固定，只有下面的内容区滚动。
+             申请：竖排表单（标签在上），提交后本次结果显示在表单上方；我的申请：只读列表 + 空状态。
+             外壳样式复用 .apvDialog / .apv*（style-gale.css「权限审批对话框」），表单与列表行是 .apl*。 -->
+        <Dialog id="authDialog" showHeader="false" contentWidth="36rem" contentHeight="34rem"
+                verticalScrolling="false" horizontalScrolling="false" class="apvDialog aplDialog">
                 <content>
-                        <VBox class="authPanel" busy="{auth>/busy}">
-                                <MessageStrip text="{auth>/notice}" type="Error" showIcon="true" visible="{= !!${auth>/notice} }" class="sapUiTinyMarginBottom"/>
+                        <VBox renderType="Bare" class="apvRoot">
 
-                                <IconTabBar expandable="false" headerBackgroundDesign="Transparent" upperCase="false">
-                                        <items>
+                                <!-- ===== 头部 ===== -->
+                                <VBox class="apvHead">
+                                        <HBox alignItems="Start" class="apvHeadRow">
+                                                <VBox class="apvHeadText">
+                                                        <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                                        <Title level="H3" text="{i18n>authApply}" class="apvTitle"/>
+                                                        <Text text="{i18n>aplSub}" class="apvSub"/>
+                                                </VBox>
+                                                <Button icon="sap-icon://refresh" tooltip="{i18n>authRefresh}" type="Transparent" press=".onAuthRefreshMine" visible="{= ${auth>/tab} === 'mine' }" class="apvHeadBtn"/>
+                                                <Button icon="sap-icon://decline" tooltip="{i18n>close}" type="Transparent" press=".onCloseAuth" class="apvHeadBtn"/>
+                                        </HBox>
+                                        <HBox renderType="Bare" class="apvTabs">
+                                                <Button text="{i18n>authTabApply}" type="Transparent" press=".onAuthTab" class="apvTabBtn">
+                                                        <customData>
+                                                                <core:CustomData key="tab" value="apply"/>
+                                                                <core:CustomData key="on" value="{= ${auth>/tab} === 'apply' ? 'yes' : 'no' }" writeToDom="true"/>
+                                                        </customData>
+                                                </Button>
+                                                <Button text="{i18n>authTabMine}" type="Transparent" press=".onAuthTab" class="apvTabBtn">
+                                                        <customData>
+                                                                <core:CustomData key="tab" value="mine"/>
+                                                                <core:CustomData key="on" value="{= ${auth>/tab} === 'mine' ? 'yes' : 'no' }" writeToDom="true"/>
+                                                        </customData>
+                                                </Button>
+                                        </HBox>
+                                </VBox>
 
-                                                <!-- 申请 -->
-                                                <IconTabFilter text="{i18n>authTabApply}" key="apply">
-                                                        <f:SimpleForm editable="true" layout="ResponsiveGridLayout" labelSpanL="3" labelSpanM="3" emptySpanL="1" emptySpanM="1">
-                                                                <f:content>
-                                                                        <Label text="{i18n>authTcode}" required="true"/>
-                                                                        <Input value="{auth>/form/tcode}" placeholder="{i18n>authTcodePh}" maxLength="20"/>
-                                                                        <Label text="{i18n>authWerks}" required="true"/>
-                                                                        <Input value="{auth>/form/werks}" placeholder="{i18n>authWerksPh}"/>
-                                                                        <Label text="{i18n>authReason}" required="true"/>
-                                                                        <TextArea value="{auth>/form/reason}" placeholder="{i18n>authReasonPh}" maxLength="255" rows="2" width="100%"/>
-                                                                </f:content>
-                                                        </f:SimpleForm>
-                                                        <Button text="{i18n>authSubmit}" type="Emphasized" press=".onAuthSubmit"/>
-                                                        <core:Fragment fragmentName="zai.chat.view.AuthResult" type="XML"/>
-                                                </IconTabFilter>
+                                <!-- ===== 内容（只有这里滚动） ===== -->
+                                <VBox renderType="Bare" class="apvScroll" busy="{auth>/busy}" busyIndicatorDelay="200">
+                                        <MessageStrip text="{auth>/notice}" type="Error" showIcon="true" visible="{= !!${auth>/notice} }" class="apvStrip"/>
 
-                                                <!-- 我的申请 -->
-                                                <IconTabFilter text="{i18n>authTabMine}" key="mine">
-                                                        <Button text="{i18n>authRefresh}" icon="sap-icon://refresh" press=".onAuthRefreshMine"/>
-                                                        <Table items="{auth>/mine/rows}" noDataText="{i18n>authNoRequests}" fixedLayout="false" contextualWidth="Auto" class="sapUiTinyMarginTop">
-                                                                <columns>
-                                                                        <Column><Text text="{i18n>authColTcode}"/></Column>
-                                                                        <Column><Text text="{i18n>authColWerks}"/></Column>
-                                                                        <Column minScreenWidth="Tablet" demandPopin="true"><Text text="{i18n>authColTable}"/></Column>
-                                                                        <Column><Text text="{i18n>authColStatus}"/></Column>
-                                                                        <Column><Text text="{i18n>authColMessage}"/></Column>
-                                                                        <Column minScreenWidth="Tablet" demandPopin="true"><Text text="{i18n>authColTime}"/></Column>
-                                                                </columns>
-                                                                <items>
-                                                                        <ColumnListItem>
-                                                                                <cells>
-                                                                                        <Text text="{auth>tcode}" wrapping="false"/>
-                                                                                        <Text text="{auth>werks}" wrapping="false"/>
-                                                                                        <Text text="{auth>tabname}" wrapping="false"/>
-                                                                                        <ObjectStatus text="{auth>statusText}" state="{auth>statusState}" class="authNoWrap"/>
-                                                                                        <Text text="{auth>message}"/>
-                                                                                        <Text text="{auth>createdAtText}" wrapping="false"/>
-                                                                                </cells>
-                                                                        </ColumnListItem>
-                                                                </items>
-                                                        </Table>
-                                                        <HBox alignItems="Center" justifyContent="SpaceBetween" class="sapUiSmallMarginTop">
-                                                                <Text text="{= ${auth>/mine/rows}.length ? (${auth>/mine/skip} + 1) + ' - ' + (${auth>/mine/skip} + ${auth>/mine/rows}.length) + ' / ' + ${auth>/mine/total} : '0' }"/>
-                                                                <HBox>
-                                                                        <Button text="{i18n>authPrev}" press=".onAuthPage" enabled="{= ${auth>/mine/skip} > 0 }">
+                                        <!-- 申请 -->
+                                        <VBox renderType="Bare" class="apvPane" visible="{= ${auth>/tab} === 'apply' }">
+
+                                                <!-- 本次提交结果：逐条一行（AuthResult 的表格留给管理页的批量代加） -->
+                                                <VBox renderType="Bare" class="aplResult" visible="{= ${auth>/result/lines}.length > 0 }">
+                                                        <Text text="{auth>/result/summary}" class="aplResultHead"/>
+                                                        <VBox items="{path: 'auth>/result/lines', templateShareable: false}" class="apvDoneList">
+                                                                <HBox alignItems="Center" class="aplRow">
+                                                                        <VBox class="apvMain">
+                                                                                <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                                                                <HBox alignItems="Center" class="apvChips">
+                                                                                        <Text text="{auth>tcode}" class="apvChip apvChipTcode"/>
+                                                                                        <Text text="{auth>werksText}" class="apvChip"/>
+                                                                                </HBox>
+                                                                                <Text text="{auth>message}" class="aplMsg" visible="{= !!${auth>message} }"/>
+                                                                        </VBox>
+                                                                        <Text text="{auth>statusText}" class="apvStatus" wrapping="false">
                                                                                 <customData>
-                                                                                        <core:CustomData key="list" value="mine"/>
-                                                                                        <core:CustomData key="delta" value="-50"/>
+                                                                                        <core:CustomData key="status" value="{auth>status}" writeToDom="true"/>
                                                                                 </customData>
-                                                                        </Button>
-                                                                        <Button text="{i18n>authNext}" press=".onAuthPage" enabled="{= ${auth>/mine/skip} + 50 &lt; ${auth>/mine/total} }">
-                                                                                <customData>
-                                                                                        <core:CustomData key="list" value="mine"/>
-                                                                                        <core:CustomData key="delta" value="50"/>
-                                                                                </customData>
-                                                                        </Button>
+                                                                        </Text>
                                                                 </HBox>
-                                                        </HBox>
-                                                </IconTabFilter>
+                                                        </VBox>
+                                                </VBox>
 
-                                        </items>
-                                </IconTabBar>
+                                                <VBox renderType="Bare" class="aplField">
+                                                        <Text text="{i18n>authTcode}" class="aplLabel aplReq"/>
+                                                        <Input value="{auth>/form/tcode}" placeholder="{i18n>authTcodePh}" maxLength="20" class="aplInput aplMono" submit=".onAuthSubmit"/>
+                                                </VBox>
+                                                <VBox renderType="Bare" class="aplField">
+                                                        <Text text="{i18n>authWerks}" class="aplLabel aplReq"/>
+                                                        <Input value="{auth>/form/werks}" placeholder="{i18n>authWerksPh}" class="aplInput aplMono" submit=".onAuthSubmit"/>
+                                                        <Text text="{i18n>aplWerksHint}" class="aplHint"/>
+                                                </VBox>
+                                                <VBox renderType="Bare" class="aplField">
+                                                        <Text text="{i18n>authReason}" class="aplLabel aplReq"/>
+                                                        <TextArea value="{auth>/form/reason}" placeholder="{i18n>authReasonPh}" maxLength="255" rows="3" width="100%" class="aplInput"/>
+                                                </VBox>
+
+                                        </VBox>
+
+                                        <!-- 我的申请 -->
+                                        <VBox renderType="Bare" class="apvPane" visible="{= ${auth>/tab} === 'mine' }">
+                                                <VBox items="{path: 'auth>/mine/rows', templateShareable: false}" class="apvDoneList">
+                                                        <HBox alignItems="Center" class="aplRow">
+                                                                <VBox class="apvMain">
+                                                                        <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                                                        <HBox alignItems="Center" class="apvChips">
+                                                                                <Text text="{auth>tcode}" class="apvChip apvChipTcode"/>
+                                                                                <Text text="{auth>werksText}" class="apvChip"/>
+                                                                                <Text text="{auth>tabname}" class="apvTabname" visible="{= !!${auth>tabname} }"/>
+                                                                        </HBox>
+                                                                        <Text text="{auth>mineSub}" class="aplMsg" wrapping="false"/>
+                                                                </VBox>
+                                                                <Text text="{auth>statusText}" class="apvStatus" wrapping="false">
+                                                                        <customData>
+                                                                                <core:CustomData key="status" value="{auth>status}" writeToDom="true"/>
+                                                                        </customData>
+                                                                </Text>
+                                                        </HBox>
+                                                </VBox>
+
+                                                <!-- 页脚：条数 + 翻页（超过一页才有按钮） -->
+                                                <HBox alignItems="Center" justifyContent="Center" class="aplPager" visible="{= ${auth>/mine/rows}.length > 0 }">
+                                                        <Button icon="sap-icon://navigation-left-arrow" tooltip="{i18n>authPrev}" type="Transparent" press=".onAuthPage"
+                                                                visible="{= ${auth>/mine/total} > 50 }" enabled="{= ${auth>/mine/skip} > 0 }" class="apvHeadBtn">
+                                                                <customData>
+                                                                        <core:CustomData key="list" value="mine"/>
+                                                                        <core:CustomData key="delta" value="-50"/>
+                                                                </customData>
+                                                        </Button>
+                                                        <Text text="{= (${auth>/mine/skip} + 1) + ' - ' + (${auth>/mine/skip} + ${auth>/mine/rows}.length) + ' / ' + ${auth>/mine/total} }" class="aplPagerText"/>
+                                                        <Button icon="sap-icon://navigation-right-arrow" tooltip="{i18n>authNext}" type="Transparent" press=".onAuthPage"
+                                                                visible="{= ${auth>/mine/total} > 50 }" enabled="{= ${auth>/mine/skip} + 50 &lt; ${auth>/mine/total} }" class="apvHeadBtn">
+                                                                <customData>
+                                                                        <core:CustomData key="list" value="mine"/>
+                                                                        <core:CustomData key="delta" value="50"/>
+                                                                </customData>
+                                                        </Button>
+                                                </HBox>
+
+                                                <!-- 空状态（上下居中） -->
+                                                <VBox alignItems="Center" class="apvEmpty" visible="{= !${auth>/busy} &amp;&amp; ${auth>/mine/rows}.length === 0 }">
+                                                        <core:Icon src="sap-icon://list" class="apvEmptyIcon apvEmptyIconMuted"/>
+                                                        <Text text="{i18n>authNoRequests}" class="apvEmptyTitle"/>
+                                                        <Text text="{i18n>aplEmptySub}" class="apvEmptySub"/>
+                                                        <Button text="{i18n>aplGoApply}" icon="sap-icon://navigation-right-arrow" iconFirst="false" type="Transparent" press=".onAuthTab" class="apvEmptyLink">
+                                                                <customData><core:CustomData key="tab" value="apply"/></customData>
+                                                        </Button>
+                                                </VBox>
+                                        </VBox>
+                                </VBox>
+
+                                <!-- ===== 页脚（仅「申请」页）：申请人 + 提交；固定在底部，不随内容滚走 ===== -->
+                                <HBox alignItems="Center" justifyContent="SpaceBetween" class="aplFoot" visible="{= ${auth>/tab} === 'apply' }">
+                                        <HBox alignItems="Center" class="aplWho">
+                                                <Text text="{i18n>aplApplicant}" class="aplWhoLabel"/>
+                                                <Text text="{auth>/owner}" class="aplWhoId"/>
+                                        </HBox>
+                                        <Button text="{i18n>authSubmit}" type="Emphasized" press=".onAuthSubmit" class="apvBtn aplSubmit"/>
+                                </HBox>
                         </VBox>
                 </content>
-                <buttons>
-                        <Button text="{i18n>close}" press=".onCloseAuth"/>
-                </buttons>
         </Dialog>
 
 </core:FragmentDefinition>

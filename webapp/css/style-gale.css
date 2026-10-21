@@ -732,6 +732,35 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .apvStatus[data-status="EXISTS"] { background: var(--accent-soft); color: var(--accent) !important; }
 .apvStatus[data-status="REJECTED"], .apvStatus[data-status="FAILED"] { background: var(--apv-red-soft); color: var(--apv-red) !important; }
 
+/* ==================== 20261021：申请权限对话框（侧栏「申请权限」；外壳复用上面的 .apvDialog / .apv*）====================
+   竖排表单（标签在上、输入框与目录搜索框同一套：10px 圆角、浅底、聚焦蓝环）+ 列表行（事务码 chip / 工厂 / 状态胶囊） */
+.aplField { margin-bottom: 1rem; }
+.aplLabel { display: block !important; margin-bottom: .4rem; font-size: .8rem !important; font-weight: 600 !important; color: var(--text-2) !important; }
+.aplReq::after { content: " *"; color: var(--apv-red); }
+.aplHint { display: block !important; margin-top: .4rem; font-size: .74rem !important; line-height: 1.5 !important; color: var(--sub) !important; }
+.aplInput { width: 100% !important; }
+.aplInput .sapMInputBaseContentWrapper { min-height: 2.5rem; box-sizing: border-box; border-radius: 10px !important; border: 1px solid var(--line) !important; background: var(--bg) !important; box-shadow: none !important; transition: border-color .15s, box-shadow .15s, background .15s; }
+.aplInput .sapMInputBaseContentWrapper::before, .aplInput .sapMInputBaseContentWrapper::after { content: none !important; }
+.aplInput .sapMInputBaseContentWrapper:hover { border-color: var(--line-strong) !important; }
+.aplInput .sapMInputBaseContentWrapper:focus-within { background: var(--surface) !important; border-color: var(--accent) !important; box-shadow: var(--ring) !important; }
+.aplInput .sapMInputBaseInner { padding: 0 .8rem !important; font-size: .9rem !important; color: var(--text) !important; }
+.aplInput .sapMTextAreaInner { padding: .6rem .8rem !important; font-size: .9rem !important; line-height: 1.5 !important; color: var(--text) !important; }
+.aplInput .sapMInputBaseInner::placeholder, .aplInput .sapMTextAreaInner::placeholder { color: var(--sub) !important; font-style: normal !important; opacity: 1; }
+.aplMono .sapMInputBaseInner { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important; letter-spacing: .01em; }
+.aplMono .sapMInputBaseInner::placeholder { font-family: inherit !important; }
+.aplFoot { flex: none; padding: .75rem 1.4rem; gap: .75rem; border-top: 1px solid var(--line); }
+.aplWho { gap: .5rem; min-width: 0; }
+.aplWhoLabel { font-size: .74rem !important; color: var(--sub) !important; }
+.aplWhoId { font-size: .78rem !important; font-weight: 600 !important; padding: .14rem .55rem; border-radius: 6px; background: var(--hover); color: var(--text-2) !important; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important; }
+.aplSubmit .sapMBtnInner { height: 2.4rem !important; min-height: 2.4rem !important; padding: 0 1.5rem !important; }
+.aplResult { margin-bottom: 1.1rem; animation: fadeUp .3s var(--ease) both; }
+.aplResultHead { display: block !important; margin-bottom: .45rem; font-size: .8rem !important; font-weight: 600 !important; color: var(--text-2) !important; }
+.aplRow { padding: .7rem .9rem; gap: .75rem; }
+.aplRow .apvChips { margin-top: 0; }
+.aplMsg { display: block !important; margin-top: .3rem; font-size: .74rem !important; line-height: 1.5 !important; color: var(--sub) !important; }
+.aplPager { margin-top: .7rem; gap: .4rem; }
+.aplPagerText { font-size: .74rem !important; color: var(--sub) !important; font-variant-numeric: tabular-nums; }
+
 /* ==================== 20261020：输入框里的模型选择（会话级）==================== */
 .modelPill { margin-left: .2rem; min-width: 0; }
 .modelPill .sapMBtnInner { display: inline-flex !important; align-items: center; max-width: 15rem; height: 1.95rem !important; min-height: 1.95rem !important; padding: 0 .7rem 0 .6rem !important; border-radius: 999px !important; border: 1px solid var(--line) !important; background: transparent !important; box-shadow: none !important; }
