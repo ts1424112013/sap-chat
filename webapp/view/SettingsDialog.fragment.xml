@@ -146,22 +146,25 @@
                                                                                 <Button text="{i18n>addModel}" icon="sap-icon://add" press=".onAddModel" type="Emphasized"/>
                                                                         </Toolbar>
                                                                 </headerToolbar>
+                                                                <!-- 20261022：原来 7 列定宽合计 38rem，比对话框内容区还宽，「服务地址」被挤成一个字宽、地址竖着排。
+                                                                     改为 5 列：模型（名称 + ID · 类型两行）定宽、服务地址单行省略（悬停看全）占剩余宽度，
+                                                                     启用 / 测试 / 编辑收窄居中 -->
                                                                 <columns>
-                                                                        <Column width="7rem"><Text text="{i18n>colModelId}"/></Column>
-                                                                        <Column width="9rem"><Text text="{i18n>colModelName}"/></Column>
-                                                                        <Column width="5.5rem" minScreenWidth="Tablet" demandPopin="true"><Text text="{i18n>colModelType}"/></Column>
-                                                                        <Column minScreenWidth="Tablet" demandPopin="true"><Text text="{i18n>colEndpoint}"/></Column>
-                                                                        <Column width="4rem"><Text text="{i18n>colActive}"/></Column>
-                                                                        <Column width="4.5rem"><Text text="{i18n>colTest}"/></Column>
-                                                                        <Column width="4rem"><Text text="{i18n>colEdit}"/></Column>
+                                                                        <Column width="11rem"><Text text="{i18n>colModel}"/></Column>
+                                                                        <Column><Text text="{i18n>colEndpoint}"/></Column>
+                                                                        <Column width="4rem" hAlign="Center"><Text text="{i18n>colActive}"/></Column>
+                                                                        <Column width="4.5rem" hAlign="Center"><Text text="{i18n>colTest}"/></Column>
+                                                                        <Column width="3.5rem" hAlign="Center"><Text text="{i18n>colEdit}"/></Column>
                                                                 </columns>
                                                                 <items>
                                                                         <ColumnListItem>
                                                                                 <cells>
-                                                                                        <Text text="{settings>ModelId}"/>
-                                                                                        <Text text="{settings>ModelName}"/>
-                                                                                        <Text text="{settings>ModelType}"/>
-                                                                                        <Text text="{settings>EndpointUrl}" wrapping="true"/>
+                                                                                        <VBox>
+                                                                                                <Text text="{settings>ModelName}" tooltip="{settings>ModelName}" wrapping="false" class="modelCellName"/>
+                                                                                                <Text text="{= ${settings>ModelId} + (${settings>ModelType} ? ' · ' + ${settings>ModelType} : '') }"
+                                                                                                        wrapping="false" class="modelCellSub"/>
+                                                                                        </VBox>
+                                                                                        <Text text="{settings>EndpointUrl}" tooltip="{settings>EndpointUrl}" wrapping="false" class="modelCellUrl"/>
                                                                                         <ObjectStatus state="{settings>ActiveState}" text="{settings>IsActive}"/>
                                                                                         <Button text="{i18n>testConn}" type="Transparent" press=".onTestModel" tooltip="{i18n>testConnTip}" class="testBtn">
                                                                                                 <customData>

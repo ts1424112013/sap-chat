@@ -990,3 +990,10 @@ body, body.sapUiBody { background: var(--bg) !important; }
 [data-theme="dark"] .sapMComboBoxBasePicker .sapMCbBg { background: var(--bg) !important; border-color: var(--line-strong) !important; }
 [data-theme="dark"] .sapMComboBoxBasePicker .sapMCbBg.sapMCbMarkChecked { border-color: var(--accent) !important; }
 [data-theme="dark"] .sapMComboBoxBasePicker .sapMCbMarkChecked::before { color: var(--accent) !important; }
+
+/* ==================== 设置 · 模型管理表（20261022） ====================
+   模型列两行：名称 + 「ID · 类型」；服务地址单行省略。选择器带 .sapMText，压过上面暗色的 .sapMText 统一字色，
+   颜色走 token，亮暗通用 */
+.settingsDlg .sapMText.modelCellName { font-weight: 600; color: var(--text) !important; }
+.settingsDlg .sapMText.modelCellSub { display: block; margin-top: .15rem; font-size: .75rem; color: var(--sub) !important; }
+.settingsDlg .sapMText.modelCellUrl { color: var(--text-2) !important; }
