@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设置 · 技能管理</title>
+<style>
+body{margin:0;background:#5B6270}
+a{color:#2563EB}a:hover{color:#1D4ED8}
+button,input,textarea{font-family:inherit}
+textarea::placeholder,input::placeholder{color:#6B7280}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style>
+</head>
+<body>
+
+<div style="min-height:100vh;box-sizing:border-box;padding:36px 16px;background:#5B6270;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;display:flex;justify-content:center;align-items:flex-start">
+<div role="dialog" aria-label="设置" style="width:100%;max-width:1040px;background:#FFFFFF;border-radius:18px;box-shadow:0 24px 64px rgba(17,24,39,.3);overflow:hidden;display:flex;flex-direction:column">
+
+<div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px 0">
+<h2 style="margin:0;font-size:17px;font-weight:700">设置</h2>
+<button aria-label="关闭" style="width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:#4B5563;display:flex;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8 M12 4l-8 8"></path></svg></button>
+</div>
+<div role="tablist" style="display:flex;gap:22px;padding:10px 20px 0;border-bottom:1px solid #E6E8EC;overflow-x:auto">
+<button role="tab" aria-selected="false" style="border:0;background:transparent;padding:8px 0 10px;font-size:13px;color:#4B5563;white-space:nowrap">连接</button>
+<button role="tab" aria-selected="false" style="border:0;background:transparent;padding:8px 0 10px;font-size:13px;color:#4B5563;white-space:nowrap">模型管理</button>
+<button role="tab" aria-selected="false" style="border:0;background:transparent;padding:8px 0 10px;font-size:13px;color:#4B5563;white-space:nowrap">用户管理</button>
+<button role="tab" aria-selected="false" style="border:0;background:transparent;padding:8px 0 10px;font-size:13px;color:#4B5563;white-space:nowrap">测评</button>
+<button role="tab" aria-selected="true" style="border:0;border-bottom:2px solid #2563EB;background:transparent;padding:8px 0 8px;font-size:13px;font-weight:600;color:#2563EB;white-space:nowrap">技能</button>
+</div>
+
+<div style="display:flex;flex-wrap:wrap;min-height:600px">
+
+<div style="flex:1 1 300px;max-width:340px;box-sizing:border-box;border-right:1px solid #E6E8EC;background:#FAFBFC;padding:14px;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;gap:8px">
+<div style="position:relative;flex:1;min-width:0">
+<label class="sr" for="admSearch">搜索技能</label>
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#4B5563" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" style="position:absolute;left:10px;top:10px"><path d="M7 2.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9z M10.3 10.3L13.5 13.5"></path></svg>
+<input id="admSearch" placeholder="搜索技能" style="width:100%;height:34px;box-sizing:border-box;border:1px solid #E6E8EC;border-radius:9px;padding:0 10px 0 30px;font-size:12.5px;background:#FFFFFF;color:#111827">
+</div>
+<button style="height:34px;border:0;border-radius:9px;background:#2563EB;color:#FFFFFF;font-size:12.5px;font-weight:600;padding:0 12px;display:flex;align-items:center;gap:4px;white-space:nowrap"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10 M3 8h10"></path></svg>新建</button>
+</div>
+<div style="display:flex;gap:6px;flex-wrap:wrap">
+<button style="height:26px;border:1px solid #2563EB;border-radius:999px;background:#EEF3FE;color:#1D4ED8;font-size:12px;font-weight:600;padding:0 10px">全部 11</button>
+<button style="height:26px;border:1px solid #E6E8EC;border-radius:999px;background:#FFFFFF;color:#4B5563;font-size:12px;padding:0 10px">数据分析</button>
+<button style="height:26px;border:1px solid #E6E8EC;border-radius:999px;background:#FFFFFF;color:#4B5563;font-size:12px;padding:0 10px">代码分析</button>
+<button style="height:26px;border:1px solid #E6E8EC;border-radius:999px;background:#FFFFFF;color:#4B5563;font-size:12px;padding:0 10px">报表执行</button>
+<button style="height:26px;border:1px solid #E6E8EC;border-radius:999px;background:#FFFFFF;color:#4B5563;font-size:12px;padding:0 10px">Fiori 报表</button>
+</div>
+<div style="display:flex;flex-direction:column;gap:2px">
+
+<button style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;border:0;border-radius:9px;padding:9px 10px;background:#E6EDFB;width:100%"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font-size:13px;font-weight:600;color:#111827">性能审查</span><span style="font-size:11.5px;color:#4B5563">代码分析 · v3</span></span><span style="font-size:11px;color:#166534;background:#DCFCE7;border-radius:5px;padding:0 6px;line-height:18px">启用</span></button>
+<button style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;border:0;border-radius:9px;padding:9px 10px;background:transparent;width:100%"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font-size:13px;font-weight:600;color:#111827">代码解读</span><span style="font-size:11.5px;color:#4B5563">代码分析 · v2</span></span><span style="font-size:11px;color:#166534;background:#DCFCE7;border-radius:5px;padding:0 6px;line-height:18px">启用</span></button>
+<button style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;border:0;border-radius:9px;padding:9px 10px;background:transparent;width:100%"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font-size:13px;font-weight:600;color:#111827">增强出口定位</span><span style="font-size:11.5px;color:#4B5563">代码分析 · v1</span></span><span style="font-size:11px;color:#166534;background:#DCFCE7;border-radius:5px;padding:0 6px;line-height:18px">启用</span></button>
+<button style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;border:0;border-radius:9px;padding:9px 10px;background:transparent;width:100%"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font-size:13px;font-weight:600;color:#111827">升级影响评估</span><span style="font-size:11.5px;color:#4B5563">代码分析 · v1</span></span><span style="font-size:11px;color:#166534;background:#DCFCE7;border-radius:5px;padding:0 6px;line-height:18px">启用</span></button>
+<button style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;border:0;border-radius:9px;padding:9px 10px;background:transparent;width:100%"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font-size:13px;font-weight:600;color:#111827">采购未清分析</span><span style="font-size:11.5px;color:#4B5563">数据分析 · v2</span></span><span style="font-size:11px;color:#166534;background:#DCFCE7;border-radius:5px;padding:0 6px;line-height:18px">启用</span></button>
+<button style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;border:0;border-radius:9px;padding:9px 10px;background:transparent;width:100%"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font-size:13px;font-weight:600;color:#111827">主数据质检</span><span style="font-size:11.5px;color:#4B5563">数据分析 · v1</span></span><span style="font-size:11px;color:#166534;background:#DCFCE7;border-radius:5px;padding:0 6px;line-height:18px">启用</span></button>
+<button style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;border:0;border-radius:9px;padding:9px 10px;background:transparent;width:100%"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font-size:13px;font-weight:600;color:#111827">库存周转分析</span><span style="font-size:11.5px;color:#4B5563">数据分析 · v1</span></span><span style="font-size:11px;color:#4B5563;background:#F2F4F7;border-radius:5px;padding:0 6px;line-height:18px">草稿</span></button>
+<button style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;border:0;border-radius:9px;padding:9px 10px;background:transparent;width:100%"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font-size:13px;font-weight:600;color:#111827">多维统计报告</span><span style="font-size:11.5px;color:#4B5563">数据分析 · v1</span></span><span style="font-size:11px;color:#166534;background:#DCFCE7;border-radius:5px;padding:0 6px;line-height:18px">启用</span></button>
+<button style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;border:0;border-radius:9px;padding:9px 10px;background:transparent;width:100%"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font-size:13px;font-weight:600;color:#111827">需求结构分析</span><span style="font-size:11.5px;color:#4B5563">报表执行 · v1</span></span><span style="font-size:11px;color:#166534;background:#DCFCE7;border-radius:5px;padding:0 6px;line-height:18px">启用</span></button>
+<button style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;border:0;border-radius:9px;padding:9px 10px;background:transparent;width:100%"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font-size:13px;font-weight:600;color:#111827">两次结果对比</span><span style="font-size:11.5px;color:#4B5563">报表执行 · v1</span></span><span style="font-size:11px;color:#166534;background:#DCFCE7;border-radius:5px;padding:0 6px;line-height:18px">启用</span></button>
+<button style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;border:0;border-radius:9px;padding:9px 10px;background:transparent;width:100%"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font-size:13px;font-weight:600;color:#111827">出货异常分析</span><span style="font-size:11.5px;color:#4B5563">Fiori 报表 · v1</span></span><span style="font-size:11px;color:#166534;background:#DCFCE7;border-radius:5px;padding:0 6px;line-height:18px">启用</span></button>
+
+</div>
+</div>
+
+<div style="flex:999 1 480px;min-width:0;box-sizing:border-box;padding:18px 22px;display:flex;flex-direction:column;gap:16px">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+<div style="display:flex;align-items:center;gap:10px"><span style="font-size:16px;font-weight:700">性能审查</span><span style="font-size:11px;color:#4B5563;border:1px solid #E6E8EC;border-radius:5px;padding:0 5px;line-height:18px">v3</span><span style="font-size:12px;color:#6B7280">admin 改于 10-20 16:12</span></div>
+<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:#111827"><span>启用</span><span style="width:34px;height:20px;border-radius:999px;background:#2563EB;position:relative;display:inline-block"><span style="position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#FFFFFF"></span></span></label>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
+<div style="display:flex;flex-direction:column;gap:6px">
+<label for="admName" style="font-size:12.5px;font-weight:600">名称</label>
+<input id="admName" value="性能审查" style="height:34px;border:1px solid #D9DDE3;border-radius:9px;padding:0 10px;font-size:13px;color:#111827">
+</div>
+<div style="display:flex;flex-direction:column;gap:6px">
+<label for="admDesc" style="font-size:12.5px;font-weight:600">一句话说明 <span style="font-weight:400;color:#6B7280">（弹层里显示）</span></label>
+<input id="admDesc" value="按清单逐项查 LOOP 内 SELECT、FOR ALL ENTRIES 空表、SELECT * 等，按严重程度出表" style="height:34px;border:1px solid #D9DDE3;border-radius:9px;padding:0 10px;font-size:13px;color:#111827">
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
+<fieldset style="border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:8px">
+<legend style="font-size:12.5px;font-weight:600;padding:0;margin-bottom:8px">适用场景</legend>
+<div style="display:flex;gap:6px;flex-wrap:wrap">
+<span style="height:28px;display:inline-flex;align-items:center;gap:5px;border:1px solid #2563EB;border-radius:999px;background:#EEF3FE;color:#1D4ED8;font-size:12px;font-weight:600;padding:0 10px"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-6.5"></path></svg>代码分析</span>
+<span style="height:28px;display:inline-flex;align-items:center;border:1px solid #E6E8EC;border-radius:999px;background:#FFFFFF;color:#4B5563;font-size:12px;padding:0 10px">数据分析</span>
+<span style="height:28px;display:inline-flex;align-items:center;border:1px solid #E6E8EC;border-radius:999px;background:#FFFFFF;color:#4B5563;font-size:12px;padding:0 10px">报表执行</span>
+<span style="height:28px;display:inline-flex;align-items:center;border:1px solid #E6E8EC;border-radius:999px;background:#FFFFFF;color:#4B5563;font-size:12px;padding:0 10px">Fiori 报表</span>
+</div>
+<span style="font-size:11.5px;color:#6B7280">自动场景不可选</span>
+</fieldset>
+<fieldset style="border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:8px">
+<legend style="font-size:12.5px;font-weight:600;padding:0;margin-bottom:8px">可用工具</legend>
+<label style="display:flex;align-items:center;gap:8px;font-size:12.5px"><input type="checkbox" checked style="width:15px;height:15px;accent-color:#2563EB">读源码<span style="color:#6B7280;font-size:11.5px">read_program_source</span></label>
+<label style="display:flex;align-items:center;gap:8px;font-size:12.5px"><input type="checkbox" checked style="width:15px;height:15px;accent-color:#2563EB">表结构<span style="color:#6B7280;font-size:11.5px">describe_table</span></label>
+<span style="font-size:11.5px;color:#6B7280">只列出所选场景允许的工具</span>
+</fieldset>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:6px;flex:1">
+<div style="display:flex;justify-content:space-between;align-items:baseline"><label for="admBody" style="font-size:12.5px;font-weight:600">做法正文 <span style="font-weight:400;color:#6B7280">（发给模型的内容）</span></label><span style="font-size:11.5px;color:#6B7280">286 / 3000 字</span></div>
+<textarea id="admBody" rows="11" style="flex:1;min-height:200px;border:1px solid #D9DDE3;border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:20px;color:#111827;resize:vertical">【步骤】
+1. 先读源码，按子程序 / 方法记下所有数据库访问的位置
+2. 逐项检查：LOOP 内 SELECT、嵌套 LOOP、FOR ALL ENTRIES 前没判空、SELECT *、WHERE 没用上主键或索引、同一张表重复读取
+3. 要确认索引时，用表结构工具查主键和索引字段
+
+【输出】
+按严重程度（高 / 中 / 低）出表：位置、问题、建议
+没发现问题的检查项，最后用一句话带过
+
+【自查】
+每条问题都能对应到具体行号；没读到的代码不下结论</textarea>
+<span style="font-size:11.5px;color:#6B7280">输出格式、权限和工具校验由系统固定，这里写的内容改不了它们</span>
+</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid #EDEFF2;padding-top:14px">
+<span style="font-size:12px;color:#4B5563">保存后升为 v4；进行中的任务仍用 v3</span>
+<div style="display:flex;gap:8px">
+<button style="height:34px;border:1px solid #D9DDE3;border-radius:9px;background:#FFFFFF;color:#111827;font-size:13px;padding:0 14px">用测评用例试跑</button>
+<button style="height:34px;border:1px solid #D9DDE3;border-radius:9px;background:#FFFFFF;color:#111827;font-size:13px;padding:0 14px">取消</button>
+<button style="height:34px;border:0;border-radius:9px;background:#2563EB;color:#FFFFFF;font-size:13px;font-weight:600;padding:0 16px">保存</button>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+</div>
+<a href="index.html" style="position:fixed;right:86px;top:9px;z-index:99;font:500 12px/1 -apple-system,'PingFang SC',sans-serif;color:#FFFFFF;background:rgba(17,24,39,.78);padding:7px 11px;border-radius:999px;text-decoration:none">← 返回目录</a>
+</body>
+</html>

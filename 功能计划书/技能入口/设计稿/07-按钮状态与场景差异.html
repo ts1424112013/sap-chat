@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>按钮状态与场景差异</title>
+<style>
+body{margin:0}
+a{color:#2563EB}a:hover{color:#1D4ED8}
+button{font-family:inherit}
+</style>
+</head>
+<body style="background:#EEF0F3">
+
+<div style="width:1280px;height:900px;box-sizing:border-box;padding:40px 48px;background:#FFFFFF;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;display:flex;flex-direction:column;gap:30px">
+
+<div style="display:flex;flex-direction:column;gap:14px">
+<h2 style="margin:0;font-size:18px;font-weight:700">「技能」按钮的 5 种状态</h2>
+<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px">
+
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="height:96px;border:1px solid #E6E8EC;border-radius:12px;background:#F7F8FA;display:flex;align-items:center;justify-content:center">
+<button style="height:31px;display:flex;align-items:center;gap:6px;padding:0 9px 0 11px;border-radius:999px;border:1px solid #E6E8EC;background:#FFFFFF;color:#4B5563;font-size:12.5px;font-weight:500"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l6.2 3.2L8 8.2 1.8 5z M1.8 8L8 11.2 14.2 8 M1.8 11L8 14.2 14.2 11"></path></svg>技能<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"></path></svg></button>
+</div>
+<div style="font-size:13px;font-weight:600">默认</div>
+<div style="font-size:12px;color:#4B5563;line-height:18px">和「智能路由」同款胶囊，放在输入框底部最左</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="height:96px;border:1px solid #E6E8EC;border-radius:12px;background:#F7F8FA;display:flex;align-items:center;justify-content:center">
+<button style="height:31px;display:flex;align-items:center;gap:6px;padding:0 9px 0 11px;border-radius:999px;border:1px solid #D9DDE3;background:#ECEFF3;color:#111827;font-size:12.5px;font-weight:500"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l6.2 3.2L8 8.2 1.8 5z M1.8 8L8 11.2 14.2 8 M1.8 11L8 14.2 14.2 11"></path></svg>技能<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"></path></svg></button>
+</div>
+<div style="font-size:13px;font-weight:600">悬停</div>
+<div style="font-size:12px;color:#4B5563;line-height:18px">底色加深；提示「选一个做法，Agent 按它来回答」</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="height:96px;border:1px solid #E6E8EC;border-radius:12px;background:#F7F8FA;display:flex;align-items:center;justify-content:center">
+<button style="height:31px;display:flex;align-items:center;gap:6px;padding:0 9px 0 11px;border-radius:999px;border:1px solid #2563EB;background:#EEF3FE;color:#1D4ED8;font-size:12.5px;font-weight:500"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l6.2 3.2L8 8.2 1.8 5z M1.8 8L8 11.2 14.2 8 M1.8 11L8 14.2 14.2 11"></path></svg>技能<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 9.5L8 6l3.5 3.5"></path></svg></button>
+</div>
+<div style="font-size:13px;font-weight:600">弹层打开</div>
+<div style="font-size:12px;color:#4B5563;line-height:18px">蓝框，箭头朝上；点外面或按 Esc 关闭</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="height:96px;border:1px solid #E6E8EC;border-radius:12px;background:#F7F8FA;display:flex;align-items:center;justify-content:center">
+<span style="height:31px;box-sizing:border-box;display:inline-flex;align-items:center;border-radius:999px;border:1px solid #2563EB;background:#EEF3FE;color:#1D4ED8">
+<button style="height:29px;border:0;background:transparent;color:inherit;display:flex;align-items:center;gap:6px;padding:0 4px 0 11px;font-size:12.5px;font-weight:600"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l6.2 3.2L8 8.2 1.8 5z M1.8 8L8 11.2 14.2 8 M1.8 11L8 14.2 14.2 11"></path></svg>性能审查</button>
+<button aria-label="不用这个技能" style="width:27px;height:29px;border:0;background:transparent;color:inherit;display:flex;align-items:center;justify-content:center"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7 M11.5 4.5l-7 7"></path></svg></button>
+</span>
+</div>
+<div style="font-size:13px;font-weight:600">已选技能</div>
+<div style="font-size:12px;color:#4B5563;line-height:18px">显示技能名；点名字换技能，点 × 不用。新建任务时清空</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="height:96px;border:1px solid #E6E8EC;border-radius:12px;background:#F7F8FA;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;position:relative">
+<span style="font-size:11px;line-height:15px;color:#FFFFFF;background:#1F2937;border-radius:7px;padding:5px 8px;max-width:180px;text-align:center">自动场景不能用技能，先选具体场景</span>
+<button disabled style="height:31px;display:flex;align-items:center;gap:6px;padding:0 11px;border-radius:999px;border:1px dashed #C4C9D1;background:transparent;color:#6B7280;font-size:12.5px;font-weight:500;opacity:.7"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l6.2 3.2L8 8.2 1.8 5z M1.8 8L8 11.2 14.2 8 M1.8 11L8 14.2 14.2 11"></path></svg>技能</button>
+</div>
+<div style="font-size:13px;font-weight:600">不可用 · 自动场景</div>
+<div style="font-size:12px;color:#4B5563;line-height:18px">虚线框、变灰；悬停给出原因</div>
+</div>
+
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px">
+<h2 style="margin:0;font-size:18px;font-weight:700">各场景下的差异</h2>
+<div style="border:1px solid #E6E8EC;border-radius:12px;overflow:hidden">
+<div style="display:grid;grid-template-columns:140px 200px 300px minmax(0,1fr);gap:16px;padding:10px 16px;background:#F7F8FA;border-bottom:1px solid #E6E8EC;font-size:12.5px;font-weight:600;color:#4B5563"><span>场景</span><span>技能按钮</span><span>技能什么时候起作用</span><span>技能可勾的工具（只能从场景白名单里选）</span></div>
+<div style="display:grid;grid-template-columns:140px 200px 300px minmax(0,1fr);gap:16px;padding:10px 16px;border-bottom:1px solid #EDEFF2;font-size:13px;align-items:center"><span style="font-weight:600">数据分析</span><span style="color:#166534">可用</span><span>每一轮都按技能做法</span><span style="color:#4B5563">找表 · 表结构 · SQL · 统计计划</span></div>
+<div style="display:grid;grid-template-columns:140px 200px 300px minmax(0,1fr);gap:16px;padding:10px 16px;border-bottom:1px solid #EDEFF2;font-size:13px;align-items:center"><span style="font-weight:600">代码分析</span><span style="color:#166534">可用</span><span>每一轮都按技能做法</span><span style="color:#4B5563">读源码 · 表结构</span></div>
+<div style="display:grid;grid-template-columns:140px 200px 300px minmax(0,1fr);gap:16px;padding:10px 16px;border-bottom:1px solid #EDEFF2;font-size:13px;align-items:center"><span style="font-weight:600">报表执行</span><span style="color:#93370D">可用，弹层带黄色提示</span><span>选报表、填参数、执行照旧；只在分析结果时生效</span><span style="color:#4B5563">无工具，只读报表结果</span></div>
+<div style="display:grid;grid-template-columns:140px 200px 300px minmax(0,1fr);gap:16px;padding:10px 16px;border-bottom:1px solid #EDEFF2;font-size:13px;align-items:center"><span style="font-weight:600">Fiori 报表</span><span style="color:#93370D">可用，弹层带黄色提示</span><span>点「交给模型分析」之后才生效</span><span style="color:#4B5563">无工具，只读取数结果</span></div>
+<div style="display:grid;grid-template-columns:140px 200px 300px minmax(0,1fr);gap:16px;padding:10px 16px;font-size:13px;align-items:center"><span style="font-weight:600">自动</span><span style="color:#4B5563">不可用（一期）</span><span style="color:#4B5563">—</span><span style="color:#4B5563">—</span></div>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px">
+
+<div style="display:flex;flex-direction:column;gap:12px">
+<h2 style="margin:0;font-size:18px;font-weight:700">弹层里一行技能的组成</h2>
+<div style="display:flex;gap:16px;align-items:flex-start">
+<div style="position:relative;width:340px;flex:none;border:1px solid #E6E8EC;border-radius:12px;padding:6px;background:#FFFFFF;box-shadow:0 6px 20px rgba(17,24,39,.06)">
+<div style="display:flex;gap:10px;align-items:flex-start;border-radius:10px;padding:9px 10px;background:#F3F7FF">
+<span style="flex:none;width:30px;height:30px;border-radius:8px;background:#EEF3FE;color:#2563EB;display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l6.2 3.2L8 8.2 1.8 5z M1.8 8L8 11.2 14.2 8 M1.8 11L8 14.2 14.2 11"></path></svg></span>
+<span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+<span style="display:flex;align-items:center;gap:6px"><span style="font-size:13.5px;font-weight:600">性能审查</span><span style="font-size:10.5px;color:#4B5563;border:1px solid #E6E8EC;border-radius:5px;padding:0 4px;line-height:16px">v3</span></span>
+<span style="font-size:12px;color:#4B5563;line-height:17px">按清单逐项查 LOOP 内 SELECT、FOR ALL ENTRIES 空表等，按严重程度出表</span>
+<span style="font-size:11.5px;color:#6B7280">工具：读源码 · 表结构</span>
+</span>
+<span style="color:#2563EB;flex:none;margin-top:7px"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-6.5"></path></svg></span>
+</div>
+<span style="position:absolute;left:56px;top:-9px;width:18px;height:18px;border-radius:50%;background:#F5A524;color:#111827;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">1</span>
+<span style="position:absolute;left:128px;top:-9px;width:18px;height:18px;border-radius:50%;background:#F5A524;color:#111827;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">2</span>
+<span style="position:absolute;left:-9px;top:46px;width:18px;height:18px;border-radius:50%;background:#F5A524;color:#111827;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">3</span>
+<span style="position:absolute;left:-9px;top:76px;width:18px;height:18px;border-radius:50%;background:#F5A524;color:#111827;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">4</span>
+<span style="position:absolute;right:-9px;top:12px;width:18px;height:18px;border-radius:50%;background:#F5A524;color:#111827;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">5</span>
+</div>
+<ol style="margin:0;padding-left:18px;font-size:12.5px;line-height:21px;color:#111827">
+<li>名称：动词短语，6 个字以内</li>
+<li>版本：改了做法就升版，回答里会标出用的版本</li>
+<li>一句话说明：说清楚怎么做，不写口号</li>
+<li>工具：场景工具的子集，只能更少不能更多</li>
+<li>对勾：当前选中的技能</li>
+</ol>
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px">
+<h2 style="margin:0;font-size:18px;font-weight:700">两条提示</h2>
+<div style="display:flex;flex-direction:column;gap:6px">
+<span style="font-size:12px;color:#4B5563">报表执行 / Fiori 报表的弹层顶部</span>
+<div style="padding:8px 10px;border-radius:9px;background:#FFF6E5;color:#7A4E00;font-size:12px;line-height:17px;display:flex;gap:6px;align-items:flex-start;max-width:400px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true" style="flex:none;margin-top:1px"><path d="M8 1.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 8 1.8z M8 7.3v4 M8 5v.3"></path></svg>报表类场景的执行和取数是固定流程，技能只在「交给模型分析结果」这一步生效</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:6px">
+<span style="font-size:12px;color:#4B5563">首页选了技能后，输入框下方</span>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:520px;font-size:12px;color:#4B5563;border:1px dashed #D9DDE3;border-radius:9px;padding:8px 10px">
+<span style="display:flex;align-items:center;gap:6px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#2563EB" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l6.2 3.2L8 8.2 1.8 5z M1.8 8L8 11.2 14.2 8 M1.8 11L8 14.2 14.2 11"></path></svg>本任务按「性能审查 v3」的做法回答，只用读源码、表结构两个工具；追问也沿用</span>
+<a href="javascript:void(0)" style="font-size:12px;text-decoration:none;font-weight:500;white-space:nowrap">查看做法</a>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+<a href="index.html" style="position:fixed;right:86px;top:9px;z-index:99;font:500 12px/1 -apple-system,'PingFang SC',sans-serif;color:#FFFFFF;background:rgba(17,24,39,.78);padding:7px 11px;border-radius:999px;text-decoration:none">← 返回目录</a>
+</body>
+</html>

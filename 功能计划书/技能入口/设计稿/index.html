@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent 技能入口 · 设计稿</title>
+<style>
+body{margin:0;background:#F7F8FA;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif}
+a{color:#2563EB;text-decoration:none}
+.wrap{max-width:960px;margin:0 auto;padding:48px 16px 64px}
+h1{margin:0;font-size:26px;font-weight:700}
+.lead{margin:10px 0 0;font-size:14px;line-height:22px;color:#4B5563}
+h2{margin:34px 0 12px;font-size:14px;font-weight:600;color:#4B5563}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.item{display:flex;flex-direction:column;gap:6px;background:#FFFFFF;border:1px solid #E6E8EC;border-radius:14px;padding:16px;color:#111827}
+.item:hover{border-color:#B9CCF6;box-shadow:0 4px 14px rgba(17,24,39,.06)}
+.no{font-size:12px;font-weight:600;color:#2563EB}
+.name{font-size:15px;font-weight:600}
+.desc{font-size:12.5px;line-height:19px;color:#4B5563}
+.tag{align-self:flex-start;font-size:11px;font-weight:600;color:#1D4ED8;background:#EEF3FE;border-radius:999px;padding:2px 8px}
+.foot{margin-top:36px;font-size:12px;line-height:20px;color:#6B7280}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Agent 技能入口 · 设计稿</h1>
+<p class="lead">在 Agent 输入框底部加「技能」入口：场景决定能用哪些工具，技能只决定这件事怎么做（步骤、口径、自查、输出格式），而且只能把工具范围收窄。配色和尺寸取自现有界面（2026-10-22）。</p>
+
+<h2>入口与选择</h2>
+<div class="grid">
+<a class="item" href="01-场景首页-可点击.html"><span class="no">01</span><span class="name">场景首页 · 技能入口</span><span class="desc">切场景、开弹层、搜索、选技能、取消；输入「/」也能呼出，↑↓ 和 Enter 可用</span><span class="tag">可点击</span></a>
+<a class="item" href="02-技能选择弹层.html"><span class="no">02</span><span class="name">技能选择弹层</span><span class="desc">搜索框 + 技能列表（名称、版本、说明、工具），底部注明不增加权限</span></a>
+<a class="item" href="03-已选技能.html"><span class="no">03</span><span class="name">已选技能</span><span class="desc">按钮变成「性能审查 ×」，提示语换成技能写法，下方说明本任务按哪版做法回答</span></a>
+<a class="item" href="04-输入斜杠快速选.html"><span class="no">04</span><span class="name">对话中输入「/」</span><span class="desc">在输入框上方弹出技能列表，键盘选择</span></a>
+</div>
+
+<h2>使用中、暗色与状态</h2>
+<div class="grid">
+<a class="item" href="05-带技能的回答.html"><span class="no">05</span><span class="name">带技能的回答</span><span class="desc">消息和回答都标出技能；执行过程第一行是「使用技能」；回答按技能规定的格式输出</span></a>
+<a class="item" href="06-暗色模式.html"><span class="no">06</span><span class="name">暗色模式</span><span class="desc">数据分析场景，弹层打开、已选一个技能</span></a>
+<a class="item" href="07-按钮状态与场景差异.html"><span class="no">07</span><span class="name">按钮状态与场景差异</span><span class="desc">按钮 5 种状态、各场景什么时候生效、弹层一行的组成、两条提示</span></a>
+</div>
+
+<h2>技能维护（二期）</h2>
+<div class="grid">
+<a class="item" href="08-设置-技能管理.html"><span class="no">08</span><span class="name">设置 › 技能</span><span class="desc">技能列表 + 编辑：说明、适用场景、可用工具、做法正文、启用；保存升版本，可用测评用例试跑</span></a>
+</div>
+
+<p class="foot">回答示例里的行号写作「[行号]」，是示意，不是真实结果。<br>在线画布版：https://claude.ai/artifact/CxHu77CCDpdGJory2UA6Y9（仅本人可见）</p>
+</div>
+</body>
+</html>

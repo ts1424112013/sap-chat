@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>暗色模式 · 技能</title>
+<style>
+body{margin:0;background:#111317}
+a{color:#8FB3FF}a:hover{color:#B5CCFF}
+button,input,textarea{font-family:inherit}
+textarea::placeholder,input::placeholder{color:#8A93A2}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (max-width:760px){.side{max-width:none !important}}
+</style>
+</head>
+<body>
+
+<div style="display:flex;flex-wrap:wrap;min-height:100vh;background:#111317;color:#E8EAED;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">
+
+<aside class="side" style="flex:1 1 288px;max-width:288px;box-sizing:border-box;background:#15171B;border-right:1px solid #262A31;padding:14px 12px 12px;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;align-items:center;gap:10px;padding:2px 6px">
+<svg width="26" height="26" viewBox="0 0 40 40" aria-hidden="true"><path d="M30 12A12 12 0 1 0 32 23H21" fill="none" stroke="#6B9BFF" stroke-width="4.5" stroke-linecap="round"></path><path d="M25 25l6 8" fill="none" stroke="#9B85FF" stroke-width="4.5" stroke-linecap="round"></path></svg>
+<span style="font-size:16px;font-weight:700">Gale-SAP</span>
+</div>
+<div style="display:flex;gap:4px;padding:4px;background:#1E2127;border-radius:12px">
+<button style="flex:1;height:32px;border:0;border-radius:9px;background:transparent;color:#AEB4BE;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"></path></svg>对话</button>
+<button aria-pressed="true" style="flex:1;height:32px;border:0;border-radius:9px;background:#2A2E35;color:#E8EAED;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 12.5h4 M6.5 14.5h3 M8 1.8a4.2 4.2 0 0 0-2.5 7.6c.5.4.8.9.8 1.6h3.4c0-.7.3-1.2.8-1.6A4.2 4.2 0 0 0 8 1.8z"></path></svg>Agent</button>
+</div>
+<button style="height:38px;border:1px solid #30353D;border-radius:10px;background:#191C21;font-size:13px;font-weight:600;color:#E8EAED;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10 M3 8h10"></path></svg>新建任务</button>
+<div style="font-size:11.5px;color:#8A93A2;padding:4px 4px 0">Agent 会话</div>
+<div style="position:relative">
+<label class="sr" for="dkSessSearch">搜索会话</label>
+<input id="dkSessSearch" placeholder="搜索会话标题..." style="width:100%;box-sizing:border-box;height:34px;border:1px solid #262A31;border-radius:10px;padding:0 30px 0 10px;font-size:12.5px;background:#191C21;color:#E8EAED">
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#AEB4BE" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" style="position:absolute;right:10px;top:10px"><path d="M7 2.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9z M10.3 10.3L13.5 13.5"></path></svg>
+</div>
+<p style="margin:6px 0 0;text-align:center;font-size:11.5px;color:#8A93A2">暂无历史会话，发送第一条消息后自动保存</p>
+<div style="flex:1"></div>
+<div style="border-top:1px solid #262A31;padding-top:8px;display:flex;flex-direction:column;gap:2px">
+<button style="height:32px;border:0;background:transparent;border-radius:8px;display:flex;align-items:center;gap:8px;padding:0 8px;font-size:12.5px;color:#E8EAED"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M10 2.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z M7.5 8.5L2.5 13.5 M4 12l1.5 1.5 M5.5 10.5L7 12"></path></svg>申请权限</button>
+<button style="height:32px;border:0;background:transparent;border-radius:8px;display:flex;align-items:center;gap:8px;padding:0 8px;font-size:12.5px;color:#E8EAED"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 2.5h6v2H5z M4 3.5H3v10h10v-10h-1 M5.5 8l1.8 1.8L10.5 6.5"></path></svg>权限审批</button>
+</div>
+<div style="display:flex;align-items:center;gap:10px;border-top:1px solid #262A31;padding:10px 4px 0">
+<span style="width:30px;height:30px;border-radius:50%;background:rgba(107,155,255,.18);color:#8FB3FF;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center">AD</span>
+<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">管理员</div><div style="font-size:11px;color:#8A93A2;display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#F5A524"></span>演示模式</div></div>
+<button aria-label="设置" style="width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:#AEB4BE;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M8 5.6a2.4 2.4 0 1 0 0 4.8 2.4 2.4 0 0 0 0-4.8z M8 1.5v1.8 M8 12.7v1.8 M1.5 8h1.8 M12.7 8h1.8 M3.4 3.4l1.3 1.3 M11.3 11.3l1.3 1.3 M3.4 12.6l1.3-1.3 M11.3 4.7l1.3-1.3"></path></svg></button>
+</div>
+</aside>
+
+<main style="flex:999 1 560px;min-width:0;display:flex;flex-direction:column">
+<div style="height:46px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid #1E2127">
+<div style="display:flex;align-items:center;gap:10px">
+<button aria-label="收起侧栏" style="width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:#AEB4BE;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4h11 M2.5 8h11 M2.5 12h11"></path></svg></button>
+<span style="font-size:12.5px;color:#AEB4BE">✦ Agent · 数据分析</span>
+</div>
+<div style="display:flex;gap:4px">
+<button aria-label="切换亮色" style="width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:#AEB4BE;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6z M8 1.5v1.2 M8 13.3v1.2 M1.5 8h1.2 M13.3 8h1.2 M3.4 3.4l.9.9 M11.7 11.7l.9.9 M3.4 12.6l.9-.9 M11.7 4.3l.9-.9"></path></svg></button>
+<button aria-label="导出" style="width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:#AEB4BE;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8 M4.5 7L8 10.5 11.5 7 M3 13.5h10"></path></svg></button>
+</div>
+</div>
+
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:76px 24px 48px;box-sizing:border-box">
+<svg width="44" height="44" viewBox="0 0 40 40" aria-hidden="true"><path d="M30 12A12 12 0 1 0 32 23H21" fill="none" stroke="#6B9BFF" stroke-width="4.5" stroke-linecap="round"></path><path d="M25 25l6 8" fill="none" stroke="#9B85FF" stroke-width="4.5" stroke-linecap="round"></path></svg>
+<h1 style="margin:16px 0 0;font-size:30px;font-weight:700;letter-spacing:-0.01em;text-align:center">今天想让 Agent 做什么？</h1>
+<p style="margin:10px 0 0;font-size:14.5px;color:#8A93A2;text-align:center">按表 / SQL 只读取数与统计分析，不会触发任何报表执行</p>
+
+<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:22px">
+<button style="height:32px;display:flex;align-items:center;gap:6px;padding:0 14px;border-radius:999px;border:1px solid #30353D;background:#191C21;color:#AEB4BE;font-size:12.8px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 1.8h5.2L12.5 5v9.2H4z M9 1.8V5.2h3.5 M6 8.2h4.5 M6 10.8h4.5"></path></svg>报表执行</button>
+<button style="height:32px;display:flex;align-items:center;gap:6px;padding:0 14px;border-radius:999px;border:1px solid #30353D;background:#191C21;color:#AEB4BE;font-size:12.8px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 13.5h12 M3.5 11l3-3.5 2.5 2 4-5"></path></svg>Fiori 报表</button>
+<button aria-pressed="true" style="height:32px;display:flex;align-items:center;gap:6px;padding:0 14px;border-radius:999px;border:1px solid #6B9BFF;background:rgba(107,155,255,.14);color:#8FB3FF;font-size:12.8px;font-weight:600"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3.8c0-1.1 2.2-2 5-2s5 .9 5 2-2.2 2-5 2-5-.9-5-2z M3 3.8v8.4c0 1.1 2.2 2 5 2s5-.9 5-2V3.8 M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"></path></svg>数据分析</button>
+<button style="height:32px;display:flex;align-items:center;gap:6px;padding:0 14px;border-radius:999px;border:1px solid #30353D;background:#191C21;color:#AEB4BE;font-size:12.8px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 4L2 8l3.5 4 M10.5 4L14 8l-3.5 4 M9 2.5L7 13.5"></path></svg>代码分析</button>
+<button style="height:32px;display:flex;align-items:center;gap:6px;padding:0 14px;border-radius:999px;border:1px solid #30353D;background:#191C21;color:#AEB4BE;font-size:12.8px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 12.5h4 M6.5 14.5h3 M8 1.8a4.2 4.2 0 0 0-2.5 7.6c.5.4.8.9.8 1.6h3.4c0-.7.3-1.2.8-1.6A4.2 4.2 0 0 0 8 1.8z"></path></svg>自动</button>
+</div>
+
+<div style="position:relative;width:100%;max-width:820px;margin-top:16px">
+<div style="background:#191C21;border:1px solid #30353D;border-radius:18px;padding:12px 13px 10px 18px">
+<label class="sr" for="dkTask">任务输入</label>
+<textarea id="dkTask" rows="2" placeholder="说明范围，例如「工厂 1000 本月到期的采购未清」" style="display:block;width:100%;box-sizing:border-box;border:0;outline:none;resize:none;font-size:15px;line-height:22px;padding:8px 2px;color:#E8EAED;background:transparent"></textarea>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:14px;flex-wrap:wrap">
+<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+<span style="height:31px;box-sizing:border-box;display:inline-flex;align-items:center;border-radius:999px;border:1px solid #6B9BFF;background:rgba(107,155,255,.14);color:#8FB3FF">
+<button aria-haspopup="dialog" aria-expanded="true" style="height:29px;border:0;background:transparent;color:inherit;display:flex;align-items:center;gap:6px;padding:0 4px 0 11px;font-size:12.5px;font-weight:600"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l6.2 3.2L8 8.2 1.8 5z M1.8 8L8 11.2 14.2 8 M1.8 11L8 14.2 14.2 11"></path></svg>采购未清分析</button>
+<button aria-label="不用这个技能" style="width:27px;height:29px;border:0;background:transparent;color:inherit;display:flex;align-items:center;justify-content:center;border-radius:0 999px 999px 0"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7 M11.5 4.5l-7 7"></path></svg></button>
+</span>
+<button style="height:31px;display:flex;align-items:center;gap:6px;padding:0 9px 0 10px;border-radius:999px;border:1px solid #30353D;background:transparent;color:#AEB4BE;font-size:12.5px;font-weight:500"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l1.5 5 5 1.5-5 1.5L8 14.5 6.5 9.5 1.5 8l5-1.5z" fill="#8A8CFF"></path></svg>智能路由<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"></path></svg></button>
+</div>
+<div style="display:flex;align-items:center;gap:8px">
+<button aria-label="添加附件" style="width:32px;height:32px;border:0;border-radius:50%;background:transparent;color:#AEB4BE;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 7.5l-5 5a3 3 0 0 1-4.2-4.2l5.4-5.4a2 2 0 0 1 2.8 2.8L6.8 11a1 1 0 0 1-1.4-1.4L10 5"></path></svg></button>
+<button aria-label="发送" style="width:34px;height:34px;border:0;border-radius:50%;background:#2F3E5E;color:#AEB4BE;display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2L7.2 8.8 M14 2l-4.3 12-2.5-5.2L2 6.3z"></path></svg></button>
+</div>
+</div>
+</div>
+
+<div role="dialog" aria-label="选择技能" style="position:absolute;left:14px;top:calc(100% + 8px);width:410px;max-width:calc(100% - 28px);background:#1E2127;border:1px solid #30353D;border-radius:14px;box-shadow:0 16px 40px rgba(0,0,0,.5);z-index:10;overflow:hidden">
+<div style="padding:10px 10px 4px">
+<div style="position:relative">
+<label class="sr" for="dkSkillSearch">搜索技能</label>
+<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#AEB4BE" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" style="position:absolute;left:11px;top:10px"><path d="M7 2.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9z M10.3 10.3L13.5 13.5"></path></svg>
+<input id="dkSkillSearch" placeholder="搜索技能" style="width:100%;height:34px;box-sizing:border-box;border:1px solid #30353D;border-radius:9px;padding:0 10px 0 32px;font-size:13px;background:#15171B;color:#E8EAED">
+</div>
+<div style="display:flex;justify-content:space-between;margin:10px 4px 4px;font-size:11.5px;color:#8A93A2"><span>数据分析 · 3 个技能</span><span>一次用一个</span></div>
+</div>
+<div style="padding:0 6px 6px;display:flex;flex-direction:column;gap:2px">
+
+<button style="display:flex;gap:10px;align-items:flex-start;text-align:left;border:0;border-radius:10px;padding:9px 10px;background:rgba(107,155,255,.12);width:100%">
+<span style="flex:none;width:30px;height:30px;border-radius:8px;background:rgba(107,155,255,.18);color:#8FB3FF;display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l6.2 3.2L8 8.2 1.8 5z M1.8 8L8 11.2 14.2 8 M1.8 11L8 14.2 14.2 11"></path></svg></span>
+<span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+<span style="display:flex;align-items:center;gap:6px"><span style="font-size:13.5px;font-weight:600;color:#E8EAED">采购未清分析</span><span style="font-size:10.5px;color:#AEB4BE;border:1px solid #30353D;border-radius:5px;padding:0 4px;line-height:16px">v2</span></span>
+<span style="font-size:12px;color:#AEB4BE;line-height:17px">按 EKKO/EKPO/EKET 取数，未清 = 订单量 − 已收货量，按供应商和逾期天数分层</span>
+<span style="font-size:11.5px;color:#8A93A2">工具：找表 · 表结构 · SQL</span>
+</span>
+<span style="color:#8FB3FF;flex:none;margin-top:7px"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-6.5"></path></svg></span>
+</button>
+
+<button style="display:flex;gap:10px;align-items:flex-start;text-align:left;border:0;border-radius:10px;padding:9px 10px;background:transparent;width:100%">
+<span style="flex:none;width:30px;height:30px;border-radius:8px;background:rgba(107,155,255,.14);color:#8FB3FF;display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l6.2 3.2L8 8.2 1.8 5z M1.8 8L8 11.2 14.2 8 M1.8 11L8 14.2 14.2 11"></path></svg></span>
+<span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+<span style="display:flex;align-items:center;gap:6px"><span style="font-size:13.5px;font-weight:600;color:#E8EAED">主数据质检</span><span style="font-size:10.5px;color:#AEB4BE;border:1px solid #30353D;border-radius:5px;padding:0 4px;line-height:16px">v1</span></span>
+<span style="font-size:12px;color:#AEB4BE;line-height:17px">检查 MARA/MARC 关键字段缺失、重复和异常值，按问题类型汇总</span>
+<span style="font-size:11.5px;color:#8A93A2">工具：表结构 · SQL</span>
+</span>
+</button>
+
+<button style="display:flex;gap:10px;align-items:flex-start;text-align:left;border:0;border-radius:10px;padding:9px 10px;background:transparent;width:100%">
+<span style="flex:none;width:30px;height:30px;border-radius:8px;background:rgba(107,155,255,.14);color:#8FB3FF;display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l6.2 3.2L8 8.2 1.8 5z M1.8 8L8 11.2 14.2 8 M1.8 11L8 14.2 14.2 11"></path></svg></span>
+<span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+<span style="display:flex;align-items:center;gap:6px"><span style="font-size:13.5px;font-weight:600;color:#E8EAED">多维统计报告</span><span style="font-size:10.5px;color:#AEB4BE;border:1px solid #30353D;border-radius:5px;padding:0 4px;line-height:16px">v1</span></span>
+<span style="font-size:12px;color:#AEB4BE;line-height:17px">多个维度合成一条 UNION ALL 取数，结果用表格加占比呈现</span>
+<span style="font-size:11.5px;color:#8A93A2">工具：表结构 · SQL</span>
+</span>
+</button>
+
+</div>
+<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 14px;border-top:1px solid #262A31;background:#1A1D22;font-size:11.5px;color:#8A93A2">
+<span style="display:flex;align-items:center;gap:6px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M8 1.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 8 1.8z M8 7.3v4 M8 5v.3"></path></svg>技能只改变做法，不增加工具和权限</span>
+<a href="08-设置-技能管理.html" style="font-size:12px;font-weight:500;text-decoration:none">管理技能</a>
+</div>
+</div>
+</div>
+
+<div style="width:100%;max-width:820px;margin-top:22px">
+<div style="display:flex;justify-content:space-between;align-items:center;margin:0 2px 10px"><span style="font-size:12.5px;color:#AEB4BE;font-weight:600">数据分析 · 常用技能</span><span style="color:#8FB3FF;font-size:12.5px;padding:4px">全部 3 个 ›</span></div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
+<div style="background:rgba(107,155,255,.08);border:1px solid #6B9BFF;border-radius:14px;padding:14px 14px 12px;display:flex;flex-direction:column;gap:8px;min-height:120px"><span style="width:28px;height:28px;border-radius:8px;background:rgba(107,155,255,.18)"></span><span style="font-size:14px;font-weight:600">采购未清分析</span><span style="font-size:12.5px;line-height:18px;color:#AEB4BE">按 EKKO/EKPO/EKET 取数…</span></div>
+<div style="background:#191C21;border:1px solid #262A31;border-radius:14px;padding:14px 14px 12px;display:flex;flex-direction:column;gap:8px;min-height:120px"><span style="width:28px;height:28px;border-radius:8px;background:rgba(107,155,255,.14)"></span><span style="font-size:14px;font-weight:600">主数据质检</span><span style="font-size:12.5px;line-height:18px;color:#AEB4BE">检查 MARA/MARC 关键字段…</span></div>
+<div style="background:#191C21;border:1px solid #262A31;border-radius:14px;padding:14px 14px 12px;display:flex;flex-direction:column;gap:8px;min-height:120px"><span style="width:28px;height:28px;border-radius:8px;background:rgba(107,155,255,.14)"></span><span style="font-size:14px;font-weight:600">多维统计报告</span><span style="font-size:12.5px;line-height:18px;color:#AEB4BE">多个维度合成一条 UNION ALL…</span></div>
+</div>
+</div>
+
+</div>
+</main>
+</div>
+<a href="index.html" style="position:fixed;right:86px;top:9px;z-index:99;font:500 12px/1 -apple-system,'PingFang SC',sans-serif;color:#FFFFFF;background:rgba(17,24,39,.78);padding:7px 11px;border-radius:999px;text-decoration:none">← 返回目录</a>
+</body>
+</html>
