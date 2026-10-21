@@ -14,7 +14,7 @@ sap.ui.define([
          *   ① 「申请权限」→ 对话框 AuthDialog：申请 / 我的申请
          *   ② 「权限审批」（仅 ADMIN）→ 审批对话框（见 AuthApprove mixin）；入口上的红色角标 = 待审批条数
          *      （登录后、每 2 分钟、切回页面时查一次；条数变多时弹提示）
-         *   ③ 审批对话框右上「管理」→ AuthAdminDialog（内容 AuthAdmin）：全部记录与撤销 / 批量代加 / 权限表配置 / 事务码规则
+         *   ③ 审批对话框右上「管理」→ AuthAdminDialog（内容 AuthAdmin，与审批对话框同一套外壳）：全部记录与撤销 / 批量代加 / 权限表配置 / 事务码规则
          * 数据都在视图模型 "auth" 里；所有后端调用经 ChatService.auth*（失败抛 Error(后端原话)，
          * 这里统一显示在对话框 / 页签顶部的红色提示条）。
          * 以 mixin 并入 zai.chat.controller.App，方法名统一 auth / _auth 前缀，避免与其他块重名（红线 8）。
@@ -52,6 +52,7 @@ sap.ui.define([
                                 notice: "",
                                 enabled: true,
                                 tab: "apply",
+                                admTab: "records",
                                 form: { tcode: "", werks: "", reason: "" },
                                 result: { lines: [], summary: "" },
                                 mine: { rows: [], total: 0, skip: 0 },
@@ -101,6 +102,7 @@ sap.ui.define([
                                 x.werksText = !r.werks ? oRB.getText("apvWerksNone")
                                         : r.werks === "ALL" ? oRB.getText("apvWerksAll") : oRB.getText("apvWerks", [r.werks]);
                                 x.mineSub = [r.message || "", fmtTime(r.createdAt)].filter(Boolean).join("  ·  ");
+                                x.recSub = [x.channelText, x.createdAtText].filter(Boolean).join("  ·  ");
                                 x.canDecide = r.status === "PENDING";
                                 x.canRevoke = r.revocable === "X";
                                 return x;
@@ -135,6 +137,15 @@ sap.ui.define([
                 /** 申请 / 我的申请 页签（按钮的自定义数据 tab） */
                 onAuthTab: function (oEvent) {
                         this._authModel().setProperty("/tab", oEvent.getSource().data("tab"));
+                        this._authScrollTop("aplScroll");
+                },
+
+                /** 换页签后内容区回到顶部（各页签共用一个滚动容器，不重置会停在上一页的位置） */
+                _authScrollTop: function (sId) {
+                        var oBox = this.byId(sId), oDom = oBox && oBox.getDomRef();
+                        if (oDom) {
+                                oDom.scrollTop = 0;
+                        }
                 },
 
                 onCloseAuth: function () {
@@ -256,6 +267,7 @@ sap.ui.define([
                 /** 打开即刷新 */
                 onOpenAuthAdmin: function () {
                         var that = this, oModel = this._authModel();
+                        oModel.setProperty("/admTab", "records");
                         oModel.setProperty("/notice", "");
                         oModel.setProperty("/result", { lines: [], summary: "" });
                         if (!this._oAuthAdminDialog) {
@@ -304,12 +316,20 @@ sap.ui.define([
 
                 /** 记录列表 + 表 / 规则配置一起刷新 */
                 _authLoadAdmin: function (bReset) {
-                        var oModel = this._authModel();
+                        var that = this, oModel = this._authModel();
                         return Promise.all([
                                 this._authLoadAdminList(bReset),
                                 ChatService.authConfig().then(function (r) {
-                                        oModel.setProperty("/tables", r.tables || []);
-                                        oModel.setProperty("/rules", r.rules || []);
+                                        var oRB = that._rb();
+                                        oModel.setProperty("/tables", (r.tables || []).map(function (t) {
+                                                return Object.assign({}, t, { activeText: oRB.getText(t.active === "X" ? "authOn" : "authOff") });
+                                        }));
+                                        oModel.setProperty("/rules", (r.rules || []).map(function (x) {
+                                                return Object.assign({}, x, {
+                                                        modeText: oRB.getText("authMode" + x.ruleMode),
+                                                        targetText: x.tabname ? oRB.getText("admArrowTable", [x.tabname]) : oRB.getText("admArrowAuto")
+                                                });
+                                        }));
                                 })
                         ]);
                 },
@@ -325,6 +345,32 @@ sap.ui.define([
                                 // 审批 / 驳回 / 撤销 / 批量代加 / 刷新之后，角标跟着更新
                                 that._authCheckPending();
                         });
+                },
+
+                /** 管理对话框页签（按钮的自定义数据 tab） */
+                onAdmTab: function (oEvent) {
+                        this._authModel().setProperty("/admTab", oEvent.getSource().data("tab"));
+                        this._authScrollTop("admScroll");
+                },
+
+                /** 申请记录的状态胶囊：选中即按该状态重新查（空 = 全部） */
+                onAdmStatus: function (oEvent) {
+                        var that = this, oModel = this._authModel();
+                        oModel.setProperty("/admin/status", oEvent.getSource().data("status") || "");
+                        this._authRun(function () { return that._authLoadAdminList(true); });
+                },
+
+                onAdmRuleMode: function (oEvent) {
+                        this._authModel().setProperty("/editRule/ruleMode", oEvent.getSource().data("mode"));
+                },
+
+                /** 编辑区回到空白（新建一张权限表 / 一条规则） */
+                onAuthNewTable: function () {
+                        this._authModel().setProperty("/editTable", { tabname: "", descr: "", discover: true, active: true, fields: [], loaded: "" });
+                },
+
+                onAuthNewRule: function () {
+                        this._authModel().setProperty("/editRule", { tcodePat: "", tabname: "", ruleMode: "AUTO", allowAll: false, active: true });
                 },
 
                 onAuthRefreshAdmin: function () {

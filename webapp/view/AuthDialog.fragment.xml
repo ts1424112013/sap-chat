@@ -37,7 +37,7 @@
                                 </VBox>
 
                                 <!-- ===== 内容（只有这里滚动） ===== -->
-                                <VBox renderType="Bare" class="apvScroll" busy="{auth>/busy}" busyIndicatorDelay="200">
+                                <VBox id="aplScroll" renderType="Bare" class="apvScroll" busy="{auth>/busy}" busyIndicatorDelay="200">
                                         <MessageStrip text="{auth>/notice}" type="Error" showIcon="true" visible="{= !!${auth>/notice} }" class="apvStrip"/>
 
                                         <!-- 申请 -->

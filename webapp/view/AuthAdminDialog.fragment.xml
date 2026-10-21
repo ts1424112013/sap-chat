@@ -1,13 +1,12 @@
 <core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
 
-        <!-- ======================= 权限审批（管理入口，仅 ADMIN；侧栏「权限审批」打开，内容见 AuthAdmin 片段） ======================= -->
-        <Dialog id="authAdminDialog" title="{i18n>authAdmin}" contentWidth="64rem" resizable="true" draggable="true" class="authDialog authAdminDialog">
+        <!-- ======================= 权限管理（审批对话框右上「管理」，仅 ADMIN；内容见 AuthAdmin 片段） =======================
+             与权限审批 / 申请权限同一套外壳：不用 UI5 标题栏与底栏，头部 + 下划线页签 + 可滚动内容 + 固定页脚都在 AuthAdmin 里。 -->
+        <Dialog id="authAdminDialog" showHeader="false" contentWidth="52rem" contentHeight="40rem"
+                verticalScrolling="false" horizontalScrolling="false" class="apvDialog aplDialog admDialog">
                 <content>
                         <core:Fragment fragmentName="zai.chat.view.AuthAdmin" type="XML"/>
                 </content>
-                <buttons>
-                        <Button text="{i18n>close}" press=".onCloseAuthAdmin"/>
-                </buttons>
         </Dialog>
 
 </core:FragmentDefinition>

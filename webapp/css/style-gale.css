@@ -760,6 +760,82 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .aplMsg { display: block !important; margin-top: .3rem; font-size: .74rem !important; line-height: 1.5 !important; color: var(--sub) !important; }
 .aplPager { margin-top: .7rem; gap: .4rem; }
 .aplPagerText { font-size: .74rem !important; color: var(--sub) !important; font-variant-numeric: tabular-nums; }
+.aplFoot > .sapMFlexItem:last-child { margin-left: auto; }   /* 页脚只剩主按钮（左边的次要按钮不显示）时仍靠右；FlexBox 会给每个子元素包一层 .sapMFlexItem */
+
+/* ==================== 20261021：权限管理对话框（审批对话框右上「管理」；外壳同上，.adm* 是它自己的部件）==================== */
+.admEnable { gap: .5rem; margin-right: .35rem; }
+.admEnableText { font-size: .78rem !important; color: var(--text-2) !important; }
+/* 状态 / 处理方式胶囊（与目录页签同一套：圆角胶囊，选中浅蓝底） */
+.admPills { gap: .4rem; margin-bottom: .75rem; }
+.admPill { height: auto !important; }
+.admPill .sapMBtnInner { height: 1.75rem !important; min-height: 1.75rem !important; padding: 0 .85rem !important; border-radius: 999px !important; border: 1px solid var(--line) !important; background: var(--surface) !important; box-shadow: none !important; }
+.admPill .sapMBtnText { font-size: .78rem !important; font-weight: 500; color: var(--text-2) !important; }
+.admPill:hover .sapMBtnInner { border-color: var(--line-strong) !important; }
+.admPill[data-on="yes"] .sapMBtnInner { background: var(--accent-soft) !important; border-color: transparent !important; }
+.admPill[data-on="yes"] .sapMBtnText { color: var(--accent) !important; font-weight: 600; }
+.admModePills { margin-bottom: 0; }
+.admFilters { gap: .5rem; margin-bottom: .9rem; }
+.aplInput.admFilterUser { width: 9rem !important; flex: none; }
+.aplInput.admFilterTcode { width: 10.5rem !important; flex: none; }
+/* 申请记录：一条申请一行 */
+.admRow { padding: .75rem .9rem; gap: .8rem; }
+.admChips { gap: .4rem; flex-wrap: wrap; }
+.admUser { font-size: .88rem !important; font-weight: 700 !important; color: var(--text) !important; margin-right: .2rem; }
+.admReason { display: block !important; margin-top: .3rem; font-size: .78rem !important; line-height: 1.5 !important; color: var(--text-2) !important; }
+.admSide { flex: none; gap: .5rem; align-items: flex-end; }
+.admActs { gap: .4rem; }
+.apvBtn.admBtn .sapMBtnInner { height: 1.75rem !important; min-height: 1.75rem !important; padding: 0 .8rem !important; }
+.apvBtn.admBtn .sapMBtnText { font-size: .78rem !important; }
+/* 权限表 / 规则：说明条、小标题、已有项（点选载入）、编辑卡 */
+.admNote { display: block !important; margin-bottom: 1rem; padding: .6rem .8rem; border-radius: 10px; background: var(--accent-soft); font-size: .78rem !important; line-height: 1.6 !important; color: var(--text-2) !important; }
+.admSecHead { margin: .1rem 0 .5rem; }
+.admSecTitle { display: block !important; font-size: .82rem !important; font-weight: 700 !important; color: var(--text) !important; }
+.admLink .sapMBtnInner { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 .4rem !important; min-height: 1.6rem !important; height: 1.6rem !important; }
+.admLink .sapMBtnText, .admLink .sapMBtnIcon { color: var(--accent) !important; font-size: .78rem !important; font-weight: 500; }
+.admLink:hover .sapMBtnText { text-decoration: underline; }
+.admPickList { background: transparent !important; max-height: 14rem; overflow-y: auto; }
+.admPickList .sapMListUl { background: transparent !important; padding: 0 !important; display: flex; flex-direction: column; gap: .4rem; }
+.admPickList .sapMListNoData { height: 3rem; border-radius: 12px; border: 1px dashed var(--line-strong); background: var(--bg) !important; font-size: .8rem; color: var(--sub); }
+.admPickItem.sapMLIB { margin: 0 !important; padding: 0 !important; border: 1px solid var(--line) !important; border-radius: 12px !important; background: var(--surface) !important; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.admPickItem.sapMLIB:hover { border-color: var(--line-strong) !important; background: var(--hover) !important; }
+.admPickItem[data-on="yes"].sapMLIB { border-color: var(--accent) !important; box-shadow: var(--ring); background: var(--surface) !important; }
+.admPickItem .sapMLIBContent { padding: 0 !important; }
+.admPickRow { padding: .65rem .85rem; gap: .7rem; }
+.admArrow { font-size: .78rem !important; color: var(--sub) !important; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important; }
+.admEditor { margin-top: 1rem; padding: 1rem 1rem .25rem; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.admEditor > .admSecTitle { margin-bottom: .85rem; }
+.admInline { gap: .6rem; }
+.admInline .admOutlineBtn { margin-bottom: 1rem; }
+.admOutlineBtn .sapMBtnInner { height: 2.5rem !important; min-height: 2.5rem !important; padding: 0 1rem !important; border-radius: 10px !important; border: 1px solid var(--line-strong) !important; background: transparent !important; box-shadow: none !important; }
+.admOutlineBtn .sapMBtnText, .admOutlineBtn .sapMBtnIcon { color: var(--text-2) !important; font-size: .82rem !important; }
+.admOutlineBtn:hover .sapMBtnInner { border-color: var(--accent) !important; }
+.admOutlineBtn:hover .sapMBtnText, .admOutlineBtn:hover .sapMBtnIcon { color: var(--accent) !important; }
+.admTwoCol { gap: .8rem; }
+.admTwoCol > .aplField { flex: 1 1 0; min-width: 0; }
+.admToggle { padding: .6rem 0; gap: .8rem; border-top: 1px solid var(--line); }
+.admEditor .admToggle:last-child { padding-bottom: .75rem; }
+.admToggleTitle { display: block !important; font-size: .84rem !important; font-weight: 600 !important; color: var(--text) !important; }
+/* 字段映射：一行一个字段（网格对齐表头） */
+.admFldRow { display: grid !important; grid-template-columns: minmax(7rem, 1fr) 2.2rem 6rem 10rem 9rem; gap: .6rem; align-items: center; padding: .4rem 0; border-top: 1px solid var(--line); }
+.admFldHead { border-top: none; padding: 0 0 .3rem; }
+.admFldHead .sapMText { font-size: .72rem !important; color: var(--sub) !important; }
+.admFldName { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important; font-size: .82rem !important; font-weight: 600 !important; color: var(--text) !important; }
+.admFldKey { text-align: center; color: var(--accent) !important; font-size: .7rem !important; }
+.admFldType { font-size: .76rem !important; color: var(--sub) !important; }
+.admSel.sapMSlt { width: 100% !important; max-width: none; height: 2rem; border-radius: 8px !important; border: 1px solid var(--line) !important; background: var(--bg) !important; box-shadow: none !important; }
+.admSel .sapMSltLabel { font-size: .8rem; color: var(--text) !important; }
+.aplInput.admFldConst .sapMInputBaseContentWrapper { min-height: 2rem; border-radius: 8px !important; }
+.aplInput.admFldConst .sapMInputBaseInner { font-size: .8rem !important; }
+.admFldEmpty { padding: .2rem 0 .9rem; }
+.admFootHint { min-width: 0; margin-right: .75rem; }
+.admPager { gap: .4rem; }
+.apvStatus[data-status="OFF"] { background: var(--hover); color: var(--sub) !important; }
+.apvStatus[data-status="PENDING"] { background: rgba(245, 165, 36, .14); color: #A16207 !important; }
+[data-theme="dark"] .apvStatus[data-status="PENDING"] { color: #FACC15 !important; }
+.apvStatus[data-mode="AUTO"] { background: var(--apv-green-soft); color: var(--apv-green) !important; }
+.apvStatus[data-mode="APPROVE"] { background: rgba(245, 165, 36, .14); color: #A16207 !important; }
+.apvStatus[data-mode="BLOCK"] { background: var(--apv-red-soft); color: var(--apv-red) !important; }
+[data-theme="dark"] .apvStatus[data-mode="APPROVE"] { color: #FACC15 !important; }
 
 /* ==================== 20261020：输入框里的模型选择（会话级）==================== */
 .modelPill { margin-left: .2rem; min-width: 0; }
