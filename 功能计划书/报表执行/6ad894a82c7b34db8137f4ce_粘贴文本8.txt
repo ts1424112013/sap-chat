@@ -1,0 +1,1032 @@
+******************************************************************
+*Purpose:       TLK information Maintain
+*Logical:
+*Project:
+*SAP Module:    MM
+*T-CODE:
+*Author:    PY
+*EXT:       560-75602
+*Add Date:  2011/11/16
+*----------------------------------------------------------------*
+*Customer Object:
+*1.Table:
+*2.Domain:
+*3.Data element:
+*----------------------------------------------------------------*
+*Application doc:
+*----------------------------------------------------------------*
+* change History:
+*
+*  Date         Author    TP Prod.  TP date      Request NO.
+* ------------  --------  ---------------------  ----------------*
+
+*----------------------------------------------------------------*
+
+*Modify:20221214 by donghai SZ S4升級 增加創建/修改人/時間
+*Modify:20241029 by donghai Non phone升級新增字段
+
+
+REPORT zrmm_idp_0161 NO STANDARD PAGE HEADING LINE-SIZE 250 MESSAGE-ID
+sabapdocu.
+
+TABLES:zidpmmtlk,zidpmmcontrol,marc,mara,t001w.
+
+DATA:g_repid LIKE sy-repid.
+TYPE-POOLS:slis.
+DATA:wa_t_fieldcat TYPE slis_t_fieldcat_alv,
+     wa_fieldcat   TYPE slis_fieldcat_alv,
+     wa_layout     TYPE slis_layout_alv.
+
+DATA: alv_variant           LIKE disvariant,
+      w_callback_subroutine TYPE slis_formname,
+      w_callback_program    LIKE sy-repid,
+      w_set_status          TYPE slis_formname,
+      lc_glay               TYPE lvc_s_glay.
+DATA: ok_code LIKE sy-ucomm, c(2) TYPE c.
+DATA: lnumber TYPE i.
+DATA: g_flag TYPE c.
+DATA: itab_mara LIKE mara OCCURS 0 WITH HEADER LINE.
+DATA:BEGIN OF it_list1 OCCURS 0,
+       key(40)  TYPE c,
+       text(80) TYPE c,
+     END OF it_list1.
+DATA: it_list2 LIKE TABLE OF it_list1 WITH HEADER LINE.
+DATA: it_list3 LIKE TABLE OF it_list1 WITH HEADER LINE.
+DATA: it_list4 LIKE TABLE OF it_list1 WITH HEADER LINE.
+DATA: it_list5 LIKE TABLE OF it_list1 WITH HEADER LINE.
+DATA: it_list6 LIKE TABLE OF it_list1 WITH HEADER LINE.
+DATA: it_list7 LIKE TABLE OF it_list1 WITH HEADER LINE.
+
+DATA: itab1 LIKE zidpmmtlk OCCURS 0 WITH HEADER LINE,
+      itab  LIKE itab1 OCCURS 0 WITH HEADER LINE.
+
+DATA: BEGIN OF itab2 OCCURS 0,
+        tlk01    LIKE zidpmmtlk-tlk01,
+        werks    LIKE zidpmmtlk-werks,
+        tlk32    LIKE zidpmmtlk-tlk32,
+        tlk19    LIKE zidpmmtlk-tlk19,
+        tlk05    LIKE zidpmmtlk-tlk05,
+        tlk06    LIKE zidpmmtlk-tlk06,
+        tlk07    LIKE zidpmmtlk-tlk07,
+        tlk08    LIKE zidpmmtlk-tlk08,
+        tlk09    LIKE zidpmmtlk-tlk09,
+        tlk22    LIKE zidpmmtlk-tlk22,
+        tlk11    LIKE zidpmmtlk-tlk11,
+        tlk03    LIKE zidpmmtlk-tlk03,
+        tlk33    LIKE zidpmmtlk-tlk33,  "製程機種
+        tlk34    LIKE zidpmmtlk-tlk34,  "出貨機種
+        tlk04    LIKE zidpmmtlk-tlk04,
+        tlk24    LIKE zidpmmtlk-tlk24,
+        tlk18    LIKE zidpmmtlk-tlk18,
+        tlk12    LIKE zidpmmtlk-tlk12,
+        tlk27    LIKE zidpmmtlk-tlk27,
+        tlk21    LIKE zidpmmtlk-tlk21,
+        tlk13    LIKE zidpmmtlk-tlk13,
+        tlk20    LIKE zidpmmtlk-tlk20,
+        tlk15    LIKE zidpmmtlk-tlk15,
+        tlk25    LIKE zidpmmtlk-tlk25,
+        tlk17    LIKE zidpmmtlk-tlk17,
+        tlk14    LIKE zidpmmtlk-tlk14,
+        tlk26    LIKE zidpmmtlk-tlk26,
+        tlk31    LIKE zidpmmtlk-tlk31,
+        tlk28    LIKE zidpmmtlk-tlk28,
+        tlk23    LIKE zidpmmtlk-tlk23,
+        tlk10    LIKE zidpmmtlk-tlk10,
+        tlk16    LIKE zidpmmtlk-tlk16,
+        tlk29    LIKE zidpmmtlk-tlk29,
+        tlk30    LIKE zidpmmtlk-tlk30,
+        tlk35    LIKE zidpmmtlk-tlk35,
+        tlk36    LIKE zidpmmtlk-tlk36,
+        tlk37    LIKE zidpmmtlk-tlk37,
+        tlk41    LIKE zidpmmtlk-tlk41,
+        tlk42    LIKE zidpmmtlk-tlk42,
+        tlk43    LIKE zidpmmtlk-tlk43,
+        tlk44    LIKE zidpmmtlk-tlk44,
+        tlk45    LIKE zidpmmtlk-tlk45,
+        tlk46    LIKE zidpmmtlk-tlk46,
+        tlk47    LIKE zidpmmtlk-tlk47,
+        tlk48    LIKE zidpmmtlk-tlk48,
+*-----add Amelia210922 for MLB WO BPR
+        tlk50    LIKE zidpmmtlk-tlk50, "SFC PN
+        tlk51    LIKE zidpmmtlk-tlk51,  "以下為non phone升級新增字段(含現有字段啟用)
+        tlk53    LIKE zidpmmtlk-tlk53,
+        tlk54    LIKE zidpmmtlk-tlk54,
+        tlk55    LIKE zidpmmtlk-tlk55,
+        tlk56    LIKE zidpmmtlk-tlk56,
+        tlk57    LIKE zidpmmtlk-tlk57,
+        tlk58    LIKE zidpmmtlk-tlk58,
+        tlk59    LIKE zidpmmtlk-tlk59,
+        tlk60    LIKE zidpmmtlk-tlk60,
+        tlk61    LIKE zidpmmtlk-tlk61,
+        tlk62    LIKE zidpmmtlk-tlk62,
+        tlk63    LIKE zidpmmtlk-tlk63,
+        tlk64    LIKE zidpmmtlk-tlk64,
+        tlk65    LIKE zidpmmtlk-tlk65,
+        bat_info LIKE zidpmmtlk-bat_info,
+        ersda    LIKE zidpmmtlk-ersda, "Create Date
+        ernam    LIKE zidpmmtlk-ernam, "Creater
+      END OF itab2.
+
+DATA:BEGIN OF itab_error OCCURS 0,
+       tlk01       LIKE zidpmmtlk-tlk01,
+       werks       LIKE zidpmmtlk-werks,
+       message(80) TYPE c,
+     END OF itab_error.
+
+DATA:BEGIN OF itab3 OCCURS 0.
+       INCLUDE STRUCTURE itab2.
+DATA:  message(80) TYPE c,
+     END OF itab3.
+
+DATA:itab_upload LIKE zidpmmtlk OCCURS 0 WITH HEADER LINE.
+
+
+
+
+
+SELECTION-SCREEN: BEGIN OF BLOCK b1  WITH FRAME TITLE TEXT-001.
+  RANGES: r_werks FOR marc-werks.
+  PARAMETERS: p_werks LIKE marc-werks OBLIGATORY.
+  SELECT-OPTIONS: s_matnr FOR marc-matnr.
+  SELECT-OPTIONS: s_bismt FOR mara-bismt.
+  SELECT-OPTIONS: s_tlk05 FOR zidpmmtlk-tlk05,
+                  s_tlk06 FOR zidpmmtlk-tlk06,
+                  s_tlk07 FOR zidpmmtlk-tlk07,
+                  s_tlk08 FOR zidpmmtlk-tlk08,
+                  s_tlk09 FOR zidpmmtlk-tlk09,
+                  s_tlk03 FOR zidpmmtlk-tlk03,
+                  s_tlk33 FOR zidpmmtlk-tlk33,
+                  s_tlk34 FOR zidpmmtlk-tlk34.
+  PARAMETERS: s_down AS CHECKBOX.
+SELECTION-SCREEN: END OF BLOCK b1.
+
+
+SELECTION-SCREEN SKIP 1.
+PARAMETERS p_chara(02) TYPE n DEFAULT 05.
+
+INITIALIZATION.
+  g_repid = sy-repid.
+
+
+
+START-OF-SELECTION.
+  DATA:lsubrc LIKE sy-subrc.
+  REFRESH r_werks.
+  r_werks-sign = 'I'.
+  r_werks-option = 'EQ'.
+  r_werks-low = p_werks.
+  APPEND r_werks.
+  CLEAR r_werks.
+
+*  perform check_authorization.
+
+  PERFORM get_display_data.
+  DESCRIBE TABLE itab1 LINES lnumber.
+  IF lnumber = 0.
+    MESSAGE i888 WITH 'No data!'.
+  ELSE.
+    PERFORM write_alv_data.
+    PERFORM call_alv_for_list.
+  ENDIF.
+
+
+end-of-selection .
+*&---------------------------------------------------------------------*
+*&      Form  GET_DISPLAY_DATA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM get_display_data.
+  DATA: l_bismt LIKE mara-bismt.
+
+  DATA: BEGIN OF  itab_matnr OCCURS 0,
+          tlk01 LIKE mara-matnr,
+        END OF itab_matnr.
+
+*  if s_bismt is initial.
+*
+*    select * into corresponding fields of table itab1
+*    from zidpmmtlk
+*    where werks = p_werks
+*    and tlk01 in s_matnr
+*    and tlk05 in s_tlk05
+*    and tlk06 in s_tlk06
+*    and tlk07 in s_tlk07
+*    and tlk08 in s_tlk08
+*    and tlk09 in s_tlk09
+*    and tlk03 in s_tlk03
+*    and tlk33 in s_tlk33
+*    and tlk34 in s_tlk34.
+*  else.
+*    select matnr as tlk01 into table itab_matnr
+*    from mara
+*    where bismt in s_bismt.
+*    if not itab_matnr[] is initial.
+*      select * into corresponding fields of table itab1
+*      from zidpmmtlk
+*      for all entries in itab_matnr
+*      where werks = p_werks
+*      and tlk01 = itab_matnr-tlk01
+*      and tlk05 in s_tlk05
+*      and tlk06 in s_tlk06
+*      and tlk07 in s_tlk07
+*      and tlk08 in s_tlk08
+*      and tlk09 in s_tlk09
+*      and tlk03 in s_tlk03
+*      and tlk33 in s_tlk33
+*      and tlk34 in s_tlk34.
+*    endif.
+*  endif.
+*
+*  loop at itab1.
+*    select single bismt into l_bismt
+*    from mara
+*    where matnr = itab1-tlk01.
+*    itab1-tlk02 = l_bismt.
+*    modify itab1.
+*  endloop.
+
+
+
+  SELECT * INTO CORRESPONDING FIELDS OF TABLE itab1
+    FROM zidpmmtlk
+    WHERE werks = p_werks
+    AND tlk01 IN s_matnr
+    AND tlk02 IN s_bismt
+    AND tlk05 IN s_tlk05
+    AND tlk06 IN s_tlk06
+    AND tlk07 IN s_tlk07
+    AND tlk08 IN s_tlk08
+    AND tlk09 IN s_tlk09
+    AND tlk03 IN s_tlk03
+    AND tlk33 IN s_tlk33
+    AND tlk34 IN s_tlk34.
+
+ENDFORM.                    " GET_DISPLAY_DATA
+*&---------------------------------------------------------------------*
+*&      Form  WRITE_ALV_DATA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM write_alv_data.
+  REFRESH:wa_t_fieldcat.
+  PERFORM fill_alv_structure USING:
+'TLK01' 'HH PN',
+'TLK02' 'CPN',
+'TLK32' 'EDI Flag',
+'TLK19' 'BU',
+'TLK05' 'Part Name',
+'TLK06' 'EEE1',
+'TLK07' 'EEE2',
+'TLK08' 'EEE3',
+'TLK09' 'EEE4',
+'TLK22' 'Part Type',
+'TLK11' 'Scan Type',
+'TLK03' 'Model Name',
+'TLK33' 'Process model',
+'TLK34' 'Shipping model',
+'TLK04' 'Family Name',
+'TLK24' 'product line',
+'TLK18' 'Model#',
+'TLK12' 'Color(Local)',
+'TLK27' 'Color(EN)',
+'TLK21' 'Configration',
+'TLK13' 'Localization',
+'TLK20' 'Region',
+'TLK15' 'UPC/JAN',
+'TLK25' 'SCC14',
+'TLK17' 'Description',
+'TLK14' 'Keypart',
+'TLK26' 'GB',
+'TLK31' 'Version',
+'TLK28' 'M-pack Flag',
+'TLK23' 'Pack',
+'TLK10' 'Accy Kits',
+'TLK16' 'CM BUND',
+'TLK29' 'WO Type',
+'TLK30' 'RMA Kpart',
+'TLK35' 'Energy Saving',
+'TLK36' 'CD',
+'TLK37' 'DVD',
+'TLK41' 'PSD',
+'TLK42' 'Price Lable',
+'TLK43' 'Screen Lable',
+'TLK44' 'Carrier',
+'TLK45' 'EDU',
+'TLK46' 'CDM',
+'TLK47' 'Accessory',
+'TLK48' 'NEWBUY',
+'TLK50' 'SFC PN',
+
+'TLK51' 'SPECIAL SW',
+'TLK52' 'eSIM flag',
+'TLK53'   'DEMO(Y/N)',
+'TLK54'   'ENG(Y/N)',
+'TLK55'   'Dev/Pro D.Dev-fused   P.Pro-fused',
+'TLK56'   'Material texture',
+'TLK57'   'Virtual Model',
+'TLK58'   'MCOO flag',
+'TLK59'   'Stage',
+'TLK60'   'Label flag',
+'TLK61'   'MRP LABEL',
+'TLK62'   'LASER 1.Laser GB 2.Laser FG',
+'TLK63'   'Scan Vendor Code',
+'TLK64'  'MATERIAL TYPE',
+'TLK65'  'AC flag',
+'BAT_INFO' 'Battery Info',
+'ERSDA' 'Create Date'(011),
+'ERNAM' 'Creater'(012),
+'LAEDA' 'Modify Date'(013),
+'AENAM' 'Modifier'(014).
+
+
+
+
+ENDFORM.                    " WRITE_ALV_GR
+*&---------------------------------------------------------------------
+*
+*&      Form  APPEND_FC_ALV
+*&---------------------------------------------------------------------
+*
+*       text
+*----------------------------------------------------------------------
+*
+*      -->P_0322   text
+*      -->P_0323   text
+*----------------------------------------------------------------------
+*
+FORM fill_alv_structure USING p_fieldname p_seltext.
+  MOVE:
+        p_fieldname     TO wa_fieldcat-fieldname ,
+        p_seltext       TO wa_fieldcat-reptext_ddic.
+  APPEND wa_fieldcat TO wa_t_fieldcat.
+ENDFORM.                    " APPEND_FC_ALV
+*&---------------------------------------------------------------------*
+*&      Form  CALL_ALV_FOR_LIST
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM call_alv_for_list.
+
+  IF s_down = 'X'. "直接使用標準的ALV Download
+    wa_layout-colwidth_optimize = 'X'.
+    wa_layout-zebra = 'X'.
+
+    CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+      EXPORTING
+        i_callback_program = g_repid
+        it_fieldcat        = wa_t_fieldcat[]
+        is_layout          = wa_layout
+        i_default          = 'X'
+        i_save             = 'A'
+      TABLES
+        t_outtab           = itab1[]
+      EXCEPTIONS
+        program_error      = 1
+        OTHERS             = 2.
+  ELSE.
+    w_set_status = 'SET_STATUS'.
+    CLEAR wa_layout.
+*  wa_layout-coltab_fieldname  = 'COLTAB'.
+    wa_layout-colwidth_optimize = 'X'.
+    wa_layout-zebra = 'X'.
+*wa_layout-colwidth_optimize = 'X'.
+    CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+      EXPORTING
+*       i_callback_pf_status_set = 'STATUS_1000'
+        i_callback_user_command = 'GET_MAT'
+        i_callback_program      = g_repid
+        it_fieldcat             = wa_t_fieldcat[]
+        i_default               = 'X'
+        i_save                  = 'A'
+        is_layout               = wa_layout
+      TABLES
+        t_outtab                = itab1[].
+  ENDIF.
+ENDFORM.                    " CALL_ALV_FOR_LIST
+*---------------------------------------------------------------------*
+*       FORM get_mat                                                  *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+*  -->  P_UCOMM                                                       *
+*  -->  P_SELFIELD                                                    *
+*---------------------------------------------------------------------*
+FORM get_mat  USING p_ucomm    LIKE sy-ucomm
+                    p_selfield TYPE slis_selfield.
+
+  DATA: lc_value(60) TYPE c.
+  CASE p_ucomm.
+    WHEN '&IC1'.
+      READ TABLE itab1 INDEX p_selfield-tabindex.
+      MOVE-CORRESPONDING itab1 TO  itab.
+*      loop at itab .
+      SELECT SINGLE value2 INTO itab-tlk51 FROM zidpmmcontrol
+      WHERE werks = itab-werks
+        AND project = 'RELATION'
+        AND value1 = itab-tlk03 .
+*      modify itab .
+*      clear itab .
+*      endloop.
+*      CLEAR:ITAB-TLK32, ITAB-TLK28, ITAB-TLK26, ITAB-TLK14.
+      CALL SCREEN 2000 .
+
+    WHEN 'BACK' OR 'EXIT' OR 'CANCEL'.
+      LEAVE TO SCREEN 0.
+*  Begin Add by Denny for DV2K968292
+    WHEN 'REFR'.
+      CLEAR: itab1, itab.
+      FREE: itab1, itab.
+      PERFORM get_display_data.
+      PERFORM write_alv_data.
+      PERFORM call_alv_for_list.
+  ENDCASE.
+
+  IF g_flag = 'Y'.
+    CLEAR: itab1, itab.
+    FREE: itab1, itab.
+    PERFORM get_display_data.
+    PERFORM write_alv_data.
+    PERFORM call_alv_for_list.
+    g_flag = 'N'.
+  ENDIF.
+* end Add by Denny for DV2K968292
+
+ENDFORM.
+*---------------------------------------------------------------------*
+*       FORM status_1000                                              *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM status_1000 USING rt_extab TYPE slis_t_extab..
+  SET PF-STATUS 'STATUS_1000'.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Module  STATUS_2000  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE status_2000 OUTPUT.
+  SET PF-STATUS 'STATUS_2000'.
+ENDMODULE.                 " STATUS_2000  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_2000  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE user_command_2000 INPUT.
+
+  RANGES: r_tlk28 FOR zidpmmtlk-tlk28,
+          r_tlk32 FOR zidpmmtlk-tlk32,
+          r_tlk26 FOR zidpmmtlk-tlk26,
+          r_tlk14 FOR zidpmmtlk-tlk14,
+          r_tlk45 FOR zidpmmtlk-tlk45,
+          r_tlk46 FOR zidpmmtlk-tlk46,
+          r_tlk48 FOR zidpmmtlk-tlk48.
+  DATA:l_tlk28 LIKE zidpmmtlk-tlk28,
+       l_tlk32 LIKE zidpmmtlk-tlk32,
+       l_tlk26 LIKE zidpmmtlk-tlk26,
+       l_tlk14 LIKE zidpmmtlk-tlk14,
+       l_tlk45 LIKE zidpmmtlk-tlk45,
+       l_tlk46 LIKE zidpmmtlk-tlk46.
+*       l_tlk48 LIKE ZIDPMMTLK-tlk48.
+  DATA:t_list1 LIKE it_list1,
+       t_list2 LIKE it_list1,
+       t_list3 LIKE it_list1,
+       t_list4 LIKE it_list1,
+       t_list5 LIKE it_list1,
+       t_list6 LIKE it_list1.
+*       t_list7 LIKE it_list1.
+  ok_code = sy-ucomm.
+  CASE ok_code.
+    WHEN 'SAVE'.
+      READ TABLE it_list1 INDEX itab-tlk28 INTO t_list1.
+      READ TABLE it_list2 INDEX itab-tlk32 INTO t_list2.
+      READ TABLE it_list3 INDEX itab-tlk26 INTO t_list3.
+      READ TABLE it_list4 INDEX itab-tlk14 INTO t_list4.
+      READ TABLE it_list5 INDEX itab-tlk45 INTO t_list5.
+      READ TABLE it_list6 INDEX itab-tlk46 INTO t_list6.
+*      READ TABLE it_list7 INDEX itab-tlk48 INTO t_list7.
+      l_tlk28 = t_list1-text.
+      l_tlk32 = t_list2-text.
+      l_tlk26 = t_list3-text.
+      l_tlk14 = t_list4-text.
+      l_tlk45 = t_list5-text.
+      l_tlk46 = t_list6-text.
+*      l_tlk48 = t_list7-text.
+      itab-laeda = sy-datum.
+      itab-aenam = sy-uname.
+      UPDATE zidpmmtlk SET:
+                      tlk01 = itab-tlk01
+                      werks = itab-werks
+                      ersda = itab-ersda
+                      ernam = itab-ernam
+                      laeda = itab-laeda
+                      aenam = itab-aenam
+                      tlk02 = itab-tlk02
+                      tlk03 = itab-tlk03
+                      tlk04 = itab-tlk04
+                      tlk05 = itab-tlk05
+                      tlk06 = itab-tlk06
+                      tlk07 = itab-tlk07
+                      tlk08 = itab-tlk08
+                      tlk09 = itab-tlk09
+                      tlk10 = itab-tlk10
+                      tlk11 = itab-tlk11
+                      tlk12 = itab-tlk12
+                      tlk13 = itab-tlk13
+                      tlk14 = l_tlk14
+                      tlk15 = itab-tlk15
+                      tlk16 = itab-tlk16
+                      tlk17 = itab-tlk17
+                      tlk18 = itab-tlk18
+                      tlk19 = itab-tlk19
+                      tlk20 = itab-tlk20
+                      tlk21 = itab-tlk21
+                      tlk22 = itab-tlk22
+                      tlk23 = itab-tlk23
+                      tlk24 = itab-tlk24
+                      tlk25 = itab-tlk25
+                      tlk26 = l_tlk26
+                      tlk27 = itab-tlk27
+                      tlk28 = l_tlk28
+                      tlk29 = itab-tlk29
+                      tlk30 = itab-tlk30
+                      tlk31 = itab-tlk31
+                      tlk32 = l_tlk32
+                      tlk33 = itab-tlk33
+                      tlk34 = itab-tlk34
+                      tlk35 = itab-tlk35
+                      tlk36 = itab-tlk36
+                      tlk37 = itab-tlk37
+                      tlk38 = itab-tlk38
+                      tlk39 = itab-tlk39
+                      tlk40 = itab-tlk40
+                      tlk41 = itab-tlk41
+                      tlk42 = itab-tlk42
+                      tlk43 = itab-tlk43
+                      tlk44 = itab-tlk44
+                      tlk45 = l_tlk45
+                      tlk46 = l_tlk46
+                      tlk47 = itab-tlk47
+                      tlk48 = itab-tlk48
+                      tlk49 = itab-tlk49
+                      tlk50 = itab-tlk50
+                      tlk51 = itab-tlk51
+                      tlk52 = itab-tlk52  "以下為non phone升級新增字段(含現有字段啟用)
+                      tlk53 = itab-tlk53
+                      tlk54 = itab-tlk54
+                      tlk55 = itab-tlk55
+                      tlk56 = itab-tlk56
+                      tlk57 = itab-tlk57
+                      tlk58 = itab-tlk58
+                      tlk59 = itab-tlk59
+                      tlk60 = itab-tlk60
+                      tlk61 = itab-tlk61
+                      tlk62 = itab-tlk62
+                      tlk63 = itab-tlk63
+                      tlk64 = itab-tlk64
+                      tlk65 = itab-tlk65
+                      bat_info = itab-bat_info
+                      WHERE werks = p_werks
+                        AND tlk01 = itab-tlk01.
+
+      IF sy-subrc = 0.
+        MESSAGE s000 WITH 'Update data successful.'.
+        g_flag = 'Y'.
+      ENDIF.
+*  Begin Add by Denny for DV2K968292
+    WHEN 'DELETE'.
+      DELETE FROM zidpmmtlk WHERE werks = p_werks
+                    AND tlk01 = itab-tlk01.
+      IF sy-subrc = 0.
+        MESSAGE s000 WITH 'Delete data successful.'.
+        g_flag = 'Y'.
+        CLEAR itab.
+        MODIFY SCREEN.
+      ELSE.
+        MESSAGE s000 WITH 'Delete data failed,please contact IT.'.
+      ENDIF.
+*  End Add by Denny for DV2K968292
+  ENDCASE.
+  CLEAR ok_code.
+ENDMODULE.                 " USER_COMMAND_2000  INPUT
+*&---------------------------------------------------------------------*
+*&      Module  check_input  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE check_input INPUT.
+  DATA:l(5)  TYPE c,
+       m(30) TYPE c.
+  CLEAR l.
+
+  ok_code = sy-ucomm.
+  IF ok_code = 'DELETE'.EXIT. ENDIF.
+
+  IF itab-tlk28 = 'Y' OR itab-tlk28 = '1'.
+    itab-tlk28 = '1'.
+  ELSE.
+    itab-tlk28 = '2'.
+  ENDIF.
+
+  IF itab-tlk32 = 'Y' OR itab-tlk32 = '1'.
+    itab-tlk32 = '1'.
+  ELSE.
+    itab-tlk32 = '2'.
+  ENDIF.
+
+  IF itab-tlk26 = 'Y' OR itab-tlk26 = '1'.
+    itab-tlk26 = '1'.
+  ELSE.
+    itab-tlk26 = '2'.
+  ENDIF.
+
+  IF itab-tlk14 = 'Y' OR itab-tlk14 = '1'.
+    itab-tlk14 = '1'.
+  ELSE.
+    itab-tlk14 = '2'.
+  ENDIF.
+
+  IF itab-tlk45 = 'Y' OR itab-tlk45 = '1'.
+    itab-tlk45 = '1'.
+  ELSE.
+    itab-tlk45 = '2'.
+  ENDIF.
+
+  IF itab-tlk46 = 'Y' OR itab-tlk46 = '1'.
+    itab-tlk46 = '1'.
+  ELSE.
+    itab-tlk46 = '2'.
+  ENDIF.
+
+*  IF itab-tlk48 = 'Y' OR itab-tlk48 = '1'.
+*    itab-tlk48 = '1'.
+*  ELSE.
+*    itab-tlk48 = '2'.
+*  ENDIF.
+
+  READ TABLE it_list1 INDEX itab-tlk28 INTO t_list1.
+  READ TABLE it_list2 INDEX itab-tlk32 INTO t_list2.
+  READ TABLE it_list3 INDEX itab-tlk26 INTO t_list3.
+  READ TABLE it_list4 INDEX itab-tlk14 INTO t_list4.
+  READ TABLE it_list5 INDEX itab-tlk45 INTO t_list5.
+  READ TABLE it_list6 INDEX itab-tlk46 INTO t_list6.
+*  READ TABLE it_list7 INDEX itab-tlk48 INTO t_list7.
+  l_tlk28 = t_list1-text.
+  l_tlk32 = t_list2-text.
+  l_tlk26 = t_list3-text.
+  l_tlk14 = t_list4-text.
+  l_tlk45 = t_list5-text.
+  l_tlk46 = t_list6-text.
+*  l_tlk48 = t_list7-text.
+  SELECT SINGLE * FROM mara
+   WHERE matnr = itab-tlk01.
+  IF sy-subrc <> 0.
+    MESSAGE e007 WITH 'The HH PN is not exists.'.
+  ENDIF.
+
+  IF mara-mtart = 'ZFRT' AND itab-tlk17 = ''.
+    MESSAGE e007 WITH 'The DISCRIPTION can not blank for FG!'.
+  ENDIF.
+
+  IF mara-mtart = 'ZFRT' AND l_tlk28 = ''.
+    MESSAGE e007 WITH 'The M-Pack Flag can not blank for FG!'.
+  ENDIF.
+
+  IF mara-mtart = 'ZFRT' AND l_tlk32 <> 'Y' AND l_tlk32 <> 'N'.
+    MESSAGE e007 WITH 'Pls maintain Y/N for EDI Flag!'.
+  ENDIF.
+
+  SELECT SINGLE * FROM t001w
+  WHERE werks = itab-werks.
+  IF sy-subrc <> 0.
+    MESSAGE e007 WITH 'The Plant is not exist.'.
+  ENDIF.
+
+  SELECT SINGLE *
+  FROM zidpmmcontrol
+  WHERE value1 = itab-tlk18
+  AND werks = itab-werks
+  AND project = 'MODEL'.
+  IF sy-subrc = 0.
+    IF zidpmmcontrol-value2 <> itab-tlk04 OR zidpmmcontrol-value3 <>
+itab-tlk24.
+      MESSAGE e007 WITH 'Check Family Name or Product Line,Please.'.
+    ENDIF.
+  ELSE.
+    IF mara-mtart = 'ZFRT'.
+      MESSAGE e007 WITH 'Model NO. is not exist'.
+    ENDIF.
+  ENDIF.
+
+  IF itab-tlk22 <> ''.
+    SELECT SINGLE * FROM zidpmmcontrol
+    WHERE werks = itab-werks
+    AND project = 'PARTTYPE'
+    AND value1 = itab-tlk22.
+    IF sy-subrc <> 0.
+      MESSAGE e007 WITH 'Check Part Type,Please.'.
+    ENDIF.
+
+    l = itab-tlk02+0(5).
+    CONCATENATE l '%' INTO m.
+    CONDENSE m.
+    SELECT SINGLE * FROM zidpmmtlk
+    WHERE werks = itab-werks
+    AND tlk02 LIKE m.
+    IF sy-subrc = 0.
+      IF zidpmmtlk-tlk22 <> itab-tlk22.
+        IF itab-tlk22 NE 'P_TEXT'.
+          MESSAGE e007 WITH 'Part Type unmatch setting!'.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+*  SELECT SINGLE * FROM ZIDPMMCONTROL
+*        WHERE WERKS = ITAB-WERKS
+*        AND PROJECT = 'UPC'
+*        AND VALUE1 = ITAB-TLK02
+*        AND VALUE2 = ITAB-TLK15.
+*  IF SY-SUBRC <> 0.
+*    MESSAGE E007 WITH 'UPC/JAN is not exist'.
+*  ENDIF.
+*
+*  SELECT SINGLE * FROM ZIDPMMCONTROL
+*        WHERE WERKS = ITAB-WERKS
+*        AND PROJECT = 'UPC'
+*        AND VALUE1 = ITAB-TLK02
+*        AND VALUE2 = ITAB-TLK15
+*        AND VALUE3 = ITAB-TLK25.
+*  IF SY-SUBRC <> 0.
+*    MESSAGE E007 WITH 'SCC14 is not exist'.
+*  ENDIF.
+
+  IF itab-tlk03 <> ''.
+    SELECT SINGLE * FROM zidpmmcontrol
+          WHERE werks = itab-werks
+          AND project = 'CONFIG'
+          AND value1 = itab-tlk03.
+    IF sy-subrc <> 0.
+      MESSAGE e007 WITH 'Configration is not exist'.
+    ENDIF.
+  ENDIF.
+
+  IF itab-tlk12 <> ''.
+    SELECT SINGLE * FROM zidpmmcontrol
+         WHERE werks = itab-werks
+         AND project = 'COLOR'
+         AND value1 = itab-tlk03
+         AND value2 = itab-tlk12.
+    IF sy-subrc <> 0.
+      MESSAGE e007 WITH 'Color(Local) is not exist'.
+    ENDIF.
+
+
+    SELECT SINGLE * FROM zidpmmcontrol
+       WHERE werks = itab-werks
+       AND project = 'COLOR'
+       AND value1 = itab-tlk03
+       AND value2 = itab-tlk12.
+    IF sy-subrc = 0.
+      IF zidpmmcontrol-value3 <> itab-tlk27.
+        MESSAGE e007 WITH 'Check Color(EN),Please'.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+  IF itab-tlk13 <> ''.
+    SELECT SINGLE * FROM zidpmmcontrol
+     WHERE werks = itab-werks
+     AND project = 'REGION'
+     AND value2 = itab-tlk13.
+    IF sy-subrc <> 0.
+      MESSAGE e007 WITH 'Localization is not exist'.
+    ENDIF.
+
+    SELECT SINGLE * FROM zidpmmcontrol
+     WHERE werks = itab-werks
+     AND project = 'REGION'
+     AND value2 = itab-tlk13.
+    IF sy-subrc = 0.
+      IF zidpmmcontrol-value1 <> itab-tlk20.
+        MESSAGE e007 WITH 'Check Region is not exists.'.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+ENDMODULE.                 " check_input  INPUT
+*&---------------------------------------------------------------------*
+*&      Module  DISPLAY_LIST  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE display_list OUTPUT.
+  DATA:gt_list_tlk64 LIKE TABLE OF it_list1,
+       gt_list_tlk53 LIKE TABLE OF it_list1,
+       gt_list_tlk54 LIKE TABLE OF it_list1,
+       gt_list_tlk55 LIKE TABLE OF it_list1,
+       gt_list_tlk62 LIKE TABLE OF it_list1,
+       gt_list_tlk65 LIKE TABLE OF it_list1.
+  CLEAR: it_list1,it_list1[],it_list2,it_list2[],
+         it_list3,it_list3[],it_list4,it_list4[].
+
+  it_list1-key = '1'.
+  it_list1-text = 'Y'.
+  APPEND it_list1.
+  it_list1-key = '2'.
+  it_list1-text = 'N'.
+  APPEND it_list1.
+
+
+  MOVE it_list1[] TO it_list2[].
+  MOVE it_list1[] TO it_list3[].
+  MOVE it_list1[] TO it_list4[].
+  MOVE it_list1[] TO it_list5[].
+  MOVE it_list1[] TO it_list6[].
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING
+      id              = 'ITAB-TLK28'
+      values          = it_list1[]
+    EXCEPTIONS
+      id_illegal_name = 1
+      OTHERS          = 2.
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING
+      id              = 'ITAB-TLK32'
+      values          = it_list2[]
+    EXCEPTIONS
+      id_illegal_name = 1
+      OTHERS          = 2.
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING
+      id              = 'ITAB-TLK26'
+      values          = it_list3[]
+    EXCEPTIONS
+      id_illegal_name = 1
+      OTHERS          = 2.
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING
+      id              = 'ITAB-TLK14'
+      values          = it_list4[]
+    EXCEPTIONS
+      id_illegal_name = 1
+      OTHERS          = 2.
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING
+      id              = 'ITAB-TLK45'
+      values          = it_list5[]
+    EXCEPTIONS
+      id_illegal_name = 1
+      OTHERS          = 2.
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING
+      id              = 'ITAB-TLK46'
+      values          = it_list6[]
+    EXCEPTIONS
+      id_illegal_name = 1
+      OTHERS          = 2.
+
+
+* MATERIAL TYPE:0.整机  1.主板  2.料件  3.其他  4.NBAS 5.Battery
+  gt_list_tlk64 = VALUE #( ( key = '0' text = 'FG' )
+                           ( key = '1' text = 'MLB' )
+                           ( key = '2' text = 'Material' )
+                           ( key = '3' text = 'Others' )
+                           ( key = '4' text = 'NBAS' )
+                           ( key = '5' text = 'Battery' )
+                          ).
+* DEMO:Y/N
+  gt_list_tlk53 = VALUE #( ( key = 'Y' text = 'DEMO' )
+                           ( key = 'N' text = 'Non-DEMO' ) ).
+* ENG:Y/N
+  gt_list_tlk54 = VALUE #( ( key = 'Y' text = 'ENG' )
+                           ( key = 'N' text = 'Non-ENG' ) ).
+* Dev/Pro D.Dev-fused   P.Pro-fused
+  gt_list_tlk55 = VALUE #( ( key = 'D' text = 'Dev-fused' )
+                           ( key = 'P' text = 'Pro-fused' ) ).
+* LASER 1.Laser GB,  2.Laser FG
+  gt_list_tlk62 = VALUE #( ( key = '1' text = 'Laser GB' )
+                           ( key = '2' text = 'Laser FG' ) ).
+* AC flag
+  gt_list_tlk65 = VALUE #( ( key = 'Y' text = 'Apple care' )
+                           ( key = 'N' text = 'Non-AC' ) ).
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING
+      id              = 'ITAB-TLK64'
+      values          = gt_list_tlk64[]
+    EXCEPTIONS
+      id_illegal_name = 1
+      OTHERS          = 2.
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING
+      id              = 'ITAB-TLK53'
+      values          = gt_list_tlk53[]
+    EXCEPTIONS
+      id_illegal_name = 1
+      OTHERS          = 2.
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING
+      id              = 'ITAB-TLK54'
+      values          = gt_list_tlk54[]
+    EXCEPTIONS
+      id_illegal_name = 1
+      OTHERS          = 2.
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING
+      id              = 'ITAB-TLK55'
+      values          = gt_list_tlk55[]
+    EXCEPTIONS
+      id_illegal_name = 1
+      OTHERS          = 2.
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING
+      id              = 'ITAB-TLK62'
+      values          = gt_list_tlk62[]
+    EXCEPTIONS
+      id_illegal_name = 1
+      OTHERS          = 2.
+
+  CALL FUNCTION 'VRM_SET_VALUES'
+    EXPORTING
+      id              = 'ITAB-TLK65'
+      values          = gt_list_tlk65[]
+    EXCEPTIONS
+      id_illegal_name = 1
+      OTHERS          = 2.
+
+  LOOP AT SCREEN.
+    CASE screen-name.
+      WHEN 'ITAB-TLK01'.
+        screen-active = '1'.
+        screen-output = '1'.
+        screen-input = '0'.
+      WHEN 'ITAB-TLK02'.
+        screen-active = '1'.
+        screen-output = '1'.
+        screen-input = '0'.
+      WHEN 'ITAB-TLK51'.
+        screen-active = '1'.
+        screen-output = '1'.
+        screen-input = '0'.
+    ENDCASE.
+    MODIFY SCREEN.
+  ENDLOOP.
+
+ENDMODULE.                 " DISPLAY_LIST  OUTPUT
+*&---------------------------------------------------------------------*
+*&      Module  EXIT_SCREEN  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE exit_screen INPUT.
+  ok_code = sy-ucomm.
+  CASE ok_code.
+    WHEN 'BACK' OR 'EXIT' OR 'CANCEL'.
+      LEAVE TO SCREEN 0.
+  ENDCASE.
+ENDMODULE.                 " EXIT_SCREEN  INPUT
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_AUTHORIZATION
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM check_authorization.
+
+  CALL FUNCTION 'ZRFC_MM_IDP_0104'
+    TABLES
+      input  = r_werks[]
+      output = r_werks[].
+
+  IF r_werks[] IS INITIAL.
+    IF sy-langu = 'E'.
+      MESSAGE i004(zmm) WITH 'You have no authority to use this plant'.
+    ELSE.
+      MESSAGE i004(zmm) WITH '您沒有查詢這個工廠的權限'.
+    ENDIF.
+    STOP.
+  ENDIF.
+
+ENDFORM.                    " CHECK_AUTHORIZATION

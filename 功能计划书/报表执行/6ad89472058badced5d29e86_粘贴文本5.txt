@@ -1,0 +1,1704 @@
+********************************************************************
+**Purpose: Kitting stock report.
+* Logical:
+* SAP Module:    MM
+* Funcitonal Spec NO:
+* T-CODE:
+* Author: peng-fei
+* EXT:
+* Add Date:  2014-05-22
+*----------------------------------------------------------------*
+*Customer Object:
+*1.Table:
+*2.Domain:
+*3.Data element:
+*...........
+*----------------------------------------------------------------*
+* change History:
+*
+*   Date     Author      TP Prod.  TP date       Request NO.
+* --------- --------    ---------------------   -----------------*
+*Modify:20230601 by donghai 優化，加入itab_matnr[]判空處理
+*Modify:20251117 by zhixi 庫存報表增加倉碼對應賬冊，以及料號在此賬冊下的備案資料的原產國和來源標示
+*----------------------------------------------------------------*
+**
+
+REPORT zrmm_idp_0018 MESSAGE-ID zmm.
+TABLES :makt ,mard ,mara , mspr , zidpmm016,somlreci1,t001l,t001w.
+
+
+DATA: gt_t001l LIKE TABLE OF t001l WITH HEADER LINE, "Storage Locations
+      gt_mm016 LIKE TABLE OF zidpmm016 WITH HEADER LINE,
+      gt_makt  LIKE TABLE OF makt WITH HEADER LINE.
+
+*---add by Mars 20230316
+DATA: gt_zidpmm012 LIKE TABLE OF zidpmm012 WITH HEADER LINE.
+*---end by Mars 20230316
+
+DATA : BEGIN OF itab_matnr OCCURS 0,
+         lgort LIKE mard-lgort,
+         matnr LIKE mard-matnr,
+         bismt LIKE mara-bismt, "add new
+         maktx LIKE makt-maktx,
+         meins LIKE mara-meins,
+         labst LIKE mard-labst,
+         pspnr LIKE mspr-pspnr,
+       END OF itab_matnr .
+
+DATA : BEGIN OF itabpn OCCURS 0 ,
+         matnr LIKE mard-matnr,
+         bismt LIKE mara-bismt,
+         meins LIKE mara-meins,
+       END OF itabpn .
+
+*DATA:BEGIN OF itab OCCURS 0 ,
+*       lgort      LIKE mard-lgort,
+*       lgobe      LIKE t001l-lgobe,
+*       matnr      LIKE mard-matnr,
+*       bismt      LIKE mara-bismt, "add new
+*       maktx      LIKE makt-maktx,
+*       meins      LIKE mara-meins,
+*       labst      LIKE mard-labst,
+*       model(40)  TYPE c,
+*       category6  LIKE zidpmm016-category6,
+*       qpa(40)    TYPE c,
+*       pspnr(40)  TYPE c,
+*       controller LIKE zidpmmwhcd-controller,
+*       valuation  LIKE mbew-bwtar,
+**---add by Mars 20230316
+*       ptc48      LIKE zidpmm012-ptc48,       "MPQ
+**---end by Mars 20230316
+*       charg      LIKE mspr-charg,
+*       zvendor    TYPE  zevendor_batch,
+*       zwbs       TYPE  zewbs_batch,
+*       zconfig    TYPE  zeconfig_batch,
+*       zdc        TYPE  zedc_batch,
+*       zlot       TYPE  zelot_batch,
+*       zmpn       TYPE  zempn_batch,
+*       zrev       TYPE  zerev_batch,
+*       zbin       TYPE  zebin_batch,
+*     END OF itab .
+
+DATA : BEGIN OF itab_mail OCCURS 0 ,
+         lgort      LIKE mard-lgort,
+         lgobe      LIKE t001l-lgobe,
+         matnr      LIKE mard-matnr,
+         bismt      LIKE mara-bismt, "add new
+         maktx      LIKE makt-maktx,
+         meins      LIKE mara-meins,
+         labst(16)  TYPE c,
+         model      LIKE zmodel-model02,
+         category6  LIKE zidpmm016-category6,
+         qpa(40)    TYPE c,
+         pspnr(40)  TYPE c,
+         controller LIKE zidpmmwhcd-controller,
+         valuation  LIKE mbew-bwtar,
+       END OF itab_mail .
+
+DATA : BEGIN OF controller2 OCCURS 0 ,
+         matnr      LIKE mard-matnr,
+         lgort      LIKE mard-lgort,
+         controller LIKE zidpmmwhcd-controller,
+       END OF controller2 .
+
+*******************************************
+* ALV definition                          *
+*******************************************
+TYPE-POOLS: slis.
+* Global variant use
+DATA: fieldcat TYPE slis_t_fieldcat_alv  WITH HEADER LINE .
+DATA: l_netwr LIKE  bapicurr-bapicurr.
+DATA: repid     LIKE sy-repid.
+DATA: BEGIN OF  itab_bom  OCCURS 0 ,
+        matnr   LIKE   zpcepp01-matnr,
+        qpa     LIKE   zpcepp01-qpa,
+        percent LIKE zpcepp01-percent,
+      END OF itab_bom .
+DATA: BEGIN OF  itab_bom1  OCCURS 0 ,
+        matnr   LIKE   zpcepp01-matnr,
+        qpa     LIKE   zpcepp01-qpa,
+        percent LIKE zpcepp01-percent,
+      END OF itab_bom1 .
+DATA: BEGIN OF itab_mod OCCURS 0 ,
+        model01 LIKE zmodel-model01,
+        model02 LIKE zmodel-model02,
+        model03 LIKE zmodel-model03,
+        model04 LIKE zmodel-model04,
+      END OF itab_mod.
+DATA: fieldcatalog  TYPE slis_t_fieldcat_alv WITH HEADER LINE,
+      gd_tab_group  TYPE slis_t_sp_group_alv,
+      gd_layout     TYPE slis_layout_alv,
+      gd_repid      LIKE sy-repid,
+      gd_prntparams TYPE slis_print_alv,
+      it_ecat       TYPE slis_t_event.
+******* ALV DECLARATION
+*include rm07alvi.
+DATA: fc_alv TYPE slis_fieldcat_alv OCCURS 10 WITH HEADER LINE.
+DATA: g_comm04(20) TYPE c,
+      g_comm05(20) TYPE c,
+      g_comm06(20) TYPE c,
+      g_comm07(20) TYPE c,
+      g_comm08(20) TYPE c,
+      g_comm09(20) TYPE c,
+      g_comm10(20) TYPE c,
+      g_comm11(30) TYPE c,
+      g_comm12(20) TYPE c,
+      g_comm13(30) TYPE c,
+      g_comm14(30) TYPE c,
+      g_comm15(30) TYPE c,
+      g_comm16(30) TYPE c,
+*---add by Mars 20230316
+      g_comm17(30) TYPE c,    "MPQ
+*---end by Mars 20230316
+      g_comm18(30) TYPE c,
+      g_comm19(30) TYPE c,
+      g_comm20(30) TYPE c,
+      g_comm21(30) TYPE c,
+      g_comm22(30) TYPE c,
+      g_comm23(30) TYPE c,
+      g_comm24(30) TYPE c,
+      g_comm25(30) TYPE c,
+      g_comm26(30) TYPE c,
+      g_comm27(30) TYPE c,
+      g_comm28(30) TYPE c,
+      g_comm29(30) TYPE c,
+      g_comm30(30) TYPE c,
+      g_comm31(30) TYPE c,
+      g_comm32(30) TYPE c,
+      g_comm33(30) TYPE c,
+      g_comm34(30) TYPE c,
+      g_comm35(30) TYPE c,
+      g_len(2)     TYPE c.
+
+DATA:xlsx_handling TYPE REF TO cl_ehfnd_xlsx,
+     xlsx_doc      TYPE REF TO  if_ehfnd_xlsx_doc,
+     xlsx_sheet    TYPE REF TO  if_ehfnd_xlsx_sheet.
+
+DATA: gr_alv TYPE REF TO cl_salv_table.
+TYPES:BEGIN OF ty_dis,
+        werks        LIKE mard-werks,
+        lgort        LIKE mard-lgort,
+        lgobe        LIKE t001l-lgobe,
+        matnr        LIKE mard-matnr,
+        bismt        LIKE mara-bismt, "add new
+        maktx        LIKE makt-maktx,
+        meins        LIKE mara-meins,
+        labst        LIKE mard-labst,
+        model(40)    TYPE c,
+        category6    LIKE zidpmm016-category6,
+        qpa(40)      TYPE c,
+        pspnr(40)    TYPE c,
+        controller   LIKE zidpmmwhcd-controller,
+        valuation    LIKE mbew-bwtar,
+*---add by Mars 20230316
+        ptc48        LIKE zidpmm012-ptc48,       "MPQ
+*---end by Mars 20230316
+        charg        LIKE mspr-charg,
+        zvendor      TYPE  zevendor_batch,
+        zwbs         TYPE  zewbs_batch,
+        zconfig      TYPE  zeconfig_batch,
+        zdc          TYPE  zedc_batch,
+        zlot         TYPE  zelot_batch,
+        zmpn         TYPE  zempn_batch,
+        zrev         TYPE  zerev_batch,
+        zbin         TYPE  zebin_batch,
+        category2des TYPE zidpmm017-azf03,  "品質分類
+        pn_type(10)  TYPE c,   "物料類型
+        category7    TYPE zidpmm016-category7, "責任人
+        category1    TYPE zidpmm016-category1, "責任部門
+        wh_model     TYPE zidpmm016-category3, "倉碼機種
+        category9    TYPE zidpmm016-category9,  "賬冊
+        bsbcountr   TYPE zctbs_zzbsb-bsbcountr,  "原產國
+        bsborigin    TYPE zctbs_zzbsb-bsborigin,   "來源標示
+      END OF ty_dis .
+DATA:itab   TYPE STANDARD TABLE OF ty_dis.
+
+CLASS lcl_handle_events DEFINITION.
+  PUBLIC SECTION.
+    METHODS:
+      on_link_click FOR EVENT link_click OF cl_salv_events_table
+        IMPORTING row column.
+ENDCLASS.
+
+CLASS lcl_handle_events IMPLEMENTATION.
+  METHOD on_link_click.
+
+    READ TABLE itab INDEX row ASSIGNING FIELD-SYMBOL(<row>).
+    IF sy-subrc = 0.
+      ASSIGN COMPONENT column OF STRUCTURE <row> TO FIELD-SYMBOL(<value>).
+    ENDIF.
+
+    IF column = 'ZCONFIG' AND <value> IS NOT INITIAL.
+      cl_demo_output=>display( <value> ).
+    ENDIF.
+
+  ENDMETHOD.                    "on_single_click
+ENDCLASS.
+
+************************************************************************
+* SELECTION SCREEN                                                     *
+************************************************************************
+SELECTION-SCREEN: SKIP.
+SELECTION-SCREEN:BEGIN OF BLOCK c1 WITH FRAME TITLE t_com01 .
+
+  SELECTION-SCREEN: BEGIN OF LINE.
+    SELECTION-SCREEN: COMMENT (28) comm01 FOR  FIELD  p_plant.
+    PARAMETERS: p_plant     LIKE t001w-werks OBLIGATORY .
+  SELECTION-SCREEN: END OF LINE.
+
+  SELECTION-SCREEN: BEGIN OF LINE.
+    SELECTION-SCREEN: COMMENT (25) comm02 FOR  FIELD  p_sloc.
+    SELECT-OPTIONS: p_sloc  FOR  t001l-lgort  OBLIGATORY.
+  SELECTION-SCREEN: END OF LINE.
+
+  SELECTION-SCREEN: BEGIN OF LINE.
+    SELECTION-SCREEN: COMMENT (25) comm03 FOR  FIELD  p_matnr.
+    SELECT-OPTIONS: p_matnr   FOR mara-matnr.
+  SELECTION-SCREEN: END OF LINE.
+
+  SELECTION-SCREEN: BEGIN OF LINE.
+    SELECTION-SCREEN: COMMENT (25) comm06 FOR  FIELD  p_wbs.
+    SELECT-OPTIONS: p_wbs FOR mspr-pspnr .
+  SELECTION-SCREEN: END OF LINE.
+SELECTION-SCREEN:END OF BLOCK c1 .
+
+SELECTION-SCREEN: BEGIN OF LINE.
+  PARAMETERS: p_la   AS CHECKBOX DEFAULT 'X'.
+  SELECTION-SCREEN: COMMENT (25) comm04 FOR  FIELD  p_la.
+SELECTION-SCREEN: END OF LINE.
+
+SELECTION-SCREEN: BEGIN OF LINE.
+  PARAMETERS: p_spe   AS CHECKBOX .
+  SELECTION-SCREEN: COMMENT (25) comm05 FOR  FIELD  p_spe.
+SELECTION-SCREEN: END OF LINE.
+
+SELECTION-SCREEN:BEGIN OF BLOCK c2 WITH FRAME TITLE t_com02 .
+
+  SELECTION-SCREEN: BEGIN OF LINE.
+    PARAMETERS: p_alv      RADIOBUTTON GROUP def DEFAULT 'X'.
+    SELECTION-SCREEN: COMMENT (28) comm11 FOR  FIELD  p_alv.
+  SELECTION-SCREEN:  END OF LINE.
+
+  SELECTION-SCREEN: BEGIN OF LINE.
+    PARAMETERS: p_send  RADIOBUTTON GROUP def.
+    SELECTION-SCREEN: COMMENT (28) comm12 FOR  FIELD  p_send.
+  SELECTION-SCREEN:  END OF LINE.
+
+  SELECTION-SCREEN:  BEGIN OF LINE.
+    SELECTION-SCREEN:  COMMENT (20) comm13 FOR FIELD p_sbt .
+    PARAMETERS:        p_sbt LIKE vbap-ean11 .
+  SELECTION-SCREEN:  END OF LINE.
+
+*--TO email--
+  SELECTION-SCREEN:  BEGIN OF LINE.
+    SELECTION-SCREEN:  COMMENT (17) comm14 FOR FIELD p_mail .
+    SELECT-OPTIONS: p_mail FOR somlreci1-receiver NO INTERVALS .
+  SELECTION-SCREEN:  END OF LINE.
+
+SELECTION-SCREEN:END OF BLOCK c2 .
+
+
+
+************************************************************************
+* MAIN PROGRAM                                                         *
+*   INITIAL VARIABLE                                                   *
+*   PRINT ALV DATA                                                     *
+************************************************************************
+INITIALIZATION.
+  IF sy-langu = 'E'.
+    g_len = 'EN' .
+    t_com01 = 'Selection Data'.
+    t_com02 = 'Download type'.
+    comm01 = 'Plant' .
+    comm02 = 'Storage location'  .
+    comm03 = 'Material' .
+    comm04 = 'No zero stock lines'.
+    comm05 = 'Special stock & Project stock'.
+    comm06 = 'WBS'.
+    comm11 = 'ALV display'.
+    comm12 = 'Send email'.
+    comm13 = 'Subject title'.
+    comm14 = 'Mail address'.
+    g_comm04 = 'Storage location' .
+    g_comm05 = 'Material number' .
+    g_comm18 = 'Customer Material'.  "add new
+    g_comm06 = 'Material description' .
+    g_comm07 = 'UNIT' .
+    g_comm08 = 'Stock' .
+    g_comm09 = 'Model'.
+    g_comm10 = 'QPA'.
+    g_comm11 = 'Kitting Stock Report ' .
+    g_comm12 = 'WBS'.
+    g_comm13 = 'Floor'.
+    g_comm14 = 'Warehouse Controller'.
+    g_comm15 = 'Storage location description'.
+    g_comm16 = 'Valuation type' .
+*---add by Mars 20230316
+    g_comm17 = 'MPQ'.
+*---end by Mars 20230316
+    g_comm27 = 'Batch number'.
+    g_comm19 = 'Vendor'.
+    g_comm20 = 'Batch WBS'.
+    g_comm21 = 'Config'.
+    g_comm22 = 'Date code'.
+    g_comm23 = 'Lot code'.
+    g_comm24 = 'MPN'.
+    g_comm25 = 'Version'.
+    g_comm26 = 'RXID'.  "20260302 weijy  BIN
+    g_comm28 = 'Quality'.
+    g_comm29 = 'PN type'.
+    g_comm30 = 'Employee'.
+    g_comm31 = 'Department'.
+    g_comm32 = 'Lgort Model'.
+    g_comm33 = 'Book'.
+    g_comm34 = 'Country of Origin'.
+    g_comm35 = 'Source Attribution'.
+  ELSEIF sy-langu = 'M'.
+    g_len = 'ZF' .
+    t_com01 = '選項資料'.
+    t_com02 = '下載類型'.
+    comm01 = '工廠'.
+    comm02 = '倉碼'.
+    comm03 = '料號'.
+    comm04 = '只看庫存大於0'.
+    comm05 = '特殊庫存 &  project 庫存'.
+    comm06 = '階段'.
+    comm11 = 'ALV報表顯示'.
+    comm12 = '發送郵件通知'.
+    comm13 = '郵件主題'.
+    comm14 = '郵件地址'.
+    g_comm04 = '倉碼' .
+    g_comm05 = '料號' .
+    g_comm18 = '客戶料號'.
+    g_comm06 = '品名' .
+    g_comm07 = '單位' .
+    g_comm08 = '庫存數量' .
+    g_comm09 = '機種'.
+    g_comm10 = '用量'.
+    g_comm11 = 'Kitting 庫存報表 ' .
+    g_comm12 = 'WBS'.
+    g_comm13 = '樓層'.
+    g_comm14 = '倉管員'.
+    g_comm15 = '倉碼描述 '.
+    g_comm16 = '評價類型'.
+*---add by Mars 20230316
+    g_comm17 = 'MPQ'.
+*---end by Mars 20230316
+    g_comm27 = '批號'.
+    g_comm19 = '廠商'.
+    g_comm20 = '批次階段'.
+    g_comm21 = 'Config'.
+    g_comm22 = 'Date code'.
+    g_comm23 = 'Lot code'.
+    g_comm24 = '廠商料號'.
+    g_comm25 = '版本'.
+    g_comm26 = 'RXID'.  "20260302 weijy  BIN
+    g_comm28 = '品質分類'.
+    g_comm29 = '物料類型'.
+    g_comm30 = '責任人'.
+    g_comm31 = '責任部門'.
+    g_comm32 = '倉碼機種'.
+    g_comm33 = '賬冊'.
+    g_comm34 = '原產國'.
+    g_comm35 = '來源標示'.
+  ENDIF .
+
+INITIALIZATION.
+
+AT SELECTION-SCREEN.
+  LOOP AT p_sloc.
+    IF p_sloc-low = '*'.
+      LOOP AT p_matnr.
+        IF p_matnr-low = '*' .
+          IF sy-langu = 'E'.
+            MESSAGE e004
+           WITH 'Both matnr and cannot have "*"character in warehouse code'.
+          ELSE .
+            MESSAGE e004 WITH '倉碼、料號不能都為* '.
+          ENDIF .
+          STOP.
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
+  ENDLOOP.
+
+START-OF-SELECTION.
+*  DATA(gr_events) = NEW lcl_handle_events( ).
+
+  IF p_send = 'X'.
+    IF p_sbt IS INITIAL OR p_mail IS INITIAL .
+      IF sy-langu = 'E'.
+        MESSAGE i004 WITH 'Please input the Subject title and Mail address  '.
+      ELSE .
+        MESSAGE i004 WITH '請輸入郵件主題和郵件 '.
+      ENDIF .
+    ENDIF .
+  ENDIF .
+
+  PERFORM check_authorization.
+  PERFORM getdata2.
+
+  IF p_alv = 'X'.
+    PERFORM display2.
+*    PERFORM write_alv .
+*    PERFORM call_alv_for_list.
+  ELSE.
+    PERFORM send_mail2 .
+  ENDIF.
+
+*&---------------------------------------------------------------------*
+*&      Form  getdata
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM getdata.
+  DATA : l_mod      LIKE zidpmmcontrol-value1,
+         l_model    LIKE zidppp178-product,
+         l_qpa      LIKE zidppp178-menge,
+         l_qpa2(10) TYPE c,
+         l_t        TYPE i,
+         l_line     TYPE i,
+         l_stlnr    LIKE stpo-stlnr.
+
+  DATA:l_code      LIKE sy-subrc,
+       l_valuation LIKE mbew-bwtar,
+       l_mes       LIKE syst-msgv1.
+  DATA:ls_dis TYPE ty_dis.
+
+  IF p_la = 'X'.                                            "stock > 0
+    SELECT mard~lgort mard~matnr  mard~labst
+    INTO CORRESPONDING FIELDS OF TABLE itab_matnr
+    FROM mard
+    WHERE mard~matnr IN p_matnr AND mard~werks = p_plant
+    AND mard~lgort IN p_sloc AND mard~labst > 0.
+  ELSE.
+    SELECT mard~lgort mard~matnr  mard~labst
+    INTO CORRESPONDING FIELDS OF TABLE itab_matnr
+    FROM mard
+    WHERE mard~matnr IN p_matnr AND mard~werks = p_plant
+    AND mard~lgort IN p_sloc.
+  ENDIF .
+
+  IF p_spe = 'X'. "Special stock
+    IF p_la = 'X'.                                          "Stock>0
+      SELECT mkol~lgort mkol~matnr mkol~slabs AS labst
+      APPENDING CORRESPONDING FIELDS OF TABLE itab_matnr
+      FROM mkol
+      WHERE mkol~matnr IN p_matnr AND mkol~werks = p_plant
+      AND mkol~lgort IN p_sloc AND mkol~slabs > 0.
+
+      SELECT mspr~lgort mspr~matnr mspr~prlab AS labst
+      mspr~pspnr
+      APPENDING CORRESPONDING FIELDS OF TABLE itab_matnr
+      FROM mspr
+      WHERE mspr~matnr IN p_matnr AND mspr~werks = p_plant
+      AND mspr~lgort IN p_sloc AND mspr~pspnr IN p_wbs
+      AND mspr~prlab > 0.
+    ELSE.
+      SELECT mkol~lgort mkol~matnr mkol~slabs AS labst
+      APPENDING CORRESPONDING FIELDS OF TABLE itab_matnr
+      FROM mkol
+      WHERE mkol~matnr IN p_matnr AND mkol~werks = p_plant
+      AND mkol~lgort IN p_sloc.
+
+      SELECT mspr~lgort mspr~matnr mspr~prlab AS labst
+      mspr~pspnr
+      APPENDING CORRESPONDING FIELDS OF TABLE itab_matnr
+      FROM mspr
+      WHERE mspr~matnr IN p_matnr AND mspr~werks = p_plant
+      AND mspr~lgort IN p_sloc AND mspr~pspnr IN p_wbs.
+    ENDIF .
+  ENDIF .
+
+* 所有相關的數據讀取加上判空 20230601 by donghai
+  IF itab_matnr[] IS NOT INITIAL.
+
+*  DESCRIBE TABLE itab_matnr LINES l_line.
+*  IF l_line > 0.
+    SELECT matnr meins bismt
+    FROM mara
+    INTO CORRESPONDING FIELDS OF TABLE itabpn
+    FOR ALL ENTRIES IN itab_matnr
+    WHERE matnr = itab_matnr-matnr.
+*  ENDIF.
+
+*****************************************h240
+
+*獲取所有料件描述
+    CLEAR gt_makt[].
+*  SELECT * INTO CORRESPONDING FIELDS OF TABLE gt_makt
+*  FROM makt  WHERE spras = sy-langu.
+
+    SELECT *
+    FROM makt
+    INTO CORRESPONDING FIELDS OF TABLE gt_makt
+    FOR ALL ENTRIES IN itab_matnr
+    WHERE matnr = itab_matnr-matnr
+    AND spras = sy-langu.
+
+*讀取倉碼信息
+    SELECT * FROM t001l
+      INTO TABLE gt_t001l
+    WHERE werks = p_plant.
+*倉碼屬性
+    SELECT * FROM zidpmm016
+     INTO TABLE gt_mm016
+    WHERE werks = p_plant.
+
+    SELECT *
+    FROM zidpmmwhcd
+    INTO CORRESPONDING FIELDS OF TABLE controller2
+    FOR ALL ENTRIES IN itab_matnr
+      WHERE werks = p_plant
+        AND lgort = itab_matnr-lgort
+    AND matnr = itab_matnr-matnr .
+
+*---add by Mars 20230316
+*MPQ
+*  IF itab_matnr[] IS NOT INITIAL.
+    SELECT  ptc66 ptc06 ptc67 ptc48
+      INTO CORRESPONDING FIELDS OF TABLE gt_zidpmm012
+      FROM zidpmm012
+      FOR ALL ENTRIES IN itab_matnr
+      WHERE ptc66 = p_plant
+      AND ptc06 = itab_matnr-matnr.
+    SORT gt_zidpmm012 BY ptc66 ptc06  ASCENDING ptc67 DESCENDING.
+  ENDIF.
+*---end by Mars 20230316
+
+
+  LOOP AT itab_matnr .
+    CLEAR:ls_dis.
+    CLEAR gt_t001l.
+    READ TABLE gt_t001l WITH KEY werks = p_plant
+                                 lgort = itab_matnr-lgort.
+    IF sy-subrc = 0.
+      MOVE-CORRESPONDING gt_t001l TO ls_dis.
+    ENDIF.
+
+    CLEAR gt_makt.
+    READ TABLE gt_makt WITH KEY matnr = itab_matnr-matnr.
+    IF sy-subrc = 0.
+      MOVE-CORRESPONDING gt_makt TO ls_dis.
+    ENDIF.
+
+*    SELECT SINGLE lgobe INTO itab-lgobe FROM t001l
+*     WHERE werks = p_plant
+*       AND lgort = itab_matnr-lgort .
+
+*      SELECT SINGLE maktx INTO itab-maktx FROM makt
+*        WHERE matnr = itab_matnr-matnr
+*        AND spras = sy-langu .
+
+***************************************h240
+
+*    SELECT SINGLE controller INTO itab-controller FROM zidpmmwhcd
+*      WHERE werks = p_plant
+*        AND lgort = itab_matnr-lgort
+*        AND matnr = itab_matnr-matnr .
+    CLEAR controller2.
+    READ TABLE controller2 WITH KEY matnr = itab_matnr-matnr
+    lgort = itab_matnr-lgort.
+
+    ls_dis-controller = controller2-controller.
+    ls_dis-matnr = itab_matnr-matnr .
+    ls_dis-lgort = itab_matnr-lgort .
+    ls_dis-labst = itab_matnr-labst .
+
+    CALL FUNCTION 'ZRFC_MM_IDP_0195'
+      EXPORTING
+        plant          = p_plant
+        partno         = ls_dis-matnr
+        sloc           = ls_dis-lgort
+      IMPORTING
+        e_code         = l_code
+        valuation_type = l_valuation
+        message        = l_mes.
+
+    ls_dis-valuation = l_valuation .
+
+    READ TABLE itabpn WITH KEY matnr = itab_matnr-matnr.
+    IF sy-subrc = 0.
+      ls_dis-bismt = itabpn-bismt.
+      ls_dis-meins = itabpn-meins .
+    ENDIF.
+
+*    SELECT SINGLE category6 INTO itab-category6 FROM zidpmm016
+*      WHERE werks = p_plant
+*       AND  lgort = itab-lgort.
+
+    CLEAR  gt_mm016.
+    READ TABLE  gt_mm016 WITH KEY werks = p_plant
+                                 lgort = itab_matnr-lgort.
+    IF sy-subrc = 0.
+      MOVE-CORRESPONDING gt_mm016 TO ls_dis.
+    ENDIF.
+
+    CALL FUNCTION 'CONVERSION_EXIT_ABPSP_OUTPUT'
+      EXPORTING
+        input  = itab_matnr-pspnr
+      IMPORTING
+        output = ls_dis-pspnr.
+
+    l_t = 1 .
+    SELECT  product  menge
+    INTO (l_model , l_qpa)
+    FROM zidppp178 WHERE class = 'MRP' AND werks = p_plant
+    AND matnr = itab_matnr-matnr .
+      l_qpa2 = l_qpa .
+      CONDENSE l_qpa2 .
+      IF l_t = 1 .
+        ls_dis-model = l_model .
+        ls_dis-qpa   = l_qpa2 .
+      ELSE .
+        CONCATENATE l_model '/' ls_dis-model INTO ls_dis-model .
+        CONCATENATE l_qpa2 '/' ls_dis-qpa     INTO ls_dis-qpa .
+      ENDIF .
+      l_t = l_t + 1 .
+    ENDSELECT .
+
+*---add by Mars 20230317
+*MPQ
+    CLEAR  gt_zidpmm012.
+    READ TABLE  gt_zidpmm012 WITH KEY ptc66 = p_plant
+                                                                             ptc06 = itab_matnr-matnr BINARY SEARCH.
+    IF sy-subrc = 0.
+      ls_dis-ptc48 = gt_zidpmm012-ptc48.
+    ENDIF.
+*---end by Mars 20230317
+
+    APPEND ls_dis TO itab .
+    CLEAR:itab_matnr ,l_t , l_model , l_qpa , l_qpa .
+
+  ENDLOOP .
+
+ENDFORM.                    " getdata
+
+*&---------------------------------------------------------------------*
+*&      Form  write_alv
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM write_alv.
+  CLEAR: fc_alv.
+  REFRESH: fc_alv.
+  PERFORM append_fc_alv USING:
+
+      'ITAB' 'LGORT'  '8'  g_comm04,
+      'ITAB' 'LGOBE'  '16'  g_comm15,
+      'ITAB' 'MATNR'  '20' g_comm05,
+      'ITAB' 'BISMT'  '20' g_comm18, "ADD NEW
+      'ITAB' 'MAKTX'  '30' g_comm06,
+      'ITAB' 'MEINS'  '4'  g_comm07,
+      'ITAB' 'LABST'  '6'  g_comm08,
+      'ITAB' 'MODEL'  '30' g_comm09,
+      'ITAB' 'QPA'    '10'  g_comm10,
+      'ITAB' 'PSPNR'  '20' g_comm12 ,
+      'ITAB' 'CATEGORY6'  '30' g_comm13 ,
+      'ITAB' 'CONTROLLER'  '13' g_comm14 ,
+      'ITAB' 'VALUATION'   '11' g_comm16,
+*---add by Mars 202303120
+      'ITAB' 'PTC48'   '12' g_comm17,
+*      'ITAB' 'CPUDT'   '10' g_comm18,
+*      'ITAB' 'AEDAT'   '10' g_comm19,
+*      'ITAB' 'MRPVER'   '10' g_comm20.
+*---end by Mars 202303120
+      'ITAB' 'CHARG'   '10' g_comm27,
+      'ITAB' 'ZVENDOR'   '20' g_comm19,
+      'ITAB' 'ZWBS'   '20' g_comm20,
+      'ITAB' 'ZCONFIG'   '40' g_comm21,
+      'ITAB' 'ZDC'   '20' g_comm22,
+      'ITAB' 'ZLOT'   '20' g_comm23,
+      'ITAB' 'ZMPN'   '20' g_comm24,
+      'ITAB' 'ZREV'   '10' g_comm25,
+      'ITAB' 'ZBIN'   '10' g_comm26.
+ENDFORM.                    " write_alv
+*&---------------------------------------------------------------------*
+*&      Form  append_fc_alv
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_TABNAME
+*      -->P_FIELDNAME
+*      -->P_SELTEXT
+*----------------------------------------------------------------------*
+FORM append_fc_alv USING   p_tabname p_fieldname p_outputlen p_seltext .
+
+  MOVE:
+         p_tabname       TO fc_alv-tabname ,
+         p_fieldname     TO fc_alv-fieldname ,
+         p_outputlen     TO fc_alv-outputlen ,
+         p_seltext       TO fc_alv-reptext_ddic.
+
+  APPEND fc_alv.
+  CLEAR fc_alv.
+ENDFORM.                    " append_fc_alv
+*&---------------------------------------------------------------------*
+*&      Form  call_alv_for_list
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM call_alv_for_list.
+
+  gd_repid = sy-repid .
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = gd_repid
+      i_grid_title       = 'Stock report'
+      is_layout          = gd_layout
+      it_fieldcat        = fc_alv[]
+      i_default          = 'X'
+      i_save             = 'A'
+    TABLES
+      t_outtab           = itab[].
+  IF sy-subrc <> 0.
+* MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*         WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  ENDIF.
+
+
+ENDFORM.                    " call_alv_for_list
+*&---------------------------------------------------------------------*
+*&      Form  check_authorization
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM check_authorization.
+  RANGES: l_werks FOR marc-werks.
+  l_werks-sign = 'I'.
+  l_werks-option = 'EQ'.
+  l_werks-low = p_plant.
+  APPEND l_werks.
+  CLEAR l_werks.
+  CALL FUNCTION 'ZRFC_MM_IDP_0104'
+    TABLES
+      input  = l_werks[]
+      output = l_werks[].
+  IF l_werks[] IS INITIAL.
+    IF sy-langu = 'E'.
+      MESSAGE i004(zmm) WITH 'You have no authority to use this plant'
+  .
+    ELSE.
+      MESSAGE i004(zmm) WITH '您沒有查詢這個工廠的權限'.
+    ENDIF.
+    STOP.
+  ENDIF.
+ENDFORM.                    " check_authorization
+
+
+*&---------------------------------------------------------------------*
+*&      Form  send_mail
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM send_mail.
+
+  DATA: g_table_lines TYPE i.
+
+  DATA:
+    x_doc_chng LIKE sodocchgi1,                 " document attributes
+    it_objpack LIKE sopcklsti1 OCCURS 0 WITH HEADER LINE, "attachment table
+    it_objhead LIKE solisti1 OCCURS 0 WITH HEADER LINE,   "object header
+    it_objbin  LIKE solisti1 OCCURS 0 WITH HEADER LINE,   "binary table
+    it_objtxt  LIKE solisti1 OCCURS 0 WITH HEADER LINE,
+    it_reclist LIKE somlreci1 OCCURS 0 WITH HEADER LINE.
+
+*  DATA:g_tab TYPE x VALUE '09'.   " TAB value
+*  DATA:g_l   TYPE x VALUE '0D'.     " XLS SECOND LINE value
+*  DATA:g_2      TYPE x VALUE '0A'.     " New line
+  DATA:g_tab TYPE abap_char1 VALUE cl_abap_char_utilities=>horizontal_tab.   " TAB value
+  DATA:g_l   TYPE abap_cr_lf VALUE cl_abap_char_utilities=>cr_lf.     " XLS SECOND LINE value
+  DATA:g_2   TYPE abap_char1 VALUE cl_abap_char_utilities=>newline.     " New line
+
+*** begin of add by Alexis Liang 20220930
+  DATA:i_contents_hex TYPE TABLE OF solix.
+  DATA:lv_string TYPE string,
+       v_xattach TYPE xstring.
+  DATA:ls_dis TYPE ty_dis.
+
+  CLEAR: i_contents_hex, lv_string, v_xattach.
+*** end of add by Alexis Liang 20220930
+
+  CLEAR: g_table_lines,x_doc_chng,it_objpack,it_objpack[],it_objhead,
+  it_objhead[],it_objbin,it_objbin[],it_objtxt,it_objtxt[],it_reclist,
+  it_reclist[].
+
+
+  DATA : BEGIN OF it_receiver OCCURS 0,
+           reveiver(255) TYPE c,
+         END OF it_receiver.
+
+
+  LOOP AT p_mail.
+    it_receiver-reveiver = p_mail-low.
+    APPEND it_receiver.
+    CLEAR: it_receiver.
+  ENDLOOP.
+
+  LOOP AT it_receiver .
+    it_reclist-receiver = it_receiver-reveiver .
+    it_reclist-rec_type = 'U'.
+    APPEND it_reclist.
+  ENDLOOP.
+
+  CLEAR it_receiver.
+  CLEAR it_receiver[].
+
+  CLEAR: x_doc_chng.
+  x_doc_chng-obj_name = 'Excel'.
+
+  CONDENSE p_sbt NO-GAPS.
+  CONCATENATE  p_sbt 'kitting stock report'
+  INTO   x_doc_chng-obj_descr SEPARATED BY ''.
+  x_doc_chng-sensitivty = 'F'.
+
+
+  it_objtxt = 'Dear All :'.
+  APPEND it_objtxt.
+
+  it_objtxt = ''.
+  APPEND it_objtxt.
+
+  CONDENSE p_sbt NO-GAPS.
+  CONCATENATE p_sbt 'kitting stock report' INTO it_objtxt
+SEPARATED
+ BY ''.
+  APPEND it_objtxt.
+
+  it_objtxt = 'It is sent by SAP automatically,Do not return email!'.
+  APPEND it_objtxt.
+
+  it_objtxt = ''.
+  APPEND it_objtxt.
+
+  CLEAR g_table_lines.
+  DESCRIBE TABLE it_objtxt LINES g_table_lines.
+  READ TABLE it_objtxt INDEX g_table_lines.
+  x_doc_chng-doc_size =
+  ( g_table_lines - 1 ) * 255 + strlen( it_objtxt ).
+
+
+  CONCATENATE 'kitting stock report' sy-datum INTO  it_objhead
+SEPARATED BY ''.
+  APPEND  it_objhead.
+  CLEAR  it_objhead.
+
+
+  LOOP AT itab INTO ls_dis.
+    MOVE-CORRESPONDING ls_dis TO itab_mail .
+    APPEND itab_mail .
+    CLEAR: itab_mail .
+  ENDLOOP .
+
+
+
+  CLEAR it_objpack-transf_bin.
+  it_objpack-head_start = 1.
+  it_objpack-head_num = 0.
+  it_objpack-body_start = 1.
+  it_objpack-body_num = g_table_lines.
+  it_objpack-doc_type = 'RAW'.
+  APPEND it_objpack.
+  CLEAR it_objpack.
+
+  CONCATENATE ''
+                g_comm04
+                g_comm15
+                g_comm05
+                g_comm18
+                g_comm06
+                g_comm07
+                g_comm08
+                g_comm09
+                g_comm13
+                g_comm10
+                g_comm12
+                g_comm14
+                g_comm16
+  INTO it_objbin
+            SEPARATED BY g_tab.
+
+
+  CONCATENATE  it_objbin g_l INTO it_objbin.
+  APPEND it_objbin.CLEAR it_objbin.
+
+  LOOP AT itab_mail.
+
+    CONCATENATE ''
+                  itab_mail-lgort
+                  itab_mail-lgobe
+                  itab_mail-matnr
+                  itab_mail-bismt
+                  itab_mail-maktx
+                  itab_mail-meins
+                  itab_mail-labst
+                  itab_mail-model
+                  itab_mail-category6
+                  itab_mail-qpa
+                  itab_mail-pspnr
+                  itab_mail-controller
+                  itab_mail-valuation
+           INTO it_objbin
+           SEPARATED BY g_tab.
+    CONCATENATE   g_l  it_objbin  INTO it_objbin.
+    APPEND it_objbin.CLEAR it_objbin.
+
+  ENDLOOP.
+
+*** begin of add by Alexis Liang 20220930
+  LOOP AT it_objbin.
+    CONCATENATE lv_string it_objbin-line INTO lv_string.
+  ENDLOOP.
+
+* Convert string to xstring type
+* 'APPLICATION/MSEXCEL;charset=utf-16le'
+  CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
+    EXPORTING
+      text     = lv_string
+      mimetype = 'APPLICATION/MSEXCEL;charset=utf-16le'
+*     ENCODING = '8300'
+    IMPORTING
+      buffer   = v_xattach
+    EXCEPTIONS
+      failed   = 1
+      OTHERS   = 2.
+
+* Add the file header for utf-16le.
+  IF sy-subrc = 0.
+    CONCATENATE cl_abap_char_utilities=>byte_order_mark_little
+    v_xattach INTO v_xattach IN BYTE MODE.
+  ENDIF.
+
+  CALL FUNCTION 'SCMS_XSTRING_TO_BINARY'
+    EXPORTING
+      buffer     = v_xattach
+    TABLES
+      binary_tab = i_contents_hex.
+*** end of add by Alexis Liang 20220930
+
+*-document size
+  CLEAR g_table_lines.
+  DESCRIBE TABLE it_objbin LINES g_table_lines.
+  READ TABLE it_objbin INDEX g_table_lines.
+  x_doc_chng-doc_size =
+  ( g_table_lines - 1 ) * 255 + strlen( it_objbin ).
+
+*-set packing list for body text
+  DESCRIBE TABLE it_objbin  LINES g_table_lines.
+  CLEAR it_objpack-transf_bin.     "attachment
+  it_objpack-transf_bin = 'X'.
+  it_objpack-head_start = 1.
+  it_objpack-head_num = 0.
+  it_objpack-body_start = 1.
+  it_objpack-body_num = g_table_lines.
+  it_objpack-doc_type = 'XLS'.
+  it_objpack-obj_name = 'ABCD'.
+  it_objpack-obj_descr = 'kitting stock report'.
+  it_objpack-doc_size = g_table_lines * 255.
+
+  APPEND it_objpack.
+
+  CALL FUNCTION 'SO_NEW_DOCUMENT_ATT_SEND_API1'
+    EXPORTING
+      document_data              = x_doc_chng
+      put_in_outbox              = 'X'
+      commit_work                = 'X'
+    TABLES
+      packing_list               = it_objpack
+      object_header              = it_objhead
+*     contents_bin               = it_objbin
+      contents_hex               = i_contents_hex
+      contents_txt               = it_objtxt
+      receivers                  = it_reclist
+    EXCEPTIONS
+      too_many_receivers         = 1
+      document_not_sent          = 2
+      document_type_not_exist    = 3
+      operation_no_authorization = 4
+      parameter_error            = 5
+      x_error                    = 6
+      enqueue_error              = 7
+      OTHERS                     = 8.
+
+  CASE sy-subrc .
+    WHEN 0.
+      SUBMIT rsconn01
+         WITH mode EQ 'INT'
+          AND RETURN.
+      COMMIT WORK AND WAIT.
+    WHEN 2.
+      IF sy-langu = 'E'.
+        WRITE: / 'Document could not be sent to any recipient'(039).
+      ELSE .
+        WRITE: / '文件不能發送給任何接受者'.
+      ENDIF .
+    WHEN 4 OR 1.
+      IF sy-langu = 'E'.
+        WRITE: / 'No send authorization'(040).
+      ELSE .
+        WRITE: / '沒有發送權限'.
+      ENDIF .
+    WHEN OTHERS.
+      IF sy-langu = 'E'.
+        WRITE: / 'Error occurred while sending'(041).
+      ELSE .
+        WRITE: / '發送中出現錯誤'.
+      ENDIF .
+  ENDCASE.
+
+
+ENDFORM.                    " send_mail
+
+FORM getdata2.
+  DATA:s_sobkz TYPE RANGE OF mspr-sobkz.
+  DATA:l_model    LIKE zidppp178-product,
+       l_qpa      LIKE zidppp178-menge,
+       l_qpa2(16) TYPE c.
+*  DATA:l_config_id    TYPE zidpmm314-config_id,
+*       l_config_value TYPE zidpmm314-config_value.
+  DATA:lt_ocharg TYPE zm357t1,
+       ls_ocharg TYPE zm357l1.
+  DATA:lt_tmp LIKE itab.
+  DATA:l_batchclass LIKE zidpcontrolvalue-cvalue,
+       l_mandt      LIKE sy-mandt.
+  TYPES:BEGIN OF lty_matnr,
+          matnr LIKE marc-matnr,
+          werks LIKE marc-werks,
+        END OF lty_matnr,
+        BEGIN OF lty_lgort,
+          werks LIKE marc-werks,
+          lgort LIKE mard-lgort,
+        END OF lty_lgort.
+  DATA:lt_matnr TYPE TABLE OF lty_matnr,
+       lt_lgort TYPE TABLE OF lty_lgort.
+
+
+  TYPES: BEGIN OF ty_category9,
+                bsb01 TYPE zctbs_zzbsb-bsb01,
+                END OF  ty_category9.
+  DATA:lt_category9 TYPE TABLE OF ty_category9.
+
+*  IF p_spe = ''.  "如果不看特殊庫存,只查特殊庫存指示為空的數據
+*    APPEND VALUE #( sign = 'I' option = 'EQ' low = '' ) TO s_sobkz.
+*  ENDIF.
+*
+*  WITH +a AS (
+*  SELECT ksml~clint,klah~class,ksml~imerk,cabn~atnam
+*  FROM ksml
+*  INNER JOIN klah ON ksml~clint = klah~clint AND ksml~klart = klah~klart
+*  INNER JOIN cabn ON cabn~atinn = ksml~imerk
+*  WHERE ksml~klart = '023'
+*  AND klah~class = 'ZBATCH'
+*         ),
+*       +b AS (
+*  SELECT m~matnr,m~charg,
+*         STRING_AGG( CASE WHEN a~atnam = 'ZVENDOR' THEN ausp~atwrt END ) AS zvendor,
+*         STRING_AGG( CASE WHEN a~atnam = 'ZWBS' THEN ausp~atwrt END ) AS zwbs,
+*         STRING_AGG( CASE WHEN a~atnam = 'ZCONFIG' THEN ausp~atwrt END ) AS zconfig,
+*         STRING_AGG( CASE WHEN a~atnam = 'ZDC' THEN ausp~atwrt END ) AS zdc,
+*         STRING_AGG( CASE WHEN a~atnam = 'ZLOT' THEN ausp~atwrt END ) AS zlot,
+*         STRING_AGG( CASE WHEN a~atnam = 'ZMPN' THEN ausp~atwrt END ) AS zmpn,
+*         STRING_AGG( CASE WHEN a~atnam = 'ZREV' THEN ausp~atwrt END ) AS zrev,
+*         STRING_AGG( CASE WHEN a~atnam = 'ZBIN' THEN ausp~atwrt END ) AS zbin
+*  FROM mch1 AS m
+*  INNER JOIN ausp ON m~cuobj_bm = ausp~objek AND ausp~klart = '023'
+*  INNER JOIN +a AS a ON a~imerk = ausp~atinn
+*  GROUP BY m~matnr,m~charg,m~hsdat
+*         ),
+*       +c AS (
+*  SELECT matnr,werks,lgort,charg,pspnr,sobkz,prlab AS labst
+*  FROM mspr
+*  UNION ALL
+** 啟用批次的正常庫存
+*  SELECT mchb~matnr,mchb~werks,mchb~lgort,mchb~charg,CAST( '00000000' AS NUMC( 8 ) ) AS pspnr,' ' AS sobkz,mchb~clabs AS labst
+*  FROM mchb
+*  INNER JOIN marc ON marc~matnr = mchb~matnr AND marc~werks = mchb~werks AND marc~xchpf = 'X'
+*  UNION ALL
+*  SELECT matnr,werks,lgort,charg,CAST( '00000000' AS NUMC( 8 ) ) AS pspnr,sobkz,slabs AS labst
+*  FROM mkol
+*  UNION ALL
+** 未啟用批次的正常庫存
+*  SELECT mard~matnr,mard~werks,mard~lgort,' ' AS charg,CAST( '00000000' AS NUMC( 8 ) ) AS pspnr,' ' AS sobkz,mard~labst
+*  FROM mard
+*  INNER JOIN marc ON marc~matnr = mard~matnr AND marc~werks = mard~werks AND marc~xchpf = ''
+*         ),
+*       +d AS (
+*  SELECT mbew~matnr,mbew~bwkey AS werks,zidpmm032a~lgort,mbew~bwtar
+*  FROM v_mbew_md AS mbew
+*  INNER JOIN zidpmm032a ON zidpmm032a~werks = mbew~bwkey AND zidpmm032a~bwtar = mbew~bwtar
+*         ),
+*       +e AS (
+*           SELECT ptc06,ptc66,ptc48, ROW_NUMBER( ) OVER( PARTITION BY ptc06,ptc66 ORDER BY ptc67 DESCENDING ) AS row
+*           FROM zidpmm012
+*         ),
+*       +f AS (
+*           SELECT ptc06,ptc66,ptc48 FROM +e AS ee WHERE row = 1
+*         )
+*  SELECT cc~matnr,cc~lgort,cc~charg,cc~labst,
+*         bb~zvendor,bb~zwbs,bb~zconfig,bb~zdc,bb~zlot,bb~zmpn,bb~zrev,bb~zbin,
+*         t001l~lgobe,mara~bismt,makt~maktx,mara~meins,' ' AS model,z6~category6,' ' AS qpa,prps~posid AS pspnr,
+*         zidpmmwhcd~controller,dd~bwtar AS valuation,ff~ptc48,z6~category7,z8~azf03 AS category1,
+*         z6~category3 AS wh_model,t~mtbez AS pn_type,z7~azf03 AS category2des
+*  FROM +c AS cc
+*  LEFT JOIN +b AS bb ON bb~matnr = cc~matnr AND bb~charg = cc~charg
+*  INNER JOIN t001l ON t001l~werks = cc~werks AND t001l~lgort = cc~lgort
+*  INNER JOIN mara ON mara~matnr = cc~matnr
+*  LEFT JOIN makt ON makt~matnr = cc~matnr AND makt~spras = @sy-langu
+*  LEFT JOIN zidpmm016 AS z6 ON z6~werks = cc~werks AND z6~lgort = cc~lgort
+*  LEFT JOIN prps ON prps~pspnr = cc~pspnr
+*  LEFT JOIN zidpmmwhcd ON zidpmmwhcd~werks = cc~werks AND zidpmmwhcd~lgort = cc~lgort AND zidpmmwhcd~matnr = cc~matnr
+*  LEFT JOIN +f AS ff ON ff~ptc66 = cc~werks AND ff~ptc06 = cc~matnr
+*  LEFT JOIN +d AS dd ON dd~matnr = cc~matnr AND dd~werks = cc~werks AND dd~lgort = cc~lgort
+*  LEFT JOIN zidpmm017 AS z7 ON z7~werks = cc~werks AND z7~azf01 = z6~category2
+*  LEFT JOIN zidpmm017 AS z8 ON z8~werks = cc~werks AND z8~azf01 = z6~category1
+*  LEFT JOIN t134t AS t ON t~mtart = mara~mtart AND t~spras = @sy-langu
+*  WHERE cc~werks = @p_plant
+*  AND cc~matnr IN @p_matnr
+*  AND cc~lgort IN @p_sloc
+*  AND cc~pspnr IN @p_wbs
+*  AND cc~sobkz IN @s_sobkz
+*  AND cc~labst > 0
+*  INTO CORRESPONDING FIELDS OF TABLE @itab.
+
+* 檢查是否啟用批次
+  SELECT SINGLE cvalue INTO l_batchclass
+  FROM zidpcontrolvalue
+  WHERE werks = p_plant
+  AND ctype = 'BATCH_ACTIVE'
+  AND indicator1 = 'ACT'.
+  IF sy-subrc = 0.
+*   啟用批次的正常庫存
+    SELECT mchb~matnr,mchb~werks,mchb~lgort,mchb~charg,mchb~clabs AS labst
+    FROM mchb
+    INNER JOIN marc ON marc~matnr = mchb~matnr AND marc~werks = mchb~werks AND marc~xchpf = 'X'
+    WHERE mchb~werks = @p_plant
+    AND mchb~matnr IN @p_matnr
+    AND mchb~lgort IN @p_sloc
+    AND mchb~clabs > 0
+    APPENDING CORRESPONDING FIELDS OF TABLE @itab.
+
+*   未啟用批次的正常庫存
+    SELECT mard~matnr,mard~werks,mard~lgort,mard~labst
+    FROM mard
+    INNER JOIN marc ON marc~matnr = mard~matnr AND marc~werks = mard~werks AND marc~xchpf = ''
+    WHERE mard~werks = @p_plant
+    AND mard~matnr IN @p_matnr
+    AND mard~lgort IN @p_sloc
+    AND mard~labst > 0
+    APPENDING CORRESPONDING FIELDS OF TABLE @itab.
+  ELSE.
+    SELECT matnr,werks,lgort,labst
+    FROM mard
+    WHERE werks = @p_plant
+    AND matnr IN @p_matnr
+    AND lgort IN @p_sloc
+    AND labst > 0
+    APPENDING CORRESPONDING FIELDS OF TABLE @itab.
+  ENDIF.
+
+  IF p_spe = 'X'.  "特殊庫存
+    SELECT matnr,werks,lgort,charg,pspnr,prlab AS labst
+    FROM mspr
+    WHERE werks = @p_plant
+    AND matnr IN @p_matnr
+    AND lgort IN @p_sloc
+    AND pspnr IN @p_wbs
+    AND prlab > 0
+    APPENDING CORRESPONDING FIELDS OF TABLE @itab.
+
+    SELECT matnr,werks,lgort,charg,slabs AS labst
+    FROM mkol
+    WHERE werks = @p_plant
+    AND matnr IN @p_matnr
+    AND lgort IN @p_sloc
+    AND slabs > 0
+    APPENDING CORRESPONDING FIELDS OF TABLE @itab.
+  ENDIF.
+
+  IF itab[] IS NOT INITIAL.
+    MOVE-CORRESPONDING itab[] TO lt_matnr[].
+    SORT lt_matnr BY matnr werks.
+    DELETE ADJACENT DUPLICATES FROM lt_matnr COMPARING ALL FIELDS.
+    MOVE-CORRESPONDING itab[] TO lt_lgort[].
+    SORT lt_lgort BY werks lgort.
+    DELETE ADJACENT DUPLICATES FROM lt_lgort COMPARING ALL FIELDS.
+
+    SELECT z6~werks,z6~lgort,z6~category3,z6~category6,z6~category7,z7~azf03,z8~azf03 AS category2des,l~lgobe,z6~category9
+    FROM zidpmm016 AS z6
+    LEFT JOIN zidpmm017 AS z7 ON z6~werks = z7~werks AND z7~azf01 = z6~category1
+    LEFT JOIN zidpmm017 AS z8 ON z6~werks = z8~werks AND z8~azf01 = z6~category2
+    LEFT JOIN t001l AS l ON l~werks = z6~werks AND l~lgort = z6~lgort
+    FOR ALL ENTRIES IN @lt_lgort
+    WHERE z6~werks = @lt_lgort-werks
+    AND z6~lgort = @lt_lgort-lgort
+    INTO TABLE @DATA(lt_017).
+    SORT lt_017 BY werks lgort.
+
+    "內表LT_017中的字段category9長度于zcbts_zzbsb中的bsb01長度不一致
+    LOOP AT lt_017 ASSIGNING FIELD-SYMBOL(<fs_017>).
+      APPEND <fs_017>-category9 TO lt_category9.
+    ENDLOOP.
+
+    IF lt_category9 IS NOT INITIAL.
+      SELECT bsb01, bsb04, bsborigin, bsbcountr
+      FROM zctbs_zzbsb
+      FOR ALL ENTRIES IN @lt_category9
+      WHERE bsb01 = @lt_category9-bsb01
+      INTO TABLE @DATA(lt_018).
+    ENDIF.
+    SORT lt_018 BY bsb01 bsb04.
+
+
+    WITH +e AS (
+           SELECT z2~ptc06,z2~ptc66,z2~ptc48, ROW_NUMBER( ) OVER( PARTITION BY z2~ptc06,z2~ptc66 ORDER BY ptc67 DESCENDING ) AS row
+           FROM zidpmm012 AS z2
+           WHERE EXISTS ( SELECT m~matnr FROM @lt_matnr AS m WHERE m~matnr = z2~ptc06 AND m~werks = z2~ptc66 )
+          )
+    SELECT ptc06,ptc66,ptc48
+    FROM +e AS ee
+    WHERE row = 1
+    INTO TABLE @DATA(lt_012).
+    SORT lt_012 BY ptc06 ptc66.
+
+    SELECT SINGLE mandt INTO l_mandt
+    FROM zidpcontrolvalue
+    WHERE werks = p_plant
+    AND ctype = 'VALUATION_CHECK'
+    AND indicator1 = 'ACT'.
+    IF sy-subrc = 0.
+      SELECT m~matnr,m~bwkey,a~lgort,m~bwtar
+      FROM v_mbew_md AS m
+      INNER JOIN zidpmm032a AS a ON a~werks = m~bwkey AND a~bwtar = m~bwtar
+      FOR ALL ENTRIES IN @itab
+      WHERE m~matnr = @itab-matnr
+      AND m~bwkey = @itab-werks
+      AND a~lgort = @itab-lgort
+      INTO TABLE @DATA(lt_mbew).
+      SORT lt_mbew BY matnr bwkey lgort.
+    ENDIF.
+
+    SELECT mtart,mtbez INTO TABLE @DATA(lt_134)
+    FROM t134t
+    WHERE spras = @sy-langu.
+
+*    lt_tmp[] = itab[].
+*    SELECT a~*,l~lgobe,m~bismt,t~maktx,m~meins,s~posid AS pspnr,d~controller,t4~mtbez AS pn_type
+*    FROM @lt_tmp AS a
+*    INNER JOIN mara AS m ON m~matnr = a~matnr
+*    LEFT JOIN t134t AS t4 ON t4~mtart = m~mtart AND t4~spras = @sy-langu
+*    LEFT JOIN t001l AS l ON l~werks = a~werks AND l~lgort = a~lgort
+*    LEFT JOIN makt AS t ON t~matnr = a~matnr AND t~spras = @sy-langu
+*    LEFT JOIN prps AS s ON s~pspnr = a~pspnr
+*    LEFT JOIN zidpmmwhcd AS d ON d~werks = a~werks AND d~lgort = a~lgort AND d~matnr = a~matnr
+*    INTO CORRESPONDING FIELDS OF TABLE @itab.
+*    CLEAR:lt_tmp[].
+  ENDIF.
+
+
+  SORT itab BY werks lgort matnr charg.
+  LOOP AT itab ASSIGNING FIELD-SYMBOL(<fs_itab>).
+    READ TABLE lt_017 INTO DATA(ls_017) WITH KEY werks = <fs_itab>-werks
+                                                 lgort = <fs_itab>-lgort BINARY SEARCH.
+    IF sy-subrc = 0.
+      <fs_itab>-wh_model = ls_017-category3.
+      <fs_itab>-category6 = ls_017-category6.
+      <fs_itab>-category7 = ls_017-category7.
+      <fs_itab>-category1 = ls_017-azf03.
+      <fs_itab>-category2des = ls_017-category2des.
+      <fs_itab>-lgobe = ls_017-lgobe.
+      <fs_itab>-category9 = ls_017-category9.
+    ENDIF.
+
+    READ TABLE lt_018 ASSIGNING FIELD-SYMBOL(<fs_018>) WITH KEY bsb01 = <fs_itab>-category9
+                                                                                                                                       bsb04 = <fs_itab>-matnr
+                                                                                                                                       BINARY SEARCH.
+      IF sy-subrc = 0.
+        <fs_itab>-bsborigin = <fs_018>-bsborigin.
+        <fs_itab>-bsbcountr = <fs_018>-bsbcountr.
+      ENDIF.
+
+    READ TABLE lt_012 INTO DATA(ls_012) WITH KEY ptc06 = <fs_itab>-matnr
+                                                 ptc66 = <fs_itab>-werks BINARY SEARCH.
+    IF sy-subrc = 0.
+      <fs_itab>-ptc48 = ls_012-ptc48.
+    ENDIF.
+
+    READ TABLE lt_mbew INTO DATA(ls_mbew) WITH KEY matnr = <fs_itab>-matnr
+                                                   bwkey = <fs_itab>-werks
+                                                   lgort = <fs_itab>-lgort BINARY SEARCH.
+    IF sy-subrc = 0.
+      <fs_itab>-valuation = ls_mbew-bwtar.
+    ENDIF.
+
+    IF <fs_itab>-charg IS NOT INITIAL.
+      lt_ocharg[] = VALUE #( ( matnr = <fs_itab>-matnr werks = <fs_itab>-werks charg = <fs_itab>-charg ) ).
+
+      CALL FUNCTION 'ZRFC_MM_IDP_0357'
+        CHANGING
+          ocharg = lt_ocharg.
+      READ TABLE lt_ocharg INTO ls_ocharg INDEX 1.
+      IF sy-subrc = 0.
+*        <fs_itab>-zvendor = ls_ocharg-zvendor.
+*        <fs_itab>-zwbs = ls_ocharg-zwbs.
+*        <fs_itab>-zconfig = ls_ocharg-zconfig.
+*        <fs_itab>-zdc = ls_ocharg-zdc.
+*        <fs_itab>-zlot = ls_ocharg-zlot.
+*        <fs_itab>-zmpn = ls_ocharg-zmpn.
+*        <fs_itab>-zrev = ls_ocharg-zrev.
+*        <fs_itab>-zbin = ls_ocharg-zbin.
+
+        "20251105 weijy 当结果为N/A时，改为显示空1
+        <fs_itab>-zvendor = COND #( WHEN ls_ocharg-zvendor <> 'N/A' THEN ls_ocharg-zvendor ELSE '' ).
+        <fs_itab>-zwbs    = COND #( WHEN ls_ocharg-zwbs    <> 'N/A' THEN ls_ocharg-zwbs    ELSE '' ).
+        <fs_itab>-zconfig = COND #( WHEN ls_ocharg-zconfig <> 'N/A' THEN ls_ocharg-zconfig ELSE '' ).
+        <fs_itab>-zdc     = COND #( WHEN ls_ocharg-zdc     <> 'N/A' THEN ls_ocharg-zdc     ELSE '' ).
+        <fs_itab>-zlot    = COND #( WHEN ls_ocharg-zlot    <> 'N/A' THEN ls_ocharg-zlot    ELSE '' ).
+        <fs_itab>-zmpn    = COND #( WHEN ls_ocharg-zmpn    <> 'N/A' THEN ls_ocharg-zmpn    ELSE '' ).
+        <fs_itab>-zrev    = COND #( WHEN ls_ocharg-zrev    <> 'N/A' THEN ls_ocharg-zrev    ELSE '' ).
+        <fs_itab>-zbin    = COND #( WHEN ls_ocharg-zbin    <> 'N/A' THEN ls_ocharg-zbin    ELSE '' ).
+
+      ENDIF.
+    ENDIF.
+
+    SELECT SINGLE bismt,meins,mtart INTO (@<fs_itab>-bismt,@<fs_itab>-meins,@DATA(l_mtart))
+    FROM mara
+    WHERE matnr = @<fs_itab>-matnr.
+    IF sy-subrc = 0.
+      READ TABLE lt_134 INTO DATA(ls_134) WITH KEY mtart = l_mtart.
+      IF sy-subrc = 0.
+        <fs_itab>-pn_type = ls_134-mtbez.
+      ENDIF.
+    ENDIF.
+
+    SELECT SINGLE maktx INTO @<fs_itab>-maktx
+    FROM makt
+    WHERE matnr = @<fs_itab>-matnr
+    AND spras = @sy-langu.
+
+    IF <fs_itab>-pspnr <> '00000000' AND <fs_itab>-pspnr <> ''.
+      SELECT SINGLE posid INTO <fs_itab>-pspnr
+      FROM prps
+      WHERE pspnr = <fs_itab>-pspnr.
+    ENDIF.
+
+    SELECT SINGLE controller INTO <fs_itab>-controller
+    FROM zidpmmwhcd
+    WHERE werks = <fs_itab>-werks
+    AND lgort = <fs_itab>-lgort
+    AND matnr = <fs_itab>-matnr.
+
+    SELECT product menge INTO (l_model , l_qpa)
+    FROM zidppp178
+    WHERE class = 'MRP'
+    AND werks = p_plant
+    AND matnr = <fs_itab>-matnr .
+      l_qpa2 = l_qpa .
+      CONDENSE l_qpa2 .
+      IF <fs_itab>-model = ''.
+        <fs_itab>-model = l_model .
+        <fs_itab>-qpa   = l_qpa2 .
+      ELSE .
+        <fs_itab>-model = <fs_itab>-model && '/' && l_model.
+        <fs_itab>-qpa = <fs_itab>-qpa && '/' && l_qpa2.
+      ENDIF .
+    ENDSELECT .
+
+*    CLEAR:l_config_id,l_config_value.
+*    l_config_id = <fs_itab>-zconfig.
+*    CALL FUNCTION 'ZRFC_MM_IDP_0359'
+*      CHANGING
+*        config_id    = l_config_id
+*        config_value = l_config_value.
+*    <fs_itab>-zconfig = l_config_value.
+  ENDLOOP.
+ENDFORM.
+
+FORM send_mail2.
+  DATA:send_request TYPE REF TO cl_bcs,
+       document     TYPE REF TO cl_document_bcs,
+       fail         TYPE REF TO cx_bcs,
+       recipient    TYPE REF TO if_recipient_bcs.
+  DATA:l_content      TYPE string,
+       mailto         TYPE ad_smtpadr,
+       main_text      TYPE bcsy_text,
+       title          TYPE so_obj_des,
+       mail_sender_lr TYPE REF TO if_sender_bcs,
+       l_sender       LIKE adr6-smtp_addr.
+  DATA:t_attachment_header  TYPE soli_tab,
+       wa_attachment_header LIKE LINE OF t_attachment_header,
+       size                 TYPE sood-objlen,
+       bcs_exception        TYPE REF TO cx_bcs.
+  DATA:l_row TYPE i,
+       l_col TYPE i.
+  DATA:file_data TYPE xstring.
+
+
+  TRY.
+      xlsx_handling = cl_ehfnd_xlsx=>get_instance( ).
+      xlsx_doc = xlsx_handling->create_doc( ).
+*      xlsx_sheet = xlsx_doc->add_new_sheet( iv_sheet_name = 'ZDPMM018' ).
+      xlsx_sheet = xlsx_doc->get_sheet_by_id( iv_sheet_id = 1 ).
+
+      l_row = 1.
+      l_col = 1.
+      PERFORM set_cell_content USING:
+      l_row 1 g_comm04 'C',
+      l_row 2 g_comm15 'C',
+      l_row 3 g_comm05 'C',
+      l_row 4 g_comm18 'C',
+      l_row 5 g_comm06 'C',
+      l_row 6 g_comm07 'C',
+      l_row 7 g_comm08 'C',
+      l_row 8 g_comm09 'C',
+      l_row 9 g_comm13 'C',
+      l_row 10 g_comm10 'C',
+      l_row 11 g_comm12 'C',
+      l_row 12 g_comm14 'C',
+      l_row 13 g_comm16 'C',
+      l_row 14 g_comm17 'C',
+      l_row 15 g_comm27 'C',
+      l_row 16 g_comm19 'C',
+      l_row 17 g_comm20 'C',
+      l_row 18 g_comm21 'C',
+      l_row 19 g_comm22 'C',
+      l_row 20 g_comm23 'C',
+      l_row 21 g_comm24 'C',
+      l_row 22 g_comm25 'C',
+      l_row 23 g_comm26 'C',
+      l_row 24 g_comm28 'C',
+      l_row 25 g_comm29 'C',
+      l_row 26 g_comm30 'C',
+      l_row 27 g_comm31 'C',
+      l_row 28 g_comm32 'C'.
+
+
+      LOOP AT itab INTO DATA(ls_itab).
+        l_row = l_row + 1.
+
+        PERFORM set_cell_content USING:
+        l_row 1 ls_itab-lgort 'C',
+        l_row 2 ls_itab-lgobe 'C',
+        l_row 3 ls_itab-matnr 'C',
+        l_row 4 ls_itab-bismt 'C',
+        l_row 5 ls_itab-maktx 'C',
+        l_row 6 ls_itab-meins 'C',
+        l_row 7 ls_itab-labst 'C',
+        l_row 8 ls_itab-model 'C',
+        l_row 9 ls_itab-category6 'C',
+        l_row 10 ls_itab-qpa 'C',
+        l_row 11 ls_itab-pspnr 'C',
+        l_row 12 ls_itab-controller 'C',
+        l_row 13 ls_itab-valuation 'C',
+        l_row 14 ls_itab-ptc48 'C',
+        l_row 15 ls_itab-charg 'C',
+        l_row 16 ls_itab-zvendor 'C',
+        l_row 17 ls_itab-zwbs 'C',
+        l_row 18 ls_itab-zconfig 'C',
+        l_row 19 ls_itab-zdc 'C',
+        l_row 20 ls_itab-zlot 'C',
+        l_row 21 ls_itab-zmpn 'C',
+        l_row 22 ls_itab-zrev 'C',
+        l_row 23 ls_itab-zbin 'C',
+        l_row 24 ls_itab-category2des 'C',
+        l_row 25 ls_itab-pn_type 'C',
+        l_row 26 ls_itab-category7 'C',
+        l_row 27 ls_itab-category1 'C',
+        l_row 28 ls_itab-wh_model 'C'.
+      ENDLOOP.
+
+      file_data = xlsx_doc->save( ).
+
+      l_content = 'Dear All,'.
+      APPEND l_content TO main_text.
+      l_content = '  Kitting stock report.'.
+      APPEND l_content TO main_text.
+      l_content = '  It is sent by SAP automatically,Do not return email!'.
+      APPEND l_content TO main_text.
+
+      title = p_sbt && '-kitting stock report'.
+*      mailto = 'dong-hai.li@mail.foxconn.com'.
+      l_sender = 'idpbg-zz-it-erp@mail.foxconn.com'.
+
+
+*   step1: create request
+      send_request = cl_bcs=>create_persistent( ).
+*   step2: create mail content
+      DATA(solix_tab) = cl_document_bcs=>xstring_to_solix( ip_xstring = file_data ).
+      document = cl_document_bcs=>create_document(
+       i_type = 'RAW'  "'HTM'
+       i_text = main_text
+*       i_hex = solix_tab
+       i_subject = title ).
+
+      DATA(l_i) = xstrlen( file_data ).
+      size = l_i.
+
+      wa_attachment_header = 'zdpmm018.xlsx'.
+      APPEND wa_attachment_header TO t_attachment_header.
+
+*     添加附件
+      document->add_attachment(
+        i_attachment_type    = 'XLS'                         " 附件格式
+        i_attachment_subject = 'KTstock.xlsx'                        " 附件名称
+        i_attachment_size    = size                         "附件大小
+        i_att_content_hex    = solix_tab
+        i_attachment_header  = t_attachment_header
+        ).            "附件内容
+
+      send_request->set_document( document ).
+
+      LOOP AT p_mail.
+        mailto = p_mail-low.
+
+        recipient = cl_cam_address_bcs=>create_internet_address( mailto ).
+        send_request->add_recipient( recipient ).
+      ENDLOOP.
+
+      send_request->send( i_with_error_screen = 'X' ).
+
+    CATCH cx_openxml_not_allowed cx_openxml_format cx_openxml_not_found.
+      WRITE:/ 'create excel error'.
+    CATCH cx_bcs INTO bcs_exception.
+*      MESSAGE i865(so) WITH bcs_exception->error_type.
+      WRITE:/ 'send mail error'.
+  ENDTRY.
+
+  COMMIT WORK AND WAIT.
+
+  WRITE:/ 'send mail success'.
+ENDFORM.
+
+FORM set_cell_content USING fu_row fu_col fu_value fu_datatype.
+
+  xlsx_sheet->set_cell_content( iv_row = fu_row
+                                     iv_column = fu_col
+                                     iv_value = fu_value
+                                     iv_input_type = cl_abap_typedescr=>typekind_data "typekind_clike
+                                     iv_force_string = abap_false
+                                    ).
+ENDFORM.
+
+FORM display2.
+  "增加变式保存
+  DATA: gr_layout TYPE REF TO cl_salv_layout.
+  DATA: key TYPE salv_s_layout_key.
+
+
+  DATA(gr_events) = NEW lcl_handle_events( ).
+
+  TRY.
+      cl_salv_table=>factory(
+        IMPORTING
+          r_salv_table = gr_alv
+        CHANGING
+          t_table      = itab ).
+    CATCH cx_salv_msg INTO DATA(lr_msg).
+  ENDTRY.
+
+  DATA(lr_cols) = CAST cl_salv_columns( gr_alv->get_columns( ) ).
+
+  lr_cols->set_optimize( 'X' ).
+
+*  gr_alv->set_screen_status( pfstatus = 'SALV_STANDARD'
+*                           report = 'SALV_DEMO_TABLE_FUNCTIONS'
+*                           set_functions = gr_alv->c_functions_all
+*                          ).
+
+*  gr_alv->set_screen_status(
+*    pfstatus      =  'SALV_STANDARD'
+*    report        =  sy-repid
+*    set_functions = gr_alv->c_functions_all
+*  ).
+
+*  DATA(lr_selections) = gr_alv->get_selections( ).
+*  lr_selections->set_selection_mode( 3 ).
+
+  DATA(lr_functions) = gr_alv->get_functions( ).
+  lr_functions->set_all( abap_true ).
+
+  PERFORM set_column USING ''  lr_cols 'LGORT'        g_comm04 .
+  PERFORM set_column USING '' lr_cols 'LGOBE'         g_comm15 .
+  PERFORM set_column USING ''  lr_cols 'MATNR'        g_comm05.
+  PERFORM set_column USING ''  lr_cols 'BISMT'        g_comm18.
+  PERFORM set_column USING ''  lr_cols 'MAKTX'        g_comm06.
+  PERFORM set_column USING ''  lr_cols 'MEINS'        g_comm07 .
+  PERFORM set_column USING ''  lr_cols 'LABST'        g_comm08 .
+  PERFORM set_column USING ''  lr_cols 'MODEL'        g_comm09 .
+  PERFORM set_column USING ''  lr_cols 'QPA'          g_comm10 .
+  PERFORM set_column USING ''  lr_cols 'PSPNR'        g_comm12.
+  PERFORM set_column USING ''  lr_cols 'CATEGORY6'    g_comm13  .
+  PERFORM set_column USING ''  lr_cols 'CONTROLLER'   g_comm14.
+  PERFORM set_column USING ''  lr_cols 'VALUATION'    g_comm16.
+  PERFORM set_column USING '' lr_cols 'PTC48'         g_comm17.
+  PERFORM set_column USING '' lr_cols 'CHARG'         g_comm27.
+  PERFORM set_column USING '' lr_cols 'ZVENDOR'       g_comm19 .
+  PERFORM set_column USING '' lr_cols 'ZWBS'          g_comm20.
+  PERFORM set_column USING 'X' lr_cols 'ZCONFIG'      g_comm21 .
+  PERFORM set_column USING '' lr_cols 'ZDC'           g_comm22.
+  PERFORM set_column USING '' lr_cols 'ZLOT'          g_comm23.
+  PERFORM set_column USING '' lr_cols 'ZMPN'          g_comm24.
+  PERFORM set_column USING '' lr_cols 'ZREV'          g_comm25.
+  PERFORM set_column USING '' lr_cols 'ZBIN'          g_comm26.
+  PERFORM set_column USING '' lr_cols 'CATEGORY2DES'  g_comm28.
+  PERFORM set_column USING '' lr_cols 'PN_TYPE'       g_comm29.
+  PERFORM set_column USING '' lr_cols 'CATEGORY7'     g_comm30.
+  PERFORM set_column USING '' lr_cols 'CATEGORY1'     g_comm31.
+  PERFORM set_column USING '' lr_cols 'WH_MODEL'      g_comm32.
+  PERFORM set_column USING '' lr_cols 'CATEGORY9'     g_comm33.
+  PERFORM set_column USING '' lr_cols 'BSBCOUNTR'     g_comm34.
+  PERFORM set_column USING '' lr_cols 'BSBORIGIN'     g_comm35.
+
+
+
+  DATA(lr_events) = gr_alv->get_event( ).
+
+*  SET HANDLER gr_events->on_user_command FOR lr_events.
+
+  SET HANDLER gr_events->on_link_click FOR lr_events.
+  "增加变式保存
+  gr_layout = gr_alv->get_layout( ).
+  key-report = sy-repid.
+  gr_layout->set_key( key ).
+  gr_layout->set_save_restriction( cl_salv_layout=>restrict_none ).
+*  gr_layout->set_initial_layout( 'X' ).
+  gr_layout->set_default( abap_true ).
+
+
+
+  gr_alv->display( ).
+
+ENDFORM.
+
+FORM set_column  USING  i_hotspot TYPE xfeld
+                        pr_cols TYPE REF TO cl_salv_columns
+                        VALUE(fname)
+                        VALUE(text).
+
+  DATA: lr_column TYPE REF TO cl_salv_column_table.
+
+  TRY.
+      lr_column ?= pr_cols->get_column( fname ).
+      lr_column->set_long_text( CONV #( text ) ).
+      lr_column->set_medium_text( CONV #( text ) ).
+      lr_column->set_short_text( CONV #( text ) ).
+      IF i_hotspot = abap_true.
+        lr_column->set_cell_type( if_salv_c_cell_type=>hotspot ).
+      ENDIF.
+    CATCH cx_salv_not_found.                            "#EC NO_HANDLER
+  ENDTRY.
+ENDFORM.

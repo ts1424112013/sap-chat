@@ -1,0 +1,343 @@
+************************************************************************
+* Program name : ZRMM_IDP_0129_A                                       *
+* Program title:  display Addtion Sloc Information                     *
+* T-code       :                                                       *
+* Author       : pengfei                                               *
+* Date         : 20141218                                              *
+* Others       :                                                       *
+*----------------------------------------------------------------------*
+* modifications:                                                       *
+
+************************************************************************
+
+REPORT zrmm_idp_0129_a MESSAGE-ID zpp.
+*----------------------------------------------------------------------*
+*      -- Statement tables --
+*----------------------------------------------------------------------*
+TABLES:zidpmm016,t001w, t001l, zidpmm017.
+TYPE-pools:slis.
+DATA:gs_repid LIKE sy-repid,
+      gw_layout TYPE slis_layout_alv,
+      gw_fieldcat TYPE slis_fieldcat_alv,
+      gt_fieldcat TYPE slis_t_fieldcat_alv.
+
+*----------------------------------------------------------------------*
+*      -- Define internal table & Ranges --
+*----------------------------------------------------------------------*
+DATA: BEGIN OF INPUT OCCURS 0,
+  werks           LIKE zidpmm016-werks,
+  lgort       LIKE zidpmm016-lgort,
+  indicator1  LIKE zidpmm016-indicator1,
+  indicator2  LIKE zidpmm016-indicator2,
+  indicator3  LIKE zidpmm016-indicator3,
+  indicator4  LIKE zidpmm016-indicator4,
+  indicator5  LIKE zidpmm016-indicator5,
+  indicator6  LIKE zidpmm016-indicator6,
+  indicator7  LIKE zidpmm016-indicator7,
+  indicat0r8  LIKE zidpmm016-indicat0r8,
+  indicator9  LIKE zidpmm016-indicator9,
+  category1   LIKE zidpmm016-category1,
+  category2   LIKE zidpmm016-category2,
+  category3   LIKE zidpmm016-category3,
+  category4   LIKE zidpmm016-category4,
+  category5   LIKE zidpmm016-category5,
+  category6   LIKE zidpmm016-category6,
+  category7   LIKE zidpmm016-category7,
+  category8   LIKE zidpmm016-category8,
+  category9   LIKE zidpmm016-category9,
+  category10   LIKE zidpmm016-category10,
+  category11   LIKE zidpmm016-category11,
+  category12   LIKE zidpmm016-category12,
+  category13   LIKE zidpmm016-category13,
+  category14   LIKE zidpmm016-category14,
+  category15   LIKE zidpmm016-category15,
+  category16   LIKE zidpmm016-category16,
+  category17   LIKE zidpmm016-category17,
+  category18   LIKE zidpmm016-category18,
+END OF INPUT.
+
+DATA: BEGIN OF itab_t OCCURS 0.
+  DATA:    status(1) TYPE C,
+        MESSAGE(40) TYPE C.
+  INCLUDE STRUCTURE zidpmm016.
+DATA: END OF itab_t.
+DATA: BEGIN OF itab OCCURS 0.
+  INCLUDE STRUCTURE zidpmm016.
+
+  DATA:   lgobe LIKE t001l-lgobe,
+        category1des LIKE zidpmm017-azf03,
+        category2des LIKE zidpmm017-azf03,
+        category4des LIKE zidpmm017-azf03,
+        category5des LIKE zidpmm017-azf03,
+        build_code(15) TYPE C .
+DATA: END OF itab.
+*----------------------------------------------------------------------*
+*      -- Define global variable & Constants --
+*----------------------------------------------------------------------*
+DATA: g_date TYPE sy-datum.
+*----------------------------------------------------------------------*
+*      -- ALV Define --
+*----------------------------------------------------------------------*
+TYPE-pools: slis.
+DATA: gt_layout TYPE slis_layout_alv.
+DATA: fieldcat TYPE slis_t_fieldcat_alv,
+      fieldcat_ln LIKE LINE OF fieldcat.
+*----------------------------------------------------------------------*
+*      -- Selection screen --
+*----------------------------------------------------------------------*
+selection-SCREEN BEGIN OF BLOCK b  WITH FRAME TITLE TEXT-001.
+
+  PARAMETERS p_werks LIKE zidpmm016-werks obligatory DEFAULT 'ABG1'.
+  SELECT-options: p_lgort FOR zidpmm016-lgort.
+
+selection-SCREEN END OF BLOCK b.
+
+*----------------------------------------------------------------------*
+*      -- At selection screen --
+*----------------------------------------------------------------------*
+AT selection-SCREEN.
+
+*----------------------------------------------------------------------*
+*      -- Main program --
+*----------------------------------------------------------------------*
+start-OF-selection.
+
+
+PERFORM check_authorization.
+PERFORM sel_data.
+PERFORM OUTPUT.
+
+
+END-OF-selection.
+
+*&---------------------------------------------------------------------*
+*&      Form  sel_data
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM sel_data.
+  SELECT *
+  INTO corresponding FIELDS OF TABLE itab
+  FROM zidpmm016 AS a
+  inner JOIN t001l AS b ON a~werks = b~werks
+  AND a~lgort = b~lgort
+  WHERE a~werks = p_werks
+  AND a~lgort IN p_lgort.
+  IF itab[] IS INITIAL.
+    MESSAGE i000(zmm) WITH 'No Data Display'.
+    STOP.
+  ENDIF.
+  LOOP AT itab.
+    SELECT SINGLE azf03 INTO itab-category1des FROM zidpmm017
+    WHERE werks = itab-werks AND azf01 = itab-category1.
+    SELECT SINGLE azf03 INTO itab-category2des FROM zidpmm017
+    WHERE werks = itab-werks AND azf01 = itab-category2.
+    SELECT SINGLE azf03 INTO itab-category4des FROM zidpmm017
+    WHERE werks = itab-werks AND azf01 = itab-category4.
+    SELECT SINGLE azf03 INTO itab-category5des FROM zidpmm017
+    WHERE werks = itab-werks AND azf01 = itab-category5.
+    SELECT SINGLE cvalue1 INTO itab-build_code FROM zidpcontrolvalue
+    WHERE werks = itab-werks
+    AND ctype = 'BUILD_CODE'
+    AND cvalue = itab-category6+0(3)
+    AND indicator1 = 'ACT'.
+    MODIFY itab.
+    CLEAR itab.
+  ENDLOOP.
+ENDFORM.                    " sel_data
+*&---------------------------------------------------------------------*
+*&      Form  output
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM OUTPUT.
+  DATA: C TYPE I.
+  DATA: l_repid TYPE sy-repid.
+  l_repid = sy-repid.
+
+  IF sy-langu = 'M'.
+    PERFORM fill_alv_structure USING:
+          'ITAB'  'WERKS'      '工廠',
+          'ITAB'  'LGORT'      '倉碼',
+          'ITAB'  'LGOBE'      '描述',
+          'ITAB'  'INDICATOR1' '成本否',
+          'ITAB'  'INDICATOR2' '可出貨否',
+          'ITAB'  'INDICATOR3' '生產屬性',
+          'ITAB'  'INDICATOR4' '可RMA否',
+          'ITAB'  'INDICATOR5' '保稅否',
+          'ITAB'  'INDICATOR6' '待驗否',
+          'ITAB'  'INDICATOR7' '雜項帳冊',
+          'ITAB'  'INDICAT0R8' 'T倉否',
+          'ITAB'  'INDICATOR9' 'INDICATOR9',
+          'ITAB'  'CATEGORY1'  '責任部門',
+          'ITAB'  'CATEGORY1DES'  '描述',
+
+          'ITAB'  'CATEGORY2'  '品質分類',
+          'ITAB'  'CATEGORY2DES'  '描述',
+          'ITAB'  'CATEGORY3'  '機種',
+          'ITAB'  'CATEGORY4'  '區域分類',
+          'ITAB'  'CATEGORY4DES'  '描述',
+          'ITAB'  'CATEGORY5'  'RTV分類',
+          'ITAB'  'CATEGORY5DES'  '描述',
+          'ITAB'  'CATEGORY6'  '樓層',
+          'ITAB'  'BUILD_CODE'  'building code',
+          'ITAB'  'CATEGORY7'  '責任人',
+          'ITAB'  'CATEGORY8'  '倉庫屬性',
+          'ITAB'  'CATEGORY9'  '帳冊',
+          'ITAB'  'CATEGORY10'  '保管人ID',
+          'ITAB'  'CATEGORY18'  '保管人',
+          'ITAB'  'CATEGORY11'  'PPV分類',
+          'ITAB'  'CATEGORY12'  'PPV品質分類',
+          'ITAB'  'CATEGORY13'  'PPV Flag',
+          'ITAB'  'CATEGORY14'  '製造處,MLB attrition啟用',
+          'ITAB'  'CATEGORY15'  '制程,MLB attrition啟用',
+          'ITAB'  'CATEGORY16'  '備用',
+          'ITAB'  'CATEGORY17'  '成本中心',
+*     'ITAB'  'CATEGORY18'  '備用',
+          'ITAB'  'ACTIVE'  '啟用否',
+          'ITAB'  'DEPART'  '部門',
+          'ITAB'  'ERSDA'      '創建日期',
+          'ITAB'  'ERNAM'      '創建人',
+          'ITAB'  'LAEDA'      '修改日期',
+          'ITAB'  'AENAM'      '修改人'.
+*'ITAB'  'CATEGORY1'  '責任部門',
+*     'ITAB'  'CATEGORY1DES'  '描述',
+*    'ITAB'  'CATEGORY2'  '品質分類',
+*     'ITAB'  'CATEGORY2DES'  '描述',
+
+
+
+* 'ITAB'  'CATEGORY4'  '區域分類',
+*     'ITAB'  'CATEGORY4DES'  '描述',
+*    'ITAB'  'CATEGORY5'  'RTV分類',
+*    'ITAB'  'CATEGORY5DES'  '描述',
+
+
+
+  ELSE.
+    PERFORM fill_alv_structure USING:
+          'ITAB'  'WERKS'      'Plant Code',
+          'ITAB'  'LGORT'      'SLoc',
+          'ITAB'  'LGOBE'      'Description',
+          'ITAB'  'INDICATOR1' 'Cost',
+          'ITAB'  'INDICATOR2' 'Delivery',
+          'ITAB'  'INDICATOR3' 'MFG',
+          'ITAB'  'INDICATOR4' 'RMA',
+          'ITAB'  'INDICATOR5' 'Bonded',
+          'ITAB'  'INDICATOR6' 'IQC Flag',
+          'ITAB'  'INDICATOR7' 'Messy books',
+          'ITAB'  'INDICAT0R8' 'T warehouse',
+          'ITAB'  'INDICATOR9' 'INDICATOR9',
+          'ITAB'  'CATEGORY1'  'Department',
+          'ITAB'  'CATEGORY1DES'  'Description',
+          'ITAB'  'CATEGORY2'  'Quality',
+          'ITAB'  'CATEGORY2DES'  'Description',
+          'ITAB'  'CATEGORY3'  'Model',
+          'ITAB'  'CATEGORY4'  'Area',
+          'ITAB'  'CATEGORY4DES'  'Description',
+          'ITAB'  'CATEGORY5'  'RTV',
+          'ITAB'  'CATEGORY5DES'  'Description',
+          'ITAB'  'CATEGORY6'  'Floor',
+          'ITAB'  'BUILD_CODE'  'building code',
+          'ITAB'  'CATEGORY7'  'Employee',
+          'ITAB'  'CATEGORY8'  'Sloc attribute',
+          'ITAB'  'CATEGORY9'  'Books',
+          'ITAB'  'CATEGORY10'  'Keeper ID',
+          'ITAB'  'CATEGORY18'  'Keeper',
+          'ITAB'  'CATEGORY11'  'PPV class',
+          'ITAB'  'CATEGORY12'  'PPV quality',
+          'ITAB'  'CATEGORY13'  'PPV Flag',
+          'ITAB'  'CATEGORY14'  'manufacturing, MLB attrition enable',
+          'ITAB'  'CATEGORY15'  'process, MLB attrition enable',
+          'ITAB'  'CATEGORY16'  'spare',
+          'ITAB'  'CATEGORY17'  'Cost center',
+*     'ITAB'  'CATEGORY18'  'spare',
+          'ITAB'  'ACTIVE'  'ACTIVE',
+          'ITAB'  'DEPART'  'DEPARTMENT',
+          'ITAB'  'ERSDA'      'Create Date',
+          'ITAB'  'ERNAM'      'Create By',
+          'ITAB'  'LAEDA'      'Change Date',
+          'ITAB'  'AENAM'      'Change By'.
+
+*   'ITAB'  'CATEGORY1'  'Department',
+*      'ITAB'  'CATEGORY1DES'  'Description',
+*      'ITAB'  'CATEGORY2'  'Quality',
+*     'ITAB'  'CATEGORY2DES'  'Description',
+
+
+
+*'ITAB'  'CATEGORY4'  'Area',
+*     'ITAB'  'CATEGORY4DES'  'Description',
+*     'ITAB'  'CATEGORY5'  'RTV',
+*      'ITAB'  'CATEGORY5DES'  'Description',
+* 'ITAB'  'CATEGORY9'  'Books',
+
+
+
+  ENDIF.
+  gw_layout-colwidth_optimize = 'X'.
+  gw_layout-zebra = 'X'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+  EXPORTING
+    i_callback_program = l_repid
+    it_fieldcat        = gt_fieldcat
+    is_layout          = gw_layout
+    i_default          = 'X'
+    i_save             = 'A'
+  TABLES
+    t_outtab           = itab
+  EXCEPTIONS
+    program_error      = 1
+    OTHERS             = 2.
+ENDFORM.                    " output
+*---------------------------------------------------------------------*
+*       FORM fill_alv_structure                                       *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+*  -->  P_TABNAME                                                     *
+*  -->  P_FIELDNAME                                                   *
+*  -->  P_FIELDTEXT                                                   *
+*---------------------------------------------------------------------*
+FORM fill_alv_structure USING p_tabname p_fieldname p_fieldtext.
+  gw_fieldcat-tabname = p_tabname.
+  gw_fieldcat-fieldname = p_fieldname.
+  gw_fieldcat-seltext_l = p_fieldtext.
+  APPEND gw_fieldcat TO gt_fieldcat.
+ENDFORM.                    " fill_alv_structure
+*&---------------------------------------------------------------------*
+*&      Form  check_authorization
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM check_authorization.
+  RANGES: l_werks FOR marc-werks.
+  l_werks-SIGN = 'I'.
+  l_werks-option = 'EQ'.
+  l_werks-low = p_werks.
+  APPEND l_werks.
+  CLEAR l_werks.
+  CALL FUNCTION 'ZRFC_MM_IDP_0104'
+  TABLES
+    INPUT  = l_werks[]
+    OUTPUT = l_werks[].
+  IF l_werks[] IS INITIAL.
+    IF sy-langu = 'E'.
+      MESSAGE i004(zmm) WITH 'You have no authority to use this plant'
+      .
+    ELSE.
+      MESSAGE i004(zmm) WITH '您沒有查詢這個工廠的權限'.
+    ENDIF.
+    STOP.
+  ENDIF.
+ENDFORM.                    " check_authorization

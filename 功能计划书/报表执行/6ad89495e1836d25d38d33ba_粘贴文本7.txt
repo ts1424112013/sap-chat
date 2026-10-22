@@ -1,0 +1,1710 @@
+REPORT zrmm_idp_0159 MESSAGE-ID zidpmm001 NO STANDARD PAGE
+HEADING LINE-SIZE 255.
+
+
+INCLUDE zinp_idp_0001a.
+*include zinp_idp_0001.
+
+TABLES: adrc,
+        lfa1,
+        zidpmmwhh,
+        mseg ,
+        zidpmmwhi,
+        zidpmm017,
+        zidpmmcontrol2.
+*ADD by xiaoxiao 20220518
+DATA:l_build LIKE zidpmmwhh-floor,
+     t_build LIKE zidpmmwhh-floor.
+*---------------------------------
+DATA l_matnr  LIKE  zidpmmwhi-matnr.
+DATA: BEGIN OF zidpmmwhhtab OCCURS 0,
+        docnumber        LIKE  zidpmmwhh-docnumber,
+        docyear          LIKE  zidpmmwhh-docyear,
+        doctype          LIKE  zidpmmwhh-doctype,
+        doctypetext      LIKE  dd07t-ddtext,
+        docstas          LIKE  zidpmmwhh-docstas,
+        mblnr            LIKE  zidpmmwhh-mblnr,
+        mjahr            LIKE  zidpmmwhh-mjahr,
+        badat            LIKE  zidpmmwhh-badat,
+        glizeit          LIKE  zidpmmwhh-glizeit,
+        employid         LIKE  zidpmmwhh-employid,
+        aufnr            LIKE  zidpmmwhh-aufnr,
+        fprod            LIKE  afpo-matnr,
+        auart            LIKE  aufk-auart,
+        enmng            LIKE  zidpmmwhh-enmng,
+        kostl            LIKE  zidpmmwhh-kostl,
+        commenttext      LIKE  zidpmmwhh-commenttext,
+        erdat            LIKE  zidpmmwhh-erdat,
+        erzet            LIKE  zidpmmwhh-erzet,
+        ernam            LIKE  zidpmmwhh-ernam,
+        aedat            LIKE  zidpmmwhh-aedat,
+        aezet            LIKE  zidpmmwhh-aezet,
+        aenam            LIKE  zidpmmwhh-aenam,
+        usnam            LIKE  zidpmmwhh-usnam,
+        postdate         LIKE  zidpmmwhh-postdate,
+        posttime         LIKE  zidpmmwhh-posttime,
+        ebeln            LIKE  zidpmmwhh-ebeln,
+        refno            LIKE  zidpmmwhh-refno,
+        mblnn            LIKE  zidpmmwhh-mblnn,
+        relstatus        LIKE  zidpmmwhh-relstatus,
+        reson            LIKE  zidpmmwhh-reson,
+        grtxt            LIKE  zidpmmwhh-grtxt,
+        kunnr            LIKE  zidpmmwhh-kunnr,
+        creater          LIKE  zidpmmwhh-creater,
+        password         LIKE  zidpmmwhh-password,
+        poster           LIKE  zidpmmwhh-poster,
+        password2        LIKE  zidpmmwhh-password2,
+        lifnr            LIKE  zidpmmwhh-lifnr,
+        konto            LIKE  zidpmmwhh-konto,
+        floor            LIKE  zidpmmwhh-floor,
+        model            LIKE  zidpmmwhh-model,
+        eissueflag       LIKE  zidpmmwhh-eissueflag,
+        pull_num         LIKE  zidpmmwhh-pull_num,
+        intra_cat        LIKE  zidpmmwhh-intra_cat,
+        cusremark        LIKE  zidpmmwhh-cusremark,
+        cusremarktxt     LIKE  dd07v-ddtext,
+        docitem          LIKE  zidpmmwhi-docitem,
+        matnr            LIKE  zidpmmwhi-matnr,
+        maktx            LIKE  makt-maktx,
+        bismt            LIKE  mara-bismt,
+        werks            LIKE  zidpmmwhi-werks,
+        lgort            LIKE  zidpmmwhi-lgort,
+        umlgo            LIKE  zidpmmwhi-umlgo,
+        charg            LIKE  zidpmmwhi-charg,
+        erfmg            LIKE  zidpmmwhi-erfmg,
+        erfme            LIKE  zidpmmwhi-erfme,
+        ummat            LIKE  zidpmmwhi-ummat,
+        umwrk            LIKE  zidpmmwhi-umwrk,
+        umcha            LIKE  zidpmmwhi-umcha,
+        sgtxt            LIKE  zidpmmwhi-sgtxt,
+        rsnum            LIKE  zidpmmwhi-rsnum,
+        rspos            LIKE  zidpmmwhi-rspos,
+        markdeletion     LIKE  zidpmmwhi-markdeletion,
+        dispo            LIKE  zidpmmwhi-dispo,
+        plfmg            LIKE  zidpmmwhi-plfmg,
+        alpgr            LIKE  zidpmmwhi-alpgr,
+        zalpgr           LIKE  zidpmmwhi-zalpgr,
+        ps_psp_pnr       LIKE  zidpmmwhi-ps_psp_pnr,
+        mat_pspnr        LIKE  zidpmmwhi-mat_pspnr,
+        stlnr            LIKE  zidpmmwhi-stlnr,
+        roll(1)          TYPE c,
+        smbln            LIKE mseg-smbln,
+
+        cpudt            LIKE mkpf-cpudt,
+*by wangzhongsheng 20180904
+        yl2              LIKE  zidpmmwhh-yl2,
+        yl3              LIKE  zidpmmwhh-yl3,
+        dremark_descript LIKE zidpmm017-azf03,
+        lif              LIKE  zidpmmwhi-lifnr,
+        transtype        LIKE zidpmmwhh-transtype,
+        isbpo            LIKE zidpmmwhh-isbpo,
+        zeile            LIKE   mseg-zeile,
+*add by xiaoxiao 20220311
+*      build   like zidpmmwhh-floor ,
+        build            LIKE zidpmmwhh-floor,
+        build1           LIKE zidpmmwhh-floor,
+        tslvt            TYPE v_glt0-tslvt , "cost
+        tltslvt          TYPE v_glt0-tslvt , "total
+      END OF zidpmmwhhtab.
+DATA zidpmmwhhtab1 LIKE TABLE OF zidpmmwhhtab WITH HEADER LINE.
+
+DATA: BEGIN OF l_docnu OCCURS 0,
+        docnumber LIKE  zidpmmwhh-docnumber,
+      END OF l_docnu.
+
+*Ting 090914 end
+
+TYPE-POOLS: slis.
+* Global variant use
+DATA: fieldcat TYPE slis_t_fieldcat_alv  WITH HEADER LINE .
+DATA: l_netwr LIKE  bapicurr-bapicurr.
+DATA: repid     LIKE sy-repid.
+
+DATA: fieldcatalog  TYPE slis_t_fieldcat_alv WITH HEADER LINE,
+      gd_tab_group  TYPE slis_t_sp_group_alv,
+      gd_layout     TYPE slis_layout_alv,
+      gd_repid      LIKE sy-repid,
+      gd_prntparams TYPE slis_print_alv,
+      it_ecat       TYPE slis_t_event.
+******* ALV DECLARATION
+*include rm07alvi.
+DATA: fc_alv TYPE slis_fieldcat_alv OCCURS 10 WITH HEADER LINE.
+
+
+DATA:g_comm01(20) TYPE c,
+     g_comm02(20) TYPE c,
+     g_comm03(20) TYPE c,
+     g_comm04(20) TYPE c,
+     g_comm05(20) TYPE c,
+     g_comm06(20) TYPE c,
+     g_comm07(20) TYPE c,
+     g_comm08(20) TYPE c,
+     g_comm09(20) TYPE c,
+     g_comm10(20) TYPE c,
+     g_comm11(20) TYPE c,
+     g_comm12(20) TYPE c,
+     g_comm13(20) TYPE c,
+     g_comm14(20) TYPE c,
+     g_comm15(20) TYPE c,
+     g_comm16(20) TYPE c,
+     g_comm17(20) TYPE c,
+     g_comm18(20) TYPE c,
+     g_comm19(20) TYPE c,
+     g_comm20(20) TYPE c,
+     g_comm21(20) TYPE c,
+     g_comm22(20) TYPE c,
+     g_comm23(20) TYPE c,
+     g_comm24(20) TYPE c,
+     g_comm25(20) TYPE c,
+     g_comm26(20) TYPE c,
+     g_comm27(20) TYPE c,
+     g_comm28(20) TYPE c,
+     g_comm29(20) TYPE c,
+     g_comm30(20) TYPE c,
+     g_comm31(20) TYPE c,
+     g_comm32(20) TYPE c,
+     g_comm33(20) TYPE c,
+     g_comm34(20) TYPE c,
+     g_comm35(20) TYPE c,
+     g_comm36(20) TYPE c,
+     g_comm37(20) TYPE c,
+     g_comm38(20) TYPE c,
+     g_comm39(20) TYPE c,
+     g_comm40(20) TYPE c,
+     g_comm41(20) TYPE c,
+     g_comm42(20) TYPE c,
+     g_comm43(20) TYPE c,
+     g_comm44(20) TYPE c,
+     g_comm45(20) TYPE c,
+     g_comm46(20) TYPE c,
+     g_comm47(20) TYPE c,
+     g_comm48(20) TYPE c,
+     g_comm49(20) TYPE c,
+     g_comm50(20) TYPE c,
+     g_comm51(20) TYPE c,
+     g_comm52(20) TYPE c,
+     g_comm53(20) TYPE c,
+     g_comm54(20) TYPE c,
+     g_comm55(20) TYPE c,
+     g_comm56(20) TYPE c,
+     g_comm57(20) TYPE c,
+     g_comm58(20) TYPE c,
+     g_comm59(20) TYPE c,
+     g_comm60(20) TYPE c,
+     g_comm61(20) TYPE c,
+     g_comm62(20) TYPE c,
+     g_comm63(20) TYPE c,
+     g_comm64(20) TYPE c,
+     g_comm65(20) TYPE c,
+     g_comm66(20) TYPE c,
+     g_comm67(20) TYPE c,
+     g_comm68(20) TYPE c,
+     g_comm69(20) TYPE c,
+     g_comm70(20) TYPE c,
+     g_comm71(20) TYPE c,
+     g_comm72(20) TYPE c,
+     g_comm73(20) TYPE c,
+*by wangzhongsheng 20180904
+     g_comm74(20) TYPE c,
+     g_comm75(20) TYPE c,
+     g_comm76(20) TYPE c,
+     g_comm77(20) TYPE c,
+     g_comm78(20) TYPE c,   "轉撥分類
+     g_comm79(20) TYPE c,  "是否BPO
+     g_comm80(20) TYPE c,
+
+     g_comm81(20) TYPE c,  "轉出樓棟 add xiaoxiao
+     g_comm82(20) TYPE c, "轉入樓棟
+     g_comm84(20) TYPE c,
+     g_comm85(20) TYPE c.
+
+DATA: listindex TYPE i.
+DATA:tline TYPE i.
+DATA:l_budat(30) TYPE c.
+DATA:l_cputm(30) TYPE c.
+DATA: l_c(2) TYPE c.
+DATA: l_d(2) TYPE c.
+DATA: l_e(2) TYPE c.
+DATA: l_f(2) TYPE c.
+DATA: l_g(2) TYPE c.
+DATA: l_h(2) TYPE c.
+
+DATA:l_bdatj_1 LIKE ckmlpp-bdatj,
+     l_poper_1 LIKE ckmlpp-poper,
+     l_bukrs   LIKE t001k-bukrs,
+     l_waers   LIKE t001-waers,
+     l_factor  TYPE p DECIMALS 3,
+     l_bwkey   LIKE mbew-bwkey,
+     l_bwtar   LIKE mbew-bwtar,
+     l_kalnr   LIKE ckmlhd-kalnr,
+     l_pspnr   LIKE ckmlhd-pspnr.
+DATA:gt_kalnr TYPE ckmv0_matobj_tbl WITH HEADER LINE.
+DATA:gt_ckmlpp LIKE TABLE OF ckmlpp WITH HEADER LINE,
+     gt_ckmlcr LIKE TABLE OF ckmlcr WITH HEADER LINE.
+
+SELECTION-SCREEN BEGIN OF BLOCK blk1 WITH FRAME TITLE TEXT-b01.
+  PARAMETERS:  sdocyear TYPE zidpmmwhh-docyear OBLIGATORY
+        DEFAULT sy-datum+0(4).
+
+  SELECT-OPTIONS: docnumb  FOR zidpmmwhh-docnumber MEMORY ID zm0001 ,
+                  doctype  FOR zidpmmwhh-doctype OBLIGATORY,
+                  docstas  FOR zidpmmwhh-docstas DEFAULT 0 TO 1,
+* 必輸 請購單（請求）日期 方便WHH表走索引
+                  badat    FOR zidpmmwhh-badat OBLIGATORY DEFAULT
+  sy-datum TO sy-datum,
+                  glizeit  FOR zidpmmwhh-glizeit DEFAULT '000000' TO
+  '240000',
+                  employid FOR zidpmmwhh-employid NO-EXTENSION NO
+  INTERVALS,
+                  aufnr    FOR zidpmmwhh-aufnr,
+                  kostl    FOR zidpmmwhh-kostl,
+                  erdat    FOR zidpmmwhh-erdat,
+                  aedat    FOR zidpmmwhh-aedat,
+                  postdate FOR zidpmmwhh-postdate,
+*-----add by jinzhu ZZDPG2111033 增加過賬時間篩選條件 2021/11/25
+                  posttime FOR zidpmmwhh-posttime,
+*-----add by jinzhu ZZDPG2111033 2021/11/25---end
+                  mblnr    FOR zidpmmwhh-mblnr,
+                  ebeln    FOR zidpmmwhh-ebeln,
+                  usnam    FOR zidpmmwhh-usnam,
+                  matnr    FOR zidpmmwhi-matnr,
+                  werks    FOR zidpmmwhi-werks OBLIGATORY,
+                  lgort    FOR zidpmmwhi-lgort,
+                  umlgo    FOR zidpmmwhi-umlgo ,
+*add 080409
+                  s_floor  FOR zidpmmwhh-floor,
+                  s_model  FOR zidpmmwhh-model,
+**---by huibin 2021/02/24
+                  s_yl2   FOR  zidpmmwhh-yl2 ,
+**----**
+                  s_rel FOR zidpmmwhh-relstatus,
+                  s_reson FOR zidpmmwhh-reson,
+                  s_refno FOR zidpmmwhh-refno,
+                  s_pull FOR zidpmmwhh-pull_num, "kelly add 110811
+                  s_frwbs FOR zidpmmwhi-ps_psp_pnr, "Clutch add 20150128
+                  s_towbs FOR zidpmmwhi-mat_pspnr,
+                  s_eflag FOR zidpmmwhh-eissueflag .
+*
+  SELECTION-SCREEN: BEGIN OF LINE.
+    SELECTION-SCREEN: COMMENT (28) g_comm83 FOR  FIELD s_trtype.
+    SELECT-OPTIONS: s_trtype FOR zidpmmwhh-transtype.
+  SELECTION-SCREEN: END OF LINE."add longzong
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS:l_dele TYPE c AS CHECKBOX.
+    SELECTION-SCREEN COMMENT (40) text_del FOR FIELD l_dele.
+  SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN END OF BLOCK blk1.
+*Add by linsen TWO_STEP_POST 231010  star
+*印度增加顯示在途明細
+SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-002.
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS:l_onway TYPE c AS CHECKBOX.
+    SELECTION-SCREEN COMMENT (40) text_on FOR FIELD l_onway.
+  SELECTION-SCREEN END OF LINE.
+*alv顯示變式
+  PARAMETERS: alv_def LIKE disvariant-variant.
+SELECTION-SCREEN END   OF BLOCK b3.
+****** Include standard program for ALV
+INCLUDE rm07alvi.
+*Add by linsen TWO_STEP_POST 231010  end
+INITIALIZATION.
+
+  IF sy-langu = 'E'.
+    g_comm01 = 'IDPBG Document Number               '.
+    g_comm02 = 'Material doc. year                  '.
+    g_comm03 = 'Document Type                       '.
+    g_comm04 = 'Document Status                     '.
+    g_comm05 = 'Number of material document         '.
+    g_comm06 = 'Material doc. year                  '.
+    g_comm07 = 'Requisition (request) date          '.
+    g_comm08 = 'Request arrive time                 '.
+    g_comm09 = 'Employ id                           '.
+    g_comm10 = 'Order Number                        '.
+    g_comm11 = 'Quantity withdrawn                  '.
+    g_comm12 = 'Cost Center                         '.
+    g_comm13 = 'Comment                             '.
+    g_comm14 = 'Created on                          '.
+    g_comm15 = 'Created time                        '.
+    g_comm16 = 'Entered by                          '.
+    g_comm17 = 'Changed on                          '.
+    g_comm18 = 'Time last change was made           '.
+    g_comm19 = 'User ID                             '.
+    g_comm20 = 'User name                           '.
+    g_comm21 = 'Posting date in the document        '.
+    g_comm22 = 'Posting Time                        '.
+    g_comm23 = 'Purchasing Document Number          '.
+    g_comm24 = 'mutuality number                    '.
+    g_comm25 = 'Number of material document         '.
+    g_comm26 = 'Release Satatus                     '.
+    g_comm27 = 'ReasonCode                          '.
+    g_comm28 = 'Text: Reason for goods movement     '.
+    g_comm29 = 'Customer number                     '.
+    g_comm30 = 'Created man bar code                '.
+    g_comm31 = 'Created man bar code password       '.
+    g_comm32 = 'Posted man bar code                 '.
+    g_comm33 = 'Posted man bar code password        '.
+    g_comm34 = 'Account number of vendor or creditor'.
+    g_comm35 = 'G/L account number                  '.
+    g_comm36 = 'Floor                               '.
+    g_comm37 = 'Control Value                       '.
+    g_comm38 = 'OverIssue/Ret                       '.
+    g_comm39 = 'Pull list number                    '.
+    g_comm40 = 'Intra-Type                          '.
+    g_comm41 = 'Document item number                '.
+    g_comm42 = 'Material number                     '.
+    g_comm43 = 'Plant                               '.
+    g_comm44 = 'Storage location                    '.
+    g_comm45 = 'Batch number                        '.
+    g_comm46 = 'Quantity in unit of entry           '.
+    g_comm47 = 'Unit of entry                       '.
+    g_comm48 = 'Receiving/issuing material          '.
+    g_comm49 = 'Receiving plant/issuing plant       '.
+    g_comm50 = 'Receiving/issuing storage location  '.
+    g_comm51 = 'Receiving/issuing batch             '.
+    g_comm52 = 'Item Text                           '.
+    g_comm53 = 'Number of reservation               '.
+    g_comm54 = 'Item of reservation                 '.
+    g_comm55 = 'Mark for deletion                   '.
+    g_comm56 = 'MRP controller                      '.
+    g_comm57 = 'Quantity in unit of entry           '.
+    g_comm58 = 'Alternative item: group             '.
+    g_comm59 = 'Alternative item: group             '.
+    g_comm60 = 'WBS Element                         '.
+    g_comm61 = 'WBS Element                         '.
+    g_comm62 = 'Bill of material                    '.
+    g_comm63 = 'Document text'.
+    g_comm64 = 'Order type'.
+    g_comm65 = 'Old material number'.
+    g_comm66 = 'Material description'.
+    g_comm67 = 'Storage Location(In) '.
+    g_comm68 = 'Reservation flag'.
+    g_comm69 = 'Reservation No.'.
+    g_comm70 = 'Main Material'.
+    g_comm71 = 'Posting date in the Material'.
+    g_comm72 = 'CUSREMARKNO'.
+    g_comm73 = 'CUSREMARK'.
+*by wangzhongsheng
+    g_comm74 = 'dremark'.
+    g_comm75 = 'process'.
+    g_comm76 = 'dremark_descript'.
+    g_comm77 = 'vendor'.
+    g_comm78 = 'Trans Type'.
+    g_comm79 = 'Is BPO'.
+    text_del = 'Only display deleted document(Choose)'.
+    g_comm80 = 'Material document schedule'.
+    g_comm81 = 'Building'.  "xiaoxiao 20220311
+***add by longzong20220620
+    g_comm83 = 'Transtype'.
+    g_comm84 = 'Material Cost'.
+    g_comm85 = 'Total Material Cost'.
+    text_on = 'Inquiry about the on way details'.
+  ELSEIF sy-langu = 'M'.
+    g_comm01 = '單據號碼                    '.
+    g_comm02 = '物料文件年份                '.
+    g_comm03 = '單據類型                    '.
+    g_comm04 = '單據狀態                    '.
+    g_comm05 = '物料文件號碼                '.
+    g_comm06 = '物料文件年份                '.
+    g_comm07 = '請購單（請求）日期          '.
+    g_comm08 = '需求到達時間                '.
+    g_comm09 = '員工編號                    '.
+    g_comm10 = '訂單號碼                    '.
+    g_comm11 = '領料數量                    '.
+    g_comm12 = '成本中心                    '.
+    g_comm13 = '標注                        '.
+    g_comm14 = '建立日期                    '.
+    g_comm15 = '建立時間                    '.
+    g_comm16 = '輸入者                      '.
+    g_comm17 = '更改日期                    '.
+    g_comm18 = '最後一次更改時間            '.
+    g_comm19 = '最後更改者的使用者 ID       '.
+    g_comm20 = '過賬賬號                  '.
+    g_comm21 = '文件中的過帳日期            '.
+    g_comm22 = '過帳時間                    '.
+    g_comm23 = '採購文件號碼                '.
+    g_comm24 = '關聯編號                    '.
+    g_comm25 = '物料文件號碼                '.
+    g_comm26 = '核發狀態                    '.
+    g_comm27 = '理由碼                      '.
+    g_comm28 = '內文：貨物異動原因          '.
+    g_comm29 = '客戶編號                    '.
+    g_comm30 = '創建人                      '.
+    g_comm31 = '密碼                        '.
+    g_comm32 = '過帳人                      '.
+    g_comm33 = '密碼                        '.
+    g_comm34 = '供應商或貸方的帳號          '.
+    g_comm35 = '總帳科目號碼                '.
+    g_comm36 = '樓層                        '.
+    g_comm37 = '控制參數                    '.
+    g_comm38 = '小發小退                    '.
+    g_comm39 = '拉料需求                    '.
+    g_comm40 = '內交類型                    '.
+    g_comm41 = '項次                        '.
+    g_comm42 = '物料號碼                    '.
+    g_comm43 = '工廠                        '.
+    g_comm44 = '儲存位置                    '.
+    g_comm45 = '批次號碼                    '.
+    g_comm46 = '以輸入單位表示的實際數量         '.
+    g_comm47 = '輸入單位                    '.
+    g_comm48 = '收貨/發貨物料               '.
+    g_comm49 = '接收工廠 / 發貨工廠         '.
+    g_comm50 = '收貨 / 發貨儲存位置         '.
+    g_comm51 = '收貨/發貨批次               '.
+    g_comm52 = '項目內文                    '.
+    g_comm53 = '預定 / 相關需求號碼         '.
+    g_comm54 = '預訂 / 相關需求的項目號碼   '.
+    g_comm55 = '刪除標誌                    '.
+    g_comm56 = 'MRP 控制員                  '.
+    g_comm57 = '以輸入單位表示的需求數量         '.
+    g_comm58 = 'Alternative item: group     '.
+    g_comm59 = '替代項目：群組              '.
+    g_comm60 = '工作細分結構元素（WBS 元素）'.
+    g_comm61 = '工作細分結構元素（WBS 元素）'.
+    g_comm62 = '物料表                      '.
+    g_comm63 = '單據描述'.
+    g_comm64 = '訂單類型'.
+    g_comm65 = '客戶料號'.
+    g_comm66 = '物料說明'.
+    g_comm67 = '儲存位置(入) '.
+    g_comm68 = '反轉標記'.
+    g_comm69 = '反轉物料文件號'.
+    g_comm70 = '生產主料號'.
+    g_comm71 = '會計文件日期'.
+    g_comm72 = '關務備註號'.
+    g_comm73 = '關務備註'.
+*by wangzhongsheng
+    g_comm74 = '單據備註分類'.
+    g_comm75 = '製程'.
+    g_comm76 = '單據備註分類描述'.
+    g_comm77 = '供應商'.
+    g_comm78 = '轉撥分類'.
+    g_comm79 = '是否BPO收款'.
+    text_del = '只查詢已刪除單據(打勾)'.
+    g_comm80 = '物料文件項次'.
+
+    g_comm81 = '轉出樓棟'.  "xiaoxiao 20220311
+    g_comm82 = '轉入樓棟'.  "xiaoxiao 20220311
+***add by longzong20220620
+    g_comm83 = '轉播分類'.
+    g_comm84 = 'Material Cost'.
+    g_comm85 = 'Total Material Cost'.
+    text_on = '在途明細查詢'.
+  ENDIF .
+
+
+START-OF-SELECTION.
+
+*  PERFORM extract_document_data.
+
+  PERFORM get_data.
+
+  DESCRIBE TABLE zidpmmwhhtab LINES tline .  "Elven 20070111 add
+  IF tline > 0.
+
+    PERFORM write_alv .
+    PERFORM call_alv_for_list.
+  ELSE.
+    MESSAGE s003 . "   .with  "No data found " .
+  ENDIF.
+
+END-OF-SELECTION.
+
+*&--------------------------------------------------------------
+
+*&      Form  extract_document_data
+*&--------------------------------------------------------------
+
+FORM extract_document_data.
+  DATA: domname  LIKE dd01l-domname,
+        domvalue LIKE dd07v-domvalue_l,
+        dd07v_wa LIKE dd07v,
+        l_fprod  LIKE aufk-ktext.
+
+*Add by ami20150605.sn
+
+* Modify by 向陽 20181110
+* 根據Year 第一次篩選異動單數據
+*Add by linsen TWO_STEP_POST 231010  star
+  IF l_onway = 'X'.
+    IF glizeit-high <> '000000'.
+      IF badat-low IS INITIAL.
+        badat-low = '20141001'.
+      ENDIF.
+      IF badat-high IS INITIAL.
+        badat-high = sy-datum.
+      ENDIF.
+      SELECT docnumber docyear doctype docstas mblnr mjahr
+             badat glizeit employid aufnr enmng kostl
+             commenttext erdat erzet ernam aedat aezet
+             aenam usnam postdate posttime ebeln refno
+             mblnn relstatus reson grtxt kunnr creater
+             password poster password2 lifnr konto floor
+             model eissueflag pull_num intra_cat cusremark yl2 yl3
+             transtype isbpo
+        INTO CORRESPONDING FIELDS OF TABLE zidpmmwhhtab1
+        FROM zidpmmwhh
+       WHERE  docyear EQ sdocyear
+         AND doctype = 'P'
+         AND ( badat > badat-low OR
+             ( badat = badat-low AND glizeit >= glizeit-low ) )
+         AND ( badat  < badat-high OR
+             ( badat = badat-high AND glizeit <= glizeit-high ) )
+         AND docnumber IN docnumb
+         AND docstas  = '0'
+         AND postdate IN postdate
+         AND employid IN employid
+         AND usnam    IN usnam
+         AND aufnr    IN aufnr
+         AND kostl    IN kostl
+         AND erdat    IN erdat
+         AND aedat    IN aedat
+         AND ebeln    IN ebeln
+         AND mblnr = ''
+         AND mblnn <> ''
+         AND relstatus IN s_rel
+         AND reson IN s_reson
+         AND floor IN s_floor
+         AND yl2 IN s_yl2
+         AND model IN s_model
+         AND refno IN s_refno
+         AND pull_num IN s_pull
+        AND eissueflag IN s_eflag
+        AND transtype IN s_trtype.
+    ELSE.
+      SELECT docnumber docyear doctype docstas mblnr mjahr
+             badat glizeit employid aufnr enmng kostl
+             commenttext erdat erzet ernam aedat aezet
+             aenam usnam postdate posttime ebeln refno
+             mblnn relstatus reson grtxt kunnr creater
+             password poster password2 lifnr konto floor
+             model eissueflag pull_num intra_cat cusremark yl2 yl3
+             transtype isbpo
+        INTO CORRESPONDING FIELDS OF TABLE zidpmmwhhtab1
+        FROM zidpmmwhh
+       WHERE badat IN badat
+         AND docyear EQ sdocyear
+         AND doctype = 'P'
+         AND docstas  = '0'
+         AND postdate IN postdate
+         AND glizeit  IN glizeit
+         AND docnumber IN docnumb
+         AND employid IN employid
+         AND usnam    IN usnam
+         AND aufnr    IN aufnr
+         AND kostl    IN kostl
+         AND erdat    IN erdat
+         AND aedat    IN aedat
+         AND ebeln    IN ebeln
+         AND mblnr    = ''
+         AND mblnn <> ''
+         AND relstatus IN s_rel
+         AND reson IN s_reson
+         AND floor IN s_floor
+         AND yl2 IN s_yl2
+         AND model IN s_model
+         AND refno IN s_refno
+         AND pull_num IN s_pull
+         AND eissueflag IN s_eflag.
+    ENDIF.
+*Add by linsen TWO_STEP_POST 231010  end
+  ELSE.
+    IF glizeit-high <> '000000'.
+      IF badat-low IS INITIAL. "最小日期為空賦初值
+        badat-low = '20141001'.  "GL是這個時候準備上線的
+      ENDIF.
+      IF badat-high IS INITIAL. "最大日期為空賦初值
+        badat-high = sy-datum.
+      ENDIF.
+      SELECT docnumber docyear doctype docstas mblnr mjahr
+             badat glizeit employid aufnr enmng kostl
+             commenttext erdat erzet ernam aedat aezet
+             aenam usnam postdate posttime ebeln refno
+             mblnn relstatus reson grtxt kunnr creater
+             password poster password2 lifnr konto floor
+             model eissueflag pull_num intra_cat cusremark yl2 yl3
+             transtype isbpo
+        INTO CORRESPONDING FIELDS OF TABLE zidpmmwhhtab1
+        FROM zidpmmwhh
+       WHERE  docyear EQ sdocyear
+         AND doctype IN doctype
+         AND ( badat > badat-low OR
+             ( badat = badat-low AND glizeit >= glizeit-low ) )
+         AND ( badat  < badat-high OR
+             ( badat = badat-high AND glizeit <= glizeit-high ) )
+         AND docnumber IN docnumb
+         AND docstas  IN docstas
+         AND postdate IN postdate
+         AND employid IN employid
+         AND usnam    IN usnam
+         AND aufnr    IN aufnr
+         AND kostl    IN kostl
+         AND erdat    IN erdat
+         AND aedat    IN aedat
+         AND ebeln    IN ebeln
+         AND mblnr    IN mblnr
+         AND relstatus IN s_rel
+         AND reson IN s_reson
+         AND floor IN s_floor
+         AND yl2 IN s_yl2
+         AND model IN s_model
+         AND refno IN s_refno
+         AND pull_num IN s_pull
+        AND eissueflag IN s_eflag
+        AND transtype IN s_trtype."longzong
+*      %_HINTS oracle 'INDEX(ZIDPMMWHH"DAT")'.
+    ELSE.
+      SELECT docnumber docyear doctype docstas mblnr mjahr
+             badat glizeit employid aufnr enmng kostl
+             commenttext erdat erzet ernam aedat aezet
+             aenam usnam postdate posttime ebeln refno
+             mblnn relstatus reson grtxt kunnr creater
+             password poster password2 lifnr konto floor
+             model eissueflag pull_num intra_cat cusremark yl2 yl3
+             transtype isbpo
+        INTO CORRESPONDING FIELDS OF TABLE zidpmmwhhtab1
+        FROM zidpmmwhh
+       WHERE badat IN badat
+         AND docyear EQ sdocyear
+         AND doctype IN doctype
+*  需求到達時間進行管控
+         AND docstas  IN docstas
+         AND postdate IN postdate
+         AND glizeit  IN glizeit
+         AND docnumber IN docnumb
+         AND employid IN employid
+         AND usnam    IN usnam
+         AND aufnr    IN aufnr
+         AND kostl    IN kostl
+         AND erdat    IN erdat
+         AND aedat    IN aedat
+         AND ebeln    IN ebeln
+         AND mblnr    IN mblnr
+         AND relstatus IN s_rel
+         AND reson IN s_reson
+         AND floor IN s_floor
+         AND yl2 IN s_yl2
+         AND model IN s_model
+         AND refno IN s_refno
+         AND pull_num IN s_pull
+         AND eissueflag IN s_eflag.
+*     %_HINTS ORACLE 'INDEX(ZIDPMMWHH"DAT")'.
+    ENDIF.
+  ENDIF.
+*-----add by jinzhu ZZDPG2111033 增加過賬時間篩選條件 2021/11/25
+
+  IF postdate-low <> '0000000' AND posttime-low <> '000000' .
+    LOOP AT zidpmmwhhtab1.
+      DATA:l_dtrecord(30) TYPE c.
+      DATA:l_dtlow(30) TYPE c.
+      DATA:l_dthigh(30) TYPE c.
+
+      CONCATENATE zidpmmwhhtab1-postdate zidpmmwhhtab1-posttime
+             INTO l_dtrecord.
+      CONCATENATE postdate-low posttime-low INTO  l_dtlow.
+      CONCATENATE postdate-high posttime-high INTO l_dthigh.
+      IF  l_dtrecord < l_dtlow OR  l_dtrecord > l_dthigh .
+        DELETE zidpmmwhhtab1.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+  IF zidpmmwhhtab1[] IS NOT INITIAL.
+    SELECT docnumber, docitem, docyear, matnr
+      INTO TABLE @DATA(lt_mmwhi)
+      FROM zidpmmwhi
+       FOR ALL ENTRIES IN @zidpmmwhhtab1
+     WHERE docnumber = @zidpmmwhhtab1-docnumber
+       AND werks IN @werks.
+    SORT lt_mmwhi BY docnumber.
+  ENDIF.
+
+  DATA(lt_mmwhi1) = lt_mmwhi[].
+  DELETE lt_mmwhi1 WHERE matnr = ''.
+  IF lt_mmwhi1[] IS NOT INITIAL.
+    SELECT docnumber docitem matnr docyear
+           werks lgort charg erfmg erfme ummat
+           umwrk umlgo umcha sgtxt rsnum rspos
+           markdeletion dispo plfmg alpgr zalpgr ps_psp_pnr
+           mat_pspnr stlnr lifnr AS lif
+ APPENDING CORRESPONDING FIELDS OF TABLE zidpmmwhhtab
+      FROM zidpmmwhi
+       FOR ALL ENTRIES IN lt_mmwhi1
+     WHERE docnumber = lt_mmwhi1-docnumber
+       AND docyear EQ sdocyear
+       AND ps_psp_pnr IN s_frwbs
+       AND mat_pspnr IN s_towbs
+       AND matnr IN matnr
+       AND lgort IN lgort
+       AND umlgo IN umlgo
+       AND werks IN werks
+       AND markdeletion EQ l_dele.
+*     %_HINTS ORACLE 'INDEX(ZIDPMMWHI"DOC")'.
+  ENDIF.
+*-----add by jinzhu ZZDPG2111033 2021/11/25---end
+
+
+* 將從WHH表中根據 單據類型 以及物料文件年份索引出的
+* 單據號碼放入Range類型的數據中
+* WHH表中不存在數據信息, 將文件編號內表清空
+
+  LOOP AT zidpmmwhhtab1.
+* 將符合工廠的數據寫入Range 類型數據 將不符的數據清掉
+    READ TABLE lt_mmwhi INTO DATA(ls_mmwhi) WITH KEY docnumber = zidpmmwhhtab1-docnumber BINARY SEARCH.
+    IF sy-subrc EQ 0 AND ls_mmwhi-matnr IS NOT INITIAL.
+      l_matnr = ls_mmwhi-matnr.
+
+      l_docnu-docnumber = zidpmmwhhtab1-docnumber.
+
+*      MODIFY zidpmmwhhtab FROM zidpmmwhhtab1
+*       TRANSPORTING docnumber docyear doctype docstas
+*       mblnr mjahr badat glizeit employid
+*       aufnr enmng kostl commenttext erdat erzet
+*       ernam aedat aezet aenam usnam postdate
+*       posttime ebeln refno mblnn relstatus reson
+*       grtxt kunnr creater password poster password2
+*       lifnr konto floor model eissueflag pull_num
+*       intra_cat cusremark yl2 yl3 transtype isbpo
+*       WHERE docnumber = l_docnu-docnumber.
+
+      APPEND l_docnu.CLEAR l_docnu.CLEAR l_matnr.CLEAR ls_mmwhi.
+    ELSE.
+      DELETE zidpmmwhhtab1.
+    ENDIF.
+  ENDLOOP.
+
+  SORT zidpmmwhhtab1 BY docnumber.
+  SORT zidpmmwhhtab BY docnumber docitem.
+
+  LOOP AT zidpmmwhhtab ASSIGNING FIELD-SYMBOL(<fs_zidpmmwhhtab>).
+    READ TABLE zidpmmwhhtab1 INTO DATA(ls_zidpmmwhhtab1)
+          WITH KEY docnumber = <fs_zidpmmwhhtab>-docnumber BINARY SEARCH .
+    IF sy-subrc = 0.
+
+      <fs_zidpmmwhhtab>-docnumber = ls_zidpmmwhhtab1-docnumber.
+      <fs_zidpmmwhhtab>-docyear   = ls_zidpmmwhhtab1-docyear.
+      <fs_zidpmmwhhtab>-doctype   = ls_zidpmmwhhtab1-doctype.
+      <fs_zidpmmwhhtab>-docstas   = ls_zidpmmwhhtab1-docstas.
+      <fs_zidpmmwhhtab>-mblnr     = ls_zidpmmwhhtab1-mblnr.
+      <fs_zidpmmwhhtab>-mjahr     = ls_zidpmmwhhtab1-mjahr.
+      <fs_zidpmmwhhtab>-badat     = ls_zidpmmwhhtab1-badat.
+      <fs_zidpmmwhhtab>-glizeit   = ls_zidpmmwhhtab1-glizeit.
+      <fs_zidpmmwhhtab>-employid  = ls_zidpmmwhhtab1-employid.
+      <fs_zidpmmwhhtab>-aufnr     = ls_zidpmmwhhtab1-aufnr.
+      <fs_zidpmmwhhtab>-enmng     = ls_zidpmmwhhtab1-enmng.
+      <fs_zidpmmwhhtab>-kostl     = ls_zidpmmwhhtab1-kostl.
+      <fs_zidpmmwhhtab>-commenttext = ls_zidpmmwhhtab1-commenttext.
+      <fs_zidpmmwhhtab>-erdat     = ls_zidpmmwhhtab1-erdat.
+      <fs_zidpmmwhhtab>-erzet     = ls_zidpmmwhhtab1-erzet.
+      <fs_zidpmmwhhtab>-ernam     = ls_zidpmmwhhtab1-ernam    .
+      <fs_zidpmmwhhtab>-aedat     = ls_zidpmmwhhtab1-aedat    .
+      <fs_zidpmmwhhtab>-aezet     = ls_zidpmmwhhtab1-aezet    .
+      <fs_zidpmmwhhtab>-aenam     = ls_zidpmmwhhtab1-aenam    .
+      <fs_zidpmmwhhtab>-usnam     = ls_zidpmmwhhtab1-usnam    .
+      <fs_zidpmmwhhtab>-postdate  = ls_zidpmmwhhtab1-postdate .
+      <fs_zidpmmwhhtab>-posttime  = ls_zidpmmwhhtab1-posttime .
+      <fs_zidpmmwhhtab>-ebeln     = ls_zidpmmwhhtab1-ebeln    .
+      <fs_zidpmmwhhtab>-refno     = ls_zidpmmwhhtab1-refno    .
+      <fs_zidpmmwhhtab>-mblnn     = ls_zidpmmwhhtab1-mblnn    .
+      <fs_zidpmmwhhtab>-relstatus = ls_zidpmmwhhtab1-relstatus.
+      <fs_zidpmmwhhtab>-reson     = ls_zidpmmwhhtab1-reson    .
+      <fs_zidpmmwhhtab>-grtxt     = ls_zidpmmwhhtab1-grtxt    .
+      <fs_zidpmmwhhtab>-kunnr     = ls_zidpmmwhhtab1-kunnr    .
+      <fs_zidpmmwhhtab>-creater   = ls_zidpmmwhhtab1-creater  .
+      <fs_zidpmmwhhtab>-password  = ls_zidpmmwhhtab1-password .
+      <fs_zidpmmwhhtab>-poster    = ls_zidpmmwhhtab1-poster   .
+      <fs_zidpmmwhhtab>-password2 = ls_zidpmmwhhtab1-password2.
+      <fs_zidpmmwhhtab>-lifnr     = ls_zidpmmwhhtab1-lifnr    .
+      <fs_zidpmmwhhtab>-konto     = ls_zidpmmwhhtab1-konto    .
+      <fs_zidpmmwhhtab>-floor     = ls_zidpmmwhhtab1-floor    .
+      <fs_zidpmmwhhtab>-model     = ls_zidpmmwhhtab1-model    .
+      <fs_zidpmmwhhtab>-eissueflag = ls_zidpmmwhhtab1-eissueflag.
+      <fs_zidpmmwhhtab>-pull_num   = ls_zidpmmwhhtab1-pull_num  .
+      <fs_zidpmmwhhtab>-intra_cat  = ls_zidpmmwhhtab1-intra_cat .
+      <fs_zidpmmwhhtab>-cusremark  = ls_zidpmmwhhtab1-cusremark .
+      <fs_zidpmmwhhtab>-yl2        = ls_zidpmmwhhtab1-yl2       .
+      <fs_zidpmmwhhtab>-yl3        = ls_zidpmmwhhtab1-yl3       .
+      <fs_zidpmmwhhtab>-transtype  = ls_zidpmmwhhtab1-transtype .
+      <fs_zidpmmwhhtab>-isbpo      = ls_zidpmmwhhtab1-isbpo     .
+
+    ENDIF.
+  ENDLOOP.
+
+
+  DELETE zidpmmwhhtab WHERE doctype = ' ' OR werks = ' '.
+
+  CHECK zidpmmwhhtab[] IS NOT INITIAL.
+
+  SELECT azf01,werks,azf03
+    INTO TABLE @DATA(lt_mm017)
+    FROM zidpmm017
+     FOR ALL ENTRIES IN @zidpmmwhhtab
+   WHERE "AZF01 = @ZIDPMMWHHTAB-YL2
+         werks = @zidpmmwhhtab-werks.
+  SORT lt_mm017 BY azf01 werks.
+
+  SELECT  * FROM zidpmmcontrol2
+  WHERE  object = 'KOSTLSEL'
+  AND value = 'Y'
+  INTO TABLE @DATA(lt_mmctl2).
+  SORT lt_mmctl2 BY werks.
+
+
+
+  SELECT mblnr, matnr,erfmg,werks,lgort,umlgo,zeile
+    INTO TABLE @DATA(lt_mseg)
+    FROM mseg
+     FOR ALL ENTRIES IN @zidpmmwhhtab
+   WHERE mblnr = @zidpmmwhhtab-mblnr
+     AND matnr = @zidpmmwhhtab-matnr
+     AND erfmg = @zidpmmwhhtab-erfmg
+     AND werks = @zidpmmwhhtab-werks
+     AND lgort = @zidpmmwhhtab-lgort
+     AND umlgo = @zidpmmwhhtab-umlgo.
+  SORT lt_mseg BY mblnr matnr erfmg werks lgort umlgo.
+*****----------------------*
+  DATA(lt_mblnr) = zidpmmwhhtab[].
+  DELETE lt_mblnr WHERE mblnr = ''.
+  IF lt_mblnr[] IS NOT INITIAL.
+    SELECT mblnr, cpudt
+      INTO TABLE @DATA(lt_mkpf)
+      FROM mkpf
+       FOR ALL ENTRIES IN @lt_mblnr
+     WHERE mblnr = @lt_mblnr-mblnr.
+    SORT lt_mkpf BY mblnr.
+
+    SELECT DISTINCT smbln, mblnr
+      INTO TABLE @DATA(lt_mseg2)
+      FROM mseg
+       FOR ALL ENTRIES IN @lt_mblnr
+     WHERE smbln = @lt_mblnr-mblnr." %_HINTS ORACLE 'INDEX("S")'..
+    SORT lt_mseg2 BY smbln.
+
+  ENDIF.
+
+  SELECT mara~matnr, bismt,maktx
+    INTO TABLE @DATA(lt_mara)
+    FROM mara
+    LEFT JOIN makt ON mara~matnr = makt~matnr
+     FOR ALL ENTRIES IN @zidpmmwhhtab
+   WHERE mara~matnr = @zidpmmwhhtab-matnr
+     AND spras = @sy-langu.
+  SORT lt_mara BY matnr.
+
+  DATA(lt_aufnr) = zidpmmwhhtab[].
+  DELETE lt_aufnr WHERE aufnr = ''.
+  IF lt_aufnr[] IS NOT INITIAL.
+    SELECT aufnr, matnr
+      INTO TABLE @DATA(lt_afpo)
+      FROM afpo
+       FOR ALL ENTRIES IN @lt_aufnr
+     WHERE aufnr = @lt_aufnr-aufnr . "查詢工單生產料號
+    SORT lt_afpo BY aufnr.
+
+    SELECT aufnr, auart, ktext
+      INTO TABLE @DATA(lt_aufk)
+      FROM aufk
+       FOR ALL ENTRIES IN @lt_aufnr
+     WHERE aufnr = @lt_aufnr-aufnr . "查詢工單類型
+    SORT lt_aufk BY aufnr.
+  ENDIF.
+
+  SELECT *
+    FROM dd07t
+    INTO TABLE @DATA(lt_dd07t)
+   WHERE domname IN ('ZDOCTYPE','ZCUSMARK')
+     AND ddlanguage = @sy-langu.
+  IF sy-subrc = 0.
+    SORT lt_dd07t BY domname domvalue_l.
+  ENDIF.
+
+  DATA(lt_zidpmmwhhtab) = zidpmmwhhtab[].
+  WITH +data AS (
+SELECT DISTINCT werks
+  FROM @lt_zidpmmwhhtab AS zdata ##ITAB_KEY_IN_SELECT
+ WHERE doctype = 'D'
+   AND werks IN ('IND1','IND2','IND3','INM1' ) )
+SELECT a~werks, a~lgort, a~category6
+  FROM zidpmm016 AS a
+ INNER JOIN +data AS z
+    ON a~werks = z~werks
+  INTO TABLE @DATA(lt_zidpmm016).
+  IF sy-subrc = 0.
+    SORT lt_zidpmm016 BY werks lgort.
+  ENDIF.
+  FREE lt_zidpmmwhhtab.
+
+  LOOP AT zidpmmwhhtab.
+*by wzs 20180904
+*    SELECT SINGLE AZF03 FROM ZIDPMM017 INTO ZIDPMMWHHTAB-DREMARK_DESCRIPT
+*            WHERE AZF01 = ZIDPMMWHHTAB-YL2 AND WERKS = ZIDPMMWHHTAB-WERKS.
+    READ TABLE lt_mm017 INTO DATA(ls_mm017)
+          WITH KEY azf01 = zidpmmwhhtab-yl2
+                   werks = zidpmmwhhtab-werks BINARY SEARCH.
+    IF sy-subrc = 0.
+      zidpmmwhhtab-dremark_descript = ls_mm017-azf03.
+    ENDIF.
+*by wzs 20180904
+*    domname = 'ZDOCTYPE'.
+*    domvalue = zidpmmwhhtab-doctype.
+*    CALL FUNCTION 'DDUT_DOMVALUE_TEXT_GET'
+*      EXPORTING
+*        name          = domname
+*        value         = domvalue
+*        texts_only    = 'X'
+*      IMPORTING
+*        dd07v_wa      = dd07v_wa
+*      EXCEPTIONS
+*        not_found     = 1
+*        illegal_input = 2
+*        OTHERS        = 3.
+*    IF sy-subrc EQ 0.
+*      zidpmmwhhtab-doctypetext = dd07v_wa-ddtext.
+*    ENDIF.
+    READ TABLE lt_dd07t INTO DATA(ls_dd07t)
+          WITH KEY domname = 'ZDOCTYPE'
+                   domvalue_l = zidpmmwhhtab-doctype BINARY SEARCH.
+    IF sy-subrc = 0.
+      zidpmmwhhtab-doctypetext = ls_dd07t-ddtext.
+    ENDIF.
+
+*印度增加樓棟欄位  20220311 xiaoxiao
+    IF zidpmmwhhtab-doctype = 'D'
+    AND 'IND1,IND2,IND3,INM1' CS zidpmmwhhtab-werks.
+
+*      SELECT SINGLE category6
+*        INTO l_build
+*        FROM zidpmm016
+*       WHERE werks = zidpmmwhhtab-werks
+*         AND lgort = zidpmmwhhtab-lgort.
+*      IF sy-subrc = 0.
+*        zidpmmwhhtab-build =  l_build+0(3).
+*      ENDIF.
+*      SELECT SINGLE category6
+*        INTO t_build
+*        FROM zidpmm016
+*       WHERE werks = zidpmmwhhtab-werks
+*         AND lgort = zidpmmwhhtab-umlgo.
+*      IF sy-subrc = 0.
+*        zidpmmwhhtab-build1 = t_build+0(3).
+*      ENDIF.
+      READ TABLE lt_zidpmm016 INTO DATA(ls_zidpmm016)
+            WITH KEY werks = zidpmmwhhtab-werks
+                     lgort = zidpmmwhhtab-lgort BINARY SEARCH.
+      IF sy-subrc = 0.
+        zidpmmwhhtab-build = ls_zidpmm016+0(3).
+      ENDIF.
+      READ TABLE lt_zidpmm016 INTO ls_zidpmm016
+            WITH KEY werks = zidpmmwhhtab-werks
+                     lgort = zidpmmwhhtab-umlgo BINARY SEARCH.
+      IF sy-subrc = 0.
+        zidpmmwhhtab-build1 = ls_zidpmm016+0(3).
+      ENDIF.
+*   concatenate l_build '-To-'  t_build into zidpmmwhhtab-build
+      CLEAR:l_build,t_build.
+    ENDIF.
+*==================================
+*增加關務備註欄位 Butcher
+    IF zidpmmwhhtab-doctype CA 'GH'.
+*      PERFORM get_dommain_value_text USING 'ZCUSMARK'
+*                                         zidpmmwhhtab-cusremark
+*                                         zidpmmwhhtab-cusremarktxt.
+      READ TABLE lt_dd07t INTO ls_dd07t
+            WITH KEY domname = 'ZCUSMARK'
+                     domvalue_l = zidpmmwhhtab-cusremark BINARY SEARCH.
+      IF sy-subrc = 0.
+        zidpmmwhhtab-cusremarktxt = ls_dd07t-ddtext.
+      ENDIF.
+    ENDIF .
+*一筆物料文件對應多張反轉單時要將反轉單據分開顯示 zzf 20190923
+    IF NOT zidpmmwhhtab-mblnr IS INITIAL .
+*      SELECT SINGLE * FROM MSEG
+*        WHERE SMBLN = ZIDPMMWHHTAB-MBLNR
+**        and matnr = zidpmmwhhtab-matnr
+**        and erfmg = zidpmmwhhtab-erfmg
+*        %_HINTS ORACLE 'INDEX("S")'.
+      READ TABLE lt_mseg2 INTO DATA(ls_mseg2)
+            WITH KEY smbln = zidpmmwhhtab-mblnr BINARY SEARCH.
+      IF  sy-subrc = 0.
+        zidpmmwhhtab-roll = 'X' .
+        zidpmmwhhtab-smbln = ls_mseg2-mblnr .
+      ENDIF .
+    ENDIF .
+    IF zidpmmwhhtab-aufnr NE ''.
+
+*      SELECT SINGLE MATNR INTO ZIDPMMWHHTAB-FPROD FROM AFPO
+*      WHERE AUFNR = ZIDPMMWHHTAB-AUFNR . "查詢工單生產料號
+      READ TABLE lt_afpo INTO DATA(ls_afpo)
+            WITH KEY aufnr = zidpmmwhhtab-aufnr BINARY SEARCH.
+      IF sy-subrc = 0.
+        zidpmmwhhtab-fprod = ls_afpo-matnr.
+      ENDIF .
+*      SELECT SINGLE AUART KTEXT INTO (ZIDPMMWHHTAB-AUART,L_FPROD)
+*       FROM AUFK WHERE AUFNR = ZIDPMMWHHTAB-AUFNR . "查詢工單類型
+      READ TABLE lt_aufk INTO DATA(ls_aufk)
+            WITH KEY aufnr = zidpmmwhhtab-aufnr BINARY SEARCH.
+      IF sy-subrc = 0.
+        zidpmmwhhtab-auart = ls_aufk-auart.
+        l_fprod = ls_aufk-ktext.
+      ENDIF.
+*當正常工單料號為空時抓取拆解重工工單料號
+      IF zidpmmwhhtab-fprod EQ ''.
+        zidpmmwhhtab-fprod = l_fprod.
+      ENDIF.
+
+    ENDIF.
+**----by huibin 2020/5/28-------*
+    READ TABLE lt_mseg INTO DATA(ls_mseg)
+          WITH KEY mblnr = zidpmmwhhtab-mblnr
+                   matnr = zidpmmwhhtab-matnr
+                   erfmg = zidpmmwhhtab-erfmg
+                   werks = zidpmmwhhtab-werks
+                   lgort = zidpmmwhhtab-lgort
+                   umlgo = zidpmmwhhtab-umlgo BINARY SEARCH.
+    IF sy-subrc = 0.
+      zidpmmwhhtab-zeile = ls_mseg-zeile.
+    ENDIF.
+*****----------------------*
+*    SELECT SINGLE CPUDT INTO ZIDPMMWHHTAB-CPUDT FROM MKPF
+*    WHERE MBLNR = ZIDPMMWHHTAB-MBLNR.
+    READ TABLE lt_mkpf INTO DATA(ls_mkpf)
+          WITH KEY mblnr = zidpmmwhhtab-mblnr  BINARY SEARCH.
+    IF sy-subrc = 0.
+      zidpmmwhhtab-cpudt = ls_mkpf-cpudt.
+    ENDIF.
+
+*    SELECT SINGLE BISMT INTO ZIDPMMWHHTAB-BISMT FROM MARA
+*    WHERE MATNR = ZIDPMMWHHTAB-MATNR .
+*    SELECT SINGLE MAKTX INTO ZIDPMMWHHTAB-MAKTX FROM MAKT
+*    WHERE MATNR = ZIDPMMWHHTAB-MATNR AND SPRAS = SY-LANGU.
+    READ TABLE lt_mara INTO DATA(ls_mara)
+          WITH KEY matnr = zidpmmwhhtab-matnr BINARY SEARCH .
+    IF sy-subrc = 0.
+      zidpmmwhhtab-bismt = ls_mara-bismt.
+      zidpmmwhhtab-maktx = ls_mara-maktx.
+    ENDIF.
+
+***新增成本欄位(by工廠管控，避免影響查詢效率）longzong20220618
+** 性能問題提出到 loop 外層
+*    SELECT SINGLE * FROM zidpmmcontrol2
+*    WHERE werks = zidpmmwhhtab-werks
+*    AND object = 'KOSTLSEL'
+*    AND value = 'Y'.
+
+    READ TABLE lt_mmctl2  TRANSPORTING NO FIELDS
+          WITH KEY werks = zidpmmwhhtab-werks BINARY SEARCH.
+    IF sy-subrc = 0.
+
+      CLEAR:l_bwkey,l_bwtar,l_kalnr,l_pspnr.
+      l_poper_1 = sy-datum+4(2).
+      l_bdatj_1 = sy-datum+0(4).
+
+      SELECT SINGLE bukrs FROM t001k INTO l_bukrs
+      WHERE bwkey = zidpmmwhhtab-werks .
+
+      SELECT SINGLE waers FROM t001 INTO l_waers
+      WHERE bukrs = l_bukrs .
+
+      CALL FUNCTION 'CURRENCY_CONVERTING_FACTOR'
+        EXPORTING
+          currency = l_waers
+        IMPORTING
+          factor   = l_factor.
+
+      SELECT SINGLE bwkey bwtar FROM mbew INTO
+      (l_bwkey,l_bwtar)
+      WHERE matnr = zidpmmwhhtab-matnr
+      AND bwkey = zidpmmwhhtab-werks.
+*    %_hints oracle 'INDEX(MBEW"Z01")'.
+      SELECT SINGLE kalnr pspnr FROM ckmlhd INTO (l_kalnr,l_pspnr)
+      WHERE matnr = zidpmmwhhtab-matnr
+      AND bwkey = l_bwkey
+      AND bwtar = l_bwtar.
+      CLEAR :gt_kalnr,gt_kalnr[],gt_ckmlpp,gt_ckmlpp[],
+           gt_ckmlcr,gt_ckmlcr[].
+      gt_kalnr-kalnr = l_kalnr.
+      gt_kalnr-bwkey = l_bwkey.
+      gt_kalnr-bwtar = l_bwtar.
+      gt_kalnr-pspnr = l_pspnr.
+      APPEND gt_kalnr.CLEAR gt_kalnr.
+***取得本期成本
+      CALL FUNCTION 'CKMS_PERIOD_READ_WITH_ITAB'
+        EXPORTING
+          i_use_buffer            = 'X'
+          i_bdatj_1               = l_bdatj_1
+          i_poper_1               = l_poper_1
+        TABLES
+          t_kalnr                 = gt_kalnr
+          t_ckmlpp                = gt_ckmlpp
+          t_ckmlcr                = gt_ckmlcr
+        EXCEPTIONS
+          no_data_found           = 1
+          input_data_inconsistent = 2
+          buffer_inconsistent     = 3
+          OTHERS                  = 4.
+
+
+      zidpmmwhhtab-tslvt = gt_ckmlcr-stprs * l_factor.
+      zidpmmwhhtab-tltslvt = zidpmmwhhtab-tslvt * zidpmmwhhtab-erfmg.
+    ENDIF.
+***END
+    MODIFY zidpmmwhhtab .
+    CLEAR zidpmmwhhtab .
+  ENDLOOP .
+ENDFORM.                    " extract_document_data
+
+*&---------------------------------------------------------------------*
+*&      Form  write_alv
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM write_alv.
+  CLEAR: fc_alv.
+  REFRESH: fc_alv.
+  PERFORM append_fc_alv USING:
+
+'ZIDPMMWHHTAB'  'DOCNUMBER' '10'   g_comm01  ''     '',
+'ZIDPMMWHHTAB'  'DOCYEAR'   '4'   g_comm02  ''     '',
+'ZIDPMMWHHTAB'  'DOCTYPE'   '2'   g_comm03  ''     '',
+'ZIDPMMWHHTAB'  'DOCTYPETEXT' '10' g_comm63  ''     '',
+'ZIDPMMWHHTAB'  'DOCSTAS'   '1'   g_comm04  ''     '',
+'ZIDPMMWHHTAB'  'MBLNR'     '10'   g_comm05  ''     '',
+'ZIDPMMWHHTAB'  'ROLL'     '1'   g_comm68  ''     '',
+'ZIDPMMWHHTAB'  'SMBLN'     '10'   g_comm69  ''     '',
+'ZIDPMMWHHTAB'  'MJAHR'     '4'   g_comm06  ''     '',
+'ZIDPMMWHHTAB'  'BADAT'     '8'   g_comm07  ''     '',
+'ZIDPMMWHHTAB'  'GLIZEIT '  '6'   g_comm08  ''     '',
+'ZIDPMMWHHTAB'  'EMPLOYID'  '10'   g_comm09  ''     '',
+'ZIDPMMWHHTAB'  'AUFNR '    '12'   g_comm10  'AUFNR'     'ZIDPMMWHH',
+'ZIDPMMWHHTAB'  'FPROD'    '18'   g_comm70  ''     '',
+'ZIDPMMWHHTAB'  'AUART '    '4'   g_comm64  ''     '',
+'ZIDPMMWHHTAB'  'ENMNG '    '20'   g_comm11  ''     '',
+'ZIDPMMWHHTAB'  'KOSTL '    '10'   g_comm12  ''     '',
+'ZIDPMMWHHTAB'  'COMMENTTEXT' '60' g_comm13  ''     '',
+'ZIDPMMWHHTAB'  'ERDAT '    '8'   g_comm14  ''     '',
+'ZIDPMMWHHTAB'  'ERZET '    '6'   g_comm15  ''     '',
+'ZIDPMMWHHTAB'  'ERNAM '    '12'   g_comm16  ''     '',
+'ZIDPMMWHHTAB'  'AEDAT '    '8'   g_comm17  ''     '',
+'ZIDPMMWHHTAB'  'AEZET '    '6'   g_comm18  ''     '',
+'ZIDPMMWHHTAB'  'AENAM '    '12'   g_comm19  ''     '',
+'ZIDPMMWHHTAB'  'USNAM '    '12'   g_comm20  ''     '',
+'ZIDPMMWHHTAB'  'POSTDATE'  '8'   g_comm21  ''     '',
+'ZIDPMMWHHTAB'  'POSTTIME'  '6'   g_comm22  ''     '',
+'ZIDPMMWHHTAB'  'EBELN '    '10'   g_comm23  ''     '',
+'ZIDPMMWHHTAB'  'REFNO '    '20'   g_comm24  ''     '',
+'ZIDPMMWHHTAB'  'MBLNN '    '10'   g_comm25  ''     '',
+'ZIDPMMWHHTAB'  'RELSTATUS' '1'   g_comm26  ''     '',
+'ZIDPMMWHHTAB'  'RESON'     '4'   g_comm27  ''     '',
+'ZIDPMMWHHTAB'  'CUSREMARK'  '4'   g_comm72  ''     '',
+'ZIDPMMWHHTAB'  'CUSREMARKTXT' '20'   g_comm73  ''     '',
+'ZIDPMMWHHTAB'  'GRTXT'     '20'   g_comm28  ''     '',
+'ZIDPMMWHHTAB'  'KUNNR'     '10'   g_comm29  ''     '',
+'ZIDPMMWHHTAB'  'CREATER'   '16'   g_comm30  ''     '',
+'ZIDPMMWHHTAB'  'PASSWORD'  '16'   g_comm31  ''     '',
+'ZIDPMMWHHTAB'  'POSTER'    '16'   g_comm32  ''     '',
+'ZIDPMMWHHTAB'  'PASSWORD2' '16'   g_comm33  ''     '',
+'ZIDPMMWHHTAB'  'LIFNR'     '10'   g_comm34  ''     '',
+'ZIDPMMWHHTAB'  'KONTO'     '10'   g_comm35  ''     '',
+'ZIDPMMWHHTAB'  'FLOOR'     '10'   g_comm36  ''     '',
+'ZIDPMMWHHTAB'  'MODEL'     '20'   g_comm37  ''     '',
+'ZIDPMMWHHTAB'  'EISSUEFLAG' '1'  g_comm38  ''     '',
+'ZIDPMMWHHTAB'  'PULL_NUM ' '30'   g_comm39  ''     '',
+'ZIDPMMWHHTAB'  'INTRA_CAT' '1'   g_comm40  ''     '',
+'ZIDPMMWHHTAB'  'DOCITEM'   '5'   g_comm41  ''     '',
+'ZIDPMMWHHTAB'  'MATNR'     '20'   g_comm42  'MARA'     'MATNR',
+'ZIDPMMWHHTAB'  'MAKTX'     '40'   g_comm66  ''     '',
+'ZIDPMMWHHTAB'  'BISMT'     '20'  g_comm65   'MARA'     'BISMT',
+'ZIDPMMWHHTAB'  'WERKS'     '4'   g_comm43  ''     '',
+'ZIDPMMWHHTAB'  'LGORT'     '4'   g_comm44  ''     '',
+'ZIDPMMWHHTAB'  'CHARG'     '10'   g_comm45  ''     '',
+'ZIDPMMWHHTAB'  'ERFMG'     '20'   g_comm46  ''     '',
+'ZIDPMMWHHTAB'  'ERFME'     '3'   g_comm47  ''     '',
+'ZIDPMMWHHTAB'  'UMMAT'     '20'   g_comm48  'LIPS'     'UMMAT',
+'ZIDPMMWHHTAB'  'UMWRK'     '4'   g_comm49  ''     '',
+'ZIDPMMWHHTAB'  'UMLGO'     '4'   g_comm50  ''     '',
+'ZIDPMMWHHTAB'  'UMCHA'     '10'   g_comm51  ''     '',
+'ZIDPMMWHHTAB'  'SGTXT'     '50'   g_comm52  ''     '',
+'ZIDPMMWHHTAB'  'RSNUM'     '10'   g_comm53  ''     '',
+'ZIDPMMWHHTAB'  'RSPOS'     '4'   g_comm54  ''     '',
+'ZIDPMMWHHTAB'  'MARKDELETION' '1'  g_comm55  ''     '',
+'ZIDPMMWHHTAB'  'DISPO '    '3'   g_comm56  ''     '',
+'ZIDPMMWHHTAB'  'PLFMG '    '20'   g_comm57  ''     '',
+'ZIDPMMWHHTAB'  'ALPGR '    '2'   g_comm58  ''     '',
+'ZIDPMMWHHTAB'  'ZALPGR'    '2'   g_comm59  ''     '',
+'ZIDPMMWHHTAB'  'PS_PSP_PNR' '25'  g_comm60  ''     '',
+'ZIDPMMWHHTAB'  'MAT_PSPNR ' '24'   g_comm61  ''     '',
+'ZIDPMMWHHTAB'  'STLNR     ' '8'   g_comm62  ''     '',
+'ZIDPMMWHHTAB'  'CPUDT '    '8'   g_comm71  ''     '',
+*by wangzhongsheng 20180904
+'ZIDPMMWHHTAB'  'YL2'       '8'   g_comm74  ''     '',
+'ZIDPMMWHHTAB'  'DREMARK_DESCRIPT'       '20'   g_comm76  ''     '',
+'ZIDPMMWHHTAB'  'YL3'       '12'   g_comm75  ''     '',
+'ZIDPMMWHHTAB'  'LIF'       '10'   g_comm77  ''     '',
+'ZIDPMMWHHTAB'  'TRANSTYPE'       '10'   g_comm78  ''     '',
+'ZIDPMMWHHTAB'  'ISBPO'       '1'   g_comm79  ''     '',
+'ZIDPMMWHHTAB'  'ZEILE'       '4'   g_comm80  ''     '',
+
+'ZIDPMMWHHTAB'  'BUILD'       '5'   g_comm81  ''     '',  "XIAOXIAO
+'ZIDPMMWHHTAB'  'BUILD1'       '5'   g_comm82  ''     '', "XIAOXIAO
+'ZIDPMMWHHTAB'  'TSLVT'       '20'   g_comm84  ''     '',  "LONGZONG
+'ZIDPMMWHHTAB'  'TLTSLVT'       '20'   g_comm85  ''     ''.
+
+
+ENDFORM.                    " write_alv
+*&---------------------------------------------------------------------*
+*&      Form  append_fc_alv
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_TABNAME
+*      -->P_FIELDNAME
+*      -->P_SELTEXT
+*----------------------------------------------------------------------*
+FORM append_fc_alv USING   p_tabname p_fieldname p_outputlen p_seltext
+                           p_ref_fieldname p_ref_tabname.
+
+  MOVE:
+         p_tabname       TO fc_alv-tabname ,
+         p_fieldname     TO fc_alv-fieldname ,
+         p_outputlen     TO fc_alv-outputlen ,
+         p_seltext       TO fc_alv-reptext_ddic,
+         p_ref_fieldname TO fc_alv-ref_fieldname,
+         p_ref_tabname   TO fc_alv-ref_tabname.
+
+  APPEND fc_alv.
+  CLEAR fc_alv.
+ENDFORM.                    " append_fc_alv
+*&---------------------------------------------------------------------*
+*&      Form  call_alv_for_list
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM call_alv_for_list.
+
+  gd_repid = sy-repid .
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = gd_repid
+      i_grid_title       = 'List Warehouse operation Application report'
+      is_layout          = gd_layout
+      it_fieldcat        = fc_alv[]
+      i_default          = 'X'
+      i_save             = 'A'
+    TABLES
+      t_outtab           = zidpmmwhhtab[].
+  IF sy-subrc <> 0.
+* MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*         WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  ENDIF.
+
+
+ENDFORM.                    " call_alv_for_list
+*&---------------------------------------------------------------------*
+*&      Form  get_dommain_value_text
+*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*&      Form  get_dommain_value_text
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_1123   text
+*      -->P_ZIDPMMWHH_DOCTYPE  text
+*      -->P_DOCTYPETEXT  text
+*----------------------------------------------------------------------*
+FORM get_dommain_value_text USING VALUE(name) VALUE(value) valuetext.
+  DATA: domname  LIKE dd01l-domname,
+        domvalue LIKE dd07v-domvalue_l,
+        dd07v_wa LIKE dd07v.
+
+  CLEAR valuetext.
+  domname = name.
+  domvalue = value.
+  CALL FUNCTION 'DDUT_DOMVALUE_TEXT_GET'
+    EXPORTING
+      name          = domname
+      value         = domvalue
+      texts_only    = 'X'
+    IMPORTING
+      dd07v_wa      = dd07v_wa
+    EXCEPTIONS
+      not_found     = 1
+      illegal_input = 2
+      OTHERS        = 3.
+  IF sy-subrc EQ 0.
+    valuetext = dd07v_wa-ddtext.
+  ENDIF.
+ENDFORM.                    " get_dommain_value_text
+
+FORM get_data.
+  DATA:l_date_b  TYPE sy-datum,
+       l_date_e  TYPE sy-datum,
+       l_time_b  TYPE sy-uzeit,
+       l_time_e  TYPE sy-uzeit,
+       l_pdate_b TYPE sy-datum,
+       l_pdate_e TYPE sy-datum,
+       l_ptime_b TYPE sy-uzeit,
+       l_ptime_e TYPE sy-uzeit.
+  DATA:r_mblnn   TYPE RANGE OF zidpmmwhh-mblnn,
+       r_doctype TYPE RANGE OF zidpmmwhh-doctype,
+       r_docstas TYPE RANGE OF zidpmmwhh-docstas,
+       r_mblnr   TYPE RANGE OF zidpmmwhh-mblnr.
+  DATA:BEGIN OF lt_mblnr OCCURS 0,
+         mblnr TYPE mseg-mblnr,
+       END OF lt_mblnr.
+  TYPES:BEGIN OF ty_lgort_line,
+          werks TYPE t001l-werks,
+          lgort TYPE t001l-lgort,
+        END OF ty_lgort_line,
+        ty_lgort TYPE STANDARD TABLE OF ty_lgort_line WITH EMPTY KEY.
+  DATA:lt_lgort TYPE ty_lgort.
+
+
+  READ TABLE glizeit INDEX 1.
+  READ TABLE badat INDEX 1.
+
+  IF badat-low IS INITIAL. "最小日期為空賦初值
+    l_date_b = '20141001'.  "GL是這個時候準備上線的
+  ELSE.
+    l_date_b = badat-low.
+  ENDIF.
+  IF badat-high IS INITIAL. "最大日期為空賦初值
+    l_date_e = sy-datum.
+  ELSE.
+    l_date_e = badat-high.
+  ENDIF.
+
+  IF glizeit-low IS INITIAL.
+    l_time_b = '000000'.
+  ELSE.
+    l_time_b = glizeit-low.
+  ENDIF.
+  IF glizeit-low IS INITIAL.
+    l_time_e = '235959'.
+  ELSE.
+    l_time_e = glizeit-high.
+  ENDIF.
+
+  READ TABLE postdate INDEX 1.
+  READ TABLE posttime INDEX 1.
+
+  IF postdate-low IS INITIAL. "最小日期為空賦初值
+    l_pdate_b = '00000000'.
+  ELSE.
+    l_pdate_b = postdate-low.
+  ENDIF.
+  IF postdate-high IS INITIAL. "最大日期為空賦初值
+    l_pdate_e = '20991231'.
+  ELSE.
+    l_pdate_e = postdate-high.
+  ENDIF.
+
+  IF posttime-low IS INITIAL.
+    l_ptime_b = '000000'.
+  ELSE.
+    l_ptime_b = posttime-low.
+  ENDIF.
+  IF posttime-low IS INITIAL.
+    l_ptime_e = '235959'.
+  ELSE.
+    l_ptime_e = posttime-high.
+  ENDIF.
+
+  IF l_onway = 'X'.
+    r_mblnn[] = VALUE #( ( sign = 'I' option = 'NE' low = '' ) ).
+    r_doctype[] = VALUE #( ( sign = 'I' option = 'EQ' low = 'P' ) ).
+    r_docstas[] = VALUE #( ( sign = 'I' option = 'EQ' low = '0' ) ).
+    r_mblnr[] = VALUE #( ( sign = 'I' option = 'EQ' low = '' ) ).
+  ENDIF.
+
+
+
+  SELECT h~docnumber,
+         h~docyear,
+         h~doctype,
+*         ' ' as doctypetext,
+         h~docstas,
+         h~mblnr,
+         h~mjahr,
+         h~badat,
+         h~glizeit,
+         h~employid,
+         h~aufnr,
+         CASE WHEN o~matnr IS INITIAL THEN k~ktext ELSE o~matnr END AS fprod,
+         k~auart,
+         h~enmng,
+         h~kostl,
+         h~commenttext,
+         h~erdat,
+         h~erzet,
+         h~ernam,
+         h~aedat,
+         h~aezet,
+         h~aenam,
+         h~usnam,
+         h~postdate,
+         h~posttime,
+         h~ebeln,
+         h~refno,
+         h~mblnn,
+         h~relstatus,
+         h~reson,
+         h~grtxt,
+         h~kunnr,
+         h~creater,
+         h~password,
+         h~poster,
+         h~password2,
+         h~lifnr,
+         h~konto,
+         h~floor,
+         h~model,
+         h~eissueflag,
+         h~pull_num,
+         h~intra_cat,
+         h~cusremark,
+*         ' ' as cusremarktxt,
+         i~docitem,
+         i~matnr,
+         t~maktx,
+         a~bismt,
+         i~werks,
+         i~lgort,
+         i~umlgo,
+         i~charg,
+         i~erfmg,
+         i~erfme,
+         i~ummat,
+         i~umwrk,
+         i~umcha,
+         i~sgtxt,
+         i~rsnum,
+         i~rspos,
+         i~markdeletion,
+         i~dispo,
+         i~plfmg,
+         i~alpgr,
+         i~zalpgr,
+         i~ps_psp_pnr,
+         i~mat_pspnr,
+         i~stlnr,
+*         ' ' AS roll,
+*         ' ' AS smbln,
+*         cpudt,
+         h~yl2,
+         h~yl3,
+         z7~azf03 AS dremark_descript,
+         i~lifnr AS lif,
+         h~transtype,
+         h~isbpo
+*         zeile,
+*         ' ' AS build,
+*         ' ' AS build1,
+*         0 AS tslvt,
+*         0 AS tltslvt
+  FROM zidpmmwhh AS h
+  INNER JOIN zidpmmwhi AS i ON h~docnumber = i~docnumber AND h~docyear = i~docyear
+  LEFT JOIN mara AS a ON a~matnr = i~matnr
+  LEFT JOIN afpo AS o ON o~aufnr = h~aufnr
+  LEFT JOIN aufk AS k ON k~aufnr = h~aufnr
+  LEFT JOIN makt AS t ON t~matnr = i~matnr AND t~spras = @sy-langu
+  LEFT JOIN zidpmm017 AS z7 ON z7~werks = i~werks AND z7~azf01 = h~yl2
+  WHERE h~docyear = @sdocyear
+  AND h~doctype IN @doctype
+  AND h~doctype IN @r_doctype
+  AND ( h~badat > @l_date_b OR ( h~badat = @l_date_b AND h~glizeit >= @l_time_b ) )
+  AND ( h~badat  < @l_date_e OR ( h~badat = @l_date_e AND h~glizeit <= @l_time_e ) )
+  AND h~docnumber IN @docnumb
+  AND h~docstas IN @docstas
+  AND h~docstas IN @r_docstas
+  AND ( h~postdate > @l_pdate_b OR ( h~postdate = @l_pdate_b AND h~posttime >= @l_ptime_b ) )
+  AND ( h~postdate  < @l_pdate_e OR ( h~postdate = @l_pdate_e AND h~posttime <= @l_ptime_e ) )
+  AND h~employid IN @employid
+  AND h~usnam    IN @usnam
+  AND h~aufnr    IN @aufnr
+  AND h~kostl    IN @kostl
+  AND h~erdat    IN @erdat
+  AND h~aedat    IN @aedat
+  AND h~ebeln    IN @ebeln
+  AND h~mblnr IN @mblnr
+  AND h~mblnr IN @r_mblnr
+  AND h~mblnn IN @r_mblnn
+  AND h~relstatus IN @s_rel
+  AND h~reson IN @s_reson
+  AND h~floor IN @s_floor
+  AND h~yl2 IN @s_yl2
+  AND h~model IN @s_model
+  AND h~refno IN @s_refno
+  AND h~pull_num IN @s_pull
+  AND h~eissueflag IN @s_eflag
+  AND h~transtype IN @s_trtype
+  AND i~ps_psp_pnr IN @s_frwbs
+  AND i~mat_pspnr IN @s_towbs
+  AND i~matnr IN @matnr
+  AND i~lgort IN @lgort
+  AND i~umlgo IN @umlgo
+  AND i~werks IN @werks
+  AND i~markdeletion = @l_dele
+  INTO CORRESPONDING FIELDS OF TABLE @zidpmmwhhtab.
+
+  CHECK zidpmmwhhtab[] IS NOT INITIAL.
+
+  SELECT werks FROM zidpmmcontrol2
+  WHERE werks IN @werks
+  AND object = 'KOSTLSEL'
+  AND value = 'Y'
+  INTO TABLE @DATA(lt_mmctl2).
+  SORT lt_mmctl2 BY werks.
+
+  MOVE-CORRESPONDING zidpmmwhhtab[] TO lt_mblnr[].
+  SORT lt_mblnr BY mblnr.
+  DELETE ADJACENT DUPLICATES FROM lt_mblnr COMPARING mblnr.
+  DELETE lt_mblnr WHERE mblnr = ''.
+  IF lt_mblnr[] IS NOT INITIAL.
+    SELECT mblnr,zeile, cpudt,matnr,erfmg,werks,lgort,umlgo
+    INTO TABLE @DATA(lt_mseg)
+    FROM matdoc
+    FOR ALL ENTRIES IN @lt_mblnr
+    WHERE mblnr = @lt_mblnr-mblnr.
+    SORT lt_mseg BY mblnr matnr erfmg werks lgort umlgo zeile.
+
+    SELECT DISTINCT smbln, mblnr
+    INTO TABLE @DATA(lt_mseg2)
+    FROM mseg
+    FOR ALL ENTRIES IN @lt_mblnr
+    WHERE smbln = @lt_mblnr-mblnr." %_HINTS ORACLE 'INDEX("S")'..
+    SORT lt_mseg2 BY smbln.
+  ENDIF.
+
+  lt_lgort[] = VALUE ty_lgort( FOR ls_wh IN zidpmmwhhtab[] ( werks = ls_wh-werks lgort = ls_wh-lgort )
+                                                        ( werks = ls_wh-umwrk lgort = ls_wh-umlgo ) ).
+  SORT lt_lgort BY werks lgort.
+  DELETE ADJACENT DUPLICATES FROM lt_lgort COMPARING ALL FIELDS.
+
+  SELECT a~werks, a~lgort, a~category6
+  FROM zidpmm016 AS a
+  FOR ALL ENTRIES IN @lt_lgort
+  WHERE a~werks = @lt_lgort-werks
+  AND a~lgort = @lt_lgort-lgort
+  INTO TABLE @DATA(lt_016).
+
+  SELECT domname, domvalue_l,ddtext
+  INTO TABLE @DATA(lt_dd07t)
+  FROM dd07t
+  WHERE domname IN ('ZDOCTYPE','ZCUSMARK')
+  AND ddlanguage = @sy-langu.
+  SORT lt_dd07t BY domname domvalue_l.
+
+  SORT zidpmmwhhtab BY docnumber docitem.
+  LOOP AT zidpmmwhhtab.
+    READ TABLE lt_dd07t INTO DATA(ls_dd07t) WITH KEY domname = 'ZDOCTYPE'
+                                                     domvalue_l = zidpmmwhhtab-doctype BINARY SEARCH.
+    IF sy-subrc = 0.
+      zidpmmwhhtab-doctypetext = ls_dd07t-ddtext.
+    ENDIF.
+
+    IF zidpmmwhhtab-doctype = 'D' AND ( zidpmmwhhtab-werks CS 'IN' OR zidpmmwhhtab-werks CS 'KA' ).
+      READ TABLE lt_016 INTO DATA(ls_016) WITH KEY werks = zidpmmwhhtab-werks
+                                                   lgort = zidpmmwhhtab-lgort BINARY SEARCH.
+      IF sy-subrc = 0.
+        zidpmmwhhtab-build = ls_016-category6+0(3).
+      ENDIF.
+      READ TABLE lt_016 INTO ls_016 WITH KEY werks = zidpmmwhhtab-werks
+                                             lgort = zidpmmwhhtab-umlgo BINARY SEARCH.
+      IF sy-subrc = 0.
+        zidpmmwhhtab-build1 = ls_016-category6+0(3).
+      ENDIF.
+    ENDIF.
+
+    IF zidpmmwhhtab-doctype CA 'GH'.
+      READ TABLE lt_dd07t INTO ls_dd07t WITH KEY domname = 'ZCUSMARK'
+                                                 domvalue_l = zidpmmwhhtab-cusremark BINARY SEARCH.
+      IF sy-subrc = 0.
+        zidpmmwhhtab-cusremarktxt = ls_dd07t-ddtext.
+      ENDIF.
+    ENDIF .
+
+    IF NOT zidpmmwhhtab-mblnr IS INITIAL .
+      READ TABLE lt_mseg2 INTO DATA(ls_mseg2) WITH KEY smbln = zidpmmwhhtab-mblnr BINARY SEARCH.
+      IF sy-subrc = 0.
+        zidpmmwhhtab-roll = 'X' .
+        zidpmmwhhtab-smbln = ls_mseg2-mblnr .
+      ENDIF .
+
+      READ TABLE lt_mseg INTO DATA(ls_mseg) WITH KEY mblnr = zidpmmwhhtab-mblnr
+                                                     matnr = zidpmmwhhtab-matnr
+                                                     erfmg = zidpmmwhhtab-erfmg
+                                                     werks = zidpmmwhhtab-werks
+                                                     lgort = zidpmmwhhtab-lgort
+                                                     umlgo = zidpmmwhhtab-umlgo BINARY SEARCH.
+      IF sy-subrc = 0.
+        zidpmmwhhtab-zeile = ls_mseg-zeile.
+      ENDIF.
+
+      READ TABLE lt_mseg INTO DATA(ls_mseg1) WITH KEY mblnr = zidpmmwhhtab-mblnr BINARY SEARCH.
+      IF sy-subrc = 0.
+        zidpmmwhhtab-cpudt = ls_mseg1-cpudt.
+      ENDIF.
+    ENDIF .
+
+    READ TABLE lt_mmctl2 TRANSPORTING NO FIELDS WITH KEY werks = zidpmmwhhtab-werks BINARY SEARCH.
+    IF sy-subrc = 0.
+      CLEAR:l_bwkey,l_bwtar,l_kalnr,l_pspnr.
+      l_poper_1 = sy-datum+4(2).
+      l_bdatj_1 = sy-datum+0(4).
+
+      SELECT SINGLE bukrs FROM t001k INTO l_bukrs
+      WHERE bwkey = zidpmmwhhtab-werks .
+
+      SELECT SINGLE waers FROM t001 INTO l_waers
+      WHERE bukrs = l_bukrs .
+
+      CALL FUNCTION 'CURRENCY_CONVERTING_FACTOR'
+        EXPORTING
+          currency = l_waers
+        IMPORTING
+          factor   = l_factor.
+
+      SELECT SINGLE bwkey bwtar FROM mbew INTO (l_bwkey,l_bwtar)
+      WHERE matnr = zidpmmwhhtab-matnr
+      AND bwkey = zidpmmwhhtab-werks.
+      SELECT SINGLE kalnr pspnr FROM ckmlhd INTO (l_kalnr,l_pspnr)
+      WHERE matnr = zidpmmwhhtab-matnr
+      AND bwkey = l_bwkey
+      AND bwtar = l_bwtar.
+
+      CLEAR:gt_kalnr,gt_kalnr[],gt_ckmlpp,gt_ckmlpp[], gt_ckmlcr,gt_ckmlcr[].
+      gt_kalnr-kalnr = l_kalnr.
+      gt_kalnr-bwkey = l_bwkey.
+      gt_kalnr-bwtar = l_bwtar.
+      gt_kalnr-pspnr = l_pspnr.
+      APPEND gt_kalnr.CLEAR gt_kalnr.
+
+      CALL FUNCTION 'CKMS_PERIOD_READ_WITH_ITAB'
+        EXPORTING
+          i_use_buffer            = 'X'
+          i_bdatj_1               = l_bdatj_1
+          i_poper_1               = l_poper_1
+        TABLES
+          t_kalnr                 = gt_kalnr
+          t_ckmlpp                = gt_ckmlpp
+          t_ckmlcr                = gt_ckmlcr
+        EXCEPTIONS
+          no_data_found           = 1
+          input_data_inconsistent = 2
+          buffer_inconsistent     = 3
+          OTHERS                  = 4.
+
+
+      zidpmmwhhtab-tslvt = gt_ckmlcr-stprs * l_factor.
+      zidpmmwhhtab-tltslvt = zidpmmwhhtab-tslvt * zidpmmwhhtab-erfmg.
+    ENDIF.
+
+    MODIFY zidpmmwhhtab .
+  ENDLOOP.
+ENDFORM.

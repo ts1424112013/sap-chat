@@ -1,0 +1,832 @@
+REPORT  zrsd_idp_0033   NO STANDARD PAGE HEADING LINE-SIZE 500.
+
+**
+************************************************************************
+**  Program Type   :   Report
+**  Description    :   Order Detail report
+**  Authgor        :   Hikki Cheng
+**  Creatioin Date :   2014.7.10
+**  Modifications  :
+*Ver. Date    Author  Req No.    Description
+************************************************************************
+**
+
+TYPE-POOLS: slis.
+INCLUDE <icon>.
+
+DATA: gt_fieldcat         TYPE slis_t_fieldcat_alv,
+      gs_layout           TYPE slis_layout_alv,
+      gt_list_top_of_page TYPE slis_t_listheader,
+      gt_sort             TYPE slis_t_sortinfo_alv,
+      gt_events           TYPE slis_t_event.
+
+*CONSTANTS : C_X VALUE 'X'.
+*TYPE-POOLS SLIS.           " ALV Global types
+
+TABLES: vbak, vbap,vbep,vbuk,konv,
+        vbkd, vbpa,
+        likp, lips,
+        vbrk,vbrp,
+        vbfa,
+        adrc,
+        bseg,
+        tvap.   " Maintain Item Categories
+
+
+DATA: BEGIN OF line,
+        bstnk        LIKE vbak-bstnk,   " CUSTOMER PO
+        poitem(6),               " PO item
+        bstdk        LIKE vbak-bstdk,   " PO DATE
+        kunnr        LIKE vbak-kunnr,   " CUSTOMER
+        ernam        LIKE vbak-ernam,
+        vbeln        LIKE vbak-vbeln,   " S/O
+        auart        LIKE vbak-auart,
+        posnr        LIKE vbap-posnr,
+        sodate       LIKE vbak-erdat,
+***add by lili 20171208  begin******************
+        kbetr        LIKE konp-kbetr,
+        konwa        LIKE konp-konwa,
+        kpein        LIKE konp-kpein,
+        kmein        LIKE konp-kmein,
+***add by lili 20171208  end******************
+
+        date         LIKE sy-datum,
+        time         LIKE sy-uzeit,
+
+        werks        LIKE vbap-werks,
+        matnr        LIKE vbap-matnr,
+        kdmat        LIKE vbap-kdmat,   " Customer Material no.
+        maktx(50),
+        soqty        TYPE i,           " S/O QTY
+
+        dn(15),
+        dnitem(10),
+        dndate       LIKE likp-erdat,
+        dnqty        TYPE i,
+
+        pgi(15),
+        pgidate      LIKE likp-wadat_ist,
+
+***add by lili 20180109  begin******************
+        flag1        LIKE zctbs_zzstatus-flag1,
+        rve2         LIKE zctbs_zzstatus-rve2,
+        bsi03        LIKE zctbs_zzstatus-bsi03,
+        bsi011       LIKE zctbs_zzstatus-bsi011,
+        bsi02        LIKE zctbs_zzstatus-bsi02,
+***add by lili 20180109  end******************
+
+
+        billno(15),
+        billdate     LIKE vbrk-fkdat,
+        arno(15),
+
+        netpr        LIKE konv-kbetr,
+        netwr        LIKE vbrp-netwr,
+        waerk        LIKE vbrk-waerk,
+
+        address1(30),            " street
+        address2(30),                                       " City1
+        qty1         TYPE i,    " pgi qty
+        qty2         TYPE i,    " open qty, not pgi qty
+        shkzg        LIKE vbap-shkzg,
+        decno      LIKE zbsi-decno, "正式報關單號
+      bsh28      LIKE zbsh-bsh28, "申報日期/報關日期
+      END OF line.
+
+DATA: itab LIKE STANDARD TABLE OF line WITH HEADER LINE.
+DATA: itab_all LIKE STANDARD TABLE OF line .
+DATA: itab_so_open LIKE STANDARD TABLE OF line .
+DATA: itab_dn_open LIKE STANDARD TABLE OF line .
+DATA: itab_so_close LIKE STANDARD TABLE OF line .
+DATA: itab_pgi_open LIKE STANDARD TABLE OF line .
+DATA: itab_alv LIKE TABLE OF line WITH HEADER LINE.
+
+DATA: temp_1 TYPE vbfa-rfmng.
+DATA: temp_2 TYPE vbfa-rfmng.
+DATA  l_item LIKE vbap-posnr.                   "create by lili 20180109
+DATA:s_bsi01 LIKE zbsi-bsi01.
+SELECTION-SCREEN: BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS:
+                  vkorg FOR vbak-vkorg ,
+                  werks FOR vbap-werks OBLIGATORY,
+                  kunnr FOR vbak-kunnr ,
+                  auart FOR vbak-auart,
+                  t_vbeln FOR vbak-vbeln,
+*                y_vbeln FOR likp-vbeln,
+                  bstnk FOR vbak-bstnk,   " CUSTOMER PO
+                  bstdk FOR vbak-bstdk,
+                  sodate FOR vbak-erdat OBLIGATORY,   "by xiaohu20210816
+*DEFAULT sy-datum TO sy-datum,
+                  matnr FOR vbap-matnr,
+                  kdmat FOR vbap-kdmat.
+SELECTION-SCREEN: END OF BLOCK b1.
+
+SELECTION-SCREEN: BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-001.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 2(4) com_icon.
+    SELECTION-SCREEN COMMENT 7(50) comm0.
+  SELECTION-SCREEN END OF LINE.
+
+  SELECTION-SCREEN: BEGIN OF LINE .
+    SELECTION-SCREEN POSITION 3.
+    PARAMETERS: so_all RADIOBUTTON GROUP v1 DEFAULT 'X'.
+    SELECTION-SCREEN COMMENT 6(40) comm1.
+  SELECTION-SCREEN: END OF LINE.                            " ALL
+
+
+  SELECTION-SCREEN: BEGIN OF LINE .
+    SELECTION-SCREEN POSITION 3.
+    PARAMETERS: so_open RADIOBUTTON GROUP v1.
+    SELECTION-SCREEN: COMMENT 6(40) comm2.                    "so open
+  SELECTION-SCREEN: END OF LINE.
+
+
+  SELECTION-SCREEN: BEGIN OF LINE .
+    SELECTION-SCREEN POSITION 3.
+    PARAMETERS: so_close RADIOBUTTON GROUP v1 .
+    SELECTION-SCREEN: COMMENT 6(40) comm4.                    " pgi open
+  SELECTION-SCREEN: END OF LINE.
+
+
+  SELECTION-SCREEN: BEGIN OF LINE .
+    SELECTION-SCREEN POSITION 3.
+    PARAMETERS: dn_open RADIOBUTTON GROUP v1 .
+    SELECTION-SCREEN: COMMENT 6(40) comm3.                    " DN open
+  SELECTION-SCREEN: END OF LINE.
+
+  SELECTION-SCREEN: BEGIN OF LINE .
+    SELECTION-SCREEN POSITION 3.
+    PARAMETERS: pgi_open RADIOBUTTON GROUP v1 .
+    SELECTION-SCREEN: COMMENT 6(40) comm5.                    " PGI open
+  SELECTION-SCREEN: END OF LINE.
+SELECTION-SCREEN: END OF BLOCK b2.
+
+INITIALIZATION .
+  com_icon = icon_message_information.
+
+  IF sy-langu = 'E'.
+    comm0 = 'Status Option '.    " caption
+    comm1 = 'SalesOrder Report - all'.
+    comm2 = 'SalesOrder - Open Report(SO ONLY)'.
+    comm4 = 'SalesOrder - Close Report(BILLING)'.
+    comm3 = 'Delivery Nots not PGI Report'.
+    comm5 = 'Already PGI not Billing Report'.
+  ELSE.
+    comm0 = '狀態選項'.
+    comm1 = '銷售報表- all'.
+    comm2 = '已銷售但沒出貨的報表'.
+    comm4 = '出貨明細報表(已有發票）'.
+    comm3 = '還沒過帳的出貨明細報表'.
+    comm5 = '已過帳但沒開發票'.
+  ENDIF.
+
+START-OF-SELECTION.
+  PERFORM check_authorization(zrsd_idp_0030) TABLES werks.
+  PERFORM retrieve_data.
+  PERFORM classify_status_table.
+  PERFORM fieldcat_init USING gt_fieldcat[].
+  PERFORM layout_build USING gs_layout.
+  PERFORM comment_build USING gt_list_top_of_page[].
+  PERFORM eventtab_build USING gt_events[].
+  PERFORM sort_build USING gt_sort[].
+  PERFORM main.
+*  PERFORM ALV_LIST_SHOW.
+end-of-selection.
+*TOP-OF-PAGE.
+*&--------------------------------------------------------------------*
+*&      Form  RETRIEVE_DATA
+*&--------------------------------------------------------------------*
+*       text
+*---------------------------------------------------------------------*
+FORM retrieve_data.
+  DATA: zmakt  TYPE makt OCCURS 0 WITH HEADER LINE,
+        zknumv LIKE vbak-knumv,
+        ztep1  LIKE vbak-waerk.
+
+
+  SELECT a~posex b~bstdk b~kunnr b~erdat b~vbeln b~ernam
+         b~waerk b~auart a~posnr a~matnr
+         a~kwmeng a~kdmat a~werks a~shkzg
+   INTO (itab-poitem, itab-bstdk, itab-kunnr, itab-sodate,
+         itab-vbeln, itab-ernam,itab-waerk, itab-auart, itab-posnr,
+         itab-matnr, itab-soqty, itab-kdmat, itab-werks,itab-shkzg)
+       FROM vbap AS a
+       INNER JOIN vbak AS b
+       ON a~vbeln = b~vbeln
+       AND a~erdat = b~erdat      "by xiaohu 20210816
+       WHERE a~werks IN werks AND
+          a~vbeln IN t_vbeln AND
+          a~abgru EQ '' AND
+          b~kunnr IN kunnr AND
+          b~bstdk IN bstdk AND
+          b~bstnk IN bstnk AND
+          b~vkorg IN vkorg AND
+          b~erdat IN sodate AND
+          b~auart IN auart AND
+          a~erdat IN sodate AND   "by xiaohu 20210816
+          a~matnr IN matnr AND
+          a~kdmat IN kdmat .
+*          a~fkrel NE 'C'.      " not debit/credit "comment 20250411 by lily C次
+
+    CLEAR vbkd.
+
+    itab-date = sy-datum.
+    itab-time = sy-uzeit.
+
+    SELECT SINGLE * FROM vbkd WHERE vbeln = itab-vbeln
+          AND posnr = itab-posnr
+          AND bstkd IN bstnk.
+
+
+    IF sy-subrc NE 0.
+      SELECT SINGLE * FROM vbkd WHERE vbeln = itab-vbeln
+          AND bstkd IN bstnk.
+      itab-bstnk = vbkd-bstkd.
+    ELSE.
+      itab-bstnk = vbkd-bstkd.
+    ENDIF.
+
+
+    CALL FUNCTION 'MAKT_SINGLE_READ'
+      EXPORTING
+        matnr = itab-matnr
+        spras = sy-langu
+      IMPORTING
+        wmakt = zmakt.
+    IF sy-subrc <> 0.
+    ELSE.
+      itab-maktx = zmakt-maktx.
+    ENDIF.
+***add by lili 20171208  begin******************
+    SELECT SINGLE * FROM vbak WHERE vbeln = itab-vbeln.
+*      SELECT SINGLE * FROM vbap WHERE vbeln = t_dn-vgbel
+*      AND matnr = zloadi-matnr.
+    SELECT SINGLE kbetr waers kpein kmein
+    INTO (itab-kbetr,itab-konwa,itab-kpein,itab-kmein)
+    FROM v_konv_cds
+      "将KONV换成V_KONV_CDS modify by ghm 20220428
+    WHERE knumv  = vbak-knumv
+    AND kposn  = itab-posnr
+    AND kschl = 'ZPR0'
+    AND kinak <> 'M'.
+***add by lili 20171208  end******************
+
+*    address of Ship-to
+    SELECT SINGLE adrnr FROM vbpa INTO vbpa-adrnr
+                  WHERE vbeln = itab-vbeln AND
+                        posnr = '000000' AND
+                        parvw = 'WE' .
+
+    SELECT SINGLE street city1 INTO
+         (itab-address1, itab-address2)
+         FROM adrc
+         WHERE addrnumber = vbpa-adrnr.
+
+*    ACTUALLY DELIVERY QTY FOR SPECIFIED SO ITEM
+    SELECT SUM( rfmng ) INTO temp_1
+           FROM vbfa WHERE vbelv = itab-vbeln
+           AND posnv = itab-posnr
+            AND vbtyp_n = 'R'.       " ACTUAL PGI
+
+
+    SELECT SUM( rfmng ) INTO temp_2
+           FROM vbfa WHERE vbelv = itab-vbeln
+           AND posnv = itab-posnr
+            AND vbtyp_n = 'h'.       " REVERSE PGI
+
+    itab-qty1 = temp_1 - temp_2.          "  really pgi qty
+    itab-qty2 = itab-soqty - itab-qty1.   "  open qty
+    CLEAR: temp_1, temp_2.
+
+*    SELECT  a~vbeln a~posnn a~erdat a~rfmng INTO
+*        (itab-dn, itab-dnitem, itab-dndate, itab-dnqty)
+*        FROM vbfa AS a INNER JOIN vbap AS b ON
+*      a~vbelv = b~vbeln AND a~posnv = b~posnr INNER JOIN lips AS c ON b~vbeln = c~vgbel AND a~vbelv = c~vgbel
+*        WHERE a~vbelv = itab-vbeln AND
+*          a~posnv = itab-posnr
+*      AND a~vbtyp_n IN ('J', 'T')
+**          ( a~vbtyp_n = 'J' OR
+**            a~vbtyp_n = 'T' )
+*      AND b~shkzg = itab-shkzg.  " J -> DN, T-> Return DN
+
+    SELECT  SINGLE  vbeln  posnr erdat lfimg INTO (itab-dn, itab-dnitem, itab-dndate, itab-dnqty)
+      FROM lips WHERE vgbel = itab-vbeln  AND vgpos = itab-posnr.
+
+    IF sy-subrc = 0.
+*        judge if dn is goods issue
+*        select single * from vbuk where vbeln = itab-dn.
+*        if sy-subrc = 0.
+*          if vbuk-wbstk = 'C'.
+      SELECT SINGLE * FROM likp WHERE vbeln = itab-dn.
+      IF sy-subrc = 0.
+        IF likp-wbstk = 'C'."modify by RAIN 20220428
+          SELECT SINGLE wadat_ist INTO itab-pgidate FROM likp
+                WHERE vbeln = itab-dn. " for PGI & GT - shipto hub
+
+          SELECT SINGLE b~vbeln b~netwr
+                INTO (itab-billno, itab-netwr) FROM vbrk AS a
+      INNER JOIN vbrp AS b ON a~vbeln = b~vbeln
+                    WHERE b~vgbel = itab-dn AND b~vgpos = itab-dnitem
+                    AND a~fksto = ''
+                    AND a~fkart NE 'S1'
+                    AND a~fkart NE 'S2'
+                    AND a~fkart NE 'S3'
+                    AND a~fkart NE 'ZS1'
+                    AND a~fkart NE 'ZS2'
+                    AND b~draft = space
+                      AND a~draft = space."S4hana，VBRK、VBRP新增字段DRAFT：是否草稿  GHM 20220428.
+
+          IF sy-subrc = 0.
+            SELECT SINGLE knumv waerk  INTO (zknumv, ztep1)
+                FROM vbrk WHERE vbeln =  itab-billno.
+
+            SELECT SINGLE * INTO CORRESPONDING FIELDS OF konv
+              FROM v_konv_cds
+              "将KONV换成V_KONV_CDS 加入INTO modify by ghm 20220428
+                WHERE knumv = zknumv
+                 AND kposn = itab-dnitem
+                 AND ( kschl = 'ZPR0' OR kschl = 'ZPR9' )
+                 AND kinak <> 'M'.
+
+            IF sy-subrc = 0.
+              itab-netpr = konv-kbetr / konv-kpein.
+            ELSE .
+              itab-netpr = '9999'.
+            ENDIF.
+
+            IF ztep1 EQ 'TWD' OR ztep1 EQ 'NTD'
+                  OR ztep1 = 'JPY'.
+              itab-netpr = itab-netpr * 100.
+            ENDIF.
+
+            IF itab-waerk EQ 'TWD' OR itab-waerk EQ 'NTD'
+                OR itab-waerk = 'JPY'.
+              itab-netwr = itab-netwr * 100.
+            ENDIF.
+          ENDIF.
+
+        ELSE.
+          itab-pgidate = ''.
+          itab-netwr = ''.
+        ENDIF.
+      ENDIF.
+
+***add by lili 20180109  begin******************
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        EXPORTING
+          input  = itab-dnitem
+        IMPORTING
+          output = l_item.
+
+      SELECT SINGLE flag1 rve2 bsi03 bsi011 bsi02 INTO (itab-flag1,
+      itab-rve2,itab-bsi03,itab-bsi011,itab-bsi02)
+      FROM zctbs_zzstatus WHERE docno = itab-dn
+                                AND item = l_item.
+***add by lili 20180109 end********************
+**add by lily 新增報關單號，申報日期欄位 20260113 begin*
+      SELECT SINGLE bsi01 decno INTO (s_bsi01,itab-decno) FROM zbsi WHERE bsi12 = itab-dn
+                                                                            and decno ne ''.
+      SELECT SINGLE bsh28 INTO itab-bsh28 FROM zbsh WHERE bsh01 = s_bsi01.
+*add by lily 新增報關單號，申報日期欄位 20260113 end*
+
+*      APPEND itab.
+      CLEAR: temp_1, temp_2, zknumv, ztep1,s_bsi01.
+    ENDIF.
+*  ENDSELECT.
+
+  APPEND itab.
+  CLEAR itab.
+ENDSELECT.
+*DELETE itab WHERE bstnk EQ ''.
+ENDFORM.
+*---------------------------------------------------------------------*
+*       FORM classify_status_table                                    *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM classify_status_table.
+  SORT itab BY bstnk poitem bstdk vbeln posnr.
+  IF so_all EQ 'X'.
+    itab_all = itab[].
+    itab_alv[]  = itab_all[].
+
+  ELSEIF so_open EQ 'X'.
+*    LOOP AT itab INTO line WHERE qty2 <> 0 AND dn GE ''.
+    LOOP AT itab INTO line.
+      IF line-qty2 <> 0 AND line-dn EQ ''.
+        APPEND line TO itab_so_open.
+      ENDIF.
+    ENDLOOP.
+    itab_alv[]  = itab_so_open[].
+
+  ELSEIF dn_open EQ 'X'.
+    LOOP AT itab INTO line  WHERE dn NE '' AND ( pgidate EQ '' OR
+ pgidate EQ '00000000' ).
+*        ( pgidate EQ '00000000' OR pgidate EQ '' ) .
+      APPEND line TO itab_dn_open.
+    ENDLOOP.
+    itab_alv[]  = itab_dn_open[].
+
+  ELSEIF so_close EQ 'X'.
+*    LOOP AT itab INTO line.
+*      IF itab-qty1 = itab-soqty.
+*        APPEND line TO itab_so_close.
+*      ENDIF.
+*    ENDLOOP.
+    LOOP AT itab INTO line.
+      IF line-billno <> ''.
+        APPEND line TO itab_so_close.
+      ENDIF.
+    ENDLOOP.
+    itab_alv[]  = itab_so_close[].
+  ELSEIF pgi_open EQ 'X'.
+    LOOP AT itab INTO line WHERE pgidate <> '' AND billno = ''
+                            AND pgidate <> '00000000'.
+      APPEND line TO itab_pgi_open.
+    ENDLOOP.
+    itab_alv[]  = itab_pgi_open[].
+  ENDIF.
+ENDFORM.                    "CLASSIFY_STATUS_TABLE
+*&--------------------------------------------------------------------*
+*&      Form  fieldcat_init
+*&--------------------------------------------------------------------*
+*       text
+*---------------------------------------------------------------------*
+*      -->LT_FIELDCATtext
+*---------------------------------------------------------------------*
+FORM fieldcat_init USING lt_fieldcat TYPE slis_t_fieldcat_alv.
+
+  DEFINE m_cat.
+    ls_fieldcat-fieldname = &1.
+    ls_fieldcat-key = &2.
+    ls_fieldcat-seltext_l = &3.
+    ls_fieldcat-seltext_m = &4.
+    ls_fieldcat-seltext_s = &5.
+    ls_fieldcat-reptext_ddic = &6.
+    ls_fieldcat-cfieldname  = &7.
+
+    APPEND ls_fieldcat TO lt_fieldcat.
+    CLEAR ls_fieldcat.
+    int = int + 1.
+  end-of-definition.
+
+
+  DATA: ls_fieldcat TYPE slis_fieldcat_alv,
+        int         TYPE i VALUE 1.
+  IF sy-langu = 'E'.
+    m_cat 'BSTDK' 'X' 'PO Date' '' '' '' ''.
+    m_cat 'BSTNK' 'X' 'Customer PO' '' '' '' ''.
+    m_cat 'POITEM' 'X' 'PO Item' '' '' '' ''.
+
+    m_cat 'VBELN' 'X' 'Sales Order' '' '' '' ''.
+    m_cat 'WERKS' '' 'Plant' '' '' '' ''.
+    m_cat 'SODATE' '' 'S/O Date' '' '' '' ''.
+    m_cat 'AUART' '' 'Order Type' '' '' '' ''.
+    m_cat 'KUNNR' '' 'Customer' '' '' '' ''.
+    m_cat 'POSNR' '' 'Item' '' '' '' ''.
+***add by lili 20171208  begin******************
+    m_cat 'KBETR' '' 'Price' '' '' '' ''.
+    m_cat 'KONWA' '' 'Unit' '' '' '' ''.
+    m_cat 'KPEIN' '' 'Price Unit' '' '' '' ''.
+    m_cat 'KMEIN' '' 'PC' '' '' '' ''.
+***add by lili 20171208  end******************
+
+    m_cat 'MATNR' '' 'Part Number' '' '' '' ''.
+    m_cat 'KDMAT' '' 'Customer Part' '' '' '' ''.
+    m_cat 'SOQTY' '' 'Order Qty' '' '' '' ''.
+    m_cat 'MAKTX' '' 'Description' '' '' '' ''.
+
+    m_cat 'DN' '' 'Delivery Notes' '' '' '' ''.
+    m_cat 'DNITEM' '' 'D/N Item' '' '' '' ''.
+    m_cat 'DNDATE' '' 'D/N Date' '' '' '' ''.
+    m_cat 'DNQTY' '' 'D/N Qty' '' '' '' ''.
+
+*  m_cat 'PGI' '' 'PGI No' '' '' '' ''.
+    m_cat 'PGIDATE' '' 'PostingDate' '' '' '' ''.
+    m_cat 'BILLNO' '' 'Bill No' '' '' '' ''.
+*  m_cat 'BILLDATE' '' 'Bill Date' '' '' '' ''.
+*  m_cat 'ARNO' '' 'Accounting' '' '' '' ''.
+
+***add by lili 20180109  begin******************
+    m_cat 'FLAG1' '' '抓取flag' '' '' '' ''.
+    m_cat 'RVE2' ''  '預報關number' '' '' '' ''.
+    m_cat 'BSI03' '' '預報關item' '' '' '' ''.
+    m_cat 'BSI011' '' '報關number' '' '' '' ''.
+    m_cat 'BSI02' '' '報關item' '' '' '' ''.
+***add by lili 20180109 end********************
+    m_cat 'DECNO' '' '正式報關單號' '' '' '' ''.
+    m_cat 'BSH28' '' '申報日期/報關日期' '' '' '' ''.
+    m_cat 'ERNAM' '' 'Creator' '' '' '' ''.
+
+    m_cat 'WAERK' '' 'Currency' '' '' '' ''.
+    m_cat 'NETPR' '' 'UnitPrice' '' '' '' 'WAERK'.
+    m_cat 'NETWR' '' 'NetValue' '' '' '' 'WAERK'.
+
+    m_cat 'QTY1' '' 'Close Qty' '' '' '' ''.
+    m_cat 'QTY2' '' 'Open Qty' '' '' '' ''.
+
+    m_cat 'ADDRESS1' '' 'Address1' '' '' '' ''.
+    m_cat 'ADDRESS2' '' 'Address2' '' '' '' ''.
+
+    m_cat 'DATE' '' 'DATE' '' '' '' ''.
+    m_cat 'TIME' '' 'TIME' '' '' '' ''.
+
+*  LS_FIELDCAT-CFIELDNAME    = 'WRG'.
+  ELSE.
+    m_cat 'BSTDK' 'X' '客戶PO日期' '' '' '' ''.
+    m_cat 'BSTNK' 'X' '客戶PO' '' '' '' ''.
+    m_cat 'POITEM' 'X' '客戶POitem' '' '' '' ''.
+
+    m_cat 'VBELN' 'X' '銷售訂單' '' '' '' ''.
+    m_cat 'WERKS' '' '工廠' '' '' '' ''.
+    m_cat 'SODATE' '' 'SO日期' '' '' '' ''.
+    m_cat 'AUART' '' '訂單類型' '' '' '' ''.
+    m_cat 'KUNNR' '' '客戶代碼' '' '' '' ''.
+    m_cat 'POSNR' '' 'ITEM' '' '' '' ''.
+***add by lili 20171208  begin******************
+    m_cat 'KBETR' '' '價格' '' '' '' ''.
+    m_cat 'KONWA' '' '單位' '' '' '' ''.
+    m_cat 'KPEIN' '' '價格單位' '' '' '' ''.
+    m_cat 'KMEIN' '' '批次' '' '' '' ''.
+***add by lili 20171208  end******************
+
+    m_cat 'MATNR' '' 'HH料號' '' '' '' ''.
+    m_cat 'KDMAT' '' '客戶料號' '' '' '' ''.
+    m_cat 'SOQTY' '' '訂單數量' '' '' '' ''.
+    m_cat 'MAKTX' '' '物料描述' '' '' '' ''.
+
+    m_cat 'DN' '' '出貨單' '' '' '' ''.
+    m_cat 'DNITEM' '' 'DN Item' '' '' '' ''.
+    m_cat 'DNDATE' '' '出貨日期' '' '' '' ''.
+    m_cat 'DNQTY' '' '出貨數量' '' '' '' ''.
+
+*  m_cat 'PGI' '' 'PGI No' '' '' '' ''.
+    m_cat 'PGIDATE' '' '過帳日期' '' '' '' ''.
+    m_cat 'BILLNO' '' '發票' '' '' '' ''.
+*  m_cat 'BILLDATE' '' 'Bill Date' '' '' '' ''.
+*  m_cat 'ARNO' '' 'Accounting' '' '' '' ''.
+
+***add by lili 20180109  begin******************
+    m_cat 'FLAG1' '' '抓取flag' '' '' '' ''.
+    m_cat 'RVE2' ''  '預報關單號' '' '' '' ''.
+    m_cat 'BSI03' '' '預報關項次' '' '' '' ''.
+    m_cat 'BSI011' '' '報關單號' '' '' '' ''.
+    m_cat 'BSI02' '' '報關項次' '' '' '' ''.
+***add by lili 20180109 end********************
+    m_cat 'DECNO' '' '正式報關單號' '' '' '' ''.
+    m_cat 'BSH28' '' '申報日期/報關日期' '' '' '' ''.
+    m_cat 'ERNAM' '' '創建人' '' '' '' ''.
+    m_cat 'WAERK' '' '幣別' '' '' '' ''.
+    m_cat 'NETPR' '' '單價' '' '' '' 'WAERK'.
+    m_cat 'NETWR' '' '淨價' '' '' '' 'WAERK'.
+
+    m_cat 'QTY1' '' '已過帳數量' '' '' '' ''.
+    m_cat 'QTY2' '' '未過帳數量' '' '' '' ''.
+
+    m_cat 'ADDRESS1' '' '地址1' '' '' '' ''.
+    m_cat 'ADDRESS2' '' '地址2' '' '' '' ''.
+
+    m_cat 'DATE' '' '查詢日期' '' '' '' ''.
+    m_cat 'TIME' '' '查詢時間' '' '' '' ''.
+
+  ENDIF.
+ENDFORM.                    "fieldcat_init
+*---------------------------------------------------------------------*
+*       FORM layout_build                                             *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+*  -->  LS_LAYOUT                                                     *
+*---------------------------------------------------------------------*
+FORM layout_build USING ls_layout TYPE slis_layout_alv.
+  ls_layout-zebra = 'X'.      "strip
+  ls_layout-colwidth_optimize = 'X'.
+ENDFORM.                    "layout_build
+*---------------------------------------------------------------------*
+*       FORM EVENTTAB_BUILD                                           *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+*  -->  LT_EVENTS                                                     *
+*---------------------------------------------------------------------*
+FORM eventtab_build USING lt_events TYPE slis_t_event.
+
+  DATA: ls_event TYPE slis_alv_event.
+  MOVE 'TOP_OF_PAGE' TO ls_event-name.
+  MOVE 'TOP_OF_PAGE' TO ls_event-form.
+  APPEND ls_event TO lt_events.
+  CLEAR ls_event.
+
+  MOVE 'PF_STATUS_SET' TO ls_event-name.
+  MOVE 'WHOLE_TOOLBAR' TO ls_event-form.
+  APPEND ls_event TO lt_events.
+  CLEAR ls_event.
+
+  MOVE 'USER_COMMAND' TO ls_event-name.
+  MOVE 'USER_COMMAND' TO ls_event-form.
+  APPEND ls_event TO lt_events.
+  CLEAR ls_event.
+
+ENDFORM.                    "eventtab_build
+*---------------------------------------------------------------------*
+*       FORM TOP_OF_PAGE                                              *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM top_of_page.                                           "#EC CALLED
+  CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
+    EXPORTING
+      i_logo             = 'ENJOYSAP_LOGO'
+      it_list_commentary = gt_list_top_of_page.
+
+ENDFORM.                    "top_of_page
+
+
+*-----------------------------------------------------------------------
+*    FORM PF_STATUS_SET
+*-----------------------------------------------------------------------
+FORM whole_toolbar USING extab TYPE slis_t_extab.           "#EC CALLED
+*  SET PF-STATUS 'WHOLE_TOOLBAR' EXCLUDING extab
+*                                OF PROGRAM 'ERGP2085' .
+  SET PF-STATUS 'STANDARD_MASS' OF PROGRAM 'SAPMV75A'.
+
+ENDFORM.                    "WHOLE_TOOLBAR
+
+*&--------------------------------------------------------------------*
+*&      Form  user_command
+*&--------------------------------------------------------------------*
+*       text
+*---------------------------------------------------------------------*
+*      -->RF_UCOMM   text
+*      -->RS_SELFIELDtext
+*---------------------------------------------------------------------*
+FORM user_command USING rf_ucomm    LIKE sy-ucomm
+                        rs_selfield TYPE slis_selfield.     "#EC CALLED
+
+  CLEAR itab_alv-vbeln.
+
+  CASE rf_ucomm.
+    WHEN '&IC1'.
+      READ TABLE itab_alv INDEX rs_selfield-tabindex.
+*      IF RS_SELFIELD-SEL_TAB_FIELD EQ 'ITAB_ALV-VBELN'.
+      IF rs_selfield-tabindex NE 0.
+        IF rs_selfield-sel_tab_field CS 'VBELN' .
+          SET PARAMETER ID 'AUN' FIELD itab_alv-vbeln.
+          CALL TRANSACTION 'VA03'
+                   AND SKIP FIRST SCREEN.
+        ENDIF.
+      ENDIF.
+
+    WHEN OTHERS.
+*      NOTHING
+  ENDCASE.
+ENDFORM.                    "user_command
+*---------------------------------------------------------------------*
+*       FORM COMMENT_BUILD                                            *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+*  -->  LT_TOP_OF_PAGE                                                *
+*---------------------------------------------------------------------*
+FORM comment_build USING lt_top_of_page TYPE
+                                        slis_t_listheader.
+  DATA: ls_line TYPE slis_listheader.
+*
+* LIST HEADING LINE: TYPE H
+  IF sy-langu = 'E'.
+    CLEAR ls_line.
+    ls_line-typ  = 'H'.
+    ls_line-info = 'Sales Order Status Tracking Report'.
+    APPEND ls_line TO lt_top_of_page.
+
+* STATUS LINE: TYPE S / Selection
+    CLEAR ls_line.
+    ls_line-typ  = 'S'.
+    ls_line-key  = 'Report Date'.
+    ls_line-info = sy-datum .
+    APPEND ls_line TO lt_top_of_page.
+
+    CLEAR ls_line.
+    ls_line-typ  = 'S'.
+    ls_line-key  = 'Create By'.
+    ls_line-info = 'Hikki Cheng' .
+    APPEND ls_line TO lt_top_of_page.
+
+    CLEAR ls_line.
+    ls_line-typ  = 'S'.
+    ls_line-key  = 'Program'.
+    ls_line-info = sy-repid .
+    APPEND ls_line TO lt_top_of_page.
+  ELSE.
+    CLEAR ls_line.
+    ls_line-typ  = 'H'.
+    ls_line-info = '銷售狀態追蹤報表'.
+    APPEND ls_line TO lt_top_of_page.
+
+* STATUS LINE: TYPE S / Selection
+    CLEAR ls_line.
+    ls_line-typ  = 'S'.
+    ls_line-key  = '報表日期'.
+    ls_line-info = sy-datum .
+    APPEND ls_line TO lt_top_of_page.
+
+    CLEAR ls_line.
+    ls_line-typ  = 'S'.
+    ls_line-key  = 'Create By'.
+    ls_line-info = '金偉(Hikki)' .
+    APPEND ls_line TO lt_top_of_page.
+
+    CLEAR ls_line.
+    ls_line-typ  = 'S'.
+    ls_line-key  = 'Program'.
+    ls_line-info = 'ZDPSD033' .
+    APPEND ls_line TO lt_top_of_page.
+  ENDIF.
+*  CLEAR ls_line.
+*  ls_line-typ  = 'S'.
+*  ls_line-key  = 'Create By'.
+*  ls_line-info = sy-uname .
+*  APPEND ls_line TO lt_top_of_page.
+
+* ACTION LINE: TYPE A
+*  CLEAR LS_LINE.
+*  LS_LINE-TYP  = 'A'.
+*  LS_LINE-INFO = 'TEXT-105'.
+*  APPEND LS_LINE TO LT_TOP_OF_PAGE.
+ENDFORM.                    "comment_build
+*---------------------------------------------------------------------*
+*       FORM SORT_BUILD                                               *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+*  -->  LT_SORT                                                       *
+*---------------------------------------------------------------------*
+FORM sort_build USING lt_sort TYPE slis_t_sortinfo_alv.
+  DATA: ls_sort TYPE slis_sortinfo_alv.
+
+  ls_sort-fieldname = 'BSTDK'.
+  APPEND ls_sort TO lt_sort.
+
+  ls_sort-fieldname = 'KBETR'.
+  APPEND ls_sort TO lt_sort.
+
+  ls_sort-fieldname = 'VBELN'.
+  APPEND ls_sort TO lt_sort.
+
+ENDFORM.                    "sort_build
+*&--------------------------------------------------------------------*
+*&      Form  main
+*&--------------------------------------------------------------------*
+*       text
+*---------------------------------------------------------------------*
+FORM main.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+*     I_INTERFACE_CHECK  = ' '
+*     I_BUFFER_ACTIVE    = ' '
+      i_callback_program = sy-cprog
+*     I_CALLBACK_PF_STATUS_SET          = ' '
+*     I_CALLBACK_USER_COMMAND           = ' '
+*     I_CALLBACK_TOP_OF_PAGE            = ' '
+*     I_CALLBACK_HTML_TOP_OF_PAGE       = ' '
+*     I_CALLBACK_HTML_END_OF_LIST       = ' '
+*     I_STRUCTURE_NAME   = ' '
+*     I_BACKGROUND_ID    = ' '
+*     I_GRID_TITLE       =
+*     I_GRID_SETTINGS    =
+      is_layout          = gs_layout
+      it_fieldcat        = gt_fieldcat[]
+*     IT_EXCLUDING       = ' '
+*     IT_SPECIAL_GROUPS  =
+      it_sort            = gt_sort
+*     IT_FILTER          =
+*     IS_SEL_HIDE        =
+*     I_DEFAULT          = 'X'
+*     I_SAVE             = ' '
+*     IS_VARIANT         =
+      it_events          = gt_events[]
+*     IT_EVENT_EXIT      =
+*     IS_PRINT           =
+*     IS_REPREP_ID       =
+*     I_SCREEN_START_COLUMN             = 0
+*     I_SCREEN_START_LINE               = 0
+*     I_SCREEN_END_COLUMN               = 0
+*     I_SCREEN_END_LINE  = 0
+*     IT_ALV_GRAPHICS    =
+*     IT_HYPERLINK       =
+*     IT_ADD_FIELDCAT    =
+* IMPORTING
+*     E_EXIT_CAUSED_BY_CALLER           =
+*     ES_EXIT_CAUSED_BY_USER            =
+    TABLES
+      t_outtab           = itab_alv.
+* EXCEPTIONS
+*   PROGRAM_ERROR                     = 1
+*   OTHERS                            = 2
+
+  IF sy-subrc <> 0.
+* MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*         WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  ENDIF.
+ENDFORM.                    "main

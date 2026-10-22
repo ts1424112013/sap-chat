@@ -1,0 +1,3334 @@
+REPORT zrmm_idp_0003c .
+
+*Modify:20220208 by donghai 如果勾選非成本數據則使用移動平均價
+*Modify:20250303 by donghai 性能考慮取消多線程(並行數高造成CPU高)
+
+*definition--
+TABLES:zidpmmaging,t001,t001w,t001l,mspr,mara,t156,t001k,zidpmm016,t023t
+,zidpmm017.
+
+TYPE-POOLS:slis,spta,kkpa.
+INCLUDE ole2incl.
+DATA:h_excel     TYPE ole2_object,        " Excel object
+     h_workbook  TYPE ole2_object,     " workbook
+     h_workbooks TYPE ole2_object,
+     h_worksheet TYPE ole2_object,        " SHEET
+     h_cell      TYPE ole2_object.           " cell
+DATA:gw_layout TYPE slis_layout_alv.
+DATA:gw_fieldcat TYPE slis_fieldcat_alv,
+     gt_fieldcat TYPE slis_t_fieldcat_alv.
+DATA:fc_alv TYPE slis_fieldcat_alv OCCURS 10 WITH HEADER LINE.
+DATA:g_emplyee_id LIKE ztlogin0002-emplyee_id.
+DATA:g_repid LIKE sy-repid.
+DATA:gt_display LIKE zidpmmaging OCCURS 0 WITH HEADER LINE.
+
+DATA:BEGIN OF gt_mseg OCCURS 0,
+       mblnr      LIKE mseg-mblnr,
+       mjahr      LIKE mseg-mjahr,
+       zeile      LIKE mseg-zeile,
+       menge      LIKE mseg-menge,
+       shkzg      LIKE mseg-shkzg,
+       bwart      LIKE mseg-bwart,
+       sjahr      LIKE mseg-sjahr,
+       smbln      LIKE mseg-smbln,
+       smblp      LIKE mseg-smblp,
+       matnr      LIKE mseg-matnr,
+       werks      LIKE mseg-werks,
+       lgort      LIKE mseg-lgort,
+       budat      LIKE mkpf-budat,
+       cpudt      LIKE mkpf-cpudt,
+       cputm      LIKE mkpf-cputm,
+       sobkz      LIKE mseg-sobkz,
+       mat_pspnr  LIKE mseg-mat_pspnr,
+       indicator3 LIKE zidpmm016-indicator3,
+       depart     LIKE zidpmm016-depart,
+       category1  LIKE zidpmm016-category1,
+       category2  LIKE zidpmm016-category2,
+       azf01      LIKE zidpmm017-azf03,
+       azf02      LIKE zidpmm017-azf03,
+       matkl      LIKE mara-matkl,
+       wgbez      LIKE t023t-wgbez,
+     END OF gt_mseg.
+DATA:itab_016 LIKE zidpmm016 OCCURS 0 WITH HEADER LINE.
+DATA:itab_023 LIKE t023t OCCURS 0 WITH HEADER LINE.
+DATA:itab_017 LIKE zidpmm017 OCCURS 0 WITH HEADER LINE.
+DATA:itab_mara LIKE mara OCCURS 0 WITH HEADER LINE.
+DATA:BEGIN OF itab_date OCCURS 0,
+       serial(2) TYPE p,
+       date      LIKE vbap-uepos,
+     END OF itab_date.
+DATA:g_date LIKE sy-datum,
+     g_time LIKE sy-uzeit.
+TYPES:BEGIN OF t_user_param,
+        to_do   LIKE sy-tabix,
+        params  LIKE kkapara_in,
+        objects LIKE zidpmmaging OCCURS 0,
+      END OF t_user_param.
+PARAMETERS:rfcgroup TYPE spta_rfcgr MEMORY ID spta_rfcgr
+                                    DEFAULT 'parallel_generators'
+                                    NO-DISPLAY,
+           maxtasks LIKE sy-index DEFAULT '5' NO-DISPLAY,
+           debug    LIKE sy-index NO-DISPLAY.
+DATA:g_userparam    TYPE t_user_param,
+     g_table_length TYPE i,
+     g_statistics   TYPE spta_t_statistics,
+     g_obj_done     TYPE i,
+     g_repid1       LIKE sy-repid.
+DATA:l_qday1(15)  TYPE c,
+     l_vday1(15)  TYPE c,
+     l_qday2(15)  TYPE c,
+     l_vday2(15)  TYPE c,
+     l_qday3(15)  TYPE c,
+     l_vday3(15)  TYPE c,
+     l_qday4(15)  TYPE c,
+     l_vday4(15)  TYPE c,
+     l_qday5(15)  TYPE c,
+     l_vday5(15)  TYPE c,
+     l_qday6(15)  TYPE c,
+     l_vday6(15)  TYPE c,
+     l_qday7(15)  TYPE c,
+     l_vday7(15)  TYPE c,
+     l_qday8(15)  TYPE c,
+     l_vday8(15)  TYPE c,
+     l_qday9(15)  TYPE c,
+     l_vday9(15)  TYPE c,
+     l_qday10(15) TYPE c,
+     l_vday10(15) TYPE c,
+     l_qday11(15) TYPE c,
+     l_vday11(15) TYPE c,
+     l_qday12(15) TYPE c,
+     l_vday12(15) TYPE c,
+     l_qday13(15) TYPE c,
+     l_vday13(15) TYPE c,
+     g_title      TYPE lvc_title.
+
+
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE b_com01.
+*--Base date--
+  SELECTION-SCREEN:BEGIN OF LINE.
+    SELECTION-SCREEN:COMMENT (23) comm01 FOR FIELD p_date.
+    PARAMETERS:p_date LIKE sy-datum OBLIGATORY.
+  SELECTION-SCREEN:END OF LINE.
+*--Company Code--
+  SELECTION-SCREEN:BEGIN OF LINE.
+    SELECTION-SCREEN:COMMENT (20) comm02 FOR FIELD s_bukrs.
+    SELECT-OPTIONS:s_bukrs FOR t001-bukrs.
+  SELECTION-SCREEN:END OF LINE.
+*--Plant--
+  SELECTION-SCREEN:BEGIN OF LINE.
+    SELECTION-SCREEN:COMMENT (20) comm03 FOR FIELD s_plant.
+    SELECT-OPTIONS:s_plant FOR t001w-werks OBLIGATORY DEFAULT 'ABZ1'.
+  SELECTION-SCREEN: END OF LINE.
+*--Storage Location--
+  SELECTION-SCREEN:BEGIN OF LINE.
+    SELECTION-SCREEN:COMMENT (20) comm04 FOR FIELD s_sloc.
+    SELECT-OPTIONS:s_sloc FOR t001l-lgort.
+  SELECTION-SCREEN: END OF LINE.
+*--WBS
+  SELECTION-SCREEN:BEGIN OF LINE.
+    SELECTION-SCREEN:COMMENT (20) comm05 FOR FIELD s_wbs.
+    SELECT-OPTIONS:s_wbs FOR mspr-pspnr.
+  SELECTION-SCREEN:END OF LINE.
+*--Material number
+  SELECTION-SCREEN:BEGIN OF LINE.
+    SELECTION-SCREEN:COMMENT (20) comm06 FOR FIELD s_matnr.
+    SELECT-OPTIONS:s_matnr FOR mara-matnr.
+  SELECTION-SCREEN:END OF LINE.
+*--Material type
+  SELECTION-SCREEN:BEGIN OF LINE.
+    SELECTION-SCREEN:COMMENT (20) comm29 FOR FIELD s_mtart.
+    SELECT-OPTIONS:s_mtart FOR mara-mtart.
+  SELECTION-SCREEN:END OF LINE.
+*--Movement type
+  SELECTION-SCREEN:BEGIN OF LINE.
+    SELECTION-SCREEN:COMMENT (20) comm07 FOR FIELD s_mov.
+    SELECT-OPTIONS:s_mov FOR t156-bwart. "DEFAULT '101'.
+  SELECTION-SCREEN:END OF LINE.
+SELECTION-SCREEN:END OF BLOCK b1.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE b_com02.
+*Level
+  SELECTION-SCREEN BEGIN OF LINE.
+*BU Level
+    PARAMETERS:p_bu RADIOBUTTON GROUP gp1.
+    SELECTION-SCREEN COMMENT (12) comm08 FOR FIELD p_bu.
+*Plant Level
+    PARAMETERS:p_pla RADIOBUTTON GROUP gp1.
+    SELECTION-SCREEN COMMENT (12) comm09 FOR FIELD p_pla.
+*Loc Level
+    PARAMETERS:p_loc RADIOBUTTON GROUP gp1 DEFAULT 'X'.
+    SELECTION-SCREEN COMMENT (15) comm10 FOR FIELD p_loc.
+*WBS Level
+    PARAMETERS:p_wl RADIOBUTTON GROUP gp1.
+    SELECTION-SCREEN COMMENT (15) comm11 FOR FIELD p_wl.
+  SELECTION-SCREEN END OF LINE.
+*以物料文件/過帳日期作為基準日
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS:p_pd RADIOBUTTON GROUP gp2 DEFAULT 'X'.
+    SELECTION-SCREEN COMMENT (27) comm12 FOR FIELD p_pd.
+    PARAMETERS:p_cd RADIOBUTTON GROUP gp2.
+    SELECTION-SCREEN COMMENT (25) comm13 FOR FIELD p_cd.
+  SELECTION-SCREEN END OF LINE.
+*是否包含非成本
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS:p_nco AS CHECKBOX.
+    SELECTION-SCREEN:COMMENT (30) comm14 FOR FIELD p_nco.
+  SELECTION-SCREEN END OF LINE.
+*是否考慮當前庫存為0數據
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS:p_zero AS CHECKBOX.
+    SELECTION-SCREEN:COMMENT (30) comm27 FOR FIELD p_zero.
+  SELECTION-SCREEN END OF LINE.
+*是否使用緩存
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS:p_usec AS CHECKBOX DEFAULT 'X'.
+    SELECTION-SCREEN:COMMENT (30) comm30 FOR FIELD p_usec.
+  SELECTION-SCREEN END OF LINE.
+*進程數
+  SELECTION-SCREEN:BEGIN OF LINE.
+    SELECTION-SCREEN:COMMENT (20) comm26 FOR FIELD p_proc.
+    PARAMETERS:p_proc TYPE i OBLIGATORY DEFAULT 1 .
+  SELECTION-SCREEN END OF LINE.
+
+*是否使用優化後邏輯
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS:p_new AS CHECKBOX DEFAULT 'X'.
+    SELECTION-SCREEN:COMMENT (30) comm33 FOR FIELD p_new.
+  SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN:END OF BLOCK b2.
+
+*--Dynamic Period
+SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE b_com03.
+*--Included 0~7 aging--
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS:p_age07 AS CHECKBOX.
+    SELECTION-SCREEN:COMMENT (20) comm15 FOR FIELD p_age07.
+  SELECTION-SCREEN END OF LINE.
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS:t_day1(5)  TYPE n DEFAULT '7' OBLIGATORY,
+               t_day2(5)  TYPE n DEFAULT '14' OBLIGATORY,
+               t_day3(5)  TYPE n DEFAULT '21' OBLIGATORY,
+               t_day4(5)  TYPE n DEFAULT '30' OBLIGATORY,
+               t_day5(5)  TYPE n DEFAULT '45' OBLIGATORY,
+               t_day6(5)  TYPE n DEFAULT '60' OBLIGATORY,
+               t_day7(5)  TYPE n DEFAULT '90' OBLIGATORY,
+               t_day8(5)  TYPE n DEFAULT '120' OBLIGATORY,
+               t_day9(5)  TYPE n DEFAULT '150' OBLIGATORY,
+               t_day10(5) TYPE n DEFAULT '180' OBLIGATORY,
+               t_day11(5) TYPE n DEFAULT '270' OBLIGATORY,
+               t_day12(5) TYPE n DEFAULT '365' OBLIGATORY.
+  SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN:END OF BLOCK b3.
+
+*輸出格式
+SELECTION-SCREEN BEGIN OF BLOCK b4 WITH FRAME TITLE b_com04.
+*--ALV Display--
+  SELECTION-SCREEN:BEGIN OF LINE.
+    PARAMETERS:p_alv RADIOBUTTON GROUP gp3 USER-COMMAND scr DEFAULT 'X'.
+    SELECTION-SCREEN:COMMENT (15) comm16 FOR FIELD  p_alv.
+  SELECTION-SCREEN:END OF LINE.
+*--Execute in background job to FTP--
+  SELECTION-SCREEN:BEGIN OF LINE.
+    PARAMETERS:p_bakjob RADIOBUTTON GROUP gp3.
+    SELECTION-SCREEN:COMMENT 3(40) comm17 FOR FIELD p_bakjob.
+  SELECTION-SCREEN:END OF LINE.
+*--load in format--
+  SELECTION-SCREEN:BEGIN OF LINE.
+    PARAMETERS:p_format RADIOBUTTON GROUP gp3.
+    SELECTION-SCREEN:COMMENT (60) comm18 FOR FIELD p_format.
+  SELECTION-SCREEN:END OF LINE.
+*--Send to BI FTP--
+  SELECTION-SCREEN:BEGIN OF LINE.
+    PARAMETERS:p_bi RADIOBUTTON GROUP gp3.
+    SELECTION-SCREEN:COMMENT (60) comm19 FOR FIELD p_bi.
+  SELECTION-SCREEN:END OF LINE.
+*Save to cache table
+  SELECTION-SCREEN:BEGIN OF LINE.
+    PARAMETERS:p_cache RADIOBUTTON GROUP gp3.
+    SELECTION-SCREEN:COMMENT (60) comm28 FOR FIELD p_cache.
+  SELECTION-SCREEN:END OF LINE.
+*全球看板資料緩存
+  SELECTION-SCREEN:BEGIN OF LINE.
+    PARAMETERS:p_global RADIOBUTTON GROUP gp3.
+    SELECTION-SCREEN:COMMENT (60) comm31 FOR FIELD p_global.
+  SELECTION-SCREEN:END OF LINE.
+SELECTION-SCREEN:  END OF BLOCK b4.
+
+*--Execute in background job to FTP block--
+SELECTION-SCREEN BEGIN OF BLOCK b5 WITH FRAME TITLE b_com05.
+*--FTP address--
+  SELECTION-SCREEN:BEGIN OF LINE.
+    SELECTION-SCREEN:COMMENT (20) comm20 FOR FIELD p_ftp MODIF ID b5.
+    PARAMETERS: p_ftp(30) TYPE c MODIF ID b5.
+  SELECTION-SCREEN:END OF LINE.
+*--User--
+  SELECTION-SCREEN:BEGIN OF LINE.
+    SELECTION-SCREEN:COMMENT (20) comm21 FOR FIELD p_user MODIF ID b5.
+    PARAMETERS:p_user(30) TYPE c LOWER CASE MODIF ID b5.
+  SELECTION-SCREEN:END OF LINE.
+*--Password--
+  SELECTION-SCREEN:BEGIN OF LINE.
+    SELECTION-SCREEN:COMMENT (20) comm22 FOR FIELD p_pwd MODIF ID b5.
+    PARAMETERS:p_pwd(30) TYPE c LOWER CASE MODIF ID b5.
+  SELECTION-SCREEN:END OF LINE.
+*--FTP directory--
+  SELECTION-SCREEN:BEGIN OF LINE.
+    SELECTION-SCREEN:COMMENT (20) comm23 FOR FIELD p_path MODIF ID b5.
+    PARAMETERS:p_path(30) TYPE c LOWER CASE DEFAULT '/Aging/' MODIF ID b5.
+  SELECTION-SCREEN:END OF LINE.
+*--File name--
+  SELECTION-SCREEN:BEGIN OF LINE.
+    SELECTION-SCREEN:COMMENT (20) comm24 FOR FIELD p_file MODIF ID b5.
+    PARAMETERS:p_file(30) TYPE c OBLIGATORY LOWER CASE
+               DEFAULT 'Aging' MODIF ID b5.
+  SELECTION-SCREEN:END OF LINE.
+SELECTION-SCREEN:END OF BLOCK b5.
+
+*--load in format--
+SELECTION-SCREEN BEGIN OF BLOCK b6 WITH FRAME TITLE b_com06.
+  SELECTION-SCREEN:BEGIN OF LINE.
+    SELECTION-SCREEN:COMMENT (17) comm25 FOR FIELD p_filena MODIF ID b6.
+    PARAMETERS:p_filena LIKE rlgrap-filename
+                 MEMORY ID name OBLIGATORY
+                 DEFAULT 'C:\aging.xls' MODIF ID b6.
+  SELECTION-SCREEN:END OF LINE.
+SELECTION-SCREEN:END OF BLOCK b6.
+
+*  全球看板資料緩存
+SELECTION-SCREEN BEGIN OF BLOCK b7 WITH FRAME TITLE b_com07.
+  SELECTION-SCREEN:BEGIN OF LINE.
+    SELECTION-SCREEN:COMMENT (20) comm32 FOR FIELD p_job MODIF ID b7.
+    PARAMETERS:p_job(30) TYPE c LOWER CASE MODIF ID b7.
+  SELECTION-SCREEN:END OF LINE.
+SELECTION-SCREEN:END OF BLOCK b7.
+
+INITIALIZATION.
+  IF sy-langu = 'E'.
+    b_com01 = 'Data selection'.
+    b_com02 = 'Data type selection'.
+    b_com03 = 'Dynamic period'.
+    b_com04 = 'Download type'.
+    b_com05 = 'FTP data'.
+    b_com06 = 'Load in format'.
+    comm01 = 'Base date'.
+    comm02 = 'Company'.
+    comm03 = 'Plant'.
+    comm04 = 'Location'.
+    comm05 = 'WBS'.
+    comm06 = 'Material number'.
+    comm07 = 'Movement type'.
+    comm08 = 'BU level'.
+    comm09 = 'Plant level'.
+    comm10 = 'Location level'.
+    comm11 = 'WBS level'.
+    comm12 = 'Based on posting date'.
+    comm13 = 'Based on creation date'.
+    comm14 = 'Included no cost inventory'.
+    comm15 = 'Included 0~7 days aging'.
+    comm16 = 'ALV display'.
+    comm17 = 'Execute in background job to FTP'.
+    comm18 = 'Load in format'.
+    comm19 = 'Send to BI'.
+    comm20 = 'FTP address'.
+    comm21 = 'User'.
+    comm22 = 'Password'.
+    comm23 = 'FTP directory'.
+    comm24 = 'FTP filename'.
+    comm25 = 'File path'.
+    comm26 = 'Number of processes'.
+    comm27 = 'Included zero stock'.
+    comm28 = 'Save to cache table'.
+    comm29 = 'Material type'.
+    comm30 = 'Use cache data'.
+    comm31 = 'Global Report csche data'.
+    comm32 = 'JOB Name'.
+    comm33 = 'Performance Mode'.
+  ELSE.
+    b_com01 = '數據選擇'.
+    b_com02 = '類型選擇'.
+    b_com03 = '間隔天數'.
+    b_com04 = '輸出選擇'.
+    b_com05 = 'FTP信息'.
+    b_com06 = '下載到文件'.
+    comm01 = '基準日期'.
+    comm02 = '公司代碼'.
+    comm03 = '工廠'.
+    comm04 = '倉碼'.
+    comm05 = 'WBS'.
+    comm06 = '料號'.
+    comm07 = '異動類型'.
+    comm08 = '公司層級'.
+    comm09 = '工廠層級'.
+    comm10 = '倉碼層級'.
+    comm11 = 'WBS層級'.
+    comm12 = '基於過帳日期'.
+    comm13 = '基於物料文件日期'.
+    comm14 = '包含非成本庫存'.
+    comm15 = '包含0~7天庫齡'.
+    comm16 = 'ALV顯示'.
+    comm17 = '上傳到FTP'.
+    comm18 = '下載到本地文件'.
+    comm19 = '發送到BI'.
+    comm20 = 'FTP地址'.
+    comm21 = 'FTP帳號'.
+    comm22 = '密碼'.
+    comm23 = 'FTP目錄'.
+    comm24 = 'FTP文件名'.
+    comm25 = '文件路徑'.
+    comm26 = '并行進程數'.
+    comm27 = '包含當前庫存為0數據'.
+    comm28 = '緩存數據'.
+    comm29 = '物料類型'.
+    comm30 = '使用緩存數據'.
+    comm31 = '全球報表數據緩存'.
+    comm32 = 'JOB名'.
+    comm33 = '性能模式'.
+  ENDIF.
+
+  IF p_date IS INITIAL.
+    p_date = sy-datum - 1.
+  ENDIF.
+
+*--FTP password mask--
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN.
+    IF screen-name EQ 'P_PWD'.
+      MOVE: 1 TO screen-invisible.
+      MODIFY SCREEN.
+    ELSEIF screen-name EQ 'P_PROC'.
+*      screen-input = '0'.
+*      MODIFY SCREEN.
+    ENDIF.
+  ENDLOOP.
+
+*--block 4 and block control--
+  LOOP AT SCREEN.
+*   ALV顯示
+    IF p_alv = 'X' OR p_cache = 'X'.
+      IF screen-group1 = 'B5'.
+        screen-active = '0'.
+        MODIFY SCREEN.
+      ELSEIF screen-group1 = 'B6'.
+        screen-active = '0'.
+        MODIFY SCREEN.
+      ELSEIF screen-group1 = 'B7'.
+        screen-active = '0'.
+        MODIFY SCREEN.
+      ENDIF.
+*   執行後台job發送到FTP
+    ELSEIF p_bakjob = 'X' OR p_bi = 'X'.
+      IF screen-group1 = 'B5'.
+        screen-active = '1'.
+        MODIFY SCREEN.
+      ELSEIF screen-group1 = 'B6'.
+        screen-active = '0'.
+        MODIFY SCREEN.
+      ELSEIF screen-group1 = 'B7'.
+        screen-active = '0'.
+        MODIFY SCREEN.
+      ENDIF.
+*   Load in Format
+    ELSEIF p_format = 'X'.
+      IF screen-group1 = 'B6'.
+        screen-active = '1'.
+        MODIFY SCREEN.
+      ELSEIF screen-group1 = 'B5'.
+        screen-active = '0'.
+        MODIFY SCREEN.
+      ELSEIF screen-group1 = 'B7'.
+        screen-active = '0'.
+        MODIFY SCREEN.
+      ENDIF.
+    ELSEIF p_global = 'X'.
+      IF screen-group1 = 'B6'.
+        screen-active = '0'.
+        MODIFY SCREEN.
+      ELSEIF screen-group1 = 'B5'.
+        screen-active = '0'.
+        MODIFY SCREEN.
+      ELSEIF screen-group1 = 'B7'.
+        screen-active = '1'.
+        MODIFY SCREEN.
+      ENDIF.
+    ENDIF.
+  ENDLOOP.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_filena.
+  PERFORM choose_input_file .
+
+
+START-OF-SELECTION.
+* 權限檢查
+  PERFORM check_authorization.
+* 檢查輸入條件
+  PERFORM check_input.
+* 取得日期間隔標題
+  PERFORM pre_dateheadline.
+
+  IF p_new = 'X'.
+    PERFORM get_data_new.
+  ELSE.
+
+* 取得庫存
+    PERFORM get_inventory.
+* 數據處理
+    DESCRIBE TABLE gt_display LINES g_table_length.
+    IF g_table_length > 100 AND p_proc > 1.
+      PERFORM data_process.
+    ELSE.
+      PERFORM data_process2.
+    ENDIF.
+
+  ENDIF.
+
+  IF p_bakjob = 'X'.
+    PERFORM write_ftp.
+  ELSEIF p_alv = 'X'.
+    PERFORM write_alv.
+  ELSEIF p_format = 'X'.
+    PERFORM load_format.
+  ELSEIF p_bi = 'X'.
+    PERFORM send_bi.
+  ELSEIF p_cache = 'X'.
+    IF 'IDPDISPLAY,IDP-ITPM' CS sy-uname.
+      PERFORM write_cache.
+    ENDIF.
+  ELSEIF p_global = 'X'.
+    PERFORM global_cache.
+  ENDIF.
+
+END-OF-SELECTION.
+
+*---------------------------------------------------------------------*
+*       FORM check_input                                              *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM check_input.
+  RANGES:r_werks FOR t001w-werks.
+
+* 工廠範圍
+  REFRESH:r_werks.
+  SELECT * FROM t001k
+  WHERE bukrs IN s_bukrs
+  AND bwkey IN s_plant.
+    r_werks-sign = 'I'.
+    r_werks-option = 'EQ'.
+    r_werks-low = t001k-bwkey.
+    APPEND r_werks. CLEAR r_werks.
+  ENDSELECT.
+  IF sy-subrc <> 0.
+    MESSAGE i004(zmm) WITH
+    'No plant found according to the entered conditions'(001).
+    STOP.
+  ENDIF.
+*抓取物料群組說明
+  REFRESH:itab_017.
+  SELECT * FROM zidpmm017 INTO CORRESPONDING FIELDS OF TABLE itab_017
+    WHERE werks IN r_werks.
+
+* 倉碼範圍
+  REFRESH:itab_016.
+  IF p_nco = ''.
+    SELECT * FROM zidpmm016 INTO CORRESPONDING FIELDS OF TABLE itab_016
+    WHERE werks IN r_werks
+    AND lgort IN s_sloc
+    AND indicator1 = 'Y'.
+*    AND active = 'Y'.  "只考慮有效倉碼，減少無用數據
+  ELSE.
+    SELECT * FROM zidpmm016 INTO CORRESPONDING FIELDS OF TABLE itab_016
+    WHERE werks IN r_werks
+    AND lgort IN s_sloc.
+*    AND active = 'Y'.
+  ENDIF.
+  IF itab_016[] IS INITIAL.
+    MESSAGE i004(zmm) WITH
+    'No location found according to the entered conditions'(002).
+    STOP.
+  ENDIF.
+
+  SELECT * INTO CORRESPONDING FIELDS OF TABLE itab_023
+  FROM t023t.
+
+
+* 天數區間
+  IF t_day1 IS INITIAL.
+    EXIT.
+  ENDIF.
+
+  itab_date-serial = 1.
+  itab_date-date = t_day1.
+  APPEND itab_date.
+  CLEAR itab_date.
+
+  IF NOT t_day2 IS INITIAL.
+    IF t_day2 < t_day1.
+      EXIT.
+    ENDIF.
+    itab_date-serial = 2.
+    itab_date-date = t_day2.
+    APPEND itab_date.
+    CLEAR itab_date.
+  ENDIF.
+
+  IF NOT t_day3 IS INITIAL.
+    IF t_day3 < t_day2.
+      EXIT.
+    ENDIF.
+    itab_date-serial = 3.
+    itab_date-date = t_day3.
+    APPEND itab_date.
+    CLEAR itab_date.
+  ENDIF.
+
+  IF NOT t_day4 IS INITIAL.
+    IF t_day4 < t_day3.
+      EXIT.
+    ENDIF.
+    itab_date-serial = 4.
+    itab_date-date = t_day4.
+    APPEND itab_date.
+    CLEAR itab_date.
+  ENDIF.
+
+  IF NOT t_day5 IS INITIAL.
+    IF t_day5 < t_day4.
+      EXIT.
+    ENDIF.
+    itab_date-serial = 5.
+    itab_date-date = t_day5.
+    APPEND itab_date.
+    CLEAR itab_date.
+  ENDIF.
+
+  IF NOT t_day6 IS INITIAL.
+    IF t_day6 < t_day5.
+      EXIT.
+    ENDIF.
+    itab_date-serial = 6.
+    itab_date-date = t_day6.
+    APPEND itab_date.
+    CLEAR itab_date.
+  ENDIF.
+
+  IF NOT t_day7 IS INITIAL.
+    IF t_day7 < t_day6.
+      EXIT.
+    ENDIF.
+    itab_date-serial = 7.
+    itab_date-date = t_day7.
+    APPEND itab_date.
+    CLEAR itab_date.
+  ENDIF.
+
+  IF NOT t_day8 IS INITIAL.
+    IF t_day8 < t_day7.
+      EXIT.
+    ENDIF.
+    itab_date-serial = 8.
+    itab_date-date = t_day8.
+    APPEND itab_date.
+    CLEAR itab_date.
+  ENDIF.
+
+  IF NOT t_day9 IS INITIAL.
+    IF t_day9 < t_day8.
+      EXIT.
+    ENDIF.
+    itab_date-serial = 9.
+    itab_date-date = t_day9.
+    APPEND itab_date.
+    CLEAR itab_date.
+  ENDIF.
+
+  IF NOT t_day10 IS INITIAL.
+    IF t_day10 < t_day9.
+      EXIT.
+    ENDIF.
+    itab_date-serial = 10.
+    itab_date-date = t_day10.
+    APPEND itab_date.
+    CLEAR itab_date.
+  ENDIF.
+
+  IF NOT t_day11 IS INITIAL.
+    IF t_day11 < t_day10.
+      EXIT.
+    ENDIF.
+    itab_date-serial = 11.
+    itab_date-date = t_day11.
+    APPEND itab_date.
+    CLEAR itab_date.
+  ENDIF.
+
+  IF NOT t_day12 IS INITIAL.
+    IF t_day12 < t_day11.
+      EXIT.
+    ENDIF.
+    itab_date-serial = 12.
+    itab_date-date = t_day12.
+    APPEND itab_date.
+    CLEAR itab_date.
+  ENDIF.
+*  並行數限制不超過20 modify By wushuai
+  IF  p_proc > 5.
+    IF sy-langu = 'E'.
+      MESSAGE i004(zmm) WITH
+          'The number of threads cannot exceed 5'.
+    ELSE.
+      MESSAGE i004(zmm) WITH '並行數量不能超過5！'.
+    ENDIF.
+    STOP.
+  ENDIF.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM get_inventory                                            *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM get_inventory1.
+  DATA:BEGIN OF lt_inv OCCURS 0,
+         matnr      LIKE mard-matnr,
+         werks      LIKE mard-werks,
+         bukrs      LIKE t001k-bukrs,
+         lgort      LIKE mard-lgort,
+         charg      LIKE mspr-charg,
+         sobkz      LIKE mspr-sobkz,
+         pspnr      LIKE mspr-pspnr,
+         lfgja      LIKE mard-lfgja,
+         lfmon      LIKE mard-lfmon,
+         labst      LIKE mard-labst,
+         insme      LIKE mard-insme,
+         indicator3 LIKE zidpmm016-indicator3,
+         depart     LIKE zidpmm016-depart,
+         category1  LIKE zidpmm016-category1,
+         category2  LIKE zidpmm016-category2,
+         azf01      LIKE zidpmm017-azf03,
+         azf02      LIKE zidpmm017-azf03,
+         matkl      LIKE mara-matkl,
+         wgbez      LIKE t023t-wgbez,
+       END OF lt_inv.
+  DATA:lt_t001k LIKE t001k OCCURS 0 WITH HEADER LINE.
+
+  DATA:l_baseyear  LIKE mard-lfgja,
+       l_basemonth LIKE mard-lfmon.
+
+
+* 取基準日期的年月
+  l_baseyear = p_date+0(4).
+  l_basemonth = p_date+4(2).
+* 記錄最新時間
+  GET TIME.
+  g_date = sy-datum.
+  g_time = sy-uzeit.
+* 抓取庫存
+  IF NOT itab_016[] IS INITIAL.
+
+*    IF s_mtart[] IS INITIAL.
+*
+*      SELECT mard~matnr mard~werks mard~lgort mard~lfgja mard~lfmon
+*             mard~labst mard~insme
+*      INTO CORRESPONDING FIELDS OF TABLE lt_inv
+*      FROM mard
+*      FOR ALL ENTRIES IN itab_016
+*      WHERE mard~werks = itab_016-werks
+*      AND mard~lgort = itab_016-lgort
+*      AND mard~matnr IN s_matnr.
+*
+*      SELECT mspr~matnr mspr~werks mspr~lgort mspr~charg mspr~sobkz
+*           mspr~pspnr mspr~lfgja mspr~lfmon
+*             mspr~prlab AS labst
+*      APPENDING CORRESPONDING FIELDS OF TABLE lt_inv
+*      FROM mspr
+*      FOR ALL ENTRIES IN itab_016
+*      WHERE mspr~werks = itab_016-werks
+*      AND mspr~lgort = itab_016-lgort
+*      AND mspr~matnr IN s_matnr.
+*
+*
+*
+*    ELSE.
+    SELECT mard~matnr mard~werks mard~lgort mard~lfgja mard~lfmon
+           mard~labst mard~insme mara~matkl
+    INTO CORRESPONDING FIELDS OF TABLE lt_inv
+    FROM mard
+    INNER JOIN mara ON mara~matnr = mard~matnr
+    FOR ALL ENTRIES IN itab_016
+    WHERE mard~werks = itab_016-werks
+    AND mard~lgort = itab_016-lgort
+    AND mard~matnr IN s_matnr
+    AND mara~mtart IN s_mtart.
+
+
+    SELECT mspr~matnr mspr~werks mspr~lgort mspr~charg mspr~sobkz
+           mspr~pspnr mspr~lfgja mspr~lfmon mara~matkl
+           mspr~prlab AS labst
+    APPENDING CORRESPONDING FIELDS OF TABLE lt_inv
+    FROM mspr
+    INNER JOIN mara ON mara~matnr = mspr~matnr
+    FOR ALL ENTRIES IN itab_016
+    WHERE mspr~werks = itab_016-werks
+    AND mspr~lgort = itab_016-lgort
+    AND mspr~matnr IN s_matnr
+    AND mara~mtart IN s_mtart.
+
+
+*    ENDIF.
+
+    IF p_nco = 'X'.
+      SELECT mkol~matnr mkol~werks mkol~lgort mkol~charg mkol~sobkz
+             mkol~lfgja mkol~lfmon mara~matkl
+             mkol~slabs AS labst
+      APPENDING CORRESPONDING FIELDS OF TABLE lt_inv
+      FROM mkol
+      INNER JOIN mara ON mara~matnr = mkol~matnr
+      FOR ALL ENTRIES IN itab_016
+      WHERE mkol~werks = itab_016-werks
+      AND mkol~lgort = itab_016-lgort
+      AND mkol~matnr IN s_matnr
+      AND mara~mtart IN s_mtart.
+    ENDIF.
+  ENDIF.
+* 讀取法人信息到內表
+  SELECT * INTO CORRESPONDING FIELDS OF TABLE lt_t001k
+  FROM t001k
+  WHERE bukrs IN s_bukrs.
+
+*  SELECT * INTO CORRESPONDING FIELDS OF TABLE itab_023
+*  FROM t023t.
+
+  LOOP AT lt_inv.
+
+    READ TABLE lt_t001k WITH KEY bwkey = lt_inv-werks.
+    IF sy-subrc = 0.
+      lt_inv-bukrs = lt_t001k-bukrs.
+    ENDIF.
+
+    READ TABLE itab_016 WITH KEY werks = lt_inv-werks lgort =
+lt_inv-lgort.
+    IF sy-subrc = 0.
+      lt_inv-indicator3 = itab_016-indicator3.
+      lt_inv-depart = itab_016-depart.
+      lt_inv-category1 = itab_016-category1.
+      lt_inv-category2 = itab_016-category2.
+    ENDIF.
+
+    READ TABLE  itab_017 WITH KEY werks = lt_inv-werks azf01 =
+itab_016-category1.
+    IF sy-subrc = 0 .
+      lt_inv-azf01 = itab_017-azf03.
+    ENDIF.
+
+    READ TABLE  itab_017 WITH KEY werks = lt_inv-werks azf01 =
+itab_016-category2.
+    IF sy-subrc = 0 .
+      lt_inv-azf02 = itab_017-azf03.
+    ENDIF.
+
+    READ TABLE  itab_023 WITH KEY matkl = lt_inv-matkl.
+    IF sy-subrc = 0 .
+      lt_inv-wgbez = itab_023-wgbez.
+    ENDIF.
+
+    gt_display-matnr = lt_inv-matnr.
+    gt_display-bu = lt_inv-bukrs.
+    gt_display-werks = lt_inv-werks.
+    gt_display-lgort = lt_inv-lgort.
+    gt_display-charg = lt_inv-charg.
+    gt_display-sobkz = lt_inv-sobkz.
+    gt_display-wbs = lt_inv-pspnr.
+    gt_display-total = lt_inv-labst + lt_inv-insme.
+    gt_display-indicator3 = lt_inv-indicator3.
+    gt_display-depart = lt_inv-depart.
+    gt_display-azf01 = lt_inv-azf01.
+    gt_display-azf02 = lt_inv-azf02.
+    gt_display-matkl = lt_inv-matkl.
+    gt_display-wgbez = lt_inv-wgbez.
+
+
+**增加新的顯示欄位 end by selena 2020.08.25
+
+
+*   如果庫存為0,檢查基準日之後是否有異動
+    IF gt_display-total = 0.
+      IF p_zero = ''.
+        CONTINUE.   "不考慮當前庫存為0數據
+      ENDIF.
+      IF l_baseyear > lt_inv-lfgja OR
+      ( l_baseyear = lt_inv-lfgja AND l_basemonth > lt_inv-lfmon ).
+        CONTINUE.   "基準日期月份之後未異動的不考慮
+      ENDIF.
+    ENDIF.
+*   level合併
+    IF p_bu = 'X'.
+      gt_display-werks = ''.
+      gt_display-lgort = ''.
+      gt_display-charg = ''.
+      gt_display-sobkz = ''.
+      gt_display-wbs = ''.
+      gt_display-indicator3 = ''.
+      gt_display-depart = ''.
+      gt_display-azf01 = ''.
+      gt_display-azf02 = ''.
+      gt_display-matkl = ''.
+      gt_display-wgbez = ''.
+    ELSEIF p_pla = 'X'.
+      gt_display-lgort = ''.
+      gt_display-charg = ''.
+      gt_display-sobkz = ''.
+      gt_display-wbs = ''.
+      gt_display-indicator3 = ''.
+      gt_display-depart = ''.
+      gt_display-azf01 = ''.
+      gt_display-azf02 = ''.
+      gt_display-matkl = ''.
+      gt_display-wgbez = ''.
+    ELSEIF p_loc = 'X'.
+      gt_display-charg = ''.
+      gt_display-sobkz = ''.
+      gt_display-wbs = ''.
+
+    ENDIF.
+
+    COLLECT gt_display.
+    CLEAR:gt_display.
+  ENDLOOP.
+  REFRESH:lt_inv.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM data_process                                             *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM data_process.
+  DATA:l_statistics TYPE spta_t_statistics,
+       l_repid      LIKE sy-repid.
+
+  DESCRIBE TABLE gt_display LINES g_table_length.
+  g_userparam-objects  = gt_display[].
+* 清空原表數據，防止數據出現重複
+  REFRESH:gt_display.
+
+  g_userparam-to_do = g_table_length.
+
+* 進程數
+  maxtasks = p_proc.
+
+  l_repid = sy-repid.
+
+  CALL FUNCTION 'SPTA_PARA_PROCESS_START'
+    EXPORTING
+      server_group                  = rfcgroup
+      max_no_of_tasks               = maxtasks
+      start_task_callback_form      = 'TASK_LAUNCH'
+      receive_results_callback_form = 'GET_TASK_RESULTS'
+      callback_repid                = l_repid
+      debug_level                   = debug
+    IMPORTING
+      statistics                    = l_statistics
+    CHANGING
+      user_param                    = g_userparam.
+
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM END_OF_TASK_PROC                                         *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+*  -->  P_TASKNAME                                                    *
+*---------------------------------------------------------------------*
+FORM end_of_task_proc
+   USING
+      p_taskname.
+
+  PERFORM end_of_task_proc
+          IN PROGRAM saplspta
+     USING
+        p_taskname.
+
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM task_launch                                              *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+*  -->  P_PARA_IMP                                                    *
+*  -->  P_PARA_EXP                                                    *
+*  -->  P_FAILED_OBJS                                                 *
+*  -->  P_PENDING_OBJS                                                *
+*  -->  P_USER_PARAM                                                  *
+*---------------------------------------------------------------------*
+FORM task_launch
+   USING
+      p_para_imp   TYPE spta_t_para_imp
+   CHANGING
+      p_para_exp   TYPE spta_t_para_exp
+      p_failed_objs     TYPE spta_t_failed_objects
+      p_pending_objs    TYPE spta_t_pending_objects
+      p_user_param      TYPE t_user_param.
+
+  DATA:l_package_size LIKE sy-tabix,
+       l_failed_obj   LIKE LINE OF p_failed_objs,
+       l_pending_obj  LIKE LINE OF p_pending_objs.
+  DATA:lt_objects LIKE zidpmmaging OCCURS 0 WITH HEADER LINE.
+  DATA:l_nr_obj_left   LIKE sy-index,
+       l_package_start TYPE i,              " From-Index des Pakets
+       l_package_end   TYPE i,              "   To-Index des Pakets
+       l_tabix         LIKE sy-tabix,
+       ln_pend_obj     TYPE LINE OF kkpa_t_pending_objects,
+       ln_fail_obj     TYPE LINE OF kkpa_t_failed_objects,
+       ln_objdata      LIKE zidpmmaging.
+  CONSTANTS:p_min TYPE i VALUE 10,
+            p_max TYPE i VALUE 30.
+  DATA:l_level(1)  TYPE c,
+       l_baseon(1) TYPE c,
+       l_sttype(1) TYPE c.
+
+  IF p_failed_objs[] IS INITIAL.
+    l_nr_obj_left = p_user_param-to_do - g_obj_done.
+    IF l_nr_obj_left IS INITIAL.
+      p_para_exp-all_submit = 'X'.
+    ELSE.
+      l_package_size = l_nr_obj_left / p_para_imp-nr_total_tasks.
+      IF l_package_size < p_min.
+        l_package_size = p_min.
+      ELSEIF l_package_size > p_max.
+        l_package_size = p_max.
+      ENDIF.
+      l_package_start = g_obj_done + 1.              "From-Index
+      l_package_end   = g_obj_done + l_package_size. "To-Index
+      CLEAR ln_pend_obj.
+      CLEAR ln_objdata.
+      LOOP AT p_user_param-objects INTO ln_objdata FROM l_package_start
+                                                   TO l_package_end.
+        APPEND ln_objdata TO lt_objects.
+        ADD 1 TO g_obj_done.
+        ln_pend_obj-obj_id = g_obj_done.    "entspricht Index in Tab.
+        APPEND ln_pend_obj TO p_pending_objs.
+      ENDLOOP.
+    ENDIF.
+  ELSE.
+    READ TABLE p_failed_objs INTO ln_fail_obj INDEX 1.
+    APPEND ln_fail_obj TO p_pending_objs.
+    l_tabix = ln_fail_obj-obj_id.
+    READ TABLE p_user_param-objects INDEX l_tabix INTO ln_objdata.
+    APPEND ln_objdata TO lt_objects.
+    DELETE p_failed_objs INDEX 1.
+  ENDIF.
+
+  IF lt_objects[] IS INITIAL.
+    p_para_exp-rfc_subrc  = kkpa_rfc_subrc-rfc_not_started.
+    p_para_exp-all_submit = 'X'.
+    EXIT.
+  ENDIF.
+* 庫齡層級
+  IF p_bu = 'X'.
+    l_level = '3'.
+  ELSEIF p_pla = 'X'.
+    l_level = '2'.
+  ELSEIF p_loc = 'X'.
+    l_level = '1'.
+  ELSEIF p_wl = 'X'.
+    l_level = '4'.
+  ENDIF.
+* 以過帳/開單日
+  IF p_cd = 'X'.
+    l_baseon = '2'.
+  ELSE.
+    l_baseon = '1'.
+  ENDIF.
+* 考慮非成本
+  IF p_nco = 'X'.
+    l_sttype = '1'.
+  ELSE.
+    l_sttype = '2'.
+  ENDIF.
+
+  CALL FUNCTION 'ZRFC_MM_IDP_0294'
+  STARTING NEW TASK p_para_imp-taskname
+       DESTINATION p_para_imp-taskdest
+       PERFORMING (p_para_imp-eot_form) ON END OF TASK
+       EXPORTING
+            i_level = l_level
+            i_basedate = p_date
+            i_baseon = l_baseon
+            i_stdate = g_date
+            i_sttime = g_time
+            i_sttype = l_sttype
+            i_age07 = p_age07
+            i_usecache = p_usec
+       TABLES
+            it_date = itab_date
+            it_data = lt_objects
+            it_mov = s_mov
+            it_lgort = s_sloc
+      EXCEPTIONS
+         system_failure        = 1
+         communication_failure = 2
+         OTHERS                = 3.
+
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM get_task_results                                         *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+*  -->  P_SPTA_PARA_IMP                                               *
+*  -->  P_PENDING_OBJS                                                *
+*  -->  P_SPTA_PARA_EXP                                               *
+*  -->  P_USER_PARAM                                                  *
+*---------------------------------------------------------------------*
+FORM get_task_results
+   USING
+      p_spta_para_imp   TYPE spta_t_para_imp
+      p_pending_objs    TYPE spta_t_pending_objects
+   CHANGING
+      p_spta_para_exp   TYPE spta_t_para_exp
+      p_user_param      TYPE t_user_param.
+
+  DATA:rfc_msg(80)    TYPE c,
+       rfc_failed     TYPE c,
+       l_subrc        LIKE sy-subrc,
+       l_tabsize      LIKE sy-tabix,
+       ln_pending_obj LIKE LINE OF p_pending_objs.
+  DATA:itab_tmp LIKE TABLE OF zidpmmaging WITH HEADER LINE.
+
+  REFRESH:itab_tmp.
+  RECEIVE RESULTS FROM FUNCTION 'ZRFC_MM_IDP_0294'
+       TABLES
+            it_data = itab_tmp
+     EXCEPTIONS
+        system_failure        = 1 MESSAGE rfc_msg
+        communication_failure = 2 MESSAGE rfc_msg
+        OTHERS                = 3.
+
+  l_subrc = sy-subrc.
+
+  CASE l_subrc.
+    WHEN 0.
+      CLEAR p_spta_para_exp-rfc_subrc.
+      APPEND LINES OF itab_tmp TO gt_display.
+    WHEN 1.
+      p_spta_para_exp-rfc_subrc = spta_rfc_subrc-system_failure.
+
+    WHEN 2.
+      p_spta_para_exp-rfc_subrc = spta_rfc_subrc-communication_failure.
+
+    WHEN 3.
+
+      DESCRIBE TABLE p_pending_objs LINES l_tabsize.
+      IF l_tabsize > 1.
+        p_spta_para_exp-rfc_subrc = spta_rfc_subrc-application_error.
+      ELSE.
+        p_spta_para_exp-rfc_subrc = spta_rfc_subrc-no_error.
+        READ TABLE p_pending_objs INDEX 1 INTO ln_pending_obj.
+      ENDIF.
+
+    WHEN OTHERS.
+      RAISE unexpected_subrc.
+
+  ENDCASE.
+
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM pre_dateheadline                                         *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM pre_dateheadline.
+  DATA:l_c1(3) TYPE c,
+       l_c2(3) TYPE c.
+
+  IF p_bu = 'X'.
+    g_title = 'Aging Report(BU level)'.
+  ELSEIF p_pla = 'X'.
+    g_title = 'Aging Report(Plant level)'.
+  ELSEIF p_loc = 'X'.
+    g_title = 'Aging Report(Stock level)'.
+  ELSEIF p_wl = 'X'.
+    g_title = 'Aging Report(WBS level)'.
+  ENDIF.
+
+  l_c1 = t_day1 + 0.
+  CONCATENATE '0-' l_c1 ' Days' INTO l_qday1.
+  CONCATENATE '0-' l_c1 ' Value' INTO l_vday1.
+  l_c1 = t_day1 + 1.
+  l_c2 = t_day2 + 0.
+  CONCATENATE l_c1 '-' l_c2 ' Days' INTO l_qday2.
+  CONCATENATE l_c1 '-' l_c2 ' Value' INTO l_vday2.
+  l_c1 = t_day2 + 1.
+  l_c2 = t_day3 + 0.
+  CONCATENATE l_c1 '-' l_c2 ' Days' INTO l_qday3.
+  CONCATENATE l_c1 '-' l_c2 ' Value' INTO l_vday3.
+  l_c1 = t_day3 + 1.
+  l_c2 = t_day4 + 0.
+  CONCATENATE l_c1 '-' l_c2 ' Days' INTO l_qday4.
+  CONCATENATE l_c1 '-' l_c2 ' Value' INTO l_vday4.
+  l_c1 = t_day4 + 1.
+  l_c2 = t_day5 + 0.
+  CONCATENATE l_c1 '-' l_c2 ' Days' INTO l_qday5.
+  CONCATENATE l_c1 '-' l_c2 ' Value' INTO l_vday5.
+  l_c1 = t_day5 + 1.
+  l_c2 = t_day6 + 0.
+  CONCATENATE l_c1 '-' l_c2 ' Days' INTO l_qday6.
+  CONCATENATE l_c1 '-' l_c2 ' Value' INTO l_vday6.
+  l_c1 = t_day6 + 1.
+  l_c2 = t_day7 + 0.
+  CONCATENATE l_c1 '-' l_c2 ' Days' INTO l_qday7.
+  CONCATENATE l_c1 '-' l_c2 ' Value' INTO l_vday7.
+  l_c1 = t_day7 + 1.
+  l_c2 = t_day8 + 0.
+  CONCATENATE l_c1 '-' l_c2 ' Days' INTO l_qday8.
+  CONCATENATE l_c1 '-' l_c2 ' Value' INTO l_vday8.
+  l_c1 = t_day8 + 1.
+  l_c2 = t_day9 + 0.
+  CONCATENATE l_c1 '-' l_c2 ' Days' INTO l_qday9.
+  CONCATENATE l_c1 '-' l_c2 ' Value' INTO l_vday9.
+  l_c1 = t_day9 + 1.
+  l_c2 = t_day10 + 0.
+  CONCATENATE l_c1 '-' l_c2 ' Days' INTO l_qday10.
+  CONCATENATE l_c1 '-' l_c2 ' Value' INTO l_vday10.
+  l_c1 = t_day10 + 1.
+  l_c2 = t_day11 + 0.
+  CONCATENATE l_c1 '-' l_c2 ' Days' INTO l_qday11.
+  CONCATENATE l_c1 '-' l_c2 ' Value' INTO l_vday11.
+  l_c1 = t_day11 + 1.
+  l_c2 = t_day12 + 0.
+  CONCATENATE l_c1 '-' l_c2 ' Days' INTO l_qday12.
+  CONCATENATE l_c1 '-' l_c2 ' Value' INTO l_vday12.
+  CONCATENATE '>' l_c2 ' Days'   INTO l_qday13.
+  CONCATENATE '>' l_c2 ' Value' INTO l_vday13.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM write_alv                                                *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM write_alv.
+  DATA:l_repid LIKE sy-repid.
+
+  REFRESH:fc_alv.
+  SORT gt_display BY matnr bu werks lgort.
+
+  IF p_bu = 'X'.
+    IF sy-langu = 'E'.
+      PERFORM append_fc_alv USING:
+      'MATNR'   'Material',
+      'BU'   'BU'.
+    ELSE.
+      PERFORM append_fc_alv USING:
+      'MATNR'   '料號',
+      'BU'   '公司代碼'.
+    ENDIF.
+  ENDIF.
+
+  IF p_pla = 'X'.
+    IF sy-langu = 'E'.
+      PERFORM append_fc_alv USING:
+      'MATNR'   'Material',
+      'WERKS'   'Plant'.
+    ELSE.
+      PERFORM append_fc_alv USING:
+      'MATNR'   '料號',
+      'WERKS'   '工廠'.
+    ENDIF.
+  ENDIF.
+
+  IF p_loc = 'X'.
+    IF sy-langu = 'E'.
+      PERFORM append_fc_alv USING:
+      'MATNR'   'Material',
+      'WERKS'   'Plant',
+      'LGORT'   'Location',
+      'INDICATOR3' 'Prodt atribu',
+      'DEPART'  'Depart',
+      'AZF01'   'Azf01',
+      'AZF02'   'Azf02',
+      'MATKL'   'Matkl',
+      'WGBEZ'   'Wgbez'.
+
+    ELSE.
+      PERFORM append_fc_alv USING:
+      'MATNR'   '料號',
+      'WERKS'   '工廠',
+      'LGORT'   '倉碼',
+      'INDICATOR3' '生產屬性',
+      'DEPART'  '部門',
+      'AZF01'   '責任部門',
+      'AZF02'   '品質分類',
+      'MATKL'   '物料群組',
+      'WGBEZ'   '料件類別'.
+    ENDIF.
+  ENDIF.
+
+  IF p_wl = 'X'.
+    IF sy-langu = 'E'.
+      PERFORM append_fc_alv USING:
+      'MATNR'   'Material',
+      'WERKS'   'Plant',
+      'LGORT'   'Location',
+      'CHARG'   'Batch',
+      'SOBKZ'   'Special stock indicator',
+      'WBS'   'WBS'.
+    ELSE.
+      PERFORM append_fc_alv USING:
+      'MATNR'   '料號',
+      'WERKS'   '工廠',
+      'LGORT'   '倉碼',
+      'CHARG'   '批次',
+      'SOBKZ'   '特殊庫存',
+      'WBS'   'WBS'.
+    ENDIF.
+  ENDIF.
+
+  IF sy-langu = 'E'.
+    PERFORM append_fc_alv USING:
+    'FMD'   'Last mov date',
+    'TOTAL'   'Total stock',
+    'TOTVAL'   'Total value',
+    'QTY1'   l_qday1,
+    'VALUE1'   l_vday1,
+    'QTY2'   l_qday2,
+    'VALUE2'   l_vday2,
+    'QTY3'   l_qday3,
+    'VALUE3'   l_vday3,
+    'QTY4'   l_qday4,
+    'VALUE4'   l_vday4,
+    'QTY5'   l_qday5,
+    'VALUE5'   l_vday5,
+    'QTY6'   l_qday6,
+    'VALUE6'   l_vday6,
+    'QTY7'   l_qday7,
+    'VALUE7'   l_vday7,
+    'QTY8'   l_qday8,
+    'VALUE8'   l_vday8,
+    'QTY9'   l_qday9,
+    'VALUE9'   l_vday9,
+    'QTY10'   l_qday10,
+    'VALUE10'   l_vday10,
+    'QTY11'   l_qday11,
+    'VALUE11'   l_vday11,
+    'QTY12'   l_qday12,
+    'VALUE12'   l_vday12,
+    'QTY13'   l_qday13,
+    'VALUE13'   l_vday13,
+    'MAKTX'   'Material description',
+    'BISMT'   'Old material number',
+    'MTART'   'Material type',
+    'HRKFT'   'Origin Group',
+    'EKGRP'   'Purchasing group',
+    'EKNAM'   'Buyer name',
+    'MEINS'   'Base unit',
+    'BKLAS'   'Valuation class',
+    'WAERS'   'Currency Key',
+    'STPRS'   'Standard price',
+    'PEINH'   'Price unit'.
+  ELSE.
+    PERFORM append_fc_alv USING:
+    'FMD'   '最近異動日',
+    'TOTAL'   '總庫存',
+    'TOTVAL'   '總金額',
+    'QTY1'   l_qday1,
+    'VALUE1'   l_vday1,
+    'QTY2'   l_qday2,
+    'VALUE2'   l_vday2,
+    'QTY3'   l_qday3,
+    'VALUE3'   l_vday3,
+    'QTY4'   l_qday4,
+    'VALUE4'   l_vday4,
+    'QTY5'   l_qday5,
+    'VALUE5'   l_vday5,
+    'QTY6'   l_qday6,
+    'VALUE6'   l_vday6,
+    'QTY7'   l_qday7,
+    'VALUE7'   l_vday7,
+    'QTY8'   l_qday8,
+    'VALUE8'   l_vday8,
+    'QTY9'   l_qday9,
+    'VALUE9'   l_vday9,
+    'QTY10'   l_qday10,
+    'VALUE10'   l_vday10,
+    'QTY11'   l_qday11,
+    'VALUE11'   l_vday11,
+    'QTY12'   l_qday12,
+    'VALUE12'   l_vday12,
+    'QTY13'   l_qday13,
+    'VALUE13'   l_vday13,
+    'MAKTX'   '品名',
+    'BISMT'   '客戶料號',
+    'MTART'   '物料類型',
+    'HRKFT'   '機種',
+    'EKGRP'   '採購群組',
+    'EKNAM'   '採購員',
+    'MEINS'   '單位',
+    'BKLAS'   '評價類別',
+    'WAERS'   '幣別',
+    'STPRS'   '標準價格',
+    'PEINH'   '價格單位'.
+  ENDIF.
+
+  IF p_age07 = 'X'.
+    IF sy-langu = 'E'.
+      PERFORM append_fc_alv USING:
+      'QTY_D0'   '0 days qty',
+      'VAL_D0'   '0 days value',
+      'QTY_D1'   '1 days qty',
+      'VAL_D1'   '1 days value',
+      'QTY_D2'   '2 days qty',
+      'VAL_D2'   '2 days value',
+      'QTY_D3'   '3 days qty',
+      'VAL_D3'   '3 days value',
+      'QTY_D4'   '4 days qty',
+      'VAL_D4'   '4 days value',
+      'QTY_D5'   '5 days qty',
+      'VAL_D5'   '5 days value',
+      'QTY_D6'   '6 days qty',
+      'VAL_D6'   '6 days value',
+      'QTY_D7'   '7 days qty',
+      'VAL_D7'   '7 days value'.
+    ELSE.
+      PERFORM append_fc_alv USING:
+      'QTY_D0'   '0 days qty',
+      'VAL_D0'   '0 days value',
+      'QTY_D1'   '1 days qty',
+      'VAL_D1'   '1 days value',
+      'QTY_D2'   '2 days qty',
+      'VAL_D2'   '2 days value',
+      'QTY_D3'   '3 days qty',
+      'VAL_D3'   '3 days value',
+      'QTY_D4'   '4 days qty',
+      'VAL_D4'   '4 days value',
+      'QTY_D5'   '5 days qty',
+      'VAL_D5'   '5 days value',
+      'QTY_D6'   '6 days qty',
+      'VAL_D6'   '6 days value',
+      'QTY_D7'   '7 days qty',
+      'VAL_D7'   '7 days value'.
+    ENDIF.
+  ENDIF.
+
+  gw_layout-colwidth_optimize = 'X'.
+  gw_layout-zebra = 'X'.
+  l_repid = sy-repid .
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = l_repid
+      i_grid_title       = g_title
+      is_layout          = gw_layout
+      it_fieldcat        = fc_alv[]
+      i_default          = 'X'
+      i_save             = 'A'
+    TABLES
+      t_outtab           = gt_display[].
+  IF sy-subrc <> 0.
+
+  ENDIF.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM append_fc_alv                                            *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+*  -->  P_FIELDNAME                                                   *
+*  -->  P_SELTEXT                                                     *
+*---------------------------------------------------------------------*
+FORM append_fc_alv USING p_fieldname p_seltext .
+  MOVE:p_fieldname     TO fc_alv-fieldname,
+       p_seltext       TO fc_alv-reptext_ddic.
+  APPEND fc_alv.
+  CLEAR fc_alv.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM send_bi                                                  *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM send_bi.
+  DATA:tline    TYPE string,
+       zqty(16) TYPE c.
+  DATA:ztab(1) TYPE c VALUE '|'.
+  DATA:l_localfile(50) TYPE c.
+
+  CONCATENATE p_file sy-datum sy-uzeit '.txt' INTO l_localfile.
+  OPEN DATASET l_localfile IN TEXT MODE FOR OUTPUT ENCODING UTF-8 ."RAIN 0418 +ENCODING UTF-8.
+
+  LOOP AT gt_display.
+    CLEAR: zqty,tline.
+    CONCATENATE gt_display-matnr ztab
+                gt_display-maktx ztab
+                gt_display-werks ztab
+                gt_display-lgort ztab
+                '' ztab
+                '' ztab
+                gt_display-mtart ztab
+                gt_display-meins ztab
+                gt_display-fmd ztab
+                ''
+                INTO tline.
+
+    MOVE gt_display-total TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-totval TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+*   如果勾選0-7天庫存
+    IF p_age07 = 'X'.
+      MOVE gt_display-qty_d0 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-qty_d1 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-qty_d2 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-qty_d3 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-qty_d4 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-qty_d5 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-qty_d6 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-qty_d7 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+    ELSE.
+      CONCATENATE tline '|0|0|0|0|0|0' INTO tline.
+
+      MOVE gt_display-qty1 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-value1 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+    ENDIF.
+
+    MOVE gt_display-qty2 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value2 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty3 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value3 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty4 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value4 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty5 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value5 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty6 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value6 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty7 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value7 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty8 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value8 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty9 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value9 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty10 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value10 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty11 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value11 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty12 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value12 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty13 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value13 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+
+    TRANSFER tline TO l_localfile.
+  ENDLOOP.
+  CLOSE DATASET l_localfile.
+
+  PERFORM send_ftp USING l_localfile.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM send_ftp                                                 *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+*  -->  P_LOCALFILE                                                   *
+*---------------------------------------------------------------------*
+FORM send_ftp USING p_localfile.
+  DATA:dsn          LIKE ibipparms-path,
+       filename(20) TYPE c VALUE 'C*',
+       user(64)     TYPE c,
+       pwd(64)      TYPE c,
+       host(64)     TYPE c VALUE '10.156.4.96',
+       key          TYPE i VALUE 26101957,
+       dest         LIKE rfcdes-rfcdest VALUE 'SAPFTPA',
+       dstlen       TYPE i,
+       hdl          TYPE i.
+  DATA:ftp_handle       TYPE i,
+       ftp_command(265) TYPE c,
+       ftp_result(100)  TYPE c OCCURS 0 WITH HEADER LINE.
+  DATA:ftpfile(100) TYPE c,
+       sdir(100),
+       command(100),
+       fn           TYPE rlgrap-filename, ldir(100).
+  DATA:l_pwd        LIKE tczgl-ftp_passwd,
+       l_pwd2       LIKE tczgl-ftp_passwd,
+       l_collect(1) TYPE c.
+  DATA:BEGIN OF lt_result OCCURS 0,
+         line(255),
+       END OF lt_result.
+
+  DATA: slen TYPE i.
+
+  host  = p_ftp.
+  user  = p_user.
+
+  CLEAR: l_pwd,l_pwd2.
+  l_pwd = p_pwd.
+*  CALL FUNCTION 'CV_STRING_SCRAMBLE'
+*    EXPORTING
+*      source = l_pwd
+*      scr    = 'X'
+*    IMPORTING
+*      dest   = l_pwd2.
+  slen = strlen( l_pwd ).
+  CALL FUNCTION 'HTTP_SCRAMBLE'
+    EXPORTING
+      source      = l_pwd
+      sourcelen   = slen
+      key         = key
+    IMPORTING
+      destination = l_pwd2.
+  pwd = l_pwd2.
+
+  CLEAR:l_collect.
+  DO 3 TIMES.
+    CALL FUNCTION 'FTP_CONNECT'
+      EXPORTING
+        user            = user
+        password        = pwd
+        host            = host
+        rfc_destination = 'SAPFTPA'  "R/3 application server
+      IMPORTING
+        handle          = ftp_handle
+      EXCEPTIONS
+        not_connected   = 1
+        OTHERS          = 2.
+    IF sy-subrc = 0.
+      l_collect = 'Y'.
+      EXIT.
+    ELSE.
+      WRITE:/ 'Connect FTP error'.
+      CONTINUE.
+    ENDIF.
+  ENDDO.
+  IF l_collect <> 'Y'.
+    WRITE:/ 'Connect FTP error'.
+    EXIT.
+  ELSE.
+    WRITE:/ 'Connect FTP success'.
+  ENDIF.
+
+  CONCATENATE 'cd' p_path INTO command SEPARATED BY ' '.
+  CONDENSE command.
+  CALL FUNCTION 'FTP_COMMAND'
+    EXPORTING
+      handle        = ftp_handle
+      command       = command
+    TABLES
+      data          = lt_result
+    EXCEPTIONS
+      tcpip_error   = 1
+      command_error = 2
+      data_error    = 3
+      OTHERS        = 4.
+  LOOP AT lt_result.
+    WRITE:/ lt_result-line.
+    IF lt_result-line CS 'error'.
+      EXIT.
+    ENDIF.
+  ENDLOOP.
+
+  CONCATENATE 'put' p_localfile INTO command
+              SEPARATED BY ' '.
+  CONDENSE command.
+  CALL FUNCTION 'FTP_COMMAND'
+    EXPORTING
+      handle        = ftp_handle
+      command       = command
+    TABLES
+      data          = lt_result
+    EXCEPTIONS
+      tcpip_error   = 1
+      command_error = 2
+      data_error    = 3
+      OTHERS        = 4.
+  LOOP AT lt_result.
+    WRITE:/ lt_result-line.
+    IF lt_result-line CS 'error'.
+      EXIT.
+    ENDIF.
+  ENDLOOP.
+
+  CALL FUNCTION 'FTP_DISCONNECT'
+    EXPORTING
+      handle = ftp_handle.
+
+  DELETE DATASET p_file.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM load_format                                              *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM load_format.
+  DATA:fill_i     TYPE i,
+       fill_j     TYPE i,
+       l_time(30) TYPE c.
+
+  PERFORM openxls.
+* 標題
+  PERFORM fill_cell USING 1 1 g_title.
+  CONCATENATE 'TIME:' sy-datum sy-uzeit INTO l_time.
+  PERFORM fill_cell USING 1 2 l_time.
+* 欄位說明
+  fill_j = 1.
+  IF p_bu = 'X'.
+    IF sy-langu = 'E'.
+      PERFORM fill_cell USING 2 fill_j 'Material'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'BU'.
+      fill_j = fill_j + 1.
+    ELSE.
+      PERFORM fill_cell USING 2 fill_j 'Material'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'BU'.
+      fill_j = fill_j + 1.
+    ENDIF.
+  ENDIF.
+
+  IF p_pla = 'X'.
+    IF sy-langu = 'E'.
+      PERFORM fill_cell USING 2 fill_j 'Material'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'Plant'.
+      fill_j = fill_j + 1.
+    ELSE.
+      PERFORM fill_cell USING 2 fill_j 'Material'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'Plant'.
+      fill_j = fill_j + 1.
+    ENDIF.
+  ENDIF.
+
+  IF p_loc = 'X'.
+    IF sy-langu = 'E'.
+      PERFORM fill_cell USING 2 fill_j 'Material'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'Plant'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'Location'.
+      fill_j = fill_j + 1.
+    ELSE.
+      PERFORM fill_cell USING 2 fill_j 'Material'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'Plant'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'Location'.
+      fill_j = fill_j + 1.
+    ENDIF.
+  ENDIF.
+
+  IF p_wl = 'X'.
+    IF sy-langu = 'E'.
+      PERFORM fill_cell USING 2 fill_j 'Material'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'Plant'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'Location'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'Batch'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'Special stock indicator'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'WBS'.
+      fill_j = fill_j + 1.
+    ELSE.
+      PERFORM fill_cell USING 2 fill_j 'Material'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'Plant'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'Location'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'Batch'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'Special stock indicator'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j 'WBS'.
+      fill_j = fill_j + 1.
+    ENDIF.
+  ENDIF.
+
+  IF sy-langu = 'E'.
+    PERFORM fill_cell USING 2 fill_j 'Last movement date'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Total stock'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Total value'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday1.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday1.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday2.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday2.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday3.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday3.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday4.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday4.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday5.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday5.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday6.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday6.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday7.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday7.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday8.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday8.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday9.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday9.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday10.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday10.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday11.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday11.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday12.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday12.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday13.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday13.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Material description'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Old material number'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Material type'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Origin Group'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Purchasing group'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Buyer name'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Base unit of measure'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Valuation class'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Currency Key'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Standard price'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Price unit'.
+    fill_j = fill_j + 1.
+  ELSE.
+    PERFORM fill_cell USING 2 fill_j 'Last movement date'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Total stock'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Total value'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday1.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday1.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday2.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday2.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday3.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday3.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday4.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday4.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday5.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday5.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday6.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday6.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday7.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday7.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday8.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday8.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday9.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday9.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday10.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday10.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday11.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday11.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday12.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday12.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_qday13.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j l_vday13.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Material description'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Old material number'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Material type'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Origin Group'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Purchasing group'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Description of purchasing group'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Base unit of measure'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Valuation class'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Currency Key'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Standard price'.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING 2 fill_j 'Price unit'.
+    fill_j = fill_j + 1.
+  ENDIF.
+
+  IF p_age07 = 'X'.
+    IF sy-langu = 'E'.
+      PERFORM fill_cell USING 2 fill_j '0 days qty'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '0 days value'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '1 days qty'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '1 days value'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '2 days qty'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '2 days value'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '3 days qty'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '3 days value'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '4 days qty'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '4 days value'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '5 days qty'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '5 days value'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '6 days qty'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '6 days value'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '7 days qty'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '7 days value'.
+      fill_j = fill_j + 1.
+    ELSE.
+      PERFORM fill_cell USING 2 fill_j '0 days qty'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '0 days value'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '1 days qty'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '1 days value'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '2 days qty'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '2 days value'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '3 days qty'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '3 days value'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '4 days qty'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '4 days value'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '5 days qty'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '5 days value'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '6 days qty'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '6 days value'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '7 days qty'.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING 2 fill_j '7 days value'.
+      fill_j = fill_j + 1.
+    ENDIF.
+  ENDIF.
+* 數據
+  fill_i = 3.
+  LOOP AT gt_display.
+    fill_j = 1.
+
+    IF p_bu = 'X'.
+      PERFORM fill_cell USING fill_i fill_j gt_display-matnr.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-bu.
+      fill_j = fill_j + 1.
+    ENDIF.
+
+    IF p_pla = 'X'.
+      PERFORM fill_cell USING fill_i fill_j gt_display-matnr.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-werks.
+      fill_j = fill_j + 1.
+    ENDIF.
+
+    IF p_loc = 'X'.
+      PERFORM fill_cell USING fill_i fill_j gt_display-matnr.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-werks.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-lgort.
+      fill_j = fill_j + 1.
+    ENDIF.
+
+    IF p_wl = 'X'.
+      PERFORM fill_cell USING fill_i fill_j gt_display-matnr.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-werks.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-lgort.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-charg.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-sobkz.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-wbs.
+      fill_j = fill_j + 1.
+    ENDIF.
+
+    PERFORM fill_cell USING fill_i fill_j gt_display-fmd.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-total.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-totval.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-qty1.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-value1.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-qty2.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-value2.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-qty3.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-value3.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-qty4.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-value4.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-qty5.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-value5.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-qty6.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-value6.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-qty7.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-value7.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-qty8.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-value8.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-qty9.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-value9.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-qty10.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-value10.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-qty11.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-value11.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-qty12.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-value12.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-qty13.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-value13.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-maktx.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-bismt.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-mtart.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-hrkft.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-ekgrp.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-eknam.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-meins.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-bklas.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-waers.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-stprs.
+    fill_j = fill_j + 1.
+    PERFORM fill_cell USING fill_i fill_j gt_display-peinh.
+
+    IF p_age07 = 'X'.
+      PERFORM fill_cell USING fill_i fill_j gt_display-qty_d0.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-val_d0.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-qty_d1.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-val_d1.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-qty_d2.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-val_d2.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-qty_d3.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-val_d3.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-qty_d4.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-val_d4.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-qty_d5.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-val_d5.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-qty_d6.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-val_d6.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-qty_d7.
+      fill_j = fill_j + 1.
+      PERFORM fill_cell USING fill_i fill_j gt_display-val_d7.
+    ENDIF.
+
+    fill_i = fill_i + 1.
+  ENDLOOP.
+
+  PERFORM closexls.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM openxls                                                  *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM openxls.
+  CREATE OBJECT h_excel 'EXCEL.APPLICATION'.
+  CALL METHOD OF h_excel 'Workbooks' = h_workbooks.
+  CALL METHOD OF h_workbooks 'ADD' = h_workbook.
+  SET PROPERTY OF h_excel 'Visible' = 0.
+  GET PROPERTY OF h_excel 'ActiveSheet' = h_worksheet.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM closexls                                                 *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM closexls.
+
+  CALL METHOD OF h_workbook 'SAVEAS'
+    EXPORTING
+      #1 = p_filena.
+  IF sy-subrc = 0.
+    WRITE:/ 'Success'.
+  ELSE.
+    WRITE:/ 'Fail'.
+  ENDIF.
+
+  CALL METHOD OF h_excel 'QUIT'.
+  FREE OBJECT h_worksheet.
+  FREE OBJECT h_workbook.
+  FREE OBJECT h_excel.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM fill_cell                                                *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+*  -->  I                                                             *
+*  -->  J                                                             *
+*  -->  VAL                                                           *
+*---------------------------------------------------------------------*
+FORM fill_cell USING i j val.
+*  IF val <> ''.
+  CALL METHOD OF h_worksheet 'Cells' = h_cell NO FLUSH
+    EXPORTING
+      #1 = i
+      #2 = j.
+  SET PROPERTY OF h_cell 'Value' = val.
+  FREE OBJECT h_cell.
+*  ENDIF.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM write_ftp                                                *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM write_ftp.
+  DATA:tline    TYPE string,
+       zqty(16) TYPE c.
+*  DATA:ztab TYPE x VALUE '09'.
+  DATA:ztab TYPE abap_char1 VALUE cl_abap_char_utilities=>horizontal_tab.
+  DATA:l_localfile(50) TYPE c.
+
+  CONCATENATE p_file sy-datum sy-uzeit '.XLS' INTO l_localfile.
+  OPEN DATASET l_localfile IN TEXT MODE FOR OUTPUT ENCODING UTF-8 ."RAIN 0418 +ENCODING UTF-8
+* 標題
+  tline = g_title.
+  TRANSFER tline TO l_localfile.
+* 欄位說明
+  IF p_bu = 'X'.
+    IF sy-langu = 'E'.
+      CONCATENATE 'Material' ztab
+                  'BU' ztab
+                  INTO tline.
+    ELSE.
+      CONCATENATE 'Material' ztab
+                  'BU' ztab
+                  INTO tline.
+    ENDIF.
+  ENDIF.
+
+  IF p_pla = 'X'.
+    IF sy-langu = 'E'.
+      CONCATENATE 'Material' ztab
+                  'Plant' ztab
+                  INTO tline.
+    ELSE.
+      CONCATENATE 'Material' ztab
+                  'Plant' ztab
+                  INTO tline.
+    ENDIF.
+  ENDIF.
+
+  IF p_loc = 'X'.
+    IF sy-langu = 'E'.
+      CONCATENATE 'Material' ztab
+                  'Plant' ztab
+                  'Location' ztab
+                  INTO tline.
+    ELSE.
+      CONCATENATE 'Material' ztab
+                  'Plant' ztab
+                  'Location' ztab
+                  INTO tline.
+    ENDIF.
+  ENDIF.
+
+  IF p_wl = 'X'.
+    IF sy-langu = 'E'.
+      CONCATENATE 'Material' ztab
+                  'Plant' ztab
+                  'Location' ztab
+                  'Batch' ztab
+                  'Special stock indicator' ztab
+                  'WBS' ztab
+                  INTO tline.
+    ELSE.
+      CONCATENATE 'Material' ztab
+                  'Plant' ztab
+                  'Location' ztab
+                  'Batch' ztab
+                  'Special stock indicator' ztab
+                  'WBS' ztab
+                  INTO tline.
+    ENDIF.
+  ENDIF.
+
+  IF sy-langu = 'E'.
+    CONCATENATE tline
+                'Last movement date' ztab
+*                'Material description' ztab
+                'Old material number' ztab
+                'Material type' ztab
+                'Origin Group' ztab
+                'Purchasing group' ztab
+                'Buyer name' ztab
+                'Base unit of measure' ztab
+                'Valuation class' ztab
+                'Currency Key' ztab
+                'Standard price' ztab
+                'Price unit' ztab
+                'Total stock' ztab
+                'Total value' ztab
+                l_qday1 ztab
+                l_vday1 ztab
+                l_qday2 ztab
+                l_vday2 ztab
+                l_qday3 ztab
+                l_vday3 ztab
+                l_qday4 ztab
+                l_vday4 ztab
+                l_qday5 ztab
+                l_vday5 ztab
+                l_qday6 ztab
+                l_vday6 ztab
+                l_qday7 ztab
+                l_vday7 ztab
+                l_qday8 ztab
+                l_vday8 ztab
+                l_qday9 ztab
+                l_vday9 ztab
+                l_qday10 ztab
+                l_vday10 ztab
+                l_qday11 ztab
+                l_vday11 ztab
+                l_qday12 ztab
+                l_vday12 ztab
+                l_qday13 ztab
+                l_vday13
+                INTO tline.
+  ELSE.
+    CONCATENATE tline
+                'Last movement date' ztab
+*                'Material description' ztab
+                'Old material number' ztab
+                'Material type' ztab
+                'Origin Group' ztab
+                'Purchasing group' ztab
+                'Buyer name' ztab
+                'Base unit of measure' ztab
+                'Valuation class' ztab
+                'Currency Key' ztab
+                'Standard price' ztab
+                'Price unit' ztab
+                'Total stock' ztab
+                'Total value' ztab
+                l_qday1 ztab
+                l_vday1 ztab
+                l_qday2 ztab
+                l_vday2 ztab
+                l_qday3 ztab
+                l_vday3 ztab
+                l_qday4 ztab
+                l_vday4 ztab
+                l_qday5 ztab
+                l_vday5 ztab
+                l_qday6 ztab
+                l_vday6 ztab
+                l_qday7 ztab
+                l_vday7 ztab
+                l_qday8 ztab
+                l_vday8 ztab
+                l_qday9 ztab
+                l_vday9 ztab
+                l_qday10 ztab
+                l_vday10 ztab
+                l_qday11 ztab
+                l_vday11 ztab
+                l_qday12 ztab
+                l_vday12 ztab
+                l_qday13 ztab
+                l_vday13
+                INTO tline.
+  ENDIF.
+
+  IF p_age07 = 'X'.
+    IF sy-langu = 'E'.
+      CONCATENATE tline ztab
+                  '0 days qty' ztab
+                  '0 days value' ztab
+                  '1 days qty' ztab
+                  '1 days value' ztab
+                  '2 days qty' ztab
+                  '2 days value' ztab
+                  '3 days qty' ztab
+                  '3 days value' ztab
+                  '4 days qty' ztab
+                  '4 days value' ztab
+                  '5 days qty' ztab
+                  '5 days value' ztab
+                  '6 days qty' ztab
+                  '6 days value' ztab
+                  '7 days qty' ztab
+                  '7 days value' ztab
+                  INTO tline.
+    ELSE.
+      CONCATENATE tline ztab
+                  '0 days qty' ztab
+                  '0 days value' ztab
+                  '1 days qty' ztab
+                  '1 days value' ztab
+                  '2 days qty' ztab
+                  '2 days value' ztab
+                  '3 days qty' ztab
+                  '3 days value' ztab
+                  '4 days qty' ztab
+                  '4 days value' ztab
+                  '5 days qty' ztab
+                  '5 days value' ztab
+                  '6 days qty' ztab
+                  '6 days value' ztab
+                  '7 days qty' ztab
+                  '7 days value' ztab
+                  INTO tline.
+    ENDIF.
+  ENDIF.
+  TRANSFER tline TO l_localfile.
+* 數據
+  LOOP AT gt_display.
+    IF p_bu = 'X'.
+      CONCATENATE gt_display-matnr ztab
+                  gt_display-bu ztab
+                  INTO tline.
+    ENDIF.
+
+    IF p_pla = 'X'.
+      CONCATENATE gt_display-matnr ztab
+                  gt_display-werks ztab
+                  INTO tline.
+    ENDIF.
+
+    IF p_loc = 'X'.
+      CONCATENATE gt_display-matnr ztab
+                  gt_display-werks ztab
+                  gt_display-lgort ztab
+                  INTO tline.
+    ENDIF.
+
+    IF p_wl = 'X'.
+      CONCATENATE gt_display-matnr ztab
+                  gt_display-werks ztab
+                  gt_display-lgort ztab
+                  gt_display-charg ztab
+                  gt_display-sobkz ztab
+                  gt_display-wbs ztab
+                  INTO tline.
+    ENDIF.
+
+    CONCATENATE tline
+                gt_display-fmd ztab
+*                gt_display-maktx ztab
+                gt_display-bismt ztab
+                gt_display-mtart ztab
+                gt_display-hrkft ztab
+                gt_display-ekgrp ztab
+                gt_display-eknam ztab
+                gt_display-meins ztab
+                gt_display-bklas ztab
+                gt_display-waers
+                INTO tline.
+
+    MOVE gt_display-stprs TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-peinh TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-total TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-totval TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty1 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value1 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty2 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value2 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty3 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value3 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty4 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value4 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty5 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value5 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty6 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value6 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty7 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value7 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty8 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value8 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty9 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value9 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty10 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value10 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty11 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value11 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty12 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value12 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-qty13 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+    MOVE gt_display-value13 TO zqty.
+    CONCATENATE tline ztab zqty INTO tline.
+
+    IF p_age07 = 'X'.
+      MOVE gt_display-qty_d0 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-val_d0 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-qty_d1 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-val_d1 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-qty_d2 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-val_d2 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-qty_d3 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-val_d3 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-qty_d4 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-val_d4  TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-qty_d5 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-val_d5 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-qty_d6 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-val_d6 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-qty_d7 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+      MOVE gt_display-val_d7 TO zqty.
+      CONCATENATE tline ztab zqty INTO tline.
+    ENDIF.
+
+    TRANSFER tline TO l_localfile.
+  ENDLOOP.
+
+  CLOSE DATASET l_localfile.
+
+  PERFORM send_ftp USING l_localfile.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM check_authorization                                      *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM check_authorization.
+  RANGES:r_werks FOR t001w-werks.
+  DATA:l_msg(40) TYPE c.
+
+  SELECT * FROM t001k
+  WHERE bukrs IN s_bukrs
+  AND bwkey IN s_plant.
+    CLEAR:r_werks[],r_werks.
+    r_werks-sign = 'I'.
+    r_werks-option = 'EQ'.
+    r_werks-low = t001k-bwkey.
+    APPEND r_werks.
+
+    CALL FUNCTION 'ZRFC_MM_IDP_0104'
+      TABLES
+        input  = r_werks[]
+        output = r_werks[].
+
+    IF r_werks[] IS INITIAL.
+      IF sy-langu = 'E'.
+        CONCATENATE 'You have no authority to use this plant:' t001k-bwkey
+                                                                INTO l_msg.
+        MESSAGE i004(zmm) WITH l_msg.
+      ELSE.
+        CONCATENATE '您沒有該工廠的權限:' t001k-bwkey
+        INTO l_msg.
+        MESSAGE i004(zmm) WITH l_msg.
+      ENDIF.
+      STOP.
+    ENDIF.
+  ENDSELECT.
+
+  IF p_cache = 'X' AND 'IDPDISPLAY,IDP-ITPM' NS sy-uname.
+    MESSAGE i004(zmm) WITH 'You have no authority to use this function'.
+    STOP.
+  ENDIF.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM choose_input_file                                        *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM choose_input_file.
+  CALL FUNCTION 'WS_FILENAME_GET'
+    EXPORTING
+      def_filename     = '*.xls'
+      def_path         = 'C:\'
+      mask             = ',*.xls.'
+      mode             = 'O'
+      title            = 'Choose Input file'
+    IMPORTING
+      filename         = p_filena
+    EXCEPTIONS
+      inv_winsys       = 1
+      no_batch         = 2
+      selection_cancel = 3
+      selection_error  = 4
+      OTHERS           = 5.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM data_process2                                            *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM data_process2.
+  DATA:l_level(1)  TYPE c,
+       l_baseon(1) TYPE c,
+       l_sttype(1) TYPE c.
+
+* 庫齡層級
+  IF p_bu = 'X'.
+    l_level = '3'.
+  ELSEIF p_pla = 'X'.
+    l_level = '2'.
+  ELSEIF p_loc = 'X'.
+    l_level = '1'.
+  ELSEIF p_wl = 'X'.
+    l_level = '4'.
+  ENDIF.
+* 以過帳/開單日
+  IF p_cd = 'X'.
+    l_baseon = '2'.
+  ELSE.
+    l_baseon = '1'.
+  ENDIF.
+* 考慮非成本
+  IF p_nco = 'X'.
+    l_sttype = '1'.
+  ELSE.
+    l_sttype = '2'.
+  ENDIF.
+
+  CALL FUNCTION 'ZRFC_MM_IDP_0294'
+    EXPORTING
+      i_level               = l_level
+      i_basedate            = p_date
+      i_baseon              = l_baseon
+      i_stdate              = g_date
+      i_sttime              = g_time
+      i_sttype              = l_sttype
+      i_age07               = p_age07
+      i_usecache            = p_usec
+    TABLES
+      it_date               = itab_date
+      it_data               = gt_display
+      it_mov                = s_mov
+      it_lgort              = s_sloc
+    EXCEPTIONS
+      system_failure        = 1
+      communication_failure = 2
+      OTHERS                = 3.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM write_cache                                              *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM write_cache.
+
+  IF NOT gt_display[] IS INITIAL.
+    READ TABLE gt_display INDEX 1.
+
+    DELETE FROM zidpmmaging
+    WHERE bu = gt_display-bu
+    AND werks = gt_display-werks
+    AND basedate = gt_display-basedate
+    AND stlevel = gt_display-stlevel
+    AND baseon = gt_display-baseon
+    AND sttype = gt_display-sttype
+    AND date_range = gt_display-date_range
+    AND mov_range = gt_display-mov_range.
+
+    MODIFY zidpmmaging FROM TABLE gt_display.
+    IF sy-subrc = 0.
+      WRITE:/ 'Success'.
+    ELSE.
+      WRITE:/ 'Fail'.
+    ENDIF.
+  ENDIF.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM get_inventory2                                           *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM get_inventory2.
+  DATA:BEGIN OF lt_inv OCCURS 0,
+         matnr      LIKE mard-matnr,
+         werks      LIKE mard-werks,
+         bukrs      LIKE t001k-bukrs,
+         lgort      LIKE mard-lgort,
+         charg      LIKE mspr-charg,
+         sobkz      LIKE mspr-sobkz,
+         pspnr      LIKE mspr-pspnr,
+         lfgja      LIKE mard-lfgja,
+         lfmon      LIKE mard-lfmon,
+         labst      LIKE mard-labst,
+         insme      LIKE mard-insme,
+         indicator3 LIKE zidpmm016-indicator3,
+         depart     LIKE zidpmm016-depart,
+         category1  LIKE zidpmm016-category1,
+         category2  LIKE zidpmm016-category2,
+         azf01      LIKE zidpmm017-azf03,
+         azf02      LIKE zidpmm017-azf03,
+         matkl      LIKE mara-matkl,
+         wgbez      LIKE t023t-wgbez,
+       END OF lt_inv.
+  DATA:lt_t001k LIKE t001k OCCURS 0 WITH HEADER LINE.
+  DATA:l_baseyear  LIKE mard-lfgja,
+       l_basemonth LIKE mard-lfmon.
+  DATA:l_month1     LIKE mard-lfmon,
+       l_month2     LIKE mard-lfmon,
+       l_month3     LIKE mard-lfmon,
+       l_date       LIKE sy-datum,
+       l_lastday(1) TYPE c.
+  DATA:BEGIN OF lt_matnr OCCURS 0,
+         werks LIKE marc-werks,
+         matnr LIKE marc-matnr,
+         charg LIKE mspr-charg,
+         waers LIKE ckms_prs_ml-waers,
+         stprs LIKE ckms_prs_ml-stprs,
+         peinh LIKE ckms_prs_ml-peinh,
+       END OF lt_matnr.
+  DATA:lt_cki_prs LIKE ckms_prs_ml OCCURS 0 WITH HEADER LINE,
+       lw_cki_pr1 TYPE cki_pr1_ml.
+  DATA:l_bdatj LIKE ckmlpp-bdatj,
+       l_poper LIKE ckmlpp-poper.
+  DATA:l_bwtar      LIKE mbew-bwtar,
+       l_indicator1 LIKE zidpmm016-indicator1,
+       l_cvalue     LIKE zidpcontrolvalue-cvalue.
+
+
+* 如果基準日期是上月最後一天,直接取期末庫存
+* 如果基準日期是上月最後一天以前,取上一月期末庫存+當前庫存(置0)
+* 如果基準日期是上月最後一天以後,取期末庫存+當前庫存(置0)
+* 取基準日期的年月
+  l_month3 = p_date+4(2).
+  l_date = p_date + 1.
+  l_month1 = l_date+4(2).
+  l_date = sy-datum.
+  l_month2 = l_date+4(2).
+  IF l_month3 <> l_month1 AND l_month3 <> l_month2.
+    l_lastday = 'Y'.   "上月最後一天
+    l_baseyear = p_date+0(4).
+    l_basemonth = p_date+4(2).
+  ELSEIF l_month3 = l_month2.
+    l_lastday = 'A'.  "當月，即上月最後一天以後
+
+    CALL FUNCTION 'CCM_GO_BACK_MONTHS'
+      EXPORTING
+        currdate   = p_date
+        backmonths = 1
+      IMPORTING
+        newdate    = l_date.
+    l_baseyear = l_date+0(4).
+    l_basemonth = l_date+4(2).
+  ELSE.
+    l_lastday = 'B'.  "上月最後一天以前
+
+    CALL FUNCTION 'CCM_GO_BACK_MONTHS'
+      EXPORTING
+        currdate   = p_date
+        backmonths = 1
+      IMPORTING
+        newdate    = l_date.
+    l_baseyear = l_date+0(4).
+    l_basemonth = l_date+4(2).
+  ENDIF.
+* 記錄最新時間
+  g_date = sy-datum + 2.
+  g_time = sy-uzeit.
+* 抓取庫存
+  IF NOT itab_016[] IS INITIAL.
+    SELECT zidpfi_mv_sum~werks zidpfi_mv_sum~matnr zidpfi_mv_sum~lgort
+           zidpfi_mv_sum~gjahr AS lfgja zidpfi_mv_sum~pspnr
+* 增加主鍵，防止被自動去重 Add by wushaui 20220705
+           zidpfi_mv_sum~gjahr AS lfmon
+           menge AS labst
+           mara~matkl
+    INTO CORRESPONDING FIELDS OF TABLE lt_inv
+    FROM zidpfi_mv_sum
+    INNER JOIN mara ON mara~matnr = zidpfi_mv_sum~matnr
+    FOR ALL ENTRIES IN itab_016
+    WHERE zidpfi_mv_sum~werks = itab_016-werks
+    AND zidpfi_mv_sum~lgort = itab_016-lgort
+    AND zidpfi_mv_sum~matnr IN s_matnr
+    AND mara~mtart IN s_mtart
+    AND zidpfi_mv_sum~gjahr = l_baseyear
+    AND zidpfi_mv_sum~monat = l_basemonth.
+
+    IF l_lastday <> 'Y'.
+      SELECT mard~matnr mard~werks mard~lgort mard~lfgja mard~lfmon
+*             0 AS labst 0 AS insme
+             mara~matkl
+      APPENDING CORRESPONDING FIELDS OF TABLE lt_inv
+      FROM mard
+      INNER JOIN mara ON mara~matnr = mard~matnr
+      FOR ALL ENTRIES IN itab_016
+      WHERE mard~werks = itab_016-werks
+      AND mard~lgort = itab_016-lgort
+      AND mard~matnr IN s_matnr
+      AND mara~mtart IN s_mtart.
+
+      SELECT mspr~matnr mspr~werks mspr~lgort mspr~charg mspr~sobkz
+             mspr~pspnr mspr~lfgja mspr~lfmon mara~matkl
+*             0 AS labst
+      APPENDING CORRESPONDING FIELDS OF TABLE lt_inv
+      FROM mspr
+      INNER JOIN mara ON mara~matnr = mspr~matnr
+      FOR ALL ENTRIES IN itab_016
+      WHERE mspr~werks = itab_016-werks
+      AND mspr~lgort = itab_016-lgort
+      AND mspr~matnr IN s_matnr
+      AND mara~mtart IN s_mtart.
+
+      IF p_nco = 'X'.
+        SELECT mkol~matnr mkol~werks mkol~lgort mkol~charg mkol~sobkz
+               mkol~lfgja mkol~lfmon mara~matkl
+*               0 AS labst
+        APPENDING CORRESPONDING FIELDS OF TABLE lt_inv
+        FROM mkol
+        INNER JOIN mara ON mara~matnr = mkol~matnr
+        FOR ALL ENTRIES IN itab_016
+        WHERE mkol~werks = itab_016-werks
+        AND mkol~lgort = itab_016-lgort
+        AND mkol~matnr IN s_matnr
+        AND mara~mtart IN s_mtart.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+* 取庫存中所有料號的標準成本
+  IF p_nco = 'X'.
+    LOOP AT lt_inv.
+      lt_matnr-werks = lt_inv-werks.
+      lt_matnr-matnr = lt_inv-matnr.
+      lt_matnr-charg = lt_inv-charg.
+      COLLECT lt_matnr.
+    ENDLOOP.
+    LOOP AT lt_matnr.
+      CLEAR:l_bwtar.
+      SELECT SINGLE cvalue INTO l_cvalue
+      FROM zidpcontrolvalue
+      WHERE werks = lt_matnr-werks
+      AND ctype = 'VALUATION_CHECK'
+      AND indicator1 = 'ACT'.
+      IF sy-subrc = 0.
+        IF lt_matnr-charg <> ''.
+          l_bwtar = lt_matnr-charg.
+        ELSE.
+          SELECT SINGLE bwtar INTO l_bwtar
+          FROM mbew
+          WHERE matnr = lt_matnr-matnr
+          AND bwkey = lt_matnr-werks
+          AND bwtar LIKE 'COST%'.
+        ENDIF.
+      ELSE.
+        l_bwtar = ''.
+      ENDIF.
+
+      CLEAR:lt_cki_prs,lt_cki_prs[],lw_cki_pr1.
+      CLEAR:l_bdatj,l_poper.
+      lw_cki_pr1-matnr = lt_matnr-matnr.
+      lw_cki_pr1-bwkey = lt_matnr-werks.
+      lw_cki_pr1-bwtar = l_bwtar.
+      l_bdatj = l_baseyear.
+      l_poper = l_basemonth.
+
+      CALL FUNCTION 'Z_CKMS_MATERIAL_PRICES_GET'
+        EXPORTING
+          i_bdatj_1          = l_bdatj
+          i_poper_1          = l_poper
+        TABLES
+          t_cki_prs          = lt_cki_prs
+        CHANGING
+          f_cki_pr1          = lw_cki_pr1
+        EXCEPTIONS
+          material_not_found = 1
+          insufficient_input = 2
+          OTHERS             = 3.
+      IF NOT lt_cki_prs[] IS INITIAL.
+        READ TABLE lt_cki_prs INDEX 1.
+        lt_matnr-waers = lt_cki_prs-waers.
+        lt_matnr-stprs = lt_cki_prs-stprs.
+        lt_matnr-peinh = lt_cki_prs-peinh.
+        MODIFY lt_matnr.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+* 讀取法人信息到內表
+  SELECT * INTO CORRESPONDING FIELDS OF TABLE lt_t001k
+  FROM t001k
+  WHERE bukrs IN s_bukrs.
+
+  SELECT * INTO CORRESPONDING FIELDS OF TABLE itab_023
+  FROM t023t.
+
+  LOOP AT lt_inv.
+    READ TABLE lt_t001k WITH KEY bwkey = lt_inv-werks.
+    IF sy-subrc = 0.
+      lt_inv-bukrs = lt_t001k-bukrs.
+    ENDIF.
+
+    CLEAR:l_indicator1.
+    READ TABLE itab_016 WITH KEY werks = lt_inv-werks
+                                 lgort = lt_inv-lgort.
+    IF sy-subrc = 0.
+      lt_inv-indicator3 = itab_016-indicator3.
+      lt_inv-depart = itab_016-depart.
+      lt_inv-category1 = itab_016-category1.
+      lt_inv-category2 = itab_016-category2.
+      l_indicator1 = itab_016-indicator1.
+    ENDIF.
+
+    READ TABLE  itab_017 WITH KEY werks = lt_inv-werks
+                                  azf01 = itab_016-category1.
+    IF sy-subrc = 0 .
+      lt_inv-azf01 = itab_017-azf03.
+    ENDIF.
+
+    READ TABLE  itab_017 WITH KEY werks = lt_inv-werks
+                                  azf01 = itab_016-category2.
+    IF sy-subrc = 0 .
+      lt_inv-azf02 = itab_017-azf03.
+    ENDIF.
+
+    READ TABLE  itab_023 WITH KEY matkl = lt_inv-matkl.
+    IF sy-subrc = 0 .
+      lt_inv-wgbez = itab_023-wgbez.
+    ENDIF.
+
+    gt_display-matnr = lt_inv-matnr.
+    gt_display-bu = lt_inv-bukrs.
+    gt_display-werks = lt_inv-werks.
+    gt_display-lgort = lt_inv-lgort.
+    gt_display-charg = lt_inv-charg.
+    gt_display-sobkz = lt_inv-sobkz.
+    gt_display-wbs = lt_inv-pspnr.
+    gt_display-total = lt_inv-labst.
+    gt_display-indicator3 = lt_inv-indicator3.
+    gt_display-depart = lt_inv-depart.
+    gt_display-azf01 = lt_inv-azf01.
+    gt_display-azf02 = lt_inv-azf02.
+    gt_display-matkl = lt_inv-matkl.
+    gt_display-wgbez = lt_inv-wgbez.
+
+*   如果庫存為0,檢查基準日之後是否有異動
+    IF gt_display-total = 0.
+      IF l_baseyear > lt_inv-lfgja OR
+      ( l_baseyear = lt_inv-lfgja AND l_basemonth > lt_inv-lfmon ).
+        CONTINUE.   "基準日期月份之後未異動的不考慮
+      ENDIF.
+    ENDIF.
+*   庫存金額
+    CLEAR:lt_matnr.
+    READ TABLE lt_matnr WITH KEY werks = gt_display-werks
+                                 matnr = gt_display-matnr.
+    IF sy-subrc = 0.
+      gt_display-waers = lt_matnr-waers.
+      IF gt_display-total > 0 AND l_indicator1 = 'Y' AND p_nco = 'X'.
+        gt_display-totval =
+        gt_display-total * lt_matnr-stprs / lt_matnr-peinh.
+      ENDIF.
+    ENDIF.
+*   level合併
+    IF p_bu = 'X'.
+      gt_display-werks = ''.
+      gt_display-lgort = ''.
+      gt_display-charg = ''.
+      gt_display-sobkz = ''.
+      gt_display-wbs = ''.
+      gt_display-indicator3 = ''.
+      gt_display-depart = ''.
+      gt_display-azf01 = ''.
+      gt_display-azf02 = ''.
+      gt_display-matkl = ''.
+      gt_display-wgbez = ''.
+    ELSEIF p_pla = 'X'.
+      gt_display-lgort = ''.
+      gt_display-charg = ''.
+      gt_display-sobkz = ''.
+      gt_display-wbs = ''.
+      gt_display-indicator3 = ''.
+      gt_display-depart = ''.
+      gt_display-azf01 = ''.
+      gt_display-azf02 = ''.
+      gt_display-matkl = ''.
+      gt_display-wgbez = ''.
+    ELSEIF p_loc = 'X'.
+      gt_display-charg = ''.
+      gt_display-sobkz = ''.
+      gt_display-wbs = ''.
+    ENDIF.
+
+    COLLECT gt_display.
+    CLEAR:gt_display.
+  ENDLOOP.
+  REFRESH:lt_inv.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM get_inventory                                            *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM get_inventory.
+  IF p_pd = 'X'.
+    PERFORM get_inventory2.
+  ELSE.
+    PERFORM get_inventory1.
+  ENDIF.
+ENDFORM.
+*---------------------------------------------------------------------*
+*       FORM Global_cache                                             *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM global_cache.
+  DATA:exch_rate LIKE bapi1093_0.
+  DATA: ll_count TYPE i.
+  DATA: ll_date LIKE sy-datum.
+  DATA: ll_jobn LIKE tbtco-jobname.
+  DATA:zglobal LIKE zidpmmaging_glo OCCURS 0 WITH HEADER LINE.
+
+*排程檢查，只能固定排程名稱，才允許存數據
+  IF sy-batch = 'X'.
+    CLEAR ll_jobn.
+    CONCATENATE '%' 'MM_GLOBAL_003C' p_job '%' INTO ll_jobn.
+    ll_date = sy-datum - 2.
+    SELECT COUNT( DISTINCT jobcount ) INTO ll_count FROM tbtco
+    WHERE jobname LIKE ll_jobn
+    AND status = 'R'
+    AND sdlstrtdt > ll_date.
+    IF ll_count <> 1.
+      MESSAGE i004(zmm) WITH 'exist job of active'.
+      STOP.
+    ENDIF.
+  ELSE.
+    MESSAGE i004(zmm) WITH '當前程式不支持手動執行'.
+    STOP.
+  ENDIF.
+
+*全部滿足，則保存
+  IF NOT gt_display[] IS INITIAL.
+    LOOP AT gt_display.
+      MOVE-CORRESPONDING gt_display TO zglobal.
+*      zglobal-transdate = sy-datum.
+      zglobal-transdate = p_date.
+      zglobal-waers1 = 'NTD'.
+      zglobal-transtime = sy-uzeit.
+      zglobal-flag = 'N'.
+*轉換為NDT
+      IF gt_display-value13 <> '0.00'.
+        CALL FUNCTION 'BAPI_EXCHANGERATE_GETDETAIL'
+          EXPORTING
+            rate_type  = 'M'
+            from_curr  = gt_display-waers
+            to_currncy = 'NTD'
+            date       = p_date
+          IMPORTING
+            exch_rate  = exch_rate.
+        zglobal-value13_a = gt_display-value13 * exch_rate-exch_rate.
+      ELSE.
+        zglobal-flag = 'V'.
+      ENDIF.
+      APPEND zglobal.
+      CLEAR:gt_display,zglobal.
+    ENDLOOP.
+*更新表裡
+    MODIFY zidpmmaging_glo FROM TABLE zglobal.
+    IF sy-subrc = 0.
+      WRITE:/ 'Success'.
+    ELSE.
+      WRITE:/ 'Fail'.
+    ENDIF.
+  ENDIF.
+ENDFORM.
+
+FORM get_data_new.
+  DATA:lt_result TYPE zammp0008.
+  DATA:l_level(10)   TYPE c,
+       l_bwarts(100) TYPE c,
+       l_day1        TYPE i,
+       l_day2        TYPE i,
+       l_day3        TYPE i,
+       l_day4        TYPE i,
+       l_day5        TYPE i,
+       l_day6        TYPE i,
+       l_day7        TYPE i,
+       l_day8        TYPE i,
+       l_day9        TYPE i,
+       l_day10       TYPE i,
+       l_day11       TYPE i,
+       l_day12       TYPE i.
+  DATA:ls_display LIKE gt_display.
+  DATA:lo_aging TYPE REF TO zcl_aging.
+
+
+
+  l_day1 = t_day1.
+  l_day2 = t_day2.
+  l_day3 = t_day3.
+  l_day4 = t_day4.
+  l_day5 = t_day5.
+  l_day6 = t_day6.
+  l_day7 = t_day7.
+  l_day8 = t_day8.
+  l_day9 = t_day9.
+  l_day10 = t_day10.
+  l_day11 = t_day11.
+  l_day12 = t_day12.
+
+  IF p_bu = 'X'.
+    l_level = 'PR'.
+  ELSEIF p_pla = 'X'.
+    l_level = 'PL'.
+  ELSEIF p_loc = 'X'.
+    l_level = 'LO'.
+  ELSE.
+    MESSAGE '不支持此層級，請勿勾選性能模式' TYPE 'I'.
+    STOP.
+  ENDIF.
+
+  lo_aging = zcl_aging=>get_instance( ).
+
+  lt_result = lo_aging->get_aging_by_interval(
+      iv_basedate = p_date
+      iv_level = l_level
+      iv_nco = p_nco
+      ir_bukrs = s_bukrs[]
+      ir_werks = s_plant[]
+      ir_lgort = s_sloc[]
+      ir_matnr = s_matnr[]
+      ir_bwart = s_mov[]
+      iv_day1 = l_day1
+      iv_day2 = l_day2
+      iv_day3 = l_day3
+      iv_day4 = l_day4
+      iv_day5 = l_day5
+      iv_day6 = l_day6
+      iv_day7 = l_day7
+      iv_day8 = l_day8
+      iv_day9 = l_day9
+      iv_day10 = l_day10
+      iv_day11 = l_day11
+      iv_day12 = l_day12
+  ).
+
+
+  SELECT l~werks,l~matnr,t~maktx,a~bismt,a~mtart,w~hrkft,c~ekgrp,a~meins,w~bklas,a~matkl
+  FROM @lt_result AS l
+  INNER JOIN mara AS a ON a~matnr = l~matnr
+  INNER JOIN makt AS t ON t~matnr = l~matnr AND t~spras = @sy-langu
+  INNER JOIN marc AS c ON c~matnr = l~matnr AND c~werks = l~werks
+  INNER JOIN mbew AS w ON w~matnr = l~matnr AND w~bwkey = l~werks AND w~bwtar = ''
+  INTO TABLE @DATA(lt_mara).
+  IF sy-subrc <> 0.
+    MESSAGE '根據輸入條件未找到數據' TYPE 'I'.
+    STOP.
+  ENDIF.
+
+  SORT lt_mara BY matnr werks.
+
+  LOOP AT lt_result INTO DATA(ls_result).
+    ls_display = VALUE #(
+    matnr = ls_result-matnr
+    bu = ls_result-prctr
+    werks = ls_result-werks
+    lgort = ls_result-lgort
+    charg = ''
+    sobkz = ''
+    wbs = ''
+    basedate = ls_result-basedate
+    stlevel = COND #( WHEN ls_result-zlevel = 'PR' THEN '3'
+                      WHEN ls_result-zlevel = 'PL' THEN '2'
+                      WHEN ls_result-zlevel = 'LO' THEN '1' ELSE '' )
+    baseon = '1'
+    sttype = ''
+    date_range = ''
+    mov_range = ''
+    fmd = ls_result-fmvd
+    total = ls_result-total_qty
+    totval = ls_result-total_amt
+    qty1 = ls_result-ag_qty1
+    value1 = ls_result-ag_amt1
+    qty2 = ls_result-ag_qty2
+    value2 = ls_result-ag_amt2
+    qty3 = ls_result-ag_qty3
+    value3 = ls_result-ag_amt3
+    qty4 = ls_result-ag_qty4
+    value4 = ls_result-ag_amt4
+    qty5 = ls_result-ag_qty5
+    value5 = ls_result-ag_amt5
+    qty6 = ls_result-ag_qty6
+    value6 = ls_result-ag_amt6
+    qty7 = ls_result-ag_qty7
+    value7 = ls_result-ag_amt7
+    qty8 = ls_result-ag_qty8
+    value8 = ls_result-ag_amt8
+    qty9 = ls_result-ag_qty9
+    value9 = ls_result-ag_amt9
+    qty10 = ls_result-ag_qty10
+    value10 = ls_result-ag_amt10
+    qty11 = ls_result-ag_qty11
+    value11 = ls_result-ag_amt11
+    qty12 = ls_result-ag_qty12
+    value12 = ls_result-ag_amt12
+    qty13 = ls_result-ag_qty13
+    value13 = ls_result-ag_amt13
+    qty_d0 = 0
+    val_d0 = 0
+    qty_d1 = 0
+    val_d1 = 0
+    qty_d2 = 0
+    val_d2 = 0
+    qty_d3 = 0
+    val_d3 = 0
+    qty_d4 = 0
+    val_d4 = 0
+    qty_d5 = 0
+    val_d5 = 0
+    qty_d6 = 0
+    val_d6 = 0
+    qty_d7 = 0
+    val_d7 = 0
+    waers = ls_result-waers
+    stprs = ls_result-avg_price * 1000
+    peinh = 1000
+
+    ).
+
+    READ TABLE lt_mara INTO DATA(ls_mara) WITH KEY matnr = ls_result-matnr
+                                                   werks = ls_result-werks BINARY SEARCH.
+    IF sy-subrc = 0.
+      ls_display-maktx = ls_mara-maktx.
+      ls_display-bismt = ls_mara-bismt.
+      ls_display-mtart = ls_mara-mtart.
+      ls_display-hrkft = ls_mara-hrkft.
+      ls_display-ekgrp = ls_mara-ekgrp.
+      ls_display-meins = ls_mara-meins.
+      ls_display-bklas = ls_mara-bklas.
+      ls_display-matkl = ls_mara-matkl.
+    ENDIF.
+
+    READ TABLE itab_023 WITH KEY matkl = ls_display-matkl.
+    IF sy-subrc = 0 .
+      ls_display-wgbez = itab_023-wgbez.
+    ENDIF.
+
+    IF ls_result-lgort IS NOT INITIAL.
+      READ TABLE itab_016 WITH KEY werks = ls_display-werks lgort = ls_display-lgort.
+      IF sy-subrc = 0.
+        ls_display-indicator3 = itab_016-indicator3.
+        ls_display-depart = itab_016-depart.
+      ENDIF.
+
+      READ TABLE itab_017 WITH KEY werks = ls_display-werks azf01 = itab_016-category1.
+      IF sy-subrc = 0 .
+        ls_display-azf01 = itab_017-azf03.
+      ENDIF.
+
+      READ TABLE itab_017 WITH KEY werks = ls_display-werks azf01 = itab_016-category2.
+      IF sy-subrc = 0 .
+        ls_display-azf02 = itab_017-azf03.
+      ENDIF.
+
+    ENDIF.
+
+    APPEND ls_display TO gt_display.
+  ENDLOOP.
+
+ENDFORM.
