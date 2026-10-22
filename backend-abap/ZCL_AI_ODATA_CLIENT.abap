@@ -15,8 +15,11 @@
 *           不能在网关请求里直接 create_internal: 10-22 部署实锤, 内层请求被
 *           /IWFND/MED/101「ICF 节点不可用」拒绝(403), 外层请求收尾时
 *           /IWCOR/CL_REST_HTTP_HANDLER 166 行 GETWA_NOT_ASSIGNED(500);
-*           SE38 里直接调用正常(没有外层网关请求) —— RFC 新会话就是为了
-*           让内部调用回到「没有外层网关请求」的环境
+*           SE38 里直接调用正常(没有外层网关请求)。机制: 内层请求与外层网关
+*           请求在同一会话里跑, 共用 /IWCOR、/IWFND 的静态数据 —— 内层收尾
+*           CLEAR flow_history(169~173 行)让外层 166 行的 <flow_history> 失效,
+*           内层自己也读到外层状态, 把服务解析成命名空间 /OPU/、服务 odata
+*           (ERROR_LOG 实锤)。RFC 新会话有自己的一份静态数据, 与 SE38 一样
 *         - 超时如实返回, 不重试; 响应超过 iv_max_bytes 拒绝
 *         - HTTP 非 200: 附上服务端原文(OData message / HTML 标题 / 正文前
 *           200 字); 401/403 提示没有权限
@@ -31,9 +34,9 @@
 *         ① 默认通道改为 RFC 新会话(见上), 不再需要 SM59;
 *         ② SM59 通道保留(FIORI_HTTP_DEST 填目标名);
 *         ③ 去掉 URL 通道(FIORI_SELF_URL): 不带凭据只会拿到登录页 401;
-*         ④ 去掉凭据透传与头名诊断: 浏览器登录后靠会话 cookie, 请求里本来
-*            就没有 Authorization 头, 透传永远取不到; 有头时转发的是用户密码,
-*            也不该转发。set_authorization / set_hdr_names 只留空壳, 让现场
+*         ④ 去掉凭据透传与头名诊断: 浏览器发了 Authorization 头, 但 ICF 登录
+*            后不把它交给应用(现场头名清单里没有), 透传取不到; 取到了转发的
+*            也是用户密码, 不该转发。set_authorization / set_hdr_names 只留空壳, 让现场
 *            DPC_EXT 的捕获块照常编译, DPC_EXT 删掉捕获块后可一并删除;
 *         ⑤ 非 200 附服务端原文(现场 V1.2a 的做法, 定位 MED/101 靠它);
 *         ⑥ 新增 PUBLIC http_get(只做一次 HTTP GET, 不选通道、不翻译错误),
@@ -353,7 +356,7 @@ CLASS zcl_ai_odata_client IMPLEMENTATION.
     IF rv IS INITIAL.
       lv_t = iv_body.
       REPLACE ALL OCCURRENCES OF REGEX '<[^>]*>' IN lv_t WITH ` `.
-      REPLACE ALL OCCURRENCES OF REGEX '[\r\n\t]+' IN lv_t WITH ` `.
+      REPLACE ALL OCCURRENCES OF REGEX '\s+' IN lv_t WITH ` `.
       rv = condense( lv_t ).
     ENDIF.
     IF strlen( rv ) > 200.
