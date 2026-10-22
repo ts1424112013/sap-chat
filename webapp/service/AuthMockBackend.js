@@ -10,11 +10,12 @@ sap.ui.define([], function () {
          *   · 失败时和后端一样让调用方看到 Error(消息)：开关未开 / 角色不够 / 校验不过 / 业务拒绝
          *   · BLOCK 只拦自助申请，IT 批量代加不受限
          *   · 映射只允许 CHAR / NUMC / DATS / TIMS 字段；主键必须有明确映射；工厂映射可选
+         *   · 20261022（V1.1）：至少一个 USER 映射；同一种映射可以配给多个字段，写入同一个值
          *   · 开关关闭只拒绝写权限表的操作（申请 / 代加 / 审批 / 撤销）和普通用户查记录，配置照常
          * 演示数据：事务码 ZDPMM051 / ZDPMM052 / ZDPMM702(规则 BLOCK) / ZDEMO001 / ZNOTABLE(无权限表)，
          * 工厂 1000 / 2000 / 3000，账号 DEMOUSER / USERA / USERB 可用、LOCKED 已锁定；
          * 可登记的表 ZIDPPP009(已登记) / ZAUTH_TEST(字段名不同) / YAUTH_SINGLE(没有事务码列) /
-         * ZAUTH_NOPLANT(没有工厂列)。
+         * ZAUTH_NOPLANT(没有工厂列) / ZAUTH_TWIN(两列账号 + 两列事务码，同类映射配多个字段)。
          * 开关：localStorage zaiChat.cfg.AUTH_ENABLED（没设过 = 开，演示方便；设置里的开关会写它）。
          * 以 Object.assign 并入 ChatService（this 即 ChatService）。
          * =====================================================================
@@ -57,12 +58,13 @@ sap.ui.define([], function () {
                                 this._oAuthMock = {
                                         seq: 0,
                                         requests: [],
-                                        rows: { ZIDPPP009: [], ZAUTH_TEST: [], YAUTH_SINGLE: [], ZAUTH_NOPLANT: [] },
+                                        rows: { ZIDPPP009: [], ZAUTH_TEST: [], YAUTH_SINGLE: [], ZAUTH_NOPLANT: [], ZAUTH_TWIN: [] },
                                         catalog: {
                                                 ZIDPPP009: base,
                                                 ZAUTH_TEST: [fld("TCD", true, 20), fld("BNAME", true, 12), fld("PLANT", true, 4), fld("ERDAT", false, 8, "DATE", "DATS")],
                                                 YAUTH_SINGLE: [fld("UNAME", true, 12), fld("WERKS", true, 4)],
-                                                ZAUTH_NOPLANT: [fld("TCODE", true, 20), fld("BNAME", true, 12)]
+                                                ZAUTH_NOPLANT: [fld("TCODE", true, 20), fld("BNAME", true, 12)],
+                                                ZAUTH_TWIN: [fld("TCODE", true, 20), fld("UNAME", true, 12), fld("TCODE_ALT", false, 20), fld("OWNER", false, 12)]
                                         },
                                         tables: {
                                                 ZIDPPP009: { descr: "演示事务码权限表", discover: "X", active: "X",
@@ -139,7 +141,7 @@ sap.ui.define([], function () {
 
                 _mockAuthFields: function (s, name) {
                         if (!/^[ZY][A-Z0-9_]*$/.test(name) || /^ZAI_/.test(name) || name.length > 30 || !s.catalog[name]) {
-                                fail("只能登记 Z / Y 开头的透明表, 且不能是 ZAI_* 系统表, 并且表必须存在(演示只有 ZIDPPP009 / ZAUTH_TEST / YAUTH_SINGLE / ZAUTH_NOPLANT)");
+                                fail("只能登记 Z / Y 开头的透明表, 且不能是 ZAI_* 系统表, 并且表必须存在(演示只有 ZIDPPP009 / ZAUTH_TEST / YAUTH_SINGLE / ZAUTH_NOPLANT / ZAUTH_TWIN)");
                         }
                         return clone(s.catalog[name]);
                 },
@@ -175,8 +177,9 @@ sap.ui.define([], function () {
                                 var t = s.tables[name];
                                 if (t.active !== "X" || t.discover !== "X") { return; }
                                 var tab = svc._mockAuthLoadTable(s, name, true);
-                                var col = tab.fields.filter(function (f) { return f.mapType === "TCODE"; })[0];
-                                if (col && s.rows[name].some(function (r) { return r[col.fieldname] === tcode; })) { out.push(tab); }
+                                // 20261022（V1.1）：TCODE 映射可以有多列，任一列里有这个事务码就算
+                                var cols = tab.fields.filter(function (f) { return f.mapType === "TCODE"; });
+                                if (cols.length && s.rows[name].some(function (r) { return cols.some(function (c) { return r[c.fieldname] === tcode; }); })) { out.push(tab); }
                         });
                         if (!out.length) { fail("该事务码尚未配置权限表，请联系 IT"); }
                         return out;
@@ -430,8 +433,9 @@ sap.ui.define([], function () {
                                 if (f.keyflag === "X" && m.t === "INITIAL") { fail("主键字段 " + m.f + " 必须配置映射(留空不允许)"); }
                                 fmap[m.f] = { t: m.t, c: m.t === "CONST" ? c : "" };
                         });
-                        if (n.USER !== 1 || n.WERKS > 1 || n.TCODE > 1) { fail("必须且只能有一个 USER(目标账号)映射; WERKS、TCODE 映射各最多一个"); }
-                        if (p.Discover === "X" && n.TCODE !== 1) { fail("参与自动发现的表必须有 TCODE 映射"); }
+                        // 20261022（V1.1）：同类映射可以配到多个字段（写入同一个值），只要求至少有一个 USER
+                        if (n.USER < 1) { fail("至少要有一个 USER(目标账号)映射"); }
+                        if (p.Discover === "X" && n.TCODE < 1) { fail("参与自动发现的表必须有 TCODE 映射"); }
                         s.tables[name] = { descr: String(p.Descr || ""), discover: p.Discover === "X" ? "X" : "", active: p.Active === "X" ? "X" : "", fmap: fmap };
                         return { message: "权限表配置已保存", error: "" };
                 },

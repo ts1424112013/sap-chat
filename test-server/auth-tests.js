@@ -215,7 +215,7 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   }
   await rejects('主键字段留空 → 拒绝', svc.authTableSave({ Tabname: 'ZAUTH_TEST', Active: 'X', FmapJson: map(full.map((f) => f.fieldname === 'PLANT' ? Object.assign({}, f, { mapType: 'INITIAL' }) : f)) }), /主键字段 PLANT 必须配置映射/);
   await rejects('漏提交字段 → 拒绝', svc.authTableSave({ Tabname: 'ZAUTH_TEST', Active: 'X', FmapJson: map(full.slice(0, 3)) }), /必须提交每个字段/);
-  await rejects('必须且只能有一个 USER', svc.authTableSave({ Tabname: 'ZAUTH_TEST', Active: 'X', FmapJson: map(full.map((f) => f.fieldname === 'TCD' ? Object.assign({}, f, { mapType: 'USER' }) : f)) }), /只能有一个 USER/);
+  await rejects('没有 USER 映射 → 拒绝', svc.authTableSave({ Tabname: 'ZAUTH_TEST', Active: 'X', FmapJson: map(full.map((f) => f.fieldname === 'BNAME' ? Object.assign({}, f, { mapType: 'CONST', constVal: 'X' }) : f)) }), /至少要有一个 USER/);
   await rejects('参与自动发现必须有 TCODE 映射', svc.authTableSave({ Tabname: 'YAUTH_SINGLE', Discover: 'X', Active: 'X', FmapJson: JSON.stringify([{ f: 'UNAME', t: 'USER', c: '' }, { f: 'WERKS', t: 'WERKS', c: '' }]) }), /TCODE 映射/);
   await rejects('固定值必须填值', svc.authTableSave({ Tabname: 'ZAUTH_TEST', Active: 'X', FmapJson: map(full.map((f) => f.fieldname === 'ERDAT' ? Object.assign({}, f, { mapType: 'CONST', constVal: '' }) : f)) }), /没填值/);
   r = await svc.authTableSave({ Tabname: 'ZAUTH_TEST', Descr: '测试表', Discover: 'X', Active: 'X', FmapJson: map(full) });
@@ -243,7 +243,19 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   as('ADMIN', 'ADMIN');
   r = await svc.authDecide({ ReqId: r.lines[0].reqId, Approve: 'X' });
   check('审批通过后写入', r.lines[0].status === 'DONE');
-  await rejects('工厂映射最多一个', svc.authTableSave({ Tabname: 'ZAUTH_NOPLANT', Active: 'X', FmapJson: JSON.stringify([{ f: 'TCODE', t: 'WERKS', c: '' }, { f: 'BNAME', t: 'WERKS', c: '' }]) }), /只能有一个 USER/);
+  // 20261022（V1.1）：同一种映射可以配给多个字段，写入同一个值；查重 / 自动发现看全部同类字段
+  await rejects('两列都配工厂、没有账号 → 仍按缺 USER 拒绝', svc.authTableSave({ Tabname: 'ZAUTH_NOPLANT', Active: 'X', FmapJson: JSON.stringify([{ f: 'TCODE', t: 'WERKS', c: '' }, { f: 'BNAME', t: 'WERKS', c: '' }]) }), /至少要有一个 USER/);
+  r = await svc.authTableSave({ Tabname: 'ZAUTH_TWIN', Descr: '两列账号 + 两列事务码', Discover: 'X', Active: 'X', FmapJson: JSON.stringify([{ f: 'TCODE', t: 'TCODE', c: '' }, { f: 'UNAME', t: 'USER', c: '' }, { f: 'TCODE_ALT', t: 'TCODE', c: '' }, { f: 'OWNER', t: 'USER', c: '' }]) });
+  check('同一种映射可以配给多个字段（两个 USER、两个 TCODE）', /已保存/.test(r.message), r.message);
+  svc._mockAuthState().rows.ZAUTH_TWIN.push({ TCODE: 'ZOLD', UNAME: 'SOMEONE', TCODE_ALT: 'ZNOTABLE', OWNER: 'SOMEONE' });
+  as('USERA');
+  r = await submit({ Tcode: 'ZNOTABLE', WerksList: '1000' });
+  check('自动发现看全部 TCODE 列：事务码只出现在第二列也能找到表', statuses(r) === 'DONE' && r.lines[0].tabname === 'ZAUTH_TWIN', JSON.stringify(r.lines));
+  const twin = svc._mockAuthState().rows.ZAUTH_TWIN.filter((x) => x.UNAME === 'USERA')[0] || {};
+  check('同类字段写同一个值：两列账号都是 USERA、两列事务码都是 ZNOTABLE', twin.OWNER === 'USERA' && twin.TCODE === 'ZNOTABLE' && twin.TCODE_ALT === 'ZNOTABLE', JSON.stringify(twin));
+  r = await submit({ Tcode: 'ZNOTABLE', WerksList: '1000' });
+  check('再申请 → EXISTS（查重比对全部同类字段）', statuses(r) === 'EXISTS', statuses(r));
+  as('ADMIN', 'ADMIN');
   r = await svc.authTableSave({ Tabname: 'ZAUTH_NOPLANT', Descr: '没有工厂列', Discover: '', Active: 'X', FmapJson: JSON.stringify([{ f: 'TCODE', t: 'TCODE', c: '' }, { f: 'BNAME', t: 'USER', c: '' }]) });
   check('没有工厂列的表也能登记', /已保存/.test(r.message));
   await svc.authRuleSave({ TcodePat: 'ZNOTABLE', Tabname: 'ZAUTH_NOPLANT', RuleMode: 'AUTO', Active: 'X' });
@@ -263,7 +275,7 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   r = await svc.authDecide({ ReqId: r.lines[0].reqId, Approve: 'X' });
   check('审批工厂为空的申请 → 开通', r.lines[0].status === 'DONE', r.lines[0].status + ' ' + r.lines[0].message);
   const cfg = await svc.authConfig();
-  check('配置页能读到已登记的表（含字段映射）和规则', cfg.tables.length === 3 && cfg.tables.some((t) => t.tabname === 'ZAUTH_TEST' && t.fields.some((f) => f.fieldname === 'TCD' && f.mapType === 'TCODE')) && cfg.rules.length >= 4);
+  check('配置页能读到已登记的表（含字段映射）和规则', cfg.tables.length === 4 && cfg.tables.some((t) => t.tabname === 'ZAUTH_TEST' && t.fields.some((f) => f.fieldname === 'TCD' && f.mapType === 'TCODE')) && cfg.tables.some((t) => t.tabname === 'ZAUTH_TWIN' && t.fields.filter((f) => f.mapType === 'USER').length === 2) && cfg.rules.length >= 4, cfg.tables.map((t) => t.tabname).join(','));
 
   console.log('\n━━ 列表分页');
   const all = await svc.authList({ Top: '5', Skip: '0' });

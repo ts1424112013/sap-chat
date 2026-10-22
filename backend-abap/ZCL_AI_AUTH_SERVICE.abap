@@ -20,6 +20,10 @@
 *         查记录照常, 这样可以先配好再打开(部署清单的上线顺序)
 *   · 工厂映射可选: 没有工厂列的权限表也能登记; 写这种表时不论申请了几个
 *     工厂只写一行(记录里工厂留空)
+* V1.1 20261022: 映射约束放宽 —— 有的权限表几个字段要填同一个值(如两列都放账号)。
+*   USER 至少一个(原来必须正好一个), WERKS / TCODE 不限个数; 同类映射的字段写入同一个值,
+*   查重 / 撤销按全部这些字段一起比对(build_row / build_where 本来就逐字段处理);
+*   自动发现在任一 TCODE 列里找到事务码就算(tcode_known 原来只看第一个 TCODE 列)
 * ★ 重贴后核对标记: "INSERT (" 只在 METHOD grant_row, "DELETE FROM (" 只在 METHOD
 *   revoke_row; "SELECT SINGLE * FROM (" 只在 row_exists(查重)与 tcode_known(自动发现, 只读);
 *   有 METHOD quote(不依赖 cl_abap_dyn_prg); decide 内有 'PENDING' 状态校验;
@@ -655,7 +659,6 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
           ls_save     TYPE zai_auth_fmap,
           ls_tab      TYPE zai_auth_tab,
           lv_users    TYPE i,
-          lv_plants   TYPE i,
           lv_tcodes   TYPE i,
           lv_const    TYPE string,
           lv_digits   TYPE string VALUE '0123456789'.
@@ -710,9 +713,7 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
               lv_tcodes = lv_tcodes + 1.
             WHEN 'USER'.
               lv_users = lv_users + 1.
-            WHEN 'WERKS'.
-              lv_plants = lv_plants + 1.
-            WHEN 'CONST' OR 'DATE' OR 'TIME' OR 'BY' OR 'INITIAL'.
+            WHEN 'WERKS' OR 'CONST' OR 'DATE' OR 'TIME' OR 'BY' OR 'INITIAL'.
               " 合法
             WHEN OTHERS.
               rs-error = |字段 { ls_in-f } 的映射类型不合法: { ls_in-t }|.
@@ -759,11 +760,12 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
           APPEND ls_save TO lt_save.
         ENDLOOP.
 
-        IF lv_users <> 1 OR lv_plants > 1 OR lv_tcodes > 1.
-          rs-error = '必须且只能有一个 USER(目标账号)映射; WERKS、TCODE 映射各最多一个'.
+        " V1.1: 同类映射可以配到多个字段(写入同一个值); 只要求至少有一个 USER
+        IF lv_users < 1.
+          rs-error = '至少要有一个 USER(目标账号)映射'.
           RETURN.
         ENDIF.
-        IF iv_discover = 'X' AND lv_tcodes <> 1.
+        IF iv_discover = 'X' AND lv_tcodes < 1.
           rs-error = '参与自动发现的表必须有 TCODE 映射'.
           RETURN.
         ENDIF.
@@ -1307,12 +1309,21 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
           lv_q     TYPE string.
     FIELD-SYMBOLS <found> TYPE any.
 
-    READ TABLE is_table-fields INTO DATA(ls_f) WITH KEY map_type = 'TCODE'.
-    IF sy-subrc <> 0 OR strlen( iv_tcode ) > ls_f-leng OR safe_name( ls_f-fieldname ) = abap_false.
+    " V1.1: TCODE 映射可以有多列, 任一列里有这个事务码就算(列太短 / 名字不合法的跳过)
+    lv_q = quote( iv_tcode ).
+    LOOP AT is_table-fields INTO DATA(ls_f) WHERE map_type = 'TCODE'.
+      IF strlen( iv_tcode ) > ls_f-leng OR safe_name( ls_f-fieldname ) = abap_false.
+        CONTINUE.
+      ENDIF.
+      IF lv_where IS INITIAL.
+        lv_where = |{ ls_f-fieldname } = { lv_q }|.
+      ELSE.
+        lv_where = lv_where && | OR { ls_f-fieldname } = { lv_q }|.
+      ENDIF.
+    ENDLOOP.
+    IF lv_where IS INITIAL.
       RETURN.
     ENDIF.
-    lv_q = quote( iv_tcode ).
-    lv_where = |{ ls_f-fieldname } = { lv_q }|.
     CREATE DATA lr_found TYPE (is_table-tabname).
     ASSIGN lr_found->* TO <found>.
     SELECT SINGLE * FROM (is_table-tabname) INTO @<found> WHERE (lv_where).
