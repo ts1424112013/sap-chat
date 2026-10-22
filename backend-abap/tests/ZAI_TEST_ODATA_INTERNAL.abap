@@ -12,15 +12,20 @@
 *&   P_SELF  离线自测              P_U1..P_U4 URI(太长时依次接着填, 不留空格)
 *&   P_SHAPE FLAT/PIVOT/EXPAND     P_C1..P_C2 SHAPE_CFG JSON(空 = 默认)
 *&   P_ROWS  打印前几行
+*&   P_CHAN  取数通道: 空 = 按配置(与 AI 助手一致: FIORI_HTTP_DEST 空走 RFC
+*&           新会话, 填了走 SM59); RFC / INTERNAL / SM59 目标名 = 强制该通道
+*&           (INTERNAL 在 SE38 里正常, 在网关请求里会 403/500, 只作对照)
 *& URI 怎么来: Fiori 页面按 F12 → Network → $batch 请求的 Payload 里找
 *&   "GET DynamiFIELDSet?$filter=..." 这一行, 在前面补上服务路径
 *&   /sap/opu/odata/sap/ZSD_IDP_001_SRV/ 即可(不带主机名)
 *& 验证项(设计 §4.1): T1 HTTP 200 且 JSON 与 F12 一致; T2 换一个没有该 Fiori
 *&   角色的账号运行应被拒(401/403 或业务报错); T3 转换后的行与 Fiori 页面一致;
 *&   T4 记下耗时与字节数(定 FIORI_TIMEOUT_SEC / FIORI_MAX_BYTES)
-*& 依赖: ZCL_AI_ODATA_CLIENT V1.0 / ZCL_AI_ODATA_SHAPER V1.0(不需要 ZAI_FRPT_* 表)
+*& 依赖: ZCL_AI_ODATA_CLIENT V1.3(get 的 iv_channel) / ZCL_AI_ODATA_SHAPER V1.0
+*&   (不需要 ZAI_FRPT_* 表); 默认通道还需要函数模块 Z_AI_ODATA_GET
 *& 只读: 不写任何表
 *& V1.0 20261020
+*& V1.1 20261022: 新增 P_CHAN(通道对照); 输出里打印实际通道
 *&---------------------------------------------------------------------*
 REPORT zai_test_odata_internal LINE-SIZE 255.
 
@@ -32,7 +37,8 @@ PARAMETERS: p_self  AS CHECKBOX DEFAULT 'X',
             p_shape TYPE c LENGTH 10 DEFAULT 'PIVOT',
             p_c1    TYPE c LENGTH 132 LOWER CASE,
             p_c2    TYPE c LENGTH 132 LOWER CASE,
-            p_rows  TYPE i DEFAULT 10.
+            p_rows  TYPE i DEFAULT 10,
+            p_chan  TYPE c LENGTH 32 LOWER CASE.
 
 CLASS lcl_t DEFINITION FINAL.
   PUBLIC SECTION.
@@ -164,8 +170,11 @@ CLASS lcl_t IMPLEMENTATION.
     WRITE: / '==== 真实调用 ===='.
     WRITE: / '用户:', sy-uname, '  客户端:', sy-mandt.
     WRITE: / 'URI:', lv_uri.
-    ls_resp = zcl_ai_odata_client=>get( iv_uri = lv_uri iv_timeout = 120 iv_max_bytes = 104857600 ).
-    WRITE: / '通道:', ls_resp-channel.
+    ls_resp = zcl_ai_odata_client=>get( iv_uri       = lv_uri
+                                        iv_timeout   = 120
+                                        iv_max_bytes = 104857600
+                                        iv_channel   = condense( p_chan ) ).
+    WRITE: / '通道:', ls_resp-channel, '  (P_CHAN 空 = 按 FIORI_HTTP_DEST 配置)'.
     WRITE: / 'HTTP:', ls_resp-http_code, ls_resp-reason.
     WRITE: / '耗时(毫秒):', ls_resp-elapsed_ms, '  字节:', ls_resp-bytes.
     IF ls_resp-error IS NOT INITIAL.

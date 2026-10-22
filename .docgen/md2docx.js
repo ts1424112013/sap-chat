@@ -566,7 +566,7 @@ const covers = {
     metaLines: [
       "文档编号: 03",
       "更新时间: 2026-10-22",
-      "当前版本: 后端 10-19 合并部署批 + 〇-C 报表执行 ALV 通用采集（待现场验证）",
+      "当前版本: 后端 10-19 合并部署批 + 〇-C ALV 通用采集（10-22 已上线）+ 〇-D 部署修复（Fiori 取数 RFC 新会话，待现场验证）",
       "适用环境: S/4HANA 760 · SAP 网关 client 470（SAP_BASIS 以现场实测为准）",
     ],
     footerLeft: "SAP AI CHAT", footerRight: "docs/03",

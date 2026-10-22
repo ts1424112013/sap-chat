@@ -99,7 +99,7 @@
 
 ## 7. 回退与兼容
 
-- **回退开关**：`ZAI_CHAT_CFG` 键 `REPORT_CAPTURE_LEGACY='X'` → 恢复旧口径（作业直接跑业务报表并下发 `P_RUNID`，要求程序端有 `ai_capture`）。立即生效，无需重新部署。
+- **回退开关**：`ZAI_CHAT_CFG` 键 `RPT_CAPTURE_LEGACY='X'` → 恢复旧口径（作业直接跑业务报表并下发 `P_RUNID`，要求程序端有 `ai_capture`）。立即生效，无需重新部署。（10-22 部署修正：原键名 `REPORT_CAPTURE_LEGACY` 21 字符，超过 `CFGKEY` 的 CHAR 20，OPEN SQL 抛异常导致报表执行 HTTP 500；`ZCL_AI_REPORT_EXEC_SAP` V1.1a 改为现名。）
 - `ZRMM_IDP_0702` 保持现状即可：新口径下不下发 `P_RUNID`，它的 `ai_capture` 因 `P_RUNID` 为空直接返回，不会双写；`P_AICAP='X'` 仍会下发，它的"工厂为空 → `MESSAGE TYPE E`"保护照旧生效。
 - **"改很少量的代码"的情形**：某报表想让"缺必填参数 / 无数据"直接判失败而不是 0 行，只需在程序里加一个 `PARAMETERS p_aicap TYPE c NO-DISPLAY.`，并在对应处 `IF p_aicap = 'X'. MESSAGE '…' TYPE 'E'. ENDIF.`（0702 就是这样，约 5 行）。
 

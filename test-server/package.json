@@ -10,7 +10,8 @@
     "test:protocol": "node task-protocol-tests.js",
     "test:frontend": "node frontend-tests.js",
     "test:auth": "node auth-tests.js",
-    "test:fiori": "node fiori-tests.js"
+    "test:fiori": "node fiori-tests.js",
+    "test:abap": "node abap-static-tests.js"
   },
   "dependencies": {
     "express": "^4.18.2",

@@ -44,15 +44,21 @@
 *         read_result 见元数据行就用其列标题/总行数, 没有(旧程序端落表)走原逻辑;
 *         ③ poll: 作业完成(F)但运行记录 ERROR_CODE=CAPTURE → FAILED(采集阶段
 *         失败原因由运行器写入 ERROR_MESSAGE, 前端步骤条直接显示);
-*         ④ 回退开关 ZAI_CHAT_CFG 键 REPORT_CAPTURE_LEGACY='X' → 仍走旧口径
+*         ④ 回退开关 ZAI_CHAT_CFG 键 RPT_CAPTURE_LEGACY='X'(V1.1a 起) → 仍走旧口径
 *         (直接 SUBMIT 业务报表 + P_RUNID, 要求程序端有 ai_capture);
 *         ⑤ P_AICAP='X' 仍下发(无该参数的程序自动忽略), 程序可选用它把空数据/缺参
 *         的 MESSAGE 升级为 TYPE 'E' 让作业取消; P_RUNID 只在回退口径下发
 *         (新口径下 ZRMM_IDP_0702 的 ai_capture 因 P_RUNID 为空自动失效, 不会双写)
+* V1.1a   20261022: 回退开关键名改为 RPT_CAPTURE_LEGACY(18 字符) —— 原键
+*         REPORT_CAPTURE_LEGACY 21 字符, 超过 ZAI_CHAT_CFG-CFGKEY 的 CHAR 20,
+*         read_cfg_str 的 OPEN SQL 抛 CX_SY_OPEN_SQL_DATA_ERROR, 无人捕获
+*         → StartReportRun 恒报 HTTP 500(10-22 部署实锤: /IWFND/ERROR_LOG
+*         ERROR_INFO "REPORT_CAPTURE_LEGACY 不是 C(20,0) 的有效值");
+*         SM30 输入超长键会被静默截成 20 位, 不会提示。配置键一律 <= 20 字符
 * ★ 重贴后核对标记: JOB_CLOSE 处 strtimmed = 'X'; 两处 JOB_CLOSE 都有
 *   job_was_released = lv_released; 全文无 SUBMIT (iv_program);
 *   read_result 输出以 {"columns": 开头; submit 内有 lv_runner / ZAI_RPT_RUNNER;
-*   PUBLIC SECTION 有 run_captured
+*   PUBLIC SECTION 有 run_captured; submit 内是 read_cfg_str( 'RPT_CAPTURE_LEGACY' )
 *=======================================================================
 CLASS zcl_ai_report_exec_sap DEFINITION
   PUBLIC
@@ -137,8 +143,9 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    " V1.1: 默认走通用 ALV 采集(作业步骤 = ZAI_RPT_RUNNER); LEGACY='X' 回退旧口径
-    lv_legacy = xsdbool( zcl_ai_task_service=>read_cfg_str( 'REPORT_CAPTURE_LEGACY' ) = 'X' ).
+    " V1.1: 默认走通用 ALV 采集(作业步骤 = ZAI_RPT_RUNNER); 回退键='X' 走旧口径
+    " V1.1a: 键名必须 <= 20 字符(CFGKEY CHAR 20), 超长 OPEN SQL 直接抛异常
+    lv_legacy = xsdbool( zcl_ai_task_service=>read_cfg_str( 'RPT_CAPTURE_LEGACY' ) = 'X' ).
     IF lv_legacy = abap_false.
       SELECT SINGLE name FROM trdir
         WHERE name = @lv_runner
