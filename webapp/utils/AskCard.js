@@ -73,10 +73,29 @@ sap.ui.define([
                 var bDate = String(oP.data_type || "").toUpperCase().indexOf("DAT") >= 0;
                 var bMulti = oP.multi_value === true;
                 var sVal = mVals[sId] || "";
-                var fnMk = function (sV, sPh) {
-                        return bDate
-                                ? new DatePicker({ value: sV, valueFormat: "yyyyMMdd", displayFormat: "yyyy-MM-dd", placeholder: sPh || "选择日期", width: "100%" })
+                // 每次编辑就记在消息数据里；范围保留空端点，避免只填“至”后切回来变成“从”。
+                var aDraft = isRange(oP) && !isEnum(oP) ? sVal.split(",") : [sVal];
+                var fnSave = function (iPart, sV) {
+                        aDraft[iPart] = sV || "";
+                        mVals[sId] = oRec.range ? (aDraft[0] || "") + "," + (aDraft[1] || "") : aDraft[0];
+                };
+                var fnMk = function (sV, sPh, iPart) {
+                        iPart = iPart || 0;
+                        // 先设日期格式再设值，避免 UI5 重置校验状态后把未完成的日期显示为空。
+                        var oInput = bDate
+                                ? new DatePicker({ valueFormat: "yyyyMMdd", displayFormat: "yyyy-MM-dd", value: sV, placeholder: sPh || "选择日期", width: "100%" })
                                 : new Input({ value: sV, placeholder: sPh || (bMulti ? "可填多个，用逗号或空格分隔" : ""), width: "100%" });
+                        oInput.attachChange(function (e) { fnSave(iPart, e.getParameter("value")); });
+                        if (bDate) {
+                                // 日期选择器没有 liveChange；同时保存手工输入、尚未失焦的日期草稿。
+                                oInput.attachBrowserEvent("input", function (e) {
+                                        var sDraft = e.target.value || "";
+                                        fnSave(iPart, /^\d{4}-\d{2}-\d{2}$/.test(sDraft) ? sDraft.replace(/-/g, "") : sDraft);
+                                });
+                        } else {
+                                oInput.attachLiveChange(function (e) { fnSave(iPart, e.getParameter("value")); });
+                        }
+                        return oInput;
                 };
                 var oRec = { id: sId, label: oP.label || sId, required: oP.required === true, range: !isEnum(oP) && isRange(oP), multi: bMulti };
                 // 校验失败重绘后保留红框提示（必填且为空）
@@ -100,6 +119,8 @@ sap.ui.define([
                                                                 if (b !== e.getSource()) { b.setPressed(false); }
                                                         });
                                                 }
+                                                mVals[sId] = oRec.enumBtns.filter(function (b) { return b.getPressed(); })
+                                                        .map(function (b) { return b.data("key"); }).join(",");
                                         }
                                 }).data("key", o.key).addStyleClass("askEnumBtn");
                         });
@@ -111,7 +132,7 @@ sap.ui.define([
                 } else if (oRec.range) {
                         var aPart = sVal.split(",");
                         oRec.low = fnMark(fnMk(aPart[0] || "", "从"));
-                        oRec.high = fnMark(fnMk(aPart[1] || "", "至"));
+                        oRec.high = fnMark(fnMk(aPart[1] || "", "至", 1));
                         oCtl = new HBox({ alignItems: "Center", items: [oRec.low, new Text({ text: "—" }).addStyleClass("askRangeSep"), oRec.high] })
                                 .addStyleClass("askRange");
                 } else {

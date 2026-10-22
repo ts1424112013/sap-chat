@@ -143,6 +143,7 @@ sap.ui.define([
                 /** V8：退出登录（清除本地登录态与网关凭据，回到登录框） */
                 onAppLogout: function () {
                         ChatService.appLogout();
+                        this._clearSessionMessages();
                         if (this._oSettingsDialog) {
                                 this._oSettingsDialog.close();
                         }
@@ -183,6 +184,7 @@ sap.ui.define([
                 /** 应用连接设置（由 onModeChange / onOpenSettings 后的手动保存触发） */
                 _applySettings: function () {
                         var oSettings = this.getView().getModel("settings");
+                        this._clearSessionMessages();
                         ChatService.setConfig({
                                 mode: oSettings.getProperty("/mode"),
                                 host: oSettings.getProperty("/host"),

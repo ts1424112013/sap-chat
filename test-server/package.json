@@ -9,6 +9,7 @@
     "test:eval": "node agent-eval-tests.js",
     "test:protocol": "node task-protocol-tests.js",
     "test:frontend": "node frontend-tests.js",
+    "test:sessions": "node session-messages-tests.js",
     "test:auth": "node auth-tests.js",
     "test:fiori": "node fiori-tests.js",
     "test:abap": "node abap-static-tests.js"

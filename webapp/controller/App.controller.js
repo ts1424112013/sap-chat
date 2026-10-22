@@ -27,8 +27,9 @@ sap.ui.define([
         "zai/chat/controller/mixin/AuthPanel",
         "zai/chat/controller/mixin/AuthApprove",
         "zai/chat/controller/mixin/CatalogPanel",
-        "zai/chat/controller/mixin/FioriPanel"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel) {
+        "zai/chat/controller/mixin/FioriPanel",
+        "zai/chat/controller/mixin/SessionMessages"
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages) {
         "use strict";
 
         /**
@@ -58,6 +59,7 @@ sap.ui.define([
          *   AuthApprove   侧栏「权限审批」对话框（20261020）
          *   CatalogPanel  「报表执行」/「Fiori 报表」场景首页的报表目录（20261020）
          *   FioriPanel    Fiori 报表取数、结果与「交给模型分析」（20261020）
+         *   SessionMessages 会话消息缓存与历史恢复
          * 新增方法前先看是否属于这几块；方法名不能与 mixin 重复（后者会覆盖）。
          * =====================================================================
          */
@@ -226,6 +228,7 @@ sap.ui.define([
                                 if (oEv.key === "zaiChat-sapAuth") {
                                         // 其他窗口登录/更换/清除凭据 → 本窗口同步并重建模型
                                         ChatService.reloadAuth();
+                                        that._clearSessionMessages();
                                         if (that.getView().getModel("settings").getProperty("/mode") === "backend") {
                                                 that._loadModels();
                                                 that._refreshSessions();
@@ -747,30 +750,9 @@ sap.ui.define([
 
                 /** 加载当前会话历史（后端模式从 OData 读取） */
                 _loadHistory: function () {
-                        var that = this;
-                        var oChatModel = this.getView().getModel("chat");
-                        var sSession = this.getView().getModel("settings").getProperty("/sessionId");
-
-                        ChatService.getHistory(sSession).then(function (aRows) {
-                                // V12：过期响应守卫 —— 启动恢复期间可能已切到 Agent 任务/其他会话
-                                var oCtxNow = that.getView().getModel("chat").getProperty("/currentSession") || {};
-                                if (oCtxNow.mode === "AGENT" || (oCtxNow.id || "") !== sSession) {
-                                        return;
-                                }
-                                var aEntries = [];
-                                aRows.forEach(function (oRow) {
-                                        aEntries.push(that._buildEntry(oRow.Role, oRow.Content, oRow.CreatedAt, ""));
-                                });
-                                oChatModel.setProperty("/messages", aEntries);
-                                // 有历史 → 对话态；无历史 → 居中大输入框
-                                that._setViewLayout(aEntries.length > 0);
-                                that._scrollToBottom();
-                                // 历史消息中的代码块同样做语法高亮
-                                setTimeout(function () {
-                                        that._highlightCodeBlocks();
-                                }, 150);
-                        }).catch(function (sErr) {
-                                // 历史加载失败不阻断，常见于服务尚未创建
+                        var oCtx = this.getView().getModel("chat").getProperty("/currentSession") || {};
+                        if (!oCtx.id) { return; }
+                        return this._readSessionHistory(oCtx.id, oCtx.mode === "AGENT").catch(function (sErr) {
                                 console.warn("[ChatService] 历史加载失败: " + sErr);
                         });
                 },
@@ -1106,7 +1088,7 @@ sap.ui.define([
                         if (oChat.getProperty("/busy")) {
                                 s = oRB.getText((oChat.getProperty("/currentSession") || {}).mode === "AGENT"
                                         ? "activityAgent" : "activityChat");
-                        } else if (this._oRun && this._oRun.timer) {
+                        } else if (Object.keys(this._mRuns || {}).some(function (k) { return this._mRuns[k].timer; }, this)) {
                                 s = oRB.getText("activityReport");
                         }
                         oChat.setProperty("/activityText", s);
@@ -1496,6 +1478,7 @@ sap.ui.define([
                         var oChat = this.getView().getModel("chat");
                         var oSettings = this.getView().getModel("settings");
                         var sMode = oCtx.mode === "AGENT" ? "AGENT" : "CHAT";
+                        this._activateSessionMessages(oCtx.id || "", sMode);
                         oChat.setProperty("/currentSession", {
                                 id: oCtx.id || "",
                                 mode: sMode,
@@ -1643,33 +1626,12 @@ sap.ui.define([
                 },
 
                 /**
-                  * 加载会话历史并渲染（V13：AGENT 也是连续对话语义 ——
-                  * 用户消息按普通气泡展示；历史回读无过程摘要数据，仅本轮实时回复附思考卡）
+                  * 优先恢复本页缓存；首次打开或普通回复被中断时回读后端并合并本地卡片。
                   */
                 _loadHistoryFor: function (sSid, bAgentTask) {
-                        var that = this;
                         this._releaseBusy();
-                        ChatService.getHistory(sSid).then(function (aRows) {
-                                // 过期响应守卫：会话已被再次切换时丢弃本次结果
-                                var oCtxNow = that.getView().getModel("chat").getProperty("/currentSession") || {};
-                                if ((oCtxNow.id || "") !== sSid) {
-                                        return;
-                                }
-                                var oRB = that._rb();
-                                var aEntries = [];
-                                aRows.forEach(function (oRow) {
-                                        var oEntry = that._buildEntry(oRow.Role, oRow.Content, oRow.CreatedAt, "");
-                                        if (bAgentTask && oRow.Role === "assistant") {
-                                                oEntry.sender = oRB.getText("agentSender");   // Agent 回复署名
-                                        }
-                                        aEntries.push(oEntry);
-                                });
-                                that.getView().getModel("chat").setProperty("/messages", aEntries);
-                                that._setViewLayout(bAgentTask ? true : aEntries.length > 0);
-                                that._scrollToBottom();
-                                setTimeout(function () {
-                                        that._highlightCodeBlocks();
-                                }, 150);
+                        return this._readSessionHistory(sSid, bAgentTask).catch(function (sErr) {
+                                console.warn("[ChatService] 历史加载失败: " + sErr);
                         });
                 },
 
@@ -2505,15 +2467,20 @@ sap.ui.define([
                   */
                 _forgetSession: function (sSid) {
                         var oSettings = this.getView().getModel("settings");
-                        if (this._oRun && this._oRun.sessionId === sSid && this._oRun.timer) {
-                                this._stopRun("stopped");
-                        }
+                        Object.keys(this._mRuns || {}).forEach(function (k) {
+                                var oRun = this._mRuns[k];
+                                if (oRun.sessionId === sSid) {
+                                        this._stopRun("stopped", oRun);
+                                        delete this._mRuns[k];
+                                }
+                        }, this);
                         if (this._mFocusArt) {
                                 delete this._mFocusArt[sSid];
                         }
                         if (this.getView().getModel("session").getProperty("/currentId") === sSid) {
                                 this._startNewSession();
                         }
+                        if (this._mSessionMessages) { delete this._mSessionMessages[sSid]; }
                         // 另一模式记住的会话也可能就是它（列表只显示当前模式，正常不会发生）
                         ["CHAT", "AGENT"].forEach(function (sMode) {
                                 if (this._mModeSession[sMode] === sSid) {
@@ -3031,6 +2998,11 @@ sap.ui.define([
                         var oChatModel = this.getView().getModel("chat");
                         // 通过重新赋值触发列表刷新（数组 push 不会自动通知）
                         oChatModel.setProperty("/messages", oChatModel.getProperty("/messages").slice());
+                        var oState = this._sessionMessageState(this._sMessagesSession);
+                        if (oState) {
+                                oState.loaded = true;
+                                oState.version++;
+                        }
                 },
 
                 /**
@@ -3277,11 +3249,23 @@ sap.ui.define([
                 },
 
                 /** V16：顶栏任务徽标（模块 · 状态；短编号放悬浮提示） */
-                _setTaskBadge: function (sModule, sStatus, sTaskId) {
+                _setTaskBadge: function (sModule, sStatus, sTaskId, sSid) {
                         var oChat = this.getView().getModel("chat");
-                        oChat.setProperty("/taskBadge", this._taskModuleLabel(sModule) + " · " + this._taskStatusText(sStatus));
-                        oChat.setProperty("/taskBadgeState", this._taskStateColor(sStatus));
-                        oChat.setProperty("/taskBadgeTip", this._rb().getText("taskBadgeTip", [String(sTaskId || "").substring(0, 8)]));
+                        var sBadge = this._taskModuleLabel(sModule) + " · " + this._taskStatusText(sStatus);
+                        var sState = this._taskStateColor(sStatus);
+                        var sTip = this._rb().getText("taskBadgeTip", [String(sTaskId || "").substring(0, 8)]);
+                        if (sSid && sSid !== this._sMessagesSession) {
+                                var oState = this._sessionMessageState(sSid);
+                                if (oState) {
+                                        oState.taskBadge = sBadge;
+                                        oState.taskBadgeState = sState;
+                                        oState.taskBadgeTip = sTip;
+                                }
+                                return;
+                        }
+                        oChat.setProperty("/taskBadge", sBadge);
+                        oChat.setProperty("/taskBadgeState", sState);
+                        oChat.setProperty("/taskBadgeTip", sTip);
                 },
 
                 /**
@@ -3377,8 +3361,10 @@ sap.ui.define([
                 },
 
                 /** V16：按 uid 找消息条目（不依赖下标） */
-                _entryByUid: function (sUid) {
-                        var aMsgs = this.getView().getModel("chat").getProperty("/messages") || [];
+                _entryByUid: function (sUid, sSid) {
+                        var oState = sSid ? this._sessionMessageState(sSid) : null;
+                        var aMsgs = sSid ? ((oState && oState.messages) || []) :
+                                (this.getView().getModel("chat").getProperty("/messages") || []);
                         for (var i = 0; i < aMsgs.length; i++) {
                                 if (aMsgs[i].uid === sUid) {
                                         return { entry: aMsgs[i], index: i };
@@ -3556,6 +3542,7 @@ sap.ui.define([
                 _submitReportFromCard: function (sUid, oAsk, oPick) {
                         var that = this;
                         var oRB = this._rb();
+                        var oState = this._sessionMessageState(oAsk.sessionId);
                         if (oAsk.fiori) {
                                 this._fioriSubmit(sUid, oAsk, oPick);   // 20261020：Fiori 报表同步取数（FioriPanel）
                                 return;
@@ -3576,6 +3563,7 @@ sap.ui.define([
                                 paramsJson: JSON.stringify(oPick.values || {}),
                                 clientRequestId: this._newSessionId()
                         }).then(function (oRes) {
+                                if (!oState || that._sessionMessageState(oAsk.sessionId) !== oState) { return; }
                                 if (!oRes || oRes.needsInput || oRes.rejected || !oRes.reportRunId) {
                                         oAsk.state = "open";
                                         oAsk.error = (oRes && oRes.message) ||
@@ -3649,16 +3637,17 @@ sap.ui.define([
                                 return;
                         }
                         if (sAct === "run-refresh" || sAct === "run-stop") {
-                                if (!this._oRun || this._oRun.uid !== sUid) {
+                                var oRun = this._runByUid(sUid);
+                                if (!oRun) {
                                         MessageToast.show(this._rb().getText("runNotTracked"));
                                         return;
                                 }
                                 if (sAct === "run-stop") {
-                                        this._stopRun("stopped");
-                                } else if (this._oRun.timer) {
-                                        this._pollRun();
+                                        this._stopRun("stopped", oRun);
+                                } else if (oRun.timer) {
+                                        this._pollRun(oRun);
                                 } else {
-                                        this._resumeRun();
+                                        this._resumeRun(oRun);
                                 }
                                 return;
                         }
@@ -3836,5 +3825,5 @@ sap.ui.define([
                 hasText: function (s) {
                         return !!(s && s.length);
                 }
-        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel));
+        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages));
 });

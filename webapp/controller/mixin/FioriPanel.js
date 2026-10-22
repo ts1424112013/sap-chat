@@ -25,6 +25,7 @@ sap.ui.define([
                 _fioriSubmit: function (sUid, oAsk, oPick) {
                         var that = this;
                         var oRB = this._rb();
+                        var oState = this._sessionMessageState(oAsk.sessionId);
                         if (oPick.missing && oPick.missing.length) {
                                 oAsk.error = oRB.getText("askMissing", [oPick.missing.join(oRB.getText("listSep"))]);
                                 this._renderAsk(sUid);
@@ -41,6 +42,7 @@ sap.ui.define([
                                 paramsJson: JSON.stringify(oPick.values || {}),
                                 clientRequestId: this._newSessionId()
                         }).then(function (oRes) {
+                                if (!oState || that._sessionMessageState(oAsk.sessionId) !== oState) { return; }
                                 var aSum = (oAsk.params || []).map(function (p) {
                                         var v = (oPick.values || {})[p.param_id];
                                         return v ? (p.label || p.param_id) + " " + AskCard.valueDisplay(p, v) : "";
@@ -50,17 +52,12 @@ sap.ui.define([
                                         ? oRB.getText("fioriFetchedWith", [aSum.join(oRB.getText("listSepComma"))])
                                         : oRB.getText("fioriFetched");
                                 that._renderAsk(sUid);
-                                var oChat = that.getView().getModel("chat");
-                                var oNow = oChat.getProperty("/currentSession") || {};
-                                if ((oNow.id || "") !== oAsk.sessionId) {
-                                        return;   // 已切换会话：不把结果写进其他会话
-                                }
                                 // 结果登记成功时后端已把任务置为完成 → 顶栏徽标同步
-                                var oCur = oChat.getProperty("/currentTask");
+                                var oCur = oState.currentTask;
                                 if (oRes.artifactId && oCur && oCur.taskId === oAsk.taskId) {
                                         oCur.status = "COMPLETED";
                                         oCur.needsInput = false;
-                                        that._setTaskBadge(oCur.module || "FIORI", "COMPLETED", oCur.taskId);
+                                        that._setTaskBadge(oCur.module || "FIORI", "COMPLETED", oCur.taskId, oAsk.sessionId);
                                 }
                                 that._fioriPushResult(oRes, oAsk.sessionId);
                         }).catch(function (oErr) {
@@ -75,6 +72,7 @@ sap.ui.define([
                         var that = this;
                         var oRB = this._rb();
                         var oEntry = this._pushReportResult(oRes, oRes.runId, {
+                                sessionId: sSessionId,
                                 text: function (iTotal, oDs) {
                                         return oRB.getText("fioriResultText", [oRes.label || oRes.reportId || "", iTotal,
                                                 oDs.truncated ? oRB.getText("runResultSample", [oDs.rows.length]) : "",
@@ -92,7 +90,7 @@ sap.ui.define([
                                         oE.runHtml = that._fioriGateHtml(oE);
                                 }
                         });
-                        if (oRes.artifactId) {
+                        if (oEntry && oRes.artifactId) {
                                 this._mFocusArt = this._mFocusArt || {};
                                 this._mFocusArt[sSessionId] = oRes.artifactId;
                         }
