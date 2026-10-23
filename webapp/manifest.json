@@ -75,6 +75,9 @@
                                 },
                                 {
                                         "uri": "css/style-gale.css"
+                                },
+                                {
+                                        "uri": "css/style-skills.css"
                                 }
                         ]
                 },

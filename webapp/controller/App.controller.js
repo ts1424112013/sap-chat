@@ -28,8 +28,9 @@ sap.ui.define([
         "zai/chat/controller/mixin/AuthApprove",
         "zai/chat/controller/mixin/CatalogPanel",
         "zai/chat/controller/mixin/FioriPanel",
-        "zai/chat/controller/mixin/SessionMessages"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages) {
+        "zai/chat/controller/mixin/SessionMessages",
+        "zai/chat/controller/mixin/SkillPanel"
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel) {
         "use strict";
 
         /**
@@ -201,6 +202,7 @@ sap.ui.define([
 
                         // ---------- 输入框回车发送（居中大输入框 + 底部输入框共用，Shift+Enter 换行） ----------
                         var fnEnter = function (oEvent) {
+                                if (that._skillPopover && that._skillPopover.isOpen()) { return; }
                                 // 229 = 输入法组合中；isComposing 防止拼音回车误发送
                                 if (oEvent.isComposing || oEvent.keyCode === 229) {
                                         return;
@@ -788,6 +790,11 @@ sap.ui.define([
                         // ---------- V12/V13：按当前会话模式分流 ----------
                         var oCtx = oChatModel.getProperty("/currentSession") || {};
                         if (oCtx.mode === "AGENT") {
+                                if (!this._skillSendReady()) { return; }
+                                if (/^\/[^\n]*$/.test(sText) && this._skillModel().getProperty("/canPick")) {
+                                        this._openSkills(this.byId(oChatModel.getProperty("/heroVisible") ? "heroInput" : "msgInput"), true);
+                                        return;
+                                }
                                 this._sendAgentMessage(sText);
                         } else {
                                 this._sendChatMessage(sText);
@@ -831,6 +838,8 @@ sap.ui.define([
                         if (oAtt) {
                                 sMeta = oRB.getText("attachMeta", [oAtt.name, oAtt.sizeText]);
                         }
+                        var oSkill = this._skillModel().getProperty("/selected");
+                        if (oSkill) { sMeta = (sMeta ? sMeta + " · " : "") + "技能：" + oSkill.name + " v" + oSkill.version; }
                         this._executeSend({
                                 mode: "AGENT",
                                 agentType: oCtx.agentType || "",
@@ -991,7 +1000,8 @@ sap.ui.define([
                                 // 20261011：本会话最近就绪的报表结果，供"分析一下这个结果"（后端校验归属/状态）
                                 focusedArtifactId: bAgent ? ((this._mFocusArt || {})[sSessionId] || "") : "",
                                 // 20261011：会话场景（新会话首条消息写入后端，之后以后端为准）
-                                scene: bAgent ? this._normScene(oCfg.agentType) : ""
+                                scene: bAgent ? this._normScene(oCfg.agentType) : "",
+                                skillId: bAgent ? this._skillRequestId() : ""
                         });
 
                         return pReq.then(function (oRes) {
@@ -1546,6 +1556,7 @@ sap.ui.define([
                         // 20261011：场景选择条 + 按场景过滤模型下拉
                         this._renderScenePicker();
                         this._syncModelList();
+                        this._syncSkills();
                 },
 
                 /** 当前浏览的工作区（"CHAT" | "AGENT"） */
@@ -1709,6 +1720,8 @@ sap.ui.define([
                         } else if (oFinished.status === "STOPPED") {
                                 return oRB.getText("stopped");
                         }
+                        var oSkillTrace = oFinished.phases.filter(function (t) { return t.phase === "SKILL"; })[0];
+                        if (oSkillTrace) { sBase += " · " + oSkillTrace.label; }
                         return sPrefix ? sPrefix + " · " + sBase : sBase;
                 },
 
@@ -2656,6 +2669,7 @@ sap.ui.define([
                         var oSc = bAgent ? this._sceneDef(this._curScene()) : null;
                         // 20261020：「报表执行」「Fiori 报表」首页是报表目录（CatalogPanel），不再放示例按钮
                         this._renderCatalog();
+                        if (bAgent && this._skillHeroCards(oField)) { return; }
                         var aList = (bAgent && this._catScene(oSc.key)) ? [] : bAgent
                                 ? ((oSc && oSc.chips.length)
                                         ? oSc.chips.map(function (s) { return { title: s, prompt: s }; })
@@ -3311,6 +3325,7 @@ sap.ui.define([
                                 tcode: (oPendingObj && oPendingObj.tcode) || ""
                         };
                         oChatModel.setProperty("/currentTask", oTask);
+                        this._adoptSkillTask();
                         this._setTaskBadge(oTask.module, oTask.status, oTask.taskId);
                         var oEntry = (oChatModel.getProperty("/messages") || [])[iAssistantIdx];
                         var oRB = this._rb();
@@ -3825,5 +3840,5 @@ sap.ui.define([
                 hasText: function (s) {
                         return !!(s && s.length);
                 }
-        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages));
+        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel));
 });

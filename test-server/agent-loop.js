@@ -10,6 +10,7 @@
 
 const axios = require('axios');
 const mockTools = require('./mock-tools');
+const Skills = require('../webapp/utils/SkillCatalog');
 
 const LLM_API_KEY = process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || 'your-key-here';
 const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
@@ -137,12 +138,22 @@ async function callLLM(messages) {
 /**
  * Agent 主循环
  */
-async function runAgent(question) {
+async function runAgent(question, options = {}) {
   const startTime = Date.now();
-  const domain = matchDomain(question);
+  const scene = options.scene || '';
+  const skillId = options.skillId || '';
+  const skill = skillId && skillId !== 'NONE' ? Skills.builtin.find(s => s.id === skillId) : null;
+  if (skillId && skillId !== 'NONE' && (!skill || !Skills.available(skill, scene, options.isAdmin === true))) {
+    throw new Error('技能不存在、不可见或不适用于当前场景');
+  }
+  const domain = scene === 'DATA' || scene === 'CODE' ? scene :
+    (scene === 'REPORT' || scene === 'FIORI' ? 'GENERAL' : matchDomain(question));
   const domainCard = getDomainCard(domain);
-  const tools = mockTools.getToolsForDomain(domain);
-  const trace = [];
+  const tools = mockTools.getToolsForDomain(domain).filter(t => !skill || !skill.tools.length || skill.tools.includes(t.id));
+  const trace = skill ? [{phase: 'SKILL', label: `使用技能：${skill.name} v${skill.version}`, status:'OK'}] : [];
+  const maxRounds = skill ? Math.min(MAX_ROUNDS, skill.maxRounds) : MAX_ROUNDS;
+  const requestLLM = options.callLLM || callLLM;
+  const executeTool = options.executeTool || mockTools.execute;
 
   // 工具清单写入 prompt（对照 ZCL_AI_AGENT_SERVICE 860-913 行的 lv_tools 拼接）
   const toolLines = tools.length > 0
@@ -158,6 +169,8 @@ async function runAgent(question) {
   const systemPrompt = `你是 SAP 业务助手。当前问题属于【${domain}】领域。
 
 ${domainCard}
+
+${skill ? Skills.card(skill) : ''}
 
 【可用工具】
 ${toolLines}
@@ -186,7 +199,7 @@ ${toolLines}
   let repaired = false;   // 协议修复重试只允许一次（对照 ABAP 计划书 P1-2 / lv_repaired）
   let protocolError = '';
 
-  while (round < MAX_ROUNDS && (Date.now() - startTime) < BUDGET_MS) {
+  while (round < maxRounds && (Date.now() - startTime) < BUDGET_MS) {
     round++;
     console.log(`\n=== 第 ${round} 轮 ===`);
 
@@ -199,7 +212,7 @@ ${toolLines}
     }
 
     // 调用模型
-    const assistantMsg = await callLLM(messages);
+    const assistantMsg = await requestLLM(messages);
     messages.push(assistantMsg);
 
     // 协议解析（宽松提取，对照 ZCL_AI_AGENT_GUARD::parse_model_json）
@@ -248,6 +261,11 @@ ${toolLines}
 
     // 执行工具（action=tool，兼容旧版 continue）
     if (parsed.tool) {
+      if (!tools.some(t => t.id === parsed.tool)) {
+        trace.push({phase:'TOOL_DECISION', label:'已拦截范围外工具', status:'REJECTED'});
+        protocolError = `工具 ${parsed.tool} 不在场景与技能的可执行交集中`;
+        break;
+      }
       console.log(`执行工具: ${parsed.tool}`, parsed.args);
 
       let toolResult;
@@ -266,10 +284,10 @@ ${toolLines}
             : null
         };
         if (toolResult.status === 'PENDING') {
-          toolResult = await mockTools.execute(parsed.tool, parsed.args || {});
+          toolResult = await executeTool(parsed.tool, parsed.args || {});
         }
       } else {
-        toolResult = await mockTools.execute(parsed.tool, parsed.args || {});
+        toolResult = await executeTool(parsed.tool, parsed.args || {});
         if (parsed.tool === 'describe_table' && toolResult.status === 'OK') {
           describedTables.add(String(parsed.args?.table || '').toUpperCase());
         }

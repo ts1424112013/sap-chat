@@ -7,8 +7,9 @@ sap.ui.define([
         "zai/chat/service/TraceService",
         "zai/chat/service/MockBackend",
         "zai/chat/service/AuthMockBackend",
-        "zai/chat/service/FioriMockBackend"
-], function (Log, ODataModel, Filter, FilterOperator, Sorter, TraceService, MockBackend, AuthMockBackend, FioriMockBackend) {
+        "zai/chat/service/FioriMockBackend",
+        "zai/chat/service/SkillService"
+], function (Log, ODataModel, Filter, FilterOperator, Sorter, TraceService, MockBackend, AuthMockBackend, FioriMockBackend, SkillService) {
         "use strict";
 
         /**
@@ -273,7 +274,7 @@ sap.ui.define([
                                 urlParameters: { "$top": "200" }
                         }).then(function (oData) {
                                 var aRows = (oData && oData.results) || [];
-                                return aRows.reverse();
+                                return Service._skillHistory(sSessionId, aRows.reverse());
                         });
                 },
 
@@ -407,6 +408,9 @@ sap.ui.define([
                   * @returns {Promise<{answer, status, elapsedMs, rounds, message, modelId, trace, analysis}>}
                   */
                 sendAgent: function (oPayload) {
+                        if (oPayload.skillId && oPayload.skillId !== "NONE") {
+                                return Promise.reject(new Error("技能请求必须使用 AnalyzeTask，不能降级到旧 Agent 接口"));
+                        }
                         if (this._sConfig.mode === "mock") {
                                 return this._mockSendAgent(oPayload);
                         }
@@ -488,10 +492,12 @@ sap.ui.define([
                   */
                 sendTask: function (oPayload) {
                         if (this._sConfig.mode === "mock") {
-                                // 演示模式：无任务后端，走旧 mock Agent（任务字段为空）
-                                return this._mockSendAgent(oPayload);
+                                return this._mockSendSkillTask(oPayload);
                         }
                         if (this._taskApiAvailable === false) {
+                                if (oPayload.skillId && oPayload.skillId !== "NONE") {
+                                        return Promise.reject(new Error("后端尚未部署技能接口，请取消技能后重试"));
+                                }
                                 return this.sendAgent(oPayload);
                         }
                         var that = this;
@@ -508,6 +514,11 @@ sap.ui.define([
                         // 未加时不发，后端按"自动"处理，不会因多余参数报错）
                         if (oPayload.scene && this._fiHasParam("AnalyzeTask", "Scene")) {
                                 mParams.Scene = oPayload.scene;
+                        }
+                        if (this._fiHasParam("AnalyzeTask", "SkillId")) {
+                                mParams.SkillId = oPayload.skillId || "";
+                        } else if (oPayload.skillId && oPayload.skillId !== "NONE") {
+                                return Promise.reject(new Error("后端不支持技能，请取消技能后重试"));
                         }
                         return this._prepareQuestion(oPayload.question).then(function (sQuestion) {
                           mParams.Question = sQuestion;
@@ -545,7 +556,8 @@ sap.ui.define([
                                                 var sMsg = that._fmtError(oError);
                                                 var bNotFound = (oError && oError.statusCode === 404) ||
                                                         /未知.*函数导入|not found|HTTP 404/i.test(sMsg);
-                                                if (bNotFound && that._taskApiAvailable !== true) {
+                                                if (bNotFound && that._taskApiAvailable !== true &&
+                                                        (!oPayload.skillId || oPayload.skillId === "NONE")) {
                                                         that._taskApiAvailable = false;
                                                         // 已暂存过的长文本直接用引用，不再存一次
                                                         that.sendAgent(Object.assign({}, oPayload, { question: sQuestion })).then(fnResolve, fnReject);
@@ -994,7 +1006,8 @@ sap.ui.define([
                                         // 20261011：会话中正在看的报表结果（"分析一下这个结果"），后端校验归属
                                         focusedArtifactId: o.focusedArtifactId || "",
                                         // 20261011：会话场景（仅新会话首条消息生效，后端以库内为准）
-                                        scene: o.scene || ""
+                                        scene: o.scene || "",
+                                        skillId: o.skillId || ""
                                 });
                         }
                         return this.send({
@@ -1578,7 +1591,7 @@ sap.ui.define([
         };
 
         // 20261011（FE-09）：演示模式实现在 service/MockBackend（mixin，_mock* 等方法）
-        Object.assign(Service, MockBackend, AuthMockBackend, FioriMockBackend);
+        Object.assign(Service, MockBackend, AuthMockBackend, FioriMockBackend, SkillService);
 
         return Service;
 });

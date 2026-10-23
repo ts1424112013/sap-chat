@@ -125,6 +125,7 @@
 * ★ 重贴后核对标记: 有 zcl_ai_fiori_report_service=>agent_turn( 调用与
 *   ls_fturn-kind; agent_model_allowed 内有 'AGENT_MODELS_FIORI'
 *=======================================================================
+* V15.5 20261023: 技能选择/任务沿用、做法卡、工具交集执行护栏与快照审计。
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -189,6 +190,8 @@ CLASS zcl_ai_agent_service DEFINITION
                 iv_model_id   TYPE string
                 iv_focus_artifact_id TYPE string OPTIONAL  " V15.1: 前端聚焦的报表结果(候选值)
                 iv_scene      TYPE string OPTIONAL  " V15.2: 新会话场景(已有会话以库内为准)
+                iv_skill_id   TYPE string OPTIONAL  " 空=沿用, NONE=取消
+                iv_task_id    TYPE string OPTIONAL  " 技能上下文候选, 必须校验归属
       EXPORTING es_result     TYPE ty_agent_result.
 
   PRIVATE SECTION.
@@ -244,6 +247,7 @@ CLASS zcl_ai_agent_service DEFINITION
     " 输出协议(system prompt 的机器可执行部分)
     CLASS-METHODS build_protocol_prompt
       IMPORTING iv_domain     TYPE string
+                is_skill      TYPE zcl_ai_skill_service=>ty_skill OPTIONAL
       RETURNING VALUE(rv)     TYPE string.
 
     " 近期对话上下文(各截断 gc_ctx_chars 字符, 仅 user/assistant)
@@ -390,6 +394,18 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       RETURN.
     ENDIF.
 
+    DATA: ls_skill TYPE zcl_ai_skill_service=>ty_skill, lv_skill_err TYPE string.
+    zcl_ai_skill_service=>resolve(
+      EXPORTING iv_id = iv_skill_id iv_scene = lv_scene iv_session_id = iv_session_id iv_task_id = iv_task_id
+      IMPORTING es_skill = ls_skill ev_error = lv_skill_err ).
+    IF lv_skill_err IS NOT INITIAL.
+      es_result-status = 'DENIED'.
+      es_result-message = lv_skill_err.
+      es_result-answer = lv_skill_err.
+      es_result-trace_json = '[]'.
+      RETURN.
+    ENDIF.
+
     " ---------------- 0. 领域路由 + 模型 + 预算 ----------------
     DATA(lv_domain) = zcl_ai_domain_cards=>match_domain( iv_question ).
     " V15.2: 显式场景固定工具域(不再按关键词猜); AUTO 保持 match_domain
@@ -440,6 +456,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       es_result-message = lv_ens_err.
       RETURN.
     ENDIF.
+
+    zcl_ai_skill_service=>bind( iv_session_id = iv_session_id iv_task_id = iv_task_id is_skill = ls_skill ).
 
     " ---------------- V15(P1): 任务层(开关 TASK_CONTEXT_ENABLED, 默认关闭) ----------------
     " 旁路新增: 开关关闭时本段全部跳过, 旧链路行为不变。
@@ -790,11 +808,23 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       ENDIF.
     ENDIF.
 
+    zcl_ai_skill_service=>bind( iv_session_id = iv_session_id iv_task_id = ls_task-task_id is_skill = ls_skill ).
+    IF ( lv_scene = 'REPORT' OR lv_scene = 'FIORI' ) AND lv_art_mode = abap_false.
+      CLEAR ls_skill. " 只记住选择, 没有已获准的结果时不把做法送入模型
+    ENDIF.
+
     DATA(lv_max_rounds) = read_cfg_int( iv_key = 'AGENT_MAX_ROUNDS' iv_default = gc_max_rounds
                                         iv_min = 2 iv_max = 10 ).   " V1.3.1: 上限 6→10(与默认 gc_max_rounds=10 对齐, 20261006)
     DATA(lv_budget_ms)  = read_cfg_int( iv_key = 'AGENT_BUDGET_SEC' iv_default = gc_budget_ms / 1000
                                         iv_min = 30 iv_max = 180 ) * 1000.   " V1.3.1: 上限 120→180(与默认 180s 对齐, 20261006)
 
+    IF ls_skill-id IS NOT INITIAL.
+      lv_max_rounds = nmin( val1 = lv_max_rounds val2 = ls_skill-max_rounds ).
+      APPEND VALUE #( phase = 'SKILL' label = |使用技能：{ ls_skill-name } v{ ls_skill-version }|
+                      status = 'OK' elapsed_ms = 0 ) TO lt_trace.
+    ENDIF.
+    DATA(lt_allowed_tools) = zcl_ai_tool_registry=>get_tools_for_domain( lv_domain ).
+    zcl_ai_skill_service=>filter_tools( EXPORTING is_skill = ls_skill CHANGING ct_tools = lt_allowed_tools ).
     DATA lv_run_id TYPE c LENGTH 32.
     CALL FUNCTION 'GUID_CREATE' IMPORTING ev_guid_32 = lv_run_id.
     GET RUN TIME FIELD lv_t0.
@@ -812,7 +842,13 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
     CLEAR ls_msg.
     ls_msg-role    = 'system'.
-    ls_msg-content = build_protocol_prompt( lv_domain ).
+    IF ls_skill-id IS NOT INITIAL.
+      ls_msg-content = zcl_ai_skill_service=>card( ls_skill ).
+      APPEND ls_msg TO lt_messages.
+      CLEAR ls_msg.
+      ls_msg-role = 'system'.
+    ENDIF.
+    ls_msg-content = build_protocol_prompt( iv_domain = lv_domain is_skill = ls_skill ).
     APPEND ls_msg TO lt_messages.
 
     " V15(P1): 上下文按任务组装(01 计划 §6.1) —— 开启任务层且任务存在时,
@@ -883,7 +919,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         EXIT.
       ENDIF.
 
-      lv_round += 1.
+      lv_round = lv_round + 1.
 
       " ---- 最后一轮: 强制收口(必须在自查清单通过后 final) ----
       IF lv_round = lv_max_rounds.
@@ -971,6 +1007,13 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
          AND zcl_ai_tool_registry=>is_registered( ls_out-tool ) <> abap_true.
         lv_perr = |未注册的工具: { ls_out-tool }|.
         lv_protocol_ok = abap_false.
+      ENDIF.
+      IF lv_protocol_ok = abap_true AND ls_out-action = 'tool'
+         AND NOT line_exists( lt_allowed_tools[ tool_id = ls_out-tool ] ).
+        lv_protocol_ok = abap_false.
+        lv_perr = |工具 { ls_out-tool } 不在当前场景与技能的可执行交集中|.
+        APPEND VALUE #( phase = 'TOOL_DECISION' label = '已拦截范围外工具'
+                        status = 'REJECTED' elapsed_ms = 0 ) TO lt_trace.
       ENDIF.
       IF lv_protocol_ok = abap_false.
         " ---- 非法输出: 仅允许一次修复重试(计划书 P1-2) ----
@@ -1467,6 +1510,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                 iv_status     = es_result-status
                 iv_ms         = lv_total_ms
                 it_trace      = lt_trace ).
+    zcl_ai_skill_service=>audit( iv_run_id = CONV string( lv_run_id ) iv_session_id = iv_session_id
+      iv_task_id = ls_task-task_id is_skill = ls_skill iv_user_seq = lv_pre_seq_i + 1 ).
 
     COMMIT WORK.
 
@@ -1815,6 +1860,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     CLEAR: lv_tools, lv_params.
 
     DATA(lt_tools) = zcl_ai_tool_registry=>get_tools_for_domain( iv_domain ).
+    zcl_ai_skill_service=>filter_tools( EXPORTING is_skill = is_skill CHANGING ct_tools = lt_tools ).
 
     LOOP AT lt_tools INTO DATA(ls_tool).
       IF ls_tool-tool_id = zcl_ai_tool_registry=>gc_tool_data_analysis.
@@ -2122,7 +2168,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     "      label 已是口径级摘要并经长度清洗, 不含明细/敏感数据) ----
     DATA lv_step_no TYPE numc4.
     LOOP AT it_trace INTO DATA(ls_t).
-      lv_step_no += 1.
+      lv_step_no = lv_step_no + 1.
       INSERT zai_agent_step FROM @(
         VALUE #( mandt      = sy-mandt
                  run_id     = iv_run_id

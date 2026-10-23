@@ -37,6 +37,9 @@ sap.ui.define([
                                 });
                                 this._oEvalDialog.setModel(this._oEvalModel, "eval");
                         }
+                        this._oEvalModel.setProperty("/skillId", "");
+                        this._oEvalModel.setProperty("/skillLabel", "");
+                        this._oEvalModel.setProperty("/skillScenes", []);
                         this._loadEvalCases().then(function () {
                                 that._evalIdleStatus();
                         });
@@ -109,7 +112,8 @@ sap.ui.define([
                         }
                         var sScene = oM.getProperty("/scene");
                         var aCases = ((this._oEvalCases && this._oEvalCases.cases) || []).filter(function (c) {
-                                return sScene === "ALL" || c.scene === sScene;
+                                return (sScene === "ALL" || c.scene === sScene) &&
+                                        (!oM.getProperty("/skillId") || (oM.getProperty("/skillScenes") || []).indexOf(c.scene) >= 0);
                         });
                         if (!aCases.length) {
                                 MessageToast.show(this._rb().getText("evalNoCases"));
@@ -131,6 +135,9 @@ sap.ui.define([
                                 sceneSupported: bScene,
                                 caseVersion: (this._oEvalCases.source || "") + " " + (this._oEvalCases.version || ""),
                                 caseCount: aCases.length,
+                                skillId: oM.getProperty("/skillId") || "",
+                                skillLabel: oM.getProperty("/skillLabel") || "",
+                                skillVersion: oM.getProperty("/skillVersion") || 0,
                                 results: []
                         };
                         AgentEval.run({
@@ -139,7 +146,9 @@ sap.ui.define([
                                 modelId: this._oEvalRun.modelId,
                                 sceneSupported: bScene,
                                 // 调用通道：与用户相同（ChatService.sendTask → AnalyzeTask；后端无新接口时自动回退 AnalyzeAgent）
-                                send: function (oPayload) { return ChatService.sendTask(oPayload); },
+                                send: function (oPayload) {
+                                        return ChatService.sendTask(Object.assign({}, oPayload, {skillId: that._oEvalRun.skillId || "NONE"}));
+                                },
                                 del: function (sSid) { return ChatService.deleteSession(sSid); },
                                 newId: this._newSessionId.bind(this),
                                 cleanup: oM.getProperty("/cleanup") === true,

@@ -12,7 +12,7 @@ sap.ui.define([], function () {
          * 题目格式见 model/evalCases.json；expect 只对最后一轮生效，
          * 所有轮次都要求状态不为 ERROR（除非 expect.status 另行规定）。
          */
-        var SCENE_TEXT = { REPORT: "报表执行", DATA: "数据分析", INVENTORY: "库存查询", CODE: "代码分析", AUTO: "自动" };
+        var SCENE_TEXT = { REPORT: "报表执行", FIORI: "Fiori 报表", DATA: "数据分析", INVENTORY: "库存查询", CODE: "代码分析", AUTO: "自动" };
 
         function normScene(s) {
                 var v = String(s || "").toUpperCase();
@@ -295,6 +295,7 @@ sap.ui.define([], function () {
                                 "- 模型：" + (oRun.modelId || "AUTO") + "；每题次数：" + (oRun.repeat || 1) +
                                         "；后端场景参数：" + (oRun.sceneSupported ? "已支持" : "未支持（场景用例跳过，其余按自动场景运行）"),
                                 "- 题库：" + (oRun.caseVersion || "") + "，共 " + (oRun.caseCount || 0) + " 题",
+                                "- 技能：" + (oRun.skillLabel ? oRun.skillLabel + "（选择时版本；实际执行见各轮 Trace）" : "未使用"),
                                 "",
                                 "## 汇总",
                                 "",

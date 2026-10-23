@@ -119,7 +119,7 @@ app.post('/AnalyzeAgent', async (req, res) => {
   console.log(`======================================`);
 
   try {
-    const result = await runAgent(question);
+    const result = await runAgent(question, {scene: req.body.scene || "", skillId: req.body.skill_id || ""});
 
     // 返回 OData JSON 格式（对照后端 ty_agent_result）
     res.json({
@@ -193,7 +193,7 @@ app.post('/AnalyzeTask', async (req, res) => {
   const pick = taskStore.pickOrCreate(session_id || MOCK_SESSION, route.task_id,
     route.module_id, route.intent_code, question, MOCK_USER);
   try {
-    const result = await runAgent(question);
+    const result = await runAgent(question, {scene: req.body.scene || "", skillId: req.body.skill_id || ""});
     const task = pick.task_id ? taskStore.getOwned(pick.task_id, session_id || MOCK_SESSION, MOCK_USER) : null;
     if (task) {
       const sts = result.status === 'OK' ? 'COMPLETED' : (result.status === 'TIMEOUT' ? 'PARTIAL' : 'FAILED');

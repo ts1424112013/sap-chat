@@ -247,6 +247,12 @@
                                                         </VBox>
                                                 </VBox>
                                         </IconTabFilter>
+                                        <IconTabFilter icon="sap-icon://learning-assistant" text="技能" key="skills" visible="{settings>/isAdmin}">
+                                                <VBox class="sapUiSmallMargin" renderType="Bare">
+                                                        <Text text="维护 Agent 的做法、适用场景和工具范围；保存后版本自动增加。"/>
+                                                        <Button text="管理技能" press=".onOpenSkillManager" type="Emphasized" class="sapUiSmallMarginTop"/>
+                                                </VBox>
+                                        </IconTabFilter>
                                 </items>
                         </IconTabBar>
                 </content>

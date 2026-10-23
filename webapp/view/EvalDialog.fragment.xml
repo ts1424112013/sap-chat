@@ -16,11 +16,13 @@
                         <VBox class="sapUiSmallMargin">
                                 <Text text="{i18n>evalIntro}" wrapping="true" class="hintText"/>
 
+                                <Text text="{= '本次使用技能：' + ${eval>/skillLabel} }" visible="{= !!${eval>/skillLabel} }" class="hintText"/>
                                 <HBox alignItems="Center" wrap="Wrap" class="evalBar">
                                         <Label text="{i18n>evalScene}" class="evalLbl"/>
-                                        <Select selectedKey="{eval>/scene}" width="9rem" enabled="{= !${eval>/running} }">
+                                        <Select selectedKey="{eval>/scene}" width="9rem" enabled="{= !${eval>/running} &amp;&amp; !${eval>/skillId} }">
                                                 <core:Item key="ALL" text="{i18n>evalSceneAll}"/>
                                                 <core:Item key="REPORT" text="报表执行"/>
+                                                <core:Item key="FIORI" text="Fiori 报表"/>
                                                 <core:Item key="DATA" text="数据分析"/>
                                                 <core:Item key="INVENTORY" text="库存查询"/>
                                                 <core:Item key="CODE" text="代码分析"/>

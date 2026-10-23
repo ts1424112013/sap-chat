@@ -129,6 +129,7 @@
 *   安全: 后端是事实源 —— 未登记报表/未开开关/归属不符一律拒绝;
 *   前端不能决定权限、白名单、报表存在性与运行成功与否
 *=======================================================================
+* V15.8 20261023: SkillList / SkillSave / AnalyzeTask.SkillId; 技能上下文只信本人任务。
 CLASS zcl_zai_chat_dpc_ext DEFINITION
   PUBLIC
   INHERITING FROM zcl_zai_chat_dpc
@@ -281,6 +282,34 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
     ENDIF.
 
     CASE to_upper( iv_action_name ).
+      WHEN 'SKILLLIST'.
+        DATA: ls_sk_list TYPE zcl_ai_skill_service=>ty_list, lv_sk_error TYPE string,
+              ls_sk_reply TYPE ty_generic_result.
+        zcl_ai_skill_service=>list(
+          EXPORTING iv_scene = v8_param( it_parameter = it_parameter iv_name = 'Scene' )
+                    iv_session_id = v8_param( it_parameter = it_parameter iv_name = 'SessionId' )
+                    iv_task_id = v8_param( it_parameter = it_parameter iv_name = 'TaskId' )
+                    iv_include_inactive = xsdbool( v8_param( it_parameter = it_parameter iv_name = 'IncludeInactive' ) = 'X' )
+          IMPORTING es_list = ls_sk_list ev_error = lv_sk_error ).
+        ls_sk_reply-success = COND #( WHEN lv_sk_error IS INITIAL THEN 'X' ELSE '' ).
+        ls_sk_reply-message = lv_sk_error.
+        ls_sk_reply-result_json = /ui2/cl_json=>serialize( data = ls_sk_list
+          pretty_name = /ui2/cl_json=>pretty_mode-camel_case compress = abap_false ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata( ls_sk_reply ) CHANGING cr_data = er_data ).
+
+      WHEN 'SKILLSAVE'.
+        DATA: ls_sk_saved TYPE zcl_ai_skill_service=>ty_skill, lv_sk_json TYPE string.
+        lv_sk_json = v8_param( it_parameter = it_parameter iv_name = 'Payload' ).
+        IF lv_sk_json CP '@@ZAI_TEXT:*'. lv_sk_json = resolve_text( lv_sk_json ). ENDIF.
+        CLEAR: ls_sk_reply, lv_sk_error.
+        zcl_ai_skill_service=>save( EXPORTING iv_json = lv_sk_json
+          IMPORTING es_skill = ls_sk_saved ev_error = lv_sk_error ).
+        ls_sk_reply-success = COND #( WHEN lv_sk_error IS INITIAL THEN 'X' ELSE '' ).
+        ls_sk_reply-message = lv_sk_error.
+        ls_sk_reply-result_json = /ui2/cl_json=>serialize( data = ls_sk_saved
+          pretty_name = /ui2/cl_json=>pretty_mode-camel_case compress = abap_false ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata( ls_sk_reply ) CHANGING cr_data = er_data ).
+
 
       " ===============================================================
       " V15.4: 事务码权限自助申请(9 个 FI; 服务内部再校验开关与角色)
@@ -420,6 +449,7 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
           EXPORTING iv_session_id = lv_session
                     iv_question   = lv_question
                     iv_model_id   = lv_model
+                    iv_skill_id   = 'NONE' " 旧接口不隐式继承新入口的技能
           IMPORTING es_result     = ls_agent ).
 
         copy_data_to_ref( EXPORTING is_data  = to_agent_odata( ls_agent )
@@ -554,14 +584,16 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
               lv_at_tid TYPE string,
               lv_at_rid TYPE string,
               lv_at_fid TYPE string,
+              lv_at_skill TYPE string,
               lv_at_scn TYPE string.   " V15.2: 会话场景
-        CLEAR: lv_at_tid, lv_at_rid, lv_at_fid, lv_at_scn.
+        CLEAR: lv_at_tid, lv_at_rid, lv_at_fid, lv_at_scn, lv_at_skill.
         LOOP AT it_parameter INTO ls_param.
           CASE to_upper( ls_param-name ).
             WHEN 'TASKID'.            lv_at_tid = ls_param-value.
             WHEN 'CLIENTREQUESTID'.   lv_at_rid = ls_param-value.
             WHEN 'FOCUSEDARTIFACTID'. lv_at_fid = ls_param-value.
             WHEN 'SCENE'.             lv_at_scn = ls_param-value.   " V15.2
+            WHEN 'SKILLID'.           lv_at_skill = ls_param-value.
           ENDCASE.
         ENDLOOP.
 
@@ -572,11 +604,19 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
                     iv_model_id          = lv_model
                     iv_focus_artifact_id = lv_at_fid
                     iv_scene             = lv_at_scn
+                    iv_task_id           = lv_at_tid
+                    iv_skill_id          = lv_at_skill
           IMPORTING es_result            = ls_atask ).
+
+        IF ls_atask-status <> 'DENIED' AND ls_atask-status <> 'ERROR'.
+          zcl_ai_skill_service=>copy_context( iv_session_id = lv_session
+            iv_from_task = lv_at_tid iv_to_task = ls_atask-task_id ).
+        ENDIF.
 
         " 显式指定 TaskId 且与后端解析一致时以显式为准(归属已校验);
         " 不一致以后端为准(后端是事实源)
-        IF lv_at_tid IS NOT INITIAL AND ls_atask-task_id IS INITIAL.
+        IF lv_at_tid IS NOT INITIAL AND ls_atask-task_id IS INITIAL
+           AND ls_atask-status <> 'DENIED' AND ls_atask-status <> 'ERROR'.
           " 后端未启用任务层时原样回显候选值(前端据此降级)
           ls_atask-task_id = lv_at_tid.
         ENDIF.

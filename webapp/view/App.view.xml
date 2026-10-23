@@ -149,6 +149,7 @@
                                                                                 placeholder="{chat>/heroPh}"
                                                                                 valueLiveUpdate="true"
                                                                                 value="{chat>/input}"
+                                                                                liveChange=".onSkillInputChange"
                                                                                 class="chatInput"/>
                                                                         <!-- V9.3：附件回显行（已选附件名 + 移除），默认隐藏；
                                                                              V13：Agent 模式附件作为任务上下文，同样支持 -->
@@ -171,6 +172,16 @@
                                                                                                 tooltip="{i18n>roleManage}" press=".onOpenRoleManage" class="roleMngBtn"/>
                                                                                 </HBox>
                                                                                 <!-- 20261020：模型选择（会话级，每个对话各自记住；对话 / Agent 两模式都显示） -->
+                                                                                <HBox alignItems="Center" class="skillSlot" visible="{skill>/visible}">
+                                                                                        <Button id="skillBtnHero" text="{skill>/label}" icon="sap-icon://learning-assistant" type="Transparent"
+                                                                                                tooltip="{skill>/hint}" enabled="{= ${skill>/canPick} &amp;&amp; !${chat>/busy} }" press=".onOpenSkills" class="skillPill"/>
+                                                                                        <Button icon="sap-icon://refresh" type="Transparent" tooltip="重新读取技能" press=".onRefreshSkills"
+                                                                                                visible="{= !!${skill>/error} }" enabled="{= !${chat>/busy} }" class="skillClear"/>
+                                                                                        <Button icon="sap-icon://decline" type="Transparent" tooltip="取消技能" press=".onClearSkill"
+                                                                                                visible="{= !!${skill>/selected} }" enabled="{= !${chat>/busy} }" class="skillClear"/>
+                                                                                        <Button icon="sap-icon://hint" type="Transparent" tooltip="查看做法" press=".onViewSkill"
+                                                                                                visible="{= !!${skill>/selected} }" class="skillClear"/>
+                                                                                </HBox>
                                                                                 <Button id="modelBtnHero" icon="sap-icon://ai" text="{chat>/currentModelName}" tooltip="{i18n>modelPickTip}"
                                                                                         type="Transparent" press=".onOpenModelPicker" class="modelPill"/>
                                                                                 <!-- V9.3：文本附件上传 + 发送；
@@ -190,6 +201,7 @@
                                                                                 </HBox>
                                                                         </HBox>
                                                                 </VBox>
+                                                                <Text text="{skill>/hint}" visible="{skill>/visible}" class="skillHint"/>
                                                                 <!-- V16：建议标签（输入卡下方一行，点击填入输入框；替代原漂浮泡泡，
                                                                      对话 = 快捷指令，Agent = 示例问题；控制器 _renderHeroBubbles 渲染） -->
                                                                 <HBox id="bubbleField" class="heroChips" wrap="Wrap" justifyContent="Center"/>
@@ -228,6 +240,7 @@
                                                                                 placeholder="{chat>/inputPh}"
                                                                                 valueLiveUpdate="true"
                                                                                 value="{chat>/input}"
+                                                                                liveChange=".onSkillInputChange"
                                                                                 class="chatInput"/>
                                                                         <!-- V9.3：附件回显行（V12：仅对话模式显示，控制器统一同步） -->
                                                                         <HBox id="attachRowDock" visible="false" alignItems="Center" class="attachRow">
@@ -249,6 +262,16 @@
                                                                                                 tooltip="{i18n>roleManage}" press=".onOpenRoleManage" class="roleMngBtn"/>
                                                                                 </HBox>
                                                                                 <!-- 20261020：模型选择（会话级） -->
+                                                                                <HBox alignItems="Center" class="skillSlot" visible="{skill>/visible}">
+                                                                                        <Button id="skillBtnDock" text="{skill>/label}" icon="sap-icon://learning-assistant" type="Transparent"
+                                                                                                tooltip="{skill>/hint}" enabled="{= ${skill>/canPick} &amp;&amp; !${chat>/busy} }" press=".onOpenSkills" class="skillPill"/>
+                                                                                        <Button icon="sap-icon://refresh" type="Transparent" tooltip="重新读取技能" press=".onRefreshSkills"
+                                                                                                visible="{= !!${skill>/error} }" enabled="{= !${chat>/busy} }" class="skillClear"/>
+                                                                                        <Button icon="sap-icon://decline" type="Transparent" tooltip="取消技能" press=".onClearSkill"
+                                                                                                visible="{= !!${skill>/selected} }" enabled="{= !${chat>/busy} }" class="skillClear"/>
+                                                                                        <Button icon="sap-icon://hint" type="Transparent" tooltip="查看做法" press=".onViewSkill"
+                                                                                                visible="{= !!${skill>/selected} }" class="skillClear"/>
+                                                                                </HBox>
                                                                                 <Button id="modelBtnDock" icon="sap-icon://ai" text="{chat>/currentModelName}" tooltip="{i18n>modelPickTip}"
                                                                                         type="Transparent" press=".onOpenModelPicker" class="modelPill"/>
                                                                                 <!-- V9.3：文本附件上传（V13：Agent 模式保留 —— 附件作为任务上下文拼入提问）
@@ -266,6 +289,7 @@
                                                                                         <Button id="sendBtn" icon="sap-icon://paper-plane" press=".onSend" type="Emphasized" tooltip="{i18n>send}" class="sendBtn"/>
                                                                                 </HBox>
                                                                         </HBox>
+                                                                        <Text text="{skill>/hint}" visible="{skill>/visible}" class="skillHint"/>
                                                                 </VBox>
                                                         </HBox>
                                                 </VBox>

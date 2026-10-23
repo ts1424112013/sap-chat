@@ -1,0 +1,38 @@
+/* Agent skills. Existing theme tokens keep light/dark behavior aligned. */
+.skillSlot { gap: 2px; flex-shrink: 0; }
+.skillPill .sapMBtnInner { border: 1px solid var(--line) !important; border-radius: 999px !important;
+    background: transparent !important; color: var(--text-2) !important; font-size: .78rem; height: 31px; min-height: 31px; }
+.skillPill .sapMBtnContent { line-height: 29px; }
+.skillPill .sapMBtnIcon { color: inherit !important; line-height: 29px; }
+.skillPill.skillSelected .sapMBtnInner { color: var(--accent) !important; background: var(--accent-soft) !important; border-color: var(--accent) !important; }
+.skillClear .sapMBtnInner { min-width: 26px; height: 28px; min-height: 28px; border: 0 !important; border-radius: 50%; background: transparent !important; }
+.skillClear .sapMBtnIcon { color: var(--text-2); line-height: 26px; font-size: .8rem; }
+.skillHint { color: var(--sub) !important; font-size: .73rem !important; line-height: 1.6; max-width: 820px; margin: 7px 0 0; }
+.skillPickerBody { padding: 12px; gap: 8px; background: var(--surface); }
+.skillPopover .sapMPopoverCont, .skillPopover .sapMPopoverScroll { background: var(--surface) !important; }
+.skillPopover .sapMList, .skillPopover .sapMLIB { background: var(--surface); }
+.skillRow { border-radius: 10px; padding: 11px !important; border-bottom: 0 !important; }
+.skillRow:hover, .skillRowFocused { background: var(--accent-soft) !important; }
+.skillRowTitle { color: var(--text) !important; font-size: .86rem !important; font-weight: 600; }
+.skillRowDescription { color: var(--text-2) !important; font-size: .78rem !important; margin: 4px 0; line-height: 1.5; }
+.skillRowTools, .skillFootnote { color: var(--sub) !important; font-size: .72rem !important; line-height: 1.6; }
+.skillNotice { padding: 8px; border-radius: 8px; background: var(--accent-soft); color: var(--text-2) !important; font-size: .75rem !important; }
+.skillHeroCard .sapMBtnInner { max-width: 240px; }
+.skillAdminLayout { gap: 12px; background: var(--surface); }
+.skillAdminSidebar { flex: 0 0 18rem; border-right: 1px solid var(--line); }
+.skillAdminEditor { flex: 1 1 22rem; min-width: 0; padding: 16px; gap: 6px; box-sizing: border-box; }
+.skillAdminEditor > .sapMLabel:not(:first-child) { margin-top: 8px; }
+[data-theme="dark"] .skillPopover .sapMText, [data-theme="dark"] .skillPopover .sapMTitle { color: var(--text); }
+[data-theme="dark"] .skillPopover .sapMBar { background: var(--surface) !important; }
+[data-theme="dark"] .skillPopover .sapMSFF { background: var(--surface) !important; border-color: var(--line-strong) !important; }
+[data-theme="dark"] .skillPopover .sapMSFI { color: var(--text) !important; }
+@media(max-width: 600px) { .skillAdminSidebar { flex-basis: 100%; width: 100% !important; border-right: 0; }
+    .skillHint { max-width: 100%; } .skillPickerBody { padding: 8px; } }
+
+[data-theme="dark"] .skillPopover .sapMDialogFooter .sapMTB,
+[data-theme="dark"] .skillPopover .sapMDialogFooter .sapMIBar,
+[data-theme="dark"] .skillPopover .sapMPopoverFooter .sapMIBar {
+    background: var(--surface) !important; border-color: var(--line) !important;
+}
+.skillPill .sapMBtnInner { max-width: 10rem; }
+.skillPill .sapMBtnContent { max-width: 8rem; overflow: hidden; text-overflow: ellipsis; }

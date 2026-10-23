@@ -565,8 +565,8 @@ const covers = {
     englishLabel: "BACKEND IMPLEMENTATION",
     metaLines: [
       "文档编号: 03",
-      "更新时间: 2026-10-22",
-      "当前版本: 后端 10-19 合并部署批 + 〇-C ALV 通用采集（10-22 已上线）+ 〇-D 部署修复（Fiori 取数 RFC 新会话，待现场验证）",
+      "更新时间: 2026-10-24",
+      "当前版本: 既有合并部署及修复 + 〇-E 规则字段映射 + 〇-F Agent 技能入口（待 SAP 验收）",
       "适用环境: S/4HANA 760 · SAP 网关 client 470（SAP_BASIS 以现场实测为准）",
     ],
     footerLeft: "SAP AI CHAT", footerRight: "docs/03",
@@ -577,8 +577,8 @@ const covers = {
     englishLabel: "FRONTEND IMPLEMENTATION",
     metaLines: [
       "文档编号: 04",
-      "更新时间: 2026-10-22",
-      "当前版本: 前端 10-19 合并部署批 + 〇-C 10-22 前端修复包（权限对话框 · 设置 · 发送键）",
+      "更新时间: 2026-10-24",
+      "当前版本: 既有合并部署及修复 + 〇-D 规则字段映射 + 〇-E Agent 技能入口（待 SAP 联调）",
       "适用环境: S/4HANA 760 · SAP 网关 client 470（SAP_BASIS 以现场实测为准）",
     ],
     footerLeft: "SAP AI CHAT", footerRight: "docs/04",
@@ -586,7 +586,9 @@ const covers = {
 };
 
 (async () => {
+  const only = process.argv.slice(2);
   for (const [name, cfg] of Object.entries(covers)) {
+    if (only.length && !only.includes(name)) continue;
     const md = fs.readFileSync(path.join(DOCS, name + ".md"), "utf-8");
     const doc = buildDoc(md, cfg);
     const buf = await Packer.toBuffer(doc);

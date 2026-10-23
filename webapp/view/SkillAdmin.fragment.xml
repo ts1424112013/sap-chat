@@ -1,0 +1,67 @@
+<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
+    <Dialog title="技能管理" contentWidth="64rem" contentHeight="36rem" stretchOnPhone="true" class="settingsDlg skillAdminDialog" busy="{skillAdmin>/saving}">
+        <content>
+            <HBox class="skillAdminLayout" wrap="Wrap" alignItems="Start">
+                <VBox width="18rem" class="skillAdminSidebar">
+                    <Toolbar>
+                        <Title text="技能目录" level="H4"/>
+                        <ToolbarSpacer/>
+                        <Button icon="sap-icon://refresh" tooltip="刷新目录" press=".onRefreshSkillAdmin"/>
+                        <Button icon="sap-icon://add" tooltip="新建技能" press=".onNewSkill"/>
+                    </Toolbar>
+                    <List items="{skillAdmin>/items}" mode="SingleSelectMaster" selectionChange=".onEditSkill" noDataText="暂无技能，可以导入内置示例">
+                        <StandardListItem title="{skillAdmin>name}" description="{= ${skillAdmin>id} + ' · v' + ${skillAdmin>version} }"
+                            info="{= ${skillAdmin>active} ? '启用' : '停用' }" infoState="{= ${skillAdmin>active} ? 'Success' : 'None' }"/>
+                    </List>
+                    <Button text="导入缺少的内置技能" icon="sap-icon://download" press=".onImportBuiltinSkills" class="sapUiSmallMargin"/>
+                    <Text text="只补缺少的编号，保留已经维护的内容。" class="sapUiSmallMargin"/>
+                </VBox>
+                <VBox class="skillAdminEditor" visible="{= !!${skillAdmin>/edit} }">
+                    <MessageStrip text="{skillAdmin>/error}" type="Error" showIcon="true" visible="{= !!${skillAdmin>/error} }"/>
+                    <Label text="技能编号" required="true"/>
+                    <Input value="{skillAdmin>/edit/id}" maxLength="32" editable="{= !${skillAdmin>/edit/version} }" placeholder="例如 CODE_PERFORMANCE"/>
+                    <Label text="名称" required="true"/>
+                    <Input value="{skillAdmin>/edit/name}" maxLength="60"/>
+                    <Label text="一句话说明" required="true"/>
+                    <Input value="{skillAdmin>/edit/description}" maxLength="200"/>
+                    <Label text="适用场景" required="true"/>
+                    <MultiComboBox width="100%" selectedKeys="{skillAdmin>/edit/scenes}">
+                        <items>
+                            <core:Item key="CODE" text="代码分析"/><core:Item key="DATA" text="数据分析"/>
+                            <core:Item key="REPORT" text="报表结果分析"/><core:Item key="FIORI" text="Fiori 结果分析"/>
+                        </items>
+                    </MultiComboBox>
+                    <Label text="工具子集"/>
+                    <MultiComboBox width="100%" selectedKeys="{skillAdmin>/edit/tools}">
+                        <items>
+                            <core:Item key="read_program_source" text="读源码"/><core:Item key="describe_table" text="表结构"/>
+                            <core:Item key="search_tables" text="找表"/><core:Item key="run_sql" text="只读 SQL"/>
+                            <core:Item key="sap_data_analysis" text="受控数据分析"/>
+                        </items>
+                    </MultiComboBox>
+                    <Text text="留空时使用场景原有工具。报表与 Fiori 结果分析不使用工具。" class="skillFootnote"/>
+                    <Label text="输入提示"/>
+                    <Input value="{skillAdmin>/edit/placeholder}" maxLength="200"/>
+                    <Label text="做法正文（最多 3000 字）" required="true"/>
+                    <TextArea value="{skillAdmin>/edit/body}" maxLength="3000" rows="10" width="100%" valueLiveUpdate="true"
+                        placeholder="步骤、业务口径、输出格式、自查清单"/>
+                    <HBox wrap="Wrap" alignItems="Center" class="sapUiSmallMarginTop">
+                        <Label text="最大轮数" labelFor="skillMaxRounds"/>
+                        <StepInput id="skillMaxRounds" value="{skillAdmin>/edit/maxRounds}" min="2" max="10" width="7rem"/>
+                        <Select selectedKey="{skillAdmin>/edit/visibility}"><items>
+                            <core:Item key="PUBLIC" text="所有已开通用户"/><core:Item key="ADMIN" text="仅管理员"/>
+                        </items></Select>
+                        <Label text="启用"/>
+                        <Switch state="{skillAdmin>/edit/active}"/>
+                    </HBox>
+                    <Text text="保存后生成新版本。运行记录保留当时的做法快照。" class="skillFootnote sapUiSmallMarginTop"/>
+                </VBox>
+            </HBox>
+        </content>
+        <buttons>
+            <Button text="保存技能" type="Emphasized" press=".onSaveSkill" enabled="{= !!${skillAdmin>/edit} &amp;&amp; !${skillAdmin>/saving} }"/>
+            <Button text="用测评用例试跑" icon="sap-icon://play" press=".onEvalSkill" enabled="{= !!${skillAdmin>/edit/version} &amp;&amp; !${skillAdmin>/saving} }"/>
+            <Button text="关闭" press=".onCloseSkillManager"/>
+        </buttons>
+    </Dialog>
+</core:FragmentDefinition>

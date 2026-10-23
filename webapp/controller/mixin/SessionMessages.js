@@ -6,6 +6,9 @@ sap.ui.define([
         // 仅保存本次页面生命周期内的消息数据，不缓存 UI5 控件或写入浏览器存储。
         return {
                 _clearSessionMessages: function () {
+                        this._skillSelections = {};
+                        this._skillActiveKey = "";
+                        this._skillLoadToken = (this._skillLoadToken || 0) + 1;
                         Object.keys(this._mRuns || {}).forEach(function (k) {
                                 this._stopRun("stopped", this._mRuns[k]);
                         }, this);
@@ -103,7 +106,7 @@ sap.ui.define([
                                 if (!that._mSessionMessages || that._mSessionMessages[sSid] !== oState ||
                                         oState.read !== oRead || oState.version !== iVersion) { return; }
                                 var aHistory = aRows.map(function (oRow) {
-                                        var oEntry = that._buildEntry(oRow.Role, oRow.Content, oRow.CreatedAt, "");
+                                        var oEntry = that._buildEntry(oRow.Role, oRow.Content, oRow.CreatedAt, oRow.SkillMeta || "");
                                         if (bAgent && oRow.Role === "assistant") {
                                                 oEntry.sender = that._rb().getText("agentSender");
                                         }
