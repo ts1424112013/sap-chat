@@ -120,6 +120,14 @@ const countOf = (s, sub) => s.split(sub).length - 1;
     check(`${k} 调用 FI ${names[k]}`, new RegExp('/p/' + names[k] + '\\?').test(fetchLog[0].url), fetchLog[0].url);
   }
 
+  // 20261023（V1.2）：AuthRuleSave 多一个参数 FmapJson；没给也要发空串（SAP 上 FI 参数全必填，缺一个就 404）
+  resetFetch([{ status: 200, json: { d: { AuthRuleSave: { Success: 'X', Message: '已保存', ResultJson: '{"message":"已保存","error":""}' } } } }]);
+  await svc.authRuleSave({ TcodePat: 'ZDPMM051', Tabname: 'ZIDPPP009', RuleMode: 'AUTO', AllowAll: '', Active: 'X', Delete: '' });
+  check('AuthRuleSave 恒发 7 个参数，没给的 FmapJson 补空串', /AuthRuleSave\?TcodePat='ZDPMM051'&Tabname='ZIDPPP009'&RuleMode='AUTO'&AllowAll=''&Active='X'&Delete=''&FmapJson=''$/.test(fetchLog[0].url), fetchLog[0].url);
+  resetFetch([{ status: 200, json: { d: { AuthRuleSave: { Success: 'X', Message: '已保存', ResultJson: '{"message":"已保存","error":""}' } } } }]);
+  await svc.authRuleSave({ TcodePat: 'ZDPMM051', Tabname: 'ZIDPPP009', RuleMode: 'AUTO', Active: 'X', FmapJson: '[{"f":"TCODE","t":"TCODE","c":""}]' });
+  check('AuthRuleSave 的 FmapJson 编码后放在 URL 里', /&FmapJson='%5B%7B%22f%22%3A%22TCODE%22/.test(fetchLog[0].url), fetchLog[0].url);
+
   /* ---------------- 2) 演示模式语义 ---------------- */
   svc.setConfig({ mode: 'mock' });
   resetFetch([]);
@@ -276,6 +284,90 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   check('审批工厂为空的申请 → 开通', r.lines[0].status === 'DONE', r.lines[0].status + ' ' + r.lines[0].message);
   const cfg = await svc.authConfig();
   check('配置页能读到已登记的表（含字段映射）和规则', cfg.tables.length === 4 && cfg.tables.some((t) => t.tabname === 'ZAUTH_TEST' && t.fields.some((f) => f.fieldname === 'TCD' && f.mapType === 'TCODE')) && cfg.tables.some((t) => t.tabname === 'ZAUTH_TWIN' && t.fields.filter((f) => f.mapType === 'USER').length === 2) && cfg.rules.length >= 4, cfg.tables.map((t) => t.tabname).join(','));
+
+  console.log('\n━━ 事务码规则带字段映射（V1.2）');
+  as('ADMIN', 'ADMIN');
+  const wideTab = [['TCODE', 'TCODE'], ['FIR_ACCOUNT', 'USER'], ['WERKS', 'WERKS'], ['WERKS_TO', 'INITIAL'], ['CREATOR', 'BY'], ['ERDAT', 'DATE']];
+  const fm = (pairs) => JSON.stringify(pairs.map((x) => ({ f: x[0], t: x[1], c: x[2] || '' })));
+  const wideOwn = wideTab.map((x) => x[0] === 'WERKS_TO' ? ['WERKS_TO', 'WERKS'] : x[0] === 'CREATOR' ? ['CREATOR', 'USER'] : x);
+  r = await svc.authTableSave({ Tabname: 'ZAUTH_WIDE', Descr: '多一列工厂、多一列账号', Discover: '', Active: 'X', FmapJson: fm(wideTab) });
+  check('登记演示表 ZAUTH_WIDE（权限表映射：WERKS_TO 留空、CREATOR = 操作人）', /已保存/.test(r.message));
+  await rejects('规则不指定权限表时不能单独配映射', svc.authRuleSave({ TcodePat: 'ZDEMO002', Tabname: '', RuleMode: 'AUTO', Active: 'X', FmapJson: fm(wideOwn) }), /不指定权限表/);
+  await rejects('规则映射同样要求至少一个 USER（报错带「本规则」前缀）', svc.authRuleSave({ TcodePat: 'ZDEMO002', Tabname: 'ZAUTH_WIDE', RuleMode: 'AUTO', Active: 'X',
+    FmapJson: fm(wideOwn.map((x) => x[1] === 'USER' ? [x[0], 'CONST', 'X'] : x)) }), /本规则的字段映射: 至少要有一个 USER/);
+  await rejects('规则映射的主键也必须有映射', svc.authRuleSave({ TcodePat: 'ZDEMO002', Tabname: 'ZAUTH_WIDE', RuleMode: 'AUTO', Active: 'X',
+    FmapJson: fm(wideOwn.map((x) => x[0] === 'WERKS' ? ['WERKS', 'INITIAL'] : x)) }), /主键字段 WERKS/);
+  await rejects('规则映射也要整份（漏字段拒绝）', svc.authRuleSave({ TcodePat: 'ZDEMO002', Tabname: 'ZAUTH_WIDE', RuleMode: 'AUTO', Active: 'X', FmapJson: fm(wideOwn.slice(0, 5)) }), /必须提交每个字段/);
+  check('校验失败的规则没有被存下', !(await svc.authConfig()).rules.some((x) => x.tcodePat === 'ZDEMO002'));
+  r = await svc.authRuleSave({ TcodePat: 'zdemo002', Tabname: 'zauth_wide', RuleMode: 'AUTO', Active: 'X', FmapJson: fm(wideOwn) });
+  check('规则带自己的映射保存成功（不要求 TCODE 以外的东西）', /自己的字段映射/.test(r.message), r.message);
+  await svc.authRuleSave({ TcodePat: 'ZDEMO003', Tabname: 'ZAUTH_WIDE', RuleMode: 'AUTO', Active: 'X', FmapJson: '' });
+  let cfgR = await svc.authConfig();
+  const rule2 = cfgR.rules.filter((x) => x.tcodePat === 'ZDEMO002')[0], rule3 = cfgR.rules.filter((x) => x.tcodePat === 'ZDEMO003')[0];
+  check('配置里：单独映射的规则 ownMap = X、带 6 个字段（WERKS_TO = 工厂、CREATOR = 账号）', rule2.ownMap === 'X' && rule2.fields.length === 6 &&
+    rule2.fields.some((f) => f.fieldname === 'WERKS_TO' && f.mapType === 'WERKS') && rule2.fields.some((f) => f.fieldname === 'CREATOR' && f.mapType === 'USER'), JSON.stringify(rule2));
+  check('配置里：沿用的规则 ownMap 为空、fields 为空数组', rule3.ownMap === '' && Array.isArray(rule3.fields) && rule3.fields.length === 0);
+  check('权限表自己的映射不受规则影响', cfgR.tables.filter((t) => t.tabname === 'ZAUTH_WIDE')[0].fields.some((f) => f.fieldname === 'WERKS_TO' && f.mapType === 'INITIAL'));
+  as('USERA');
+  r = await submit({ Tcode: 'ZDEMO002', WerksList: '1000,2000' });
+  const wide = () => svc._mockAuthState().rows.ZAUTH_WIDE;
+  const w1 = wide().filter((x) => x.TCODE === 'ZDEMO002' && x.WERKS === '1000')[0] || {};
+  check('按规则映射写：工厂写进两列、账号写进两列，逐工厂各一行', statuses(r) === 'DONE,DONE' && w1.WERKS_TO === '1000' && w1.FIR_ACCOUNT === 'USERA' && w1.CREATOR === 'USERA', JSON.stringify(w1));
+  r = await submit({ Tcode: 'ZDEMO003', WerksList: '1000' });
+  const w3 = wide().filter((x) => x.TCODE === 'ZDEMO003')[0] || {};
+  check('同一张表、没配映射的规则沿用权限表映射：WERKS_TO 留空、CREATOR = 操作人', statuses(r) === 'DONE' && w3.WERKS_TO === undefined && w3.CREATOR === 'DEMO', JSON.stringify(w3));
+  r = await submit({ Tcode: 'ZDEMO002', WerksList: '1000' });
+  check('再申请 → EXISTS（查重按规则映射的全部工厂 / 账号列比对）', statuses(r) === 'EXISTS', statuses(r));
+  as('ADMIN', 'ADMIN');
+  r = await svc.authBatchAdd({ Users: 'USERB', Tcode: 'ZDEMO002', WerksList: '3000', Reason: 'IT 处理' });
+  const wb = wide().filter((x) => x.FIR_ACCOUNT === 'USERB')[0] || {};
+  check('批量代加同样按规则映射写', statuses(r) === 'DONE' && wb.WERKS_TO === '3000' && wb.CREATOR === 'USERB', JSON.stringify(wb));
+  await svc.authRuleSave({ TcodePat: 'ZDEMO002', Tabname: 'ZAUTH_WIDE', RuleMode: 'APPROVE', Active: 'X', FmapJson: fm(wideOwn) });
+  as('DEMOUSER');
+  const pa = await submit({ Tcode: 'ZDEMO002', WerksList: '3000' });
+  const pb = await submit({ Tcode: 'ZDEMO002', WerksList: '2000' });
+  check('规则改成要审批 → 两条待审批', statuses(pa) === 'PENDING' && statuses(pb) === 'PENDING');
+  as('ADMIN', 'ADMIN');
+  r = await svc.authDecide({ ReqId: pa.lines[0].reqId, Approve: 'X' });
+  const wa = wide().filter((x) => x.FIR_ACCOUNT === 'DEMOUSER' && x.WERKS === '3000')[0] || {};
+  check('审批按规则映射写', r.lines[0].status === 'DONE' && wa.WERKS_TO === '3000' && wa.CREATOR === 'DEMOUSER', JSON.stringify(wa));
+  await svc.authRuleSave({ TcodePat: 'ZDEMO002', Tabname: 'ZAUTH_WIDE', RuleMode: 'APPROVE', Active: 'X', FmapJson: '' });
+  cfgR = await svc.authConfig();
+  check('改回「沿用权限表映射」→ 规则映射被清掉', cfgR.rules.filter((x) => x.tcodePat === 'ZDEMO002')[0].ownMap === '');
+  r = await svc.authDecide({ ReqId: pb.lines[0].reqId, Approve: 'X' });
+  const wpb = wide().filter((x) => x.FIR_ACCOUNT === 'DEMOUSER' && x.WERKS === '2000')[0] || {};
+  check('审批按「当前」配置选映射：申请时是单独映射、审批前改回沿用 → 按权限表映射写', r.lines[0].status === 'DONE' && wpb.WERKS_TO === undefined && wpb.CREATOR === 'DEMO', JSON.stringify(wpb));
+  r = await svc.authList({ User: 'USERA', Tcode: 'ZDEMO002', Status: 'DONE' });
+  const rv = r.requests.filter((x) => x.werks === '1000')[0];
+  const before = wide().length;
+  r = await svc.authRevoke({ ReqId: rv.reqId });
+  check('撤销与映射无关：按授权时记下的主键删掉那一行（规则映射已改回也不影响）', r.lines[0].status === 'REVOKED' && wide().length === before - 1 &&
+    !wide().some((x) => x.TCODE === 'ZDEMO002' && x.FIR_ACCOUNT === 'USERA' && x.WERKS === '1000'), r.lines[0].message);
+  // 表结构新增字段：权限表映射重新保存过、规则映射没跟上 → 该规则的申请被拒，提示重新保存规则
+  await svc.authRuleSave({ TcodePat: 'ZDEMO002', Tabname: 'ZAUTH_WIDE', RuleMode: 'AUTO', Active: 'X', FmapJson: fm(wideOwn) });
+  svc._mockAuthState().catalog.ZAUTH_WIDE.push({ fieldname: 'REMARK', keyflag: '', datatype: 'CHAR', leng: 40, convexit: '', mapType: 'INITIAL', constVal: '' });
+  await svc.authTableSave({ Tabname: 'ZAUTH_WIDE', Descr: '多一列备注', Discover: '', Active: 'X', FmapJson: fm(wideTab.concat([['REMARK', 'INITIAL']])) });
+  as('USERB');
+  await rejects('表结构新增字段而规则映射没跟上 → 提示重新保存该规则', submit({ Tcode: 'ZDEMO002', WerksList: '2000' }), /规则 ZDEMO002 的字段映射缺少字段 REMARK.*重新保存该规则/);
+  r = await submit({ Tcode: 'ZDEMO003', WerksList: '2000' });
+  check('沿用权限表映射的规则不受影响', statuses(r) === 'DONE', statuses(r));
+  as('ADMIN', 'ADMIN');
+  cfgR = await svc.authConfig();
+  check('配置里规则字段按当前结构列出（新字段显示建议值，保存即补齐）', cfgR.rules.filter((x) => x.tcodePat === 'ZDEMO002')[0].fields.length === 7);
+  await svc.authRuleSave({ TcodePat: 'ZDEMO002', Tabname: 'ZAUTH_WIDE', RuleMode: 'AUTO', Active: 'X', FmapJson: fm(wideOwn.concat([['REMARK', 'CONST', 'AUTO']])) });
+  as('USERB');
+  r = await submit({ Tcode: 'ZDEMO002', WerksList: '2000' });
+  const wr = wide().filter((x) => x.FIR_ACCOUNT === 'USERB' && x.WERKS === '2000' && x.TCODE === 'ZDEMO002')[0] || {};
+  check('重新保存规则后恢复（REMARK 按规则写固定值）', statuses(r) === 'DONE' && wr.REMARK === 'AUTO' && wr.WERKS_TO === '2000', JSON.stringify(wr));
+  as('ADMIN', 'ADMIN');
+  await svc.authRuleSave({ TcodePat: 'ZDEMO002', Delete: 'X' });
+  await svc.authRuleSave({ TcodePat: 'ZDEMO002', Tabname: 'ZAUTH_WIDE', RuleMode: 'AUTO', Active: 'X' });
+  cfgR = await svc.authConfig();
+  check('删规则会一并删映射：同名规则重建后是沿用', cfgR.rules.filter((x) => x.tcodePat === 'ZDEMO002')[0].ownMap === '');
+  await svc.authRuleSave({ TcodePat: 'ZDEMO003', Tabname: 'ZAUTH_WIDE', RuleMode: 'AUTO', Active: 'X', FmapJson: fm(wideOwn.concat([['REMARK', 'INITIAL']])) });
+  await svc.authRuleSave({ TcodePat: 'ZDEMO003', Tabname: 'ZIDPPP009', RuleMode: 'AUTO', Active: 'X' });
+  cfgR = await svc.authConfig();
+  check('规则换了表且没给新映射 → 旧映射作废', cfgR.rules.filter((x) => x.tcodePat === 'ZDEMO003')[0].ownMap === '');
 
   console.log('\n━━ 列表分页');
   const all = await svc.authList({ Top: '5', Skip: '0' });

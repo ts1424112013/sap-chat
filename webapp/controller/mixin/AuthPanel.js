@@ -10,11 +10,12 @@ sap.ui.define([
          * =====================================================================
          * App 控制器块：事务码权限自助申请
          * =====================================================================
-         * 入口都在侧栏会话列表下方（设计：功能计划书/权限自助申请/01-方案与开发计划_V1.3）：
+         * 入口都在侧栏会话列表下方（设计：功能计划书/权限自助申请/01-方案与开发计划_V1.4）：
          *   ① 「申请权限」→ 对话框 AuthDialog：申请 / 我的申请
          *   ② 「权限审批」（仅 ADMIN）→ 审批对话框（见 AuthApprove mixin）；入口上的红色角标 = 待审批条数
          *      （登录后、每 2 分钟、切回页面时查一次；条数变多时弹提示）
          *   ③ 审批对话框右上「管理」→ AuthAdminDialog（内容 AuthAdmin，与审批对话框同一套外壳）：全部记录与撤销 / 批量代加 / 权限表配置 / 事务码规则
+         *      20261023：事务码规则可带自己的整份字段映射（沿用权限表映射 / 本规则单独映射；列表与权限表配置共用 AuthFieldMap 片段）
          * 数据都在视图模型 "auth" 里；所有后端调用经 ChatService.auth*（失败抛 Error(后端原话)，
          * 这里统一显示在对话框 / 页签顶部的红色提示条）。
          * 以 mixin 并入 zai.chat.controller.App，方法名统一 auth / _auth 前缀，避免与其他块重名（红线 8）。
@@ -26,6 +27,13 @@ sap.ui.define([
         var STATUS_STATE = { DONE: "Success", EXISTS: "Information", PENDING: "Warning", FAILED: "Error", REJECTED: "Error", REVOKED: "None" };
 
         /** CHAR14 yyyymmddhhmmss → "yyyy-mm-dd hh:mm:ss"（不是 14 位数字就原样显示） */
+        function clone(v) { return JSON.parse(JSON.stringify(v)); }
+
+        /** 规则编辑区的空白值（新建规则 / 删除之后） */
+        function emptyRule() {
+                return { tcodePat: "", tabname: "", ruleMode: "AUTO", allowAll: false, active: true, ownMap: false, fields: [], fieldsTab: "" };
+        }
+
         function fmtTime(s) {
                 return /^\d{14}$/.test(s || "")
                         ? s.substring(0, 4) + "-" + s.substring(4, 6) + "-" + s.substring(6, 8) + " " + s.substring(8, 10) + ":" + s.substring(10, 12) + ":" + s.substring(12)
@@ -60,8 +68,9 @@ sap.ui.define([
                                 batch: { users: "", tcode: "", werks: "", reason: "" },
                                 tables: [],
                                 rules: [],
-                                editTable: { tabname: "", descr: "", discover: true, active: true, fields: [], loaded: "" },
-                                editRule: { tcodePat: "", tabname: "", ruleMode: "AUTO", allowAll: false, active: true },
+                                editTable: { tabname: "", descr: "", discover: true, active: true, fields: [], loaded: "", ownRulesText: "" },
+                                editRule: Object.assign(emptyRule(), { baseMap: [], baseHint: "", ownHint: "" }),
+                                ruleTables: [],
                                 mapTypes: ["TCODE", "USER", "WERKS", "CONST", "DATE", "TIME", "BY", "INITIAL"].map(function (k) {
                                         return { key: k, text: oRB.getText("authMap" + k) };
                                 })
@@ -330,6 +339,13 @@ sap.ui.define([
                                                         targetText: x.tabname ? oRB.getText("admArrowTable", [x.tabname]) : oRB.getText("admArrowAuto")
                                                 });
                                         }));
+                                        // 20261023：规则的目标表下拉（只列已登记的表；第一项 = 不指定，走自动发现）
+                                        oModel.setProperty("/ruleTables", [{ key: "-", text: oRB.getText("admRuleTableAuto") }].concat((r.tables || []).map(function (t) {
+                                                return { key: t.tabname, text: t.tabname + (t.descr ? "  ·  " + t.descr : "") + (t.active === "X" ? "" : "  （" + oRB.getText("authOff") + "）") };
+                                        })));
+                                        // 配置变了：两个编辑区里"权限表的映射"摘要 / 对照、"哪些规则单独映射"提示跟着刷新
+                                        oModel.setProperty("/editTable/ownRulesText", that._authOwnRulesText(oModel.getProperty("/editTable/tabname")));
+                                        that._authRuleSet(oModel.getProperty("/editRule"));
                                 })
                         ]);
                 },
@@ -366,11 +382,11 @@ sap.ui.define([
 
                 /** 编辑区回到空白（新建一张权限表 / 一条规则） */
                 onAuthNewTable: function () {
-                        this._authModel().setProperty("/editTable", { tabname: "", descr: "", discover: true, active: true, fields: [], loaded: "" });
+                        this._authModel().setProperty("/editTable", { tabname: "", descr: "", discover: true, active: true, fields: [], loaded: "", ownRulesText: "" });
                 },
 
                 onAuthNewRule: function () {
-                        this._authModel().setProperty("/editRule", { tcodePat: "", tabname: "", ruleMode: "AUTO", allowAll: false, active: true });
+                        this._authRuleSet(emptyRule());
                 },
 
                 onAuthRefreshAdmin: function () {
@@ -450,7 +466,7 @@ sap.ui.define([
 
                 /** 读表结构 + 建议映射（已登记的表带出已保存的映射，可直接改） */
                 onAuthDescribe: function () {
-                        var oModel = this._authModel(), sTab = (oModel.getProperty("/editTable/tabname") || "").trim().toUpperCase();
+                        var that = this, oModel = this._authModel(), sTab = (oModel.getProperty("/editTable/tabname") || "").trim().toUpperCase();
                         oModel.setProperty("/editTable/fields", []);
                         oModel.setProperty("/editTable/loaded", "");
                         this._authRun(function () {
@@ -458,6 +474,7 @@ sap.ui.define([
                                         oModel.setProperty("/editTable/tabname", sTab);
                                         oModel.setProperty("/editTable/fields", r.fields || []);
                                         oModel.setProperty("/editTable/loaded", sTab);
+                                        oModel.setProperty("/editTable/ownRulesText", that._authOwnRulesText(sTab));
                                 });
                         });
                 },
@@ -466,7 +483,7 @@ sap.ui.define([
                         var oModel = this._authModel(), oRow = oEvent.getParameter("listItem").getBindingContext("auth").getObject();
                         oModel.setProperty("/editTable", {
                                 tabname: oRow.tabname, descr: oRow.descr, discover: oRow.discover === "X", active: oRow.active === "X",
-                                fields: JSON.parse(JSON.stringify(oRow.fields || [])), loaded: oRow.tabname
+                                fields: clone(oRow.fields || []), loaded: oRow.tabname, ownRulesText: this._authOwnRulesText(oRow.tabname)
                         });
                 },
 
@@ -488,13 +505,93 @@ sap.ui.define([
                         });
                 },
 
-                /* ---------- 事务码规则 ---------- */
+                /* ---------- 事务码规则（20261023 起可带自己的字段映射） ---------- */
+
+                /** 已登记权限表的字段与映射（来自 AuthConfig；规则"复制权限表映射"与"对照"都用它） */
+                _authTableFields: function (sTab) {
+                        var oTab = (this._authModel().getProperty("/tables") || []).filter(function (t) { return t.tabname === sTab; })[0];
+                        return clone((oTab && oTab.fields) || []).map(function (f) {
+                                return { fieldname: f.fieldname, keyflag: f.keyflag, datatype: f.datatype, leng: f.leng, convexit: f.convexit,
+                                        mapType: f.mapType || "INITIAL", constVal: f.constVal || "" };
+                        });
+                },
+
+                /** 权限表配置里的提示：哪些规则用自己的映射（改这张表的映射不会带到它们） */
+                _authOwnRulesText: function (sTab) {
+                        var aPats = (this._authModel().getProperty("/rules") || []).filter(function (r) {
+                                return sTab && r.ownMap === "X" && r.tabname === sTab;
+                        }).map(function (r) { return r.tcodePat; });
+                        return aPats.length ? this._rb().getText("admTableOwnRules", [aPats.join("、")]) : "";
+                },
+
+                /** 写规则编辑区：按目标表算出"沿用"摘要、"单独"提示，给单独映射的每行带上权限表自己的映射作对照 */
+                _authRuleSet: function (oRule) {
+                        var oRB = this._rb(), r = Object.assign(emptyRule(), oRule || {});
+                        var aBase = r.tabname ? this._authTableFields(r.tabname) : [];
+                        var fText = function (f) {
+                                return oRB.getText("authMap" + f.mapType) + (f.mapType === "CONST" ? "「" + f.constVal + "」" : "");
+                        };
+                        r.baseMap = aBase.filter(function (f) { return f.mapType !== "INITIAL"; }).map(function (f) {
+                                return { text: f.fieldname + " → " + fText(f) };
+                        });
+                        r.baseHint = r.tabname ? oRB.getText("admRuleMapBaseHint", [r.tabname]) : "";
+                        r.fields = (r.fields || []).map(function (f) {
+                                var b = aBase.filter(function (x) { return x.fieldname === f.fieldname; })[0] || { mapType: "INITIAL", constVal: "" };
+                                return Object.assign({}, f, {
+                                        constVal: f.constVal || "",
+                                        baseType: b.mapType, baseConst: b.mapType === "CONST" ? b.constVal : "", baseText: fText(b)
+                                });
+                        });
+                        r.ownHint = oRB.getText("admRuleMapOwnHint", [r.tabname, r.fields.length]);
+                        this._authModel().setProperty("/editRule", r);
+                },
 
                 onAuthPickRule: function (oEvent) {
                         var oRow = oEvent.getParameter("listItem").getBindingContext("auth").getObject();
-                        this._authModel().setProperty("/editRule", {
-                                tcodePat: oRow.tcodePat, tabname: oRow.tabname, ruleMode: oRow.ruleMode, allowAll: oRow.allowAll === "X", active: oRow.active === "X"
+                        var bOwn = oRow.ownMap === "X";
+                        this._authRuleSet({
+                                tcodePat: oRow.tcodePat, tabname: oRow.tabname, ruleMode: oRow.ruleMode, allowAll: oRow.allowAll === "X", active: oRow.active === "X",
+                                ownMap: bOwn, fields: bOwn ? clone(oRow.fields || []) : [], fieldsTab: bOwn ? oRow.tabname : ""
                         });
+                },
+
+                /** 换目标表：单独映射时按新表的映射重新复制一份；改成"不指定"就回到沿用 */
+                onAuthRuleTable: function (oEvent) {
+                        var oItem = oEvent.getParameter("selectedItem");
+                        var r = clone(this._authModel().getProperty("/editRule"));
+                        r.tabname = oItem && oItem.getKey() !== "-" ? oItem.getKey() : "";   // "-" = 不指定（自动发现）
+                        if (!r.tabname) {
+                                r.ownMap = false;
+                        }
+                        if (r.ownMap) {
+                                r.fields = this._authTableFields(r.tabname);
+                                r.fieldsTab = r.tabname;
+                                MessageToast.show(this._rb().getText("admRuleMapRecopied", [r.tabname]));
+                        } else if (r.fieldsTab !== r.tabname) {
+                                r.fields = [];
+                                r.fieldsTab = "";
+                        }
+                        this._authRuleSet(r);
+                },
+
+                /** 「沿用权限表映射」/「本规则单独映射」胶囊（自定义数据 map = inherit | own）；
+                 *  第一次切到单独映射时复制权限表的映射；来回切换保留已改的内容 */
+                onAdmRuleMap: function (oEvent) {
+                        var r = clone(this._authModel().getProperty("/editRule"));
+                        r.ownMap = oEvent.getSource().data("map") === "own";
+                        if (r.ownMap && (!r.fields.length || r.fieldsTab !== r.tabname)) {
+                                r.fields = this._authTableFields(r.tabname);
+                                r.fieldsTab = r.tabname;
+                        }
+                        this._authRuleSet(r);
+                },
+
+                onAuthRuleRecopy: function () {
+                        var r = clone(this._authModel().getProperty("/editRule"));
+                        r.fields = this._authTableFields(r.tabname);
+                        r.fieldsTab = r.tabname;
+                        this._authRuleSet(r);
+                        MessageToast.show(this._rb().getText("admRuleMapRecopied", [r.tabname]));
                 },
 
                 onAuthSaveRule: function () {
@@ -514,13 +611,25 @@ sap.ui.define([
 
                 _authSaveRule: function (bDelete) {
                         var that = this, oModel = this._authModel(), r = oModel.getProperty("/editRule");
+                        var sPat = (r.tcodePat || "").trim().toUpperCase(), sTab = (r.tabname || "").trim().toUpperCase();
+                        // 单独映射：整份提交（每个字段一行）；沿用 / 不指定表：空串 = 后端清掉本规则的映射
+                        var bOwn = !bDelete && r.ownMap && !!sTab && r.fields.length > 0;
+                        var sFmap = bOwn ? JSON.stringify(r.fields.map(function (f) { return { f: f.fieldname, t: f.mapType, c: f.constVal || "" }; })) : "";
                         this._authRun(function () {
                                 return ChatService.authRuleSave({
-                                        TcodePat: (r.tcodePat || "").trim().toUpperCase(), Tabname: (r.tabname || "").trim().toUpperCase(), RuleMode: r.ruleMode,
-                                        AllowAll: r.allowAll ? "X" : "", Active: r.active ? "X" : "", Delete: bDelete ? "X" : ""
+                                        TcodePat: sPat, Tabname: sTab, RuleMode: r.ruleMode,
+                                        AllowAll: r.allowAll ? "X" : "", Active: r.active ? "X" : "", Delete: bDelete ? "X" : "", FmapJson: sFmap
                                 }).then(function (oRes) {
                                         MessageToast.show(oRes.message || that._rb().getText("authSaved"));
                                         return that._authLoadAdmin(false);
+                                }).then(function () {
+                                        // 编辑区换成后端存下的样子（删除后回到空白）
+                                        var oSaved = bDelete ? null : (oModel.getProperty("/rules") || []).filter(function (x) { return x.tcodePat === sPat; })[0];
+                                        var bSavedOwn = !!oSaved && oSaved.ownMap === "X";
+                                        that._authRuleSet(!oSaved ? emptyRule() : {
+                                                tcodePat: oSaved.tcodePat, tabname: oSaved.tabname, ruleMode: oSaved.ruleMode, allowAll: oSaved.allowAll === "X", active: oSaved.active === "X",
+                                                ownMap: bSavedOwn, fields: bSavedOwn ? clone(oSaved.fields || []) : [], fieldsTab: bSavedOwn ? oSaved.tabname : ""
+                                        });
                                 });
                         });
                 }

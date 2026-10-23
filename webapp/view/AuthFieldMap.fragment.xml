@@ -1,0 +1,33 @@
+<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
+
+        <!-- ======================= 字段映射列表（权限表配置 / 事务码规则共用，20261023） =======================
+             放在 binding="{auth>/editTable}" 或 binding="{auth>/editRule}" 的容器里，这里只用相对路径（fields / mapType / constVal）。
+             规则单独映射时每行多 baseType / baseConst / baseText（权限表自己的映射）：与权限表不同的行 data-diff="yes"，
+             映射下拉标蓝、字段名下显示「权限表：…」（显隐由 CSS 按 data-diff 控制，style-gale.css .admFld*）。 -->
+        <HBox renderType="Bare" class="admFldRow admFldHead" visible="{= ${auth>fields}.length > 0 }">
+                <Text text="{i18n>authFldName}"/>
+                <Text text="{i18n>authFldKey}"/>
+                <Text text="{i18n>authFldType}"/>
+                <Text text="{i18n>authFldMap}"/>
+                <Text text="{i18n>authFldConst}"/>
+        </HBox>
+        <VBox items="{path: 'auth>fields', templateShareable: false}" class="admFldList">
+                <HBox renderType="Bare" class="admFldRow">
+                        <customData>
+                                <core:CustomData key="diff" writeToDom="true"
+                                        value="{= ${auth>baseType} !== undefined &amp;&amp; (${auth>mapType} !== ${auth>baseType} || (${auth>mapType} === 'CONST' &amp;&amp; ${auth>constVal} !== ${auth>baseConst})) ? 'yes' : 'no' }"/>
+                        </customData>
+                        <VBox renderType="Bare" class="admFldNameBox">
+                                <Text text="{auth>fieldname}" class="admFldName"/>
+                                <Text text="{= ${i18n>admFldBase} + ${auth>baseText} }" class="admFldBase" visible="{= !!${auth>baseText} }"/>
+                        </VBox>
+                        <Text text="{= ${auth>keyflag} === 'X' ? '●' : '' }" class="admFldKey"/>
+                        <Text text="{= ${auth>datatype} + ' · ' + ${auth>leng} }" class="admFldType"/>
+                        <Select selectedKey="{auth>mapType}" items="{path: 'auth>/mapTypes', templateShareable: false}" class="admSel">
+                                <core:Item key="{auth>key}" text="{auth>text}"/>
+                        </Select>
+                        <Input value="{auth>constVal}" maxLength="60" enabled="{= ${auth>mapType} === 'CONST' }" class="aplInput admFldConst"/>
+                </HBox>
+        </VBox>
+
+</core:FragmentDefinition>

@@ -1,6 +1,6 @@
 *=======================================================================
 * 对象:   ZCL_AI_AUTH_SERVICE
-* 用途:   事务码权限自助申请(设计: 功能计划书/权限自助申请/01-方案与开发计划_V1.3)
+* 用途:   事务码权限自助申请(设计: 功能计划书/权限自助申请/01-方案与开发计划_V1.4)
 *         用户给自己申请; IT 批量代加 / 审批 / 撤销; 权限表与字段映射可配置,
 *         事务码按"规则"或"自动发现"落到对应的权限表。
 * V1.0 20261020: 按设计重写(取代未提交的初稿 —— 初稿是一个 execute 入口 +
@@ -13,7 +13,8 @@
 *   · 目标权限表的读写只在 row_exists / grant_row / revoke_row 三处
 *   · 字段名只来自 DDIC 且再过字符集校验, 值一律加引号转义(quote),
 *     值超长拒绝而不是截断; 映射只允许 CHAR / NUMC / DATS / TIMS 字段
-* 依赖:   SE11 表 ZAI_AUTH_TAB / ZAI_AUTH_FMAP / ZAI_AUTH_RULE / ZAI_AUTH_REQ;
+* 依赖:   SE11 表 ZAI_AUTH_TAB / ZAI_AUTH_FMAP / ZAI_AUTH_RULE / ZAI_AUTH_REQ /
+*         ZAI_AUTH_RMAP(V1.2 新建, 规则自己的字段映射);
 *         ZCL_AI_CHAT_SERVICE=>v8_get_role; ZCL_AI_TASK_SERVICE=>read_cfg_str;
 *         配置键 ZAI_CHAT_CFG.AUTH_ENABLED —— 关闭时只拒绝"会写权限表"的操作
 *         (申请 / 批量代加 / 审批 / 撤销)和普通用户查记录; 表 / 规则配置与 ADMIN
@@ -24,11 +25,23 @@
 *   USER 至少一个(原来必须正好一个), WERKS / TCODE 不限个数; 同类映射的字段写入同一个值,
 *   查重 / 撤销按全部这些字段一起比对(build_row / build_where 本来就逐字段处理);
 *   自动发现在任一 TCODE 列里找到事务码就算(tcode_known 原来只看第一个 TCODE 列)
+* V1.2 20261023: 事务码规则可带自己的字段映射(新表 ZAI_AUTH_RMAP, 键 TCODE_PAT + FIELDNAME)
+*   —— 同一张权限表, 不同事务码可能要把工厂 / 账号写进不同的列(或多写一列)。
+*   · 选用: 命中规则、规则指定了权限表、且该规则有自己的映射 → 用规则映射; 其余一律用
+*     权限表映射(无规则 / 规则没配 / 规则不指定表走自动发现), 旧规则行为不变
+*   · 规则映射是"整份"(每个字段都有), 约束同权限表(check_fmap 共用), 但不要求 TCODE;
+*     表结构新增字段而规则映射没跟上 → 该规则的申请报"请 IT 重新保存该规则"
+*   · 申请 / 批量代加在 find_tables 套用; 审批按当前配置重新选(decide 里 find_rule);
+*     查重按选中映射比对; 撤销仍按 KEY_JSON 原始主键, 与映射无关; 自动发现不变
+*   · save_rule 新增可选参数 iv_fmap_json(空 = 沿用权限表映射并清掉本规则映射);
+*     删除规则一并删映射; get_config 的规则带 own_map / fields
 * ★ 重贴后核对标记: "INSERT (" 只在 METHOD grant_row, "DELETE FROM (" 只在 METHOD
 *   revoke_row; "SELECT SINGLE * FROM (" 只在 row_exists(查重)与 tcode_known(自动发现, 只读);
 *   有 METHOD quote(不依赖 cl_abap_dyn_prg); decide 内有 'PENDING' 状态校验;
 *   save_table / save_rule / get_config / describe_table 调 gate 时带
-*   iv_need_enabled = abap_false; run_submit 内有 line_exists( ls_tab-fields[ map_type = 'WERKS' ] )
+*   iv_need_enabled = abap_false; run_submit 内有 line_exists( ls_tab-fields[ map_type = 'WERKS' ] );
+*   V1.2: 有 METHOD check_fmap 与 METHOD apply_rule_map; zai_auth_rmap 出现在 save_rule
+*   (删 / 写)、apply_rule_map(读)、get_config(读) 三个方法里
 *=======================================================================
 CLASS zcl_ai_auth_service DEFINITION
   PUBLIC
@@ -111,6 +124,8 @@ CLASS zcl_ai_auth_service DEFINITION
              rule_mode TYPE string,      " AUTO / APPROVE / BLOCK
              allow_all TYPE string,
              active    TYPE string,
+             own_map   TYPE string,      " V1.2: X = 本规则有自己的字段映射(ZAI_AUTH_RMAP)
+             fields    TYPE tt_field,    " V1.2: own_map = X 时为当前表结构 + 规则映射(仅 get_config 填)
            END OF ty_rule.
     TYPES tt_rule TYPE STANDARD TABLE OF ty_rule WITH DEFAULT KEY.
 
@@ -181,6 +196,8 @@ CLASS zcl_ai_auth_service DEFINITION
       RETURNING VALUE(rs)      TYPE ty_ack.
 
     " ADMIN: 保存 / 删除事务码规则
+    " V1.2: iv_fmap_json 非空 = 本规则自己的字段映射(格式同 save_table, 规则必须指定权限表);
+    "       空 = 沿用权限表的映射(并清掉本规则原有的映射)
     CLASS-METHODS save_rule
       IMPORTING iv_tcode_pat   TYPE string
                 iv_tabname     TYPE string
@@ -188,6 +205,7 @@ CLASS zcl_ai_auth_service DEFINITION
                 iv_allow_all   TYPE string
                 iv_active      TYPE string
                 iv_delete      TYPE string
+                iv_fmap_json   TYPE string OPTIONAL
       RETURNING VALUE(rs)      TYPE ty_ack.
 
     " ADMIN: 已登记的表(含字段映射) + 规则
@@ -204,6 +222,13 @@ CLASS zcl_ai_auth_service DEFINITION
              c TYPE string,
            END OF ty_fmap_in.
     TYPES tt_fmap_in TYPE STANDARD TABLE OF ty_fmap_in WITH DEFAULT KEY.
+
+    TYPES: BEGIN OF ty_map,              " check_fmap 校验通过的一行映射
+             fieldname TYPE string,
+             map_type  TYPE string,
+             const_val TYPE string,
+           END OF ty_map.
+    TYPES tt_map TYPE STANDARD TABLE OF ty_map WITH DEFAULT KEY.
 
     TYPES: BEGIN OF ty_key,              " 授权时记下的原始主键(撤销用)
              f TYPE string,
@@ -279,6 +304,19 @@ CLASS zcl_ai_auth_service DEFINITION
       IMPORTING is_table       TYPE ty_table
                 iv_tcode       TYPE string
       RETURNING VALUE(rv)      TYPE abap_bool.
+    " V1.2: 字段映射 JSON 的校验(权限表与规则共用); iv_need_tcode = X 时至少一个 TCODE
+    CLASS-METHODS check_fmap
+      IMPORTING iv_tabname     TYPE string
+                iv_fmap_json   TYPE string
+                iv_need_tcode  TYPE abap_bool
+      EXPORTING et_map         TYPE tt_map
+                ev_error       TYPE string.
+    " V1.2: 规则有自己的映射时, 用它覆盖 cs_table 的映射(ev_own = X); 没有则原样不动
+    CLASS-METHODS apply_rule_map
+      IMPORTING iv_tcode_pat   TYPE string
+      EXPORTING ev_own         TYPE abap_bool
+                ev_error       TYPE string
+      CHANGING  cs_table       TYPE ty_table.
 
     " ---- 一条申请的处理 ----
     CLASS-METHODS run_submit
@@ -398,6 +436,7 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
 
     DATA: ls_req    TYPE zai_auth_req,
           ls_tab    TYPE ty_table,
+          ls_rule   TYPE ty_rule,
           lr_row    TYPE REF TO data,
           lt_plants TYPE tt_string,
           lv_err    TYPE string,
@@ -443,6 +482,15 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
                                   iv_need_active = abap_true
                         IMPORTING es_table       = ls_tab
                                   ev_error       = lv_err ).
+          ENDIF.
+          IF lv_err IS INITIAL.
+            " V1.2: 按当前配置重新选映射 —— 当前命中的规则指向的正是这张表、且有自己的映射时用它
+            ls_rule = find_rule( CONV string( ls_req-tcode ) ).
+            IF ls_rule-tabname = ls_tab-tabname.
+              apply_rule_map( EXPORTING iv_tcode_pat = ls_rule-tcode_pat
+                              IMPORTING ev_error     = lv_err
+                              CHANGING  cs_table     = ls_tab ).
+            ENDIF.
           ENDIF.
           IF lv_err IS INITIAL.
             build_row( EXPORTING is_table = ls_tab
@@ -651,17 +699,10 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
 
   METHOD save_table.
 
-    DATA: lv_name     TYPE string,
-          lv_json     TYPE string,
-          lt_fields   TYPE tt_field,
-          lt_in       TYPE tt_fmap_in,
-          lt_save     TYPE STANDARD TABLE OF zai_auth_fmap WITH DEFAULT KEY,
-          ls_save     TYPE zai_auth_fmap,
-          ls_tab      TYPE zai_auth_tab,
-          lv_users    TYPE i,
-          lv_tcodes   TYPE i,
-          lv_const    TYPE string,
-          lv_digits   TYPE string VALUE '0123456789'.
+    DATA: lv_name TYPE string,
+          lt_map  TYPE tt_map,
+          lt_save TYPE STANDARD TABLE OF zai_auth_fmap WITH DEFAULT KEY,
+          ls_tab  TYPE zai_auth_tab.
 
     rs-error = gate( iv_admin = abap_true iv_need_enabled = abap_false ).
     IF rs-error IS NOT INITIAL.
@@ -670,9 +711,12 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
 
     TRY.
         lv_name = to_upper( condense( iv_tabname ) ).
-        read_fields( EXPORTING iv_tabname = lv_name
-                     IMPORTING et_fields  = lt_fields
-                               ev_error   = rs-error ).
+        " V1.2: 校验与规则映射共用 check_fmap(表名 → JSON → 逐字段 → USER / TCODE 个数)
+        check_fmap( EXPORTING iv_tabname    = lv_name
+                              iv_fmap_json  = iv_fmap_json
+                              iv_need_tcode = xsdbool( iv_discover = 'X' )
+                    IMPORTING et_map        = lt_map
+                              ev_error      = rs-error ).
         IF rs-error IS NOT INITIAL.
           RETURN.
         ENDIF.
@@ -681,94 +725,13 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
           RETURN.
         ENDIF.
 
-        lv_json = condense( iv_fmap_json ).
-        IF lv_json NP '[*'.
-          rs-error = '字段映射必须是 JSON 数组'.
-          RETURN.
-        ENDIF.
-        TRY.
-            /ui2/cl_json=>deserialize( EXPORTING json = lv_json CHANGING data = lt_in ).
-          CATCH cx_root.
-            rs-error = '字段映射 JSON 无法解析'.
-            RETURN.
-        ENDTRY.
-        IF lines( lt_in ) <> lines( lt_fields ).
-          rs-error = '必须提交每个字段的映射(MANDT 除外)'.
-          RETURN.
-        ENDIF.
-
-        LOOP AT lt_in INTO DATA(ls_in).
-          READ TABLE lt_fields INTO DATA(ls_f) WITH KEY fieldname = ls_in-f.
-          IF sy-subrc <> 0.
-            rs-error = |字段 { ls_in-f } 不在表结构里(字段名只能来自 DDIC)|.
-            RETURN.
-          ENDIF.
-          READ TABLE lt_save TRANSPORTING NO FIELDS WITH KEY fieldname = ls_in-f.
-          IF sy-subrc = 0.
-            rs-error = |字段 { ls_in-f } 重复|.
-            RETURN.
-          ENDIF.
-          CASE ls_in-t.
-            WHEN 'TCODE'.
-              lv_tcodes = lv_tcodes + 1.
-            WHEN 'USER'.
-              lv_users = lv_users + 1.
-            WHEN 'WERKS' OR 'CONST' OR 'DATE' OR 'TIME' OR 'BY' OR 'INITIAL'.
-              " 合法
-            WHEN OTHERS.
-              rs-error = |字段 { ls_in-f } 的映射类型不合法: { ls_in-t }|.
-              RETURN.
-          ENDCASE.
-          IF ls_in-t <> 'INITIAL'.
-            IF ls_f-datatype <> 'CHAR' AND ls_f-datatype <> 'NUMC'
-               AND ls_f-datatype <> 'DATS' AND ls_f-datatype <> 'TIMS'.
-              rs-error = |字段 { ls_in-f } 的类型 { ls_f-datatype } 不支持写入映射, 只支持 CHAR / NUMC / DATS / TIMS|.
-              RETURN.
-            ENDIF.
-            IF ( ls_in-t = 'DATE' AND ls_f-leng < 8 ) OR ( ls_in-t = 'TIME' AND ls_f-leng < 6 ).
-              rs-error = |字段 { ls_in-f } 太短, 放不下日期 / 时间|.
-              RETURN.
-            ENDIF.
-          ENDIF.
-          lv_const = condense( ls_in-c ).
-          IF ls_in-t = 'CONST'.
-            IF lv_const IS INITIAL.
-              rs-error = |字段 { ls_in-f } 选了固定值, 但没填值|.
-              RETURN.
-            ENDIF.
-            IF strlen( lv_const ) > ls_f-leng OR strlen( lv_const ) > 60.
-              rs-error = |字段 { ls_in-f } 的固定值过长|.
-              RETURN.
-            ENDIF.
-            IF ( ls_f-datatype = 'NUMC' OR ls_f-datatype = 'DATS' OR ls_f-datatype = 'TIMS' )
-               AND lv_const CN lv_digits.
-              rs-error = |字段 { ls_in-f } 的固定值必须是数字|.
-              RETURN.
-            ENDIF.
-          ENDIF.
-          " 主键必须有明确映射, 否则会写出"半条"权限
-          IF ls_f-keyflag = 'X' AND ls_in-t = 'INITIAL'.
-            rs-error = |主键字段 { ls_in-f } 必须配置映射(留空不允许)|.
-            RETURN.
-          ENDIF.
-          CLEAR ls_save.
-          ls_save-mandt     = sy-mandt.
-          ls_save-tabname   = lv_name.
-          ls_save-fieldname = ls_in-f.
-          ls_save-map_type  = ls_in-t.
-          ls_save-const_val = COND #( WHEN ls_in-t = 'CONST' THEN lv_const ELSE `` ).
-          APPEND ls_save TO lt_save.
+        LOOP AT lt_map INTO DATA(ls_m).
+          APPEND VALUE #( mandt     = sy-mandt
+                          tabname   = lv_name
+                          fieldname = ls_m-fieldname
+                          map_type  = ls_m-map_type
+                          const_val = ls_m-const_val ) TO lt_save.
         ENDLOOP.
-
-        " V1.1: 同类映射可以配到多个字段(写入同一个值); 只要求至少有一个 USER
-        IF lv_users < 1.
-          rs-error = '至少要有一个 USER(目标账号)映射'.
-          RETURN.
-        ENDIF.
-        IF iv_discover = 'X' AND lv_tcodes < 1.
-          rs-error = '参与自动发现的表必须有 TCODE 映射'.
-          RETURN.
-        ENDIF.
 
         ls_tab-mandt      = sy-mandt.
         ls_tab-tabname    = lv_name.
@@ -796,7 +759,10 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
 
     DATA: lv_pat  TYPE string,
           lv_tab  TYPE string,
+          lv_json TYPE string,
           ls_tab  TYPE ty_table,
+          lt_map  TYPE tt_map,
+          lt_rmap TYPE STANDARD TABLE OF zai_auth_rmap WITH DEFAULT KEY,
           ls_rule TYPE zai_auth_rule.
 
     rs-error = gate( iv_admin = abap_true iv_need_enabled = abap_false ).
@@ -815,6 +781,7 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
 
         IF iv_delete = 'X'.
           DELETE FROM zai_auth_rule WHERE tcode_pat = @lv_pat.
+          DELETE FROM zai_auth_rmap WHERE tcode_pat = @lv_pat.     " V1.2: 映射随规则一起删
           COMMIT WORK.
           rs-message = '规则已删除'.
           RETURN.
@@ -834,6 +801,32 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
           ENDIF.
         ENDIF.
 
+        " V1.2: 本规则自己的字段映射(整份, 约束同权限表但不要求 TCODE)
+        lv_json = condense( iv_fmap_json ).
+        IF lv_json IS NOT INITIAL.
+          IF lv_tab IS INITIAL.
+            rs-error = '规则不指定权限表(走自动发现)时不能单独配字段映射'.
+            RETURN.
+          ENDIF.
+          check_fmap( EXPORTING iv_tabname    = lv_tab
+                                iv_fmap_json  = lv_json
+                                iv_need_tcode = abap_false
+                      IMPORTING et_map        = lt_map
+                                ev_error      = rs-error ).
+          IF rs-error IS NOT INITIAL.
+            rs-error = |本规则的字段映射: { rs-error }|.
+            RETURN.
+          ENDIF.
+          LOOP AT lt_map INTO DATA(ls_m).
+            APPEND VALUE #( mandt     = sy-mandt
+                            tcode_pat = lv_pat
+                            fieldname = ls_m-fieldname
+                            tabname   = lv_tab
+                            map_type  = ls_m-map_type
+                            const_val = ls_m-const_val ) TO lt_rmap.
+          ENDLOOP.
+        ENDIF.
+
         ls_rule-mandt      = sy-mandt.
         ls_rule-tcode_pat  = lv_pat.
         ls_rule-tabname    = lv_tab.
@@ -843,8 +836,14 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
         ls_rule-changed_by = sy-uname.
         ls_rule-changed_at = now14( ).
         MODIFY zai_auth_rule FROM @ls_rule.
+        " 映射整份替换: 沿用权限表映射时清空; 规则换了表时旧映射一并作废
+        DELETE FROM zai_auth_rmap WHERE tcode_pat = @lv_pat.
+        IF lt_rmap IS NOT INITIAL.
+          INSERT zai_auth_rmap FROM TABLE @lt_rmap.
+        ENDIF.
         COMMIT WORK.
-        rs-message = '事务码规则已保存'.
+        rs-message = COND #( WHEN lt_rmap IS INITIAL THEN '事务码规则已保存'
+                             ELSE '事务码规则已保存(使用本规则自己的字段映射)' ).
 
       CATCH cx_root INTO DATA(lx).
         ROLLBACK WORK.
@@ -859,8 +858,11 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
 
     DATA: lt_names TYPE STANDARD TABLE OF zai_auth_tab WITH DEFAULT KEY,
           lt_rules TYPE STANDARD TABLE OF zai_auth_rule WITH DEFAULT KEY,
+          lt_rmap  TYPE STANDARD TABLE OF zai_auth_rmap WITH DEFAULT KEY,
           ls_table TYPE ty_table,
           lv_saved TYPE abap_bool,
+          lv_pat   TYPE string,
+          lv_tab   TYPE string,
           lv_err   TYPE string.
 
     rs-error = gate( iv_admin = abap_true iv_need_enabled = abap_false ).
@@ -885,6 +887,30 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
 
     SELECT * FROM zai_auth_rule ORDER BY tcode_pat INTO TABLE @lt_rules.
     rs-rules = CORRESPONDING #( lt_rules ).
+
+    " V1.2: 有自己映射的规则带上 own_map = X 和字段(当前表结构 + 规则映射;
+    "       表结构新增、规则映射里还没有的字段显示建议值, IT 重新保存规则即补齐)
+    LOOP AT rs-rules ASSIGNING FIELD-SYMBOL(<ls_r>) WHERE tabname IS NOT INITIAL.
+      lv_pat = <ls_r>-tcode_pat.
+      lv_tab = <ls_r>-tabname.
+      SELECT * FROM zai_auth_rmap
+        WHERE tcode_pat = @lv_pat AND tabname = @lv_tab
+        INTO TABLE @lt_rmap.
+      IF lt_rmap IS INITIAL.
+        CONTINUE.
+      ENDIF.
+      <ls_r>-own_map = 'X'.
+      read_fields( EXPORTING iv_tabname = lv_tab
+                   IMPORTING et_fields  = <ls_r>-fields
+                             ev_error   = lv_err ).
+      LOOP AT <ls_r>-fields ASSIGNING FIELD-SYMBOL(<ls_rf>).
+        READ TABLE lt_rmap INTO DATA(ls_rm) WITH KEY fieldname = <ls_rf>-fieldname.
+        IF sy-subrc = 0.
+          <ls_rf>-map_type  = ls_rm-map_type.
+          <ls_rf>-const_val = ls_rm-const_val.
+        ENDIF.
+      ENDLOOP.
+    ENDLOOP.
 
   ENDMETHOD.
 
@@ -1268,12 +1294,17 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
 
     CLEAR: et_tables, ev_error.
 
-    " 1) 规则指定了表 → 只写这一张
+    " 1) 规则指定了表 → 只写这一张; V1.2: 规则有自己的字段映射时按规则映射写
     IF is_rule-tabname IS NOT INITIAL.
       load_table( EXPORTING iv_tabname     = is_rule-tabname
                             iv_need_active = abap_true
                   IMPORTING es_table       = ls_tab
                             ev_error       = ev_error ).
+      IF ev_error IS INITIAL.
+        apply_rule_map( EXPORTING iv_tcode_pat = is_rule-tcode_pat
+                        IMPORTING ev_error     = ev_error
+                        CHANGING  cs_table     = ls_tab ).
+      ENDIF.
       IF ev_error IS INITIAL.
         APPEND ls_tab TO et_tables.
       ENDIF.
@@ -1328,6 +1359,143 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
     ASSIGN lr_found->* TO <found>.
     SELECT SINGLE * FROM (is_table-tabname) INTO @<found> WHERE (lv_where).
     rv = xsdbool( sy-subrc = 0 ).
+
+  ENDMETHOD.
+
+
+  METHOD check_fmap.
+
+    DATA: lt_fields TYPE tt_field,
+          lt_in     TYPE tt_fmap_in,
+          lv_json   TYPE string,
+          lv_users  TYPE i,
+          lv_tcodes TYPE i,
+          lv_const  TYPE string,
+          lv_digits TYPE string VALUE '0123456789'.
+
+    CLEAR: et_map, ev_error.
+    read_fields( EXPORTING iv_tabname = iv_tabname
+                 IMPORTING et_fields  = lt_fields
+                           ev_error   = ev_error ).
+    IF ev_error IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+
+    lv_json = condense( iv_fmap_json ).
+    IF lv_json NP '[*'.
+      ev_error = '字段映射必须是 JSON 数组'.
+      RETURN.
+    ENDIF.
+    TRY.
+        /ui2/cl_json=>deserialize( EXPORTING json = lv_json CHANGING data = lt_in ).
+      CATCH cx_root.
+        ev_error = '字段映射 JSON 无法解析'.
+        RETURN.
+    ENDTRY.
+    IF lines( lt_in ) <> lines( lt_fields ).
+      ev_error = '必须提交每个字段的映射(MANDT 除外)'.
+      RETURN.
+    ENDIF.
+
+    LOOP AT lt_in INTO DATA(ls_in).
+      READ TABLE lt_fields INTO DATA(ls_f) WITH KEY fieldname = ls_in-f.
+      IF sy-subrc <> 0.
+        ev_error = |字段 { ls_in-f } 不在表结构里(字段名只能来自 DDIC)|.
+        EXIT.
+      ENDIF.
+      READ TABLE et_map TRANSPORTING NO FIELDS WITH KEY fieldname = ls_in-f.
+      IF sy-subrc = 0.
+        ev_error = |字段 { ls_in-f } 重复|.
+        EXIT.
+      ENDIF.
+      CASE ls_in-t.
+        WHEN 'TCODE'.
+          lv_tcodes = lv_tcodes + 1.
+        WHEN 'USER'.
+          lv_users = lv_users + 1.
+        WHEN 'WERKS' OR 'CONST' OR 'DATE' OR 'TIME' OR 'BY' OR 'INITIAL'.
+          " 合法
+        WHEN OTHERS.
+          ev_error = |字段 { ls_in-f } 的映射类型不合法: { ls_in-t }|.
+          EXIT.
+      ENDCASE.
+      IF ls_in-t <> 'INITIAL'.
+        IF ls_f-datatype <> 'CHAR' AND ls_f-datatype <> 'NUMC'
+           AND ls_f-datatype <> 'DATS' AND ls_f-datatype <> 'TIMS'.
+          ev_error = |字段 { ls_in-f } 的类型 { ls_f-datatype } 不支持写入映射, 只支持 CHAR / NUMC / DATS / TIMS|.
+          EXIT.
+        ENDIF.
+        IF ( ls_in-t = 'DATE' AND ls_f-leng < 8 ) OR ( ls_in-t = 'TIME' AND ls_f-leng < 6 ).
+          ev_error = |字段 { ls_in-f } 太短, 放不下日期 / 时间|.
+          EXIT.
+        ENDIF.
+      ENDIF.
+      lv_const = condense( ls_in-c ).
+      IF ls_in-t = 'CONST'.
+        IF lv_const IS INITIAL.
+          ev_error = |字段 { ls_in-f } 选了固定值, 但没填值|.
+          EXIT.
+        ENDIF.
+        IF strlen( lv_const ) > ls_f-leng OR strlen( lv_const ) > 60.
+          ev_error = |字段 { ls_in-f } 的固定值过长|.
+          EXIT.
+        ENDIF.
+        IF ( ls_f-datatype = 'NUMC' OR ls_f-datatype = 'DATS' OR ls_f-datatype = 'TIMS' )
+           AND lv_const CN lv_digits.
+          ev_error = |字段 { ls_in-f } 的固定值必须是数字|.
+          EXIT.
+        ENDIF.
+      ENDIF.
+      " 主键必须有明确映射, 否则会写出"半条"权限
+      IF ls_f-keyflag = 'X' AND ls_in-t = 'INITIAL'.
+        ev_error = |主键字段 { ls_in-f } 必须配置映射(留空不允许)|.
+        EXIT.
+      ENDIF.
+      APPEND VALUE #( fieldname = ls_in-f
+                      map_type  = ls_in-t
+                      const_val = COND #( WHEN ls_in-t = 'CONST' THEN lv_const ELSE `` ) ) TO et_map.
+    ENDLOOP.
+
+    " V1.1: 同类映射可以配到多个字段(写入同一个值); 只要求至少有一个 USER
+    IF ev_error IS INITIAL AND lv_users < 1.
+      ev_error = '至少要有一个 USER(目标账号)映射'.
+    ENDIF.
+    IF ev_error IS INITIAL AND iv_need_tcode = abap_true AND lv_tcodes < 1.
+      ev_error = '参与自动发现的表必须有 TCODE 映射'.
+    ENDIF.
+    IF ev_error IS NOT INITIAL.
+      CLEAR et_map.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD apply_rule_map.
+
+    DATA lt_map TYPE STANDARD TABLE OF zai_auth_rmap WITH DEFAULT KEY.
+
+    CLEAR: ev_own, ev_error.
+    IF iv_tcode_pat IS INITIAL OR cs_table-tabname IS INITIAL.
+      RETURN.
+    ENDIF.
+    " 只认保存时就指向这张表的映射(规则换表时 save_rule 已清掉旧映射, 这里再兜一层)
+    SELECT * FROM zai_auth_rmap
+      WHERE tcode_pat = @iv_tcode_pat AND tabname = @cs_table-tabname
+      INTO TABLE @lt_map.
+    IF lt_map IS INITIAL.
+      RETURN.                             " 没有自己的映射: 沿用权限表的
+    ENDIF.
+    ev_own = abap_true.
+    " 规则映射是整份: 当前表结构的每个字段都要有(与 load_table 对权限表映射的要求相同)
+    LOOP AT cs_table-fields ASSIGNING FIELD-SYMBOL(<ls_f>).
+      READ TABLE lt_map INTO DATA(ls_m) WITH KEY fieldname = <ls_f>-fieldname.
+      IF sy-subrc <> 0.
+        ev_error = |规则 { iv_tcode_pat } 的字段映射缺少字段 { <ls_f>-fieldname }(权限表结构已变化)，请 IT 重新保存该规则|.
+        RETURN.
+      ENDIF.
+      <ls_f>-map_type  = ls_m-map_type.
+      <ls_f>-const_val = ls_m-const_val.
+    ENDLOOP.
 
   ENDMETHOD.
 

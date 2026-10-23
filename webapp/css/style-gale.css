@@ -830,6 +830,23 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .aplInput.admFldConst .sapMInputBaseContentWrapper { min-height: 2rem; border-radius: 8px !important; }
 .aplInput.admFldConst .sapMInputBaseInner { font-size: .8rem !important; }
 .admFldEmpty { padding: .2rem 0 .9rem; }
+/* 20261023：事务码规则带字段映射 —— 目标表下拉、沿用摘要、单独映射与权限表不同的行标蓝 */
+.admSel.admSelTall.sapMSlt { height: 2.5rem; border-radius: 10px !important; }
+.admSel.admSelTall .sapMSltLabel { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important; font-size: .86rem; }
+.admSel.admSelTall:hover { border-color: var(--line-strong) !important; }
+.admMapPills { margin-bottom: .7rem; }
+.admMapSum { padding-bottom: .9rem; }
+.admMapSumHead { display: block !important; font-size: .76rem !important; color: var(--text-2) !important; }
+.admMapChips { display: flex; flex-wrap: wrap; gap: .35rem; margin: .5rem 0 .15rem; }
+.admMapChip { padding: .16rem .55rem; border-radius: 6px; background: var(--hover); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important; font-size: .74rem !important; color: var(--text-2) !important; }
+.admMapBar { margin-bottom: .4rem; gap: .5rem; }
+.admNoteTight { margin-bottom: .7rem; }
+.admFldNameBox { display: flex; flex-direction: column; min-width: 0; }
+.admFldBase { display: none !important; margin-top: .1rem; font-size: .7rem !important; color: var(--accent) !important; }
+.admFldRow[data-diff="yes"] .admFldBase { display: block !important; }
+.admFldRow[data-diff="yes"] .admSel.sapMSlt { border-color: var(--accent) !important; background: var(--accent-soft) !important; }
+.admFldRow[data-diff="yes"] .admSel .sapMSltLabel { color: var(--accent) !important; font-weight: 600; }
+.apvChip.admOwnTag { background: var(--accent-soft) !important; color: var(--accent) !important; }
 .admFootHint { min-width: 0; margin-right: .75rem; }
 .admPager { gap: .4rem; }
 /* 自绘小按钮的文字居中：UI5 把 .sapMBtnContent 的行高固定为 34px，比 28~32px 高的按钮还高，字会整体偏下；

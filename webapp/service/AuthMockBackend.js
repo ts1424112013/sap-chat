@@ -12,16 +12,19 @@ sap.ui.define([], function () {
          *   · 映射只允许 CHAR / NUMC / DATS / TIMS 字段；主键必须有明确映射；工厂映射可选
          *   · 20261022（V1.1）：至少一个 USER 映射；同一种映射可以配给多个字段，写入同一个值
          *   · 开关关闭只拒绝写权限表的操作（申请 / 代加 / 审批 / 撤销）和普通用户查记录，配置照常
-         * 演示数据：事务码 ZDPMM051 / ZDPMM052 / ZDPMM702(规则 BLOCK) / ZDEMO001 / ZNOTABLE(无权限表)，
+         *   · 20261023（V1.2）：事务码规则可带自己的整份字段映射（rmaps，对应 ZAI_AUTH_RMAP）；
+         *     命中规则、规则指定了表、且有自己的映射才用，其余沿用权限表映射；审批按当前配置重新选
+         * 演示数据：事务码 ZDPMM051 / ZDPMM052 / ZDPMM702(规则 BLOCK) / ZDEMO001 / ZDEMO002 / ZDEMO003 / ZNOTABLE(无权限表)，
          * 工厂 1000 / 2000 / 3000，账号 DEMOUSER / USERA / USERB 可用、LOCKED 已锁定；
          * 可登记的表 ZIDPPP009(已登记) / ZAUTH_TEST(字段名不同) / YAUTH_SINGLE(没有事务码列) /
-         * ZAUTH_NOPLANT(没有工厂列) / ZAUTH_TWIN(两列账号 + 两列事务码，同类映射配多个字段)。
+         * ZAUTH_NOPLANT(没有工厂列) / ZAUTH_TWIN(两列账号 + 两列事务码，同类映射配多个字段) /
+         * ZAUTH_WIDE(多一列工厂、多一列账号，演示规则单独映射)。
          * 开关：localStorage zaiChat.cfg.AUTH_ENABLED（没设过 = 开，演示方便；设置里的开关会写它）。
          * 以 Object.assign 并入 ChatService（this 即 ChatService）。
          * =====================================================================
          */
 
-        var TCODES = ["ZDPMM051", "ZDPMM052", "ZDPMM702", "ZDEMO001", "ZNOTABLE"];
+        var TCODES = ["ZDPMM051", "ZDPMM052", "ZDPMM702", "ZDEMO001", "ZDEMO002", "ZDEMO003", "ZNOTABLE"];
         var PLANTS = ["1000", "2000", "3000"];
         var USERS = ["DEMOUSER", "USERA", "USERB"];
         var LOCKED = ["LOCKED"];
@@ -58,18 +61,22 @@ sap.ui.define([], function () {
                                 this._oAuthMock = {
                                         seq: 0,
                                         requests: [],
-                                        rows: { ZIDPPP009: [], ZAUTH_TEST: [], YAUTH_SINGLE: [], ZAUTH_NOPLANT: [], ZAUTH_TWIN: [] },
+                                        rows: { ZIDPPP009: [], ZAUTH_TEST: [], YAUTH_SINGLE: [], ZAUTH_NOPLANT: [], ZAUTH_TWIN: [], ZAUTH_WIDE: [] },
                                         catalog: {
                                                 ZIDPPP009: base,
                                                 ZAUTH_TEST: [fld("TCD", true, 20), fld("BNAME", true, 12), fld("PLANT", true, 4), fld("ERDAT", false, 8, "DATE", "DATS")],
                                                 YAUTH_SINGLE: [fld("UNAME", true, 12), fld("WERKS", true, 4)],
                                                 ZAUTH_NOPLANT: [fld("TCODE", true, 20), fld("BNAME", true, 12)],
-                                                ZAUTH_TWIN: [fld("TCODE", true, 20), fld("UNAME", true, 12), fld("TCODE_ALT", false, 20), fld("OWNER", false, 12)]
+                                                ZAUTH_TWIN: [fld("TCODE", true, 20), fld("UNAME", true, 12), fld("TCODE_ALT", false, 20), fld("OWNER", false, 12)],
+                                                ZAUTH_WIDE: [fld("TCODE", true, 20, "TCODE"), fld("FIR_ACCOUNT", true, 12, "USER"), fld("WERKS", true, 4, "WERKS"), fld("WERKS_TO", false, 4),
+                                                        fld("CREATOR", false, 12), fld("ERDAT", false, 8, "DATE", "DATS")]
                                         },
                                         tables: {
                                                 ZIDPPP009: { descr: "演示事务码权限表", discover: "X", active: "X",
                                                         fmap: { TCODE: { t: "TCODE", c: "" }, FIR_ACCOUNT: { t: "USER", c: "" }, WERKS: { t: "WERKS", c: "" } } }
                                         },
+                                        // 规则自己的字段映射（ZAI_AUTH_RMAP）：{ 规则: { tabname, fmap } }
+                                        rmaps: {},
                                         rules: [
                                                 { tcodePat: "ZDPMM051", tabname: "ZIDPPP009", ruleMode: "AUTO", allowAll: "", active: "X" },
                                                 { tcodePat: "ZDPMM052", tabname: "ZIDPPP009", ruleMode: "AUTO", allowAll: "", active: "X" },
@@ -141,7 +148,7 @@ sap.ui.define([], function () {
 
                 _mockAuthFields: function (s, name) {
                         if (!/^[ZY][A-Z0-9_]*$/.test(name) || /^ZAI_/.test(name) || name.length > 30 || !s.catalog[name]) {
-                                fail("只能登记 Z / Y 开头的透明表, 且不能是 ZAI_* 系统表, 并且表必须存在(演示只有 ZIDPPP009 / ZAUTH_TEST / YAUTH_SINGLE / ZAUTH_NOPLANT / ZAUTH_TWIN)");
+                                fail("只能登记 Z / Y 开头的透明表, 且不能是 ZAI_* 系统表, 并且表必须存在(演示只有 ZIDPPP009 / ZAUTH_TEST / YAUTH_SINGLE / ZAUTH_NOPLANT / ZAUTH_TWIN / ZAUTH_WIDE)");
                         }
                         return clone(s.catalog[name]);
                 },
@@ -171,7 +178,7 @@ sap.ui.define([], function () {
 
                 _mockAuthFindTables: function (s, tcode, rule) {
                         var svc = this;
-                        if (rule.tabname) { return [svc._mockAuthLoadTable(s, rule.tabname, true)]; }
+                        if (rule.tabname) { return [svc._mockAuthApplyRuleMap(s, rule.tcodePat, svc._mockAuthLoadTable(s, rule.tabname, true))]; }
                         var out = [];
                         Object.keys(s.tables).sort().forEach(function (name) {
                                 var t = s.tables[name];
@@ -183,6 +190,50 @@ sap.ui.define([], function () {
                         });
                         if (!out.length) { fail("该事务码尚未配置权限表，请联系 IT"); }
                         return out;
+                },
+
+                /** V1.2（apply_rule_map）：规则有自己的映射时整份覆盖；表结构多了映射里没有的字段 → 拒绝 */
+                _mockAuthApplyRuleMap: function (s, pat, tab) {
+                        var m = pat && s.rmaps[pat];
+                        if (!m || m.tabname !== tab.tabname) { return tab; }
+                        tab.fields.forEach(function (f) {
+                                var x = m.fmap[f.fieldname];
+                                if (!x) { fail("规则 " + pat + " 的字段映射缺少字段 " + f.fieldname + "(权限表结构已变化)，请 IT 重新保存该规则"); }
+                                f.mapType = x.t;
+                                f.constVal = x.c;
+                        });
+                        return tab;
+                },
+
+                /** V1.2（check_fmap）：字段映射校验，权限表与规则共用；needTcode = 至少一个 TCODE */
+                _mockAuthCheckFmap: function (s, name, json, needTcode) {
+                        var fields = this._mockAuthFields(s, name);
+                        var list;
+                        try { list = JSON.parse(json || ""); } catch (e) { list = null; }
+                        if (!Array.isArray(list)) { fail("字段映射必须是 JSON 数组"); }
+                        if (list.length !== fields.length) { fail("必须提交每个字段的映射(MANDT 除外)"); }
+                        var fmap = {}, n = { USER: 0, WERKS: 0, TCODE: 0 };
+                        list.forEach(function (m) {
+                                var f = fields.filter(function (x) { return x.fieldname === m.f; })[0];
+                                if (!f) { fail("字段 " + m.f + " 不在表结构里(字段名只能来自 DDIC)"); }
+                                if (fmap[m.f]) { fail("字段 " + m.f + " 重复"); }
+                                if (MAP_OK.indexOf(m.t) < 0) { fail("字段 " + m.f + " 的映射类型不合法: " + m.t); }
+                                if (n[m.t] !== undefined) { n[m.t]++; }
+                                var c = String(m.c || "").trim();
+                                if (m.t !== "INITIAL" && TYPE_OK.indexOf(f.datatype) < 0) { fail("字段 " + m.f + " 的类型 " + f.datatype + " 不支持写入映射, 只支持 CHAR / NUMC / DATS / TIMS"); }
+                                if ((m.t === "DATE" && f.leng < 8) || (m.t === "TIME" && f.leng < 6)) { fail("字段 " + m.f + " 太短, 放不下日期 / 时间"); }
+                                if (m.t === "CONST") {
+                                        if (!c) { fail("字段 " + m.f + " 选了固定值，但没填值"); }
+                                        if (c.length > f.leng || c.length > 60) { fail("字段 " + m.f + " 的固定值过长"); }
+                                        if (/^(NUMC|DATS|TIMS)$/.test(f.datatype) && /\D/.test(c)) { fail("字段 " + m.f + " 的固定值必须是数字"); }
+                                }
+                                if (f.keyflag === "X" && m.t === "INITIAL") { fail("主键字段 " + m.f + " 必须配置映射(留空不允许)"); }
+                                fmap[m.f] = { t: m.t, c: m.t === "CONST" ? c : "" };
+                        });
+                        // 20261022（V1.1）：同类映射可以配到多个字段（写入同一个值），只要求至少有一个 USER
+                        if (n.USER < 1) { fail("至少要有一个 USER(目标账号)映射"); }
+                        if (needTcode && n.TCODE < 1) { fail("参与自动发现的表必须有 TCODE 映射"); }
+                        return fmap;
                 },
 
                 /* ---------- 组行 / 查重 / 授权 / 撤销（对应 build_row / row_exists / grant_row / revoke_row） ---------- */
@@ -335,6 +386,9 @@ sap.ui.define([], function () {
                                 if (USERS.indexOf(r.targetUser) < 0 && r.targetUser !== ctx.me) { fail("目标 SAP 账号不存在、已锁定或已失效"); }
                                 svc._mockAuthValidRequest(r.tcode, r.werks, r.reason, !r.werks);
                                 var tab = svc._mockAuthLoadTable(s, r.tabname, true);
+                                // V1.2：按当前配置重新选映射——当前命中的规则指向这张表且有自己的映射时用它
+                                var rule = svc._mockAuthFindRule(s, r.tcode);
+                                if (rule.tabname === tab.tabname) { svc._mockAuthApplyRuleMap(s, rule.tcodePat, tab); }
                                 var row = svc._mockAuthBuildRow(tab, r.tcode, r.targetUser, r.werks);
                                 if (svc._mockAuthExists(s, tab, row)) {
                                         r.status = "EXISTS"; r.message = "审批时发现已有权限，未重复写入";
@@ -409,33 +463,8 @@ sap.ui.define([], function () {
 
                 _mockAuthTableSave: function (ctx, p) {
                         var s = ctx.s, name = String(p.Tabname || "").trim().toUpperCase();
-                        var fields = this._mockAuthFields(s, name);
+                        var fmap = this._mockAuthCheckFmap(s, name, p.FmapJson, p.Discover === "X");
                         if (String(p.Descr || "").length > 60) { fail("说明不能超过 60 字"); }
-                        var list;
-                        try { list = JSON.parse(p.FmapJson || ""); } catch (e) { list = null; }
-                        if (!Array.isArray(list)) { fail("字段映射必须是 JSON 数组"); }
-                        if (list.length !== fields.length) { fail("必须提交每个字段的映射(MANDT 除外)"); }
-                        var fmap = {}, n = { USER: 0, WERKS: 0, TCODE: 0 };
-                        list.forEach(function (m) {
-                                var f = fields.filter(function (x) { return x.fieldname === m.f; })[0];
-                                if (!f) { fail("字段 " + m.f + " 不在表结构里(字段名只能来自 DDIC)"); }
-                                if (fmap[m.f]) { fail("字段 " + m.f + " 重复"); }
-                                if (MAP_OK.indexOf(m.t) < 0) { fail("字段 " + m.f + " 的映射类型不合法: " + m.t); }
-                                if (n[m.t] !== undefined) { n[m.t]++; }
-                                var c = String(m.c || "").trim();
-                                if (m.t !== "INITIAL" && TYPE_OK.indexOf(f.datatype) < 0) { fail("字段 " + m.f + " 的类型 " + f.datatype + " 不支持写入映射, 只支持 CHAR / NUMC / DATS / TIMS"); }
-                                if ((m.t === "DATE" && f.leng < 8) || (m.t === "TIME" && f.leng < 6)) { fail("字段 " + m.f + " 太短, 放不下日期 / 时间"); }
-                                if (m.t === "CONST") {
-                                        if (!c) { fail("字段 " + m.f + " 选了固定值，但没填值"); }
-                                        if (c.length > f.leng || c.length > 60) { fail("字段 " + m.f + " 的固定值过长"); }
-                                        if (/^(NUMC|DATS|TIMS)$/.test(f.datatype) && /\D/.test(c)) { fail("字段 " + m.f + " 的固定值必须是数字"); }
-                                }
-                                if (f.keyflag === "X" && m.t === "INITIAL") { fail("主键字段 " + m.f + " 必须配置映射(留空不允许)"); }
-                                fmap[m.f] = { t: m.t, c: m.t === "CONST" ? c : "" };
-                        });
-                        // 20261022（V1.1）：同类映射可以配到多个字段（写入同一个值），只要求至少有一个 USER
-                        if (n.USER < 1) { fail("至少要有一个 USER(目标账号)映射"); }
-                        if (p.Discover === "X" && n.TCODE < 1) { fail("参与自动发现的表必须有 TCODE 映射"); }
                         s.tables[name] = { descr: String(p.Descr || ""), discover: p.Discover === "X" ? "X" : "", active: p.Active === "X" ? "X" : "", fmap: fmap };
                         return { message: "权限表配置已保存", error: "" };
                 },
@@ -445,21 +474,44 @@ sap.ui.define([], function () {
                         if (!pat || pat.length > 20 || !/^[A-Z0-9_\/*]+$/.test(pat)) { fail("事务码规则格式不合法(字母、数字、_ / 和通配符 *)"); }
                         if (p.Delete === "X") {
                                 s.rules = s.rules.filter(function (r) { return r.tcodePat !== pat; });
+                                delete s.rmaps[pat];                  // V1.2：映射随规则一起删
                                 return { message: "规则已删除", error: "" };
                         }
                         if (["AUTO", "APPROVE", "BLOCK"].indexOf(p.RuleMode) < 0) { fail("处理方式必须是 AUTO / APPROVE / BLOCK"); }
                         if (tab) { this._mockAuthLoadTable(s, tab, true); }
+                        // V1.2：本规则自己的字段映射（整份，约束同权限表但不要求 TCODE）；空 = 沿用权限表映射
+                        var json = String(p.FmapJson || "").trim(), fmap = null;
+                        if (json) {
+                                if (!tab) { fail("规则不指定权限表(走自动发现)时不能单独配字段映射"); }
+                                try { fmap = this._mockAuthCheckFmap(s, tab, json, false); } catch (e) { fail("本规则的字段映射: " + e.message); }
+                        }
+                        if (fmap) { s.rmaps[pat] = { tabname: tab, fmap: fmap }; } else { delete s.rmaps[pat]; }
                         var rule = { tcodePat: pat, tabname: tab, ruleMode: p.RuleMode, allowAll: p.AllowAll === "X" ? "X" : "", active: p.Active === "X" ? "X" : "" };
                         var i = -1;
                         s.rules.forEach(function (r, k) { if (r.tcodePat === pat) { i = k; } });
                         if (i >= 0) { s.rules[i] = rule; } else { s.rules.push(rule); }
                         s.rules.sort(function (a, b) { return a.tcodePat < b.tcodePat ? -1 : 1; });
-                        return { message: "事务码规则已保存", error: "" };
+                        return { message: fmap ? "事务码规则已保存(使用本规则自己的字段映射)" : "事务码规则已保存", error: "" };
                 },
 
                 _mockAuthConfig: function (ctx) {
                         var svc = this, s = ctx.s;
-                        return { error: "", rules: clone(s.rules), tables: Object.keys(s.tables).sort().map(function (name) {
+                        // V1.2：有自己映射的规则带 ownMap = X 和字段（当前表结构 + 规则映射；结构新增的字段显示建议值）
+                        var rules = clone(s.rules).map(function (r) {
+                                var m = r.tabname && s.rmaps[r.tcodePat];
+                                r.ownMap = "";
+                                r.fields = [];
+                                if (m && m.tabname === r.tabname) {
+                                        r.ownMap = "X";
+                                        r.fields = svc._mockAuthFields(s, r.tabname).map(function (f) {
+                                                var x = m.fmap[f.fieldname];
+                                                if (x) { f.mapType = x.t; f.constVal = x.c; }
+                                                return f;
+                                        });
+                                }
+                                return r;
+                        });
+                        return { error: "", rules: rules, tables: Object.keys(s.tables).sort().map(function (name) {
                                 var t = s.tables[name];
                                 var fields = svc._mockAuthFields(s, name);
                                 fields.forEach(function (f) {

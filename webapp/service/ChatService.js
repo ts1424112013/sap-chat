@@ -673,7 +673,7 @@ sap.ui.define([
                 },
 
                 /**
-                  * 20261020：事务码权限自助申请的 9 个 FI（设计：功能计划书/权限自助申请/01-方案与开发计划_V1.3）。
+                  * 20261020：事务码权限自助申请的 9 个 FI（设计：功能计划书/权限自助申请/01-方案与开发计划_V1.4）。
                   * 都走 _taskCall（GenericResult 契约、POST 参数放 URL、带 CSRF）；成功时返回已解析的 ResultJson
                   * （字段是 camelCase：reqId / targetUser / statusText 由界面层再加），失败抛 Error(后端原话)。
                   * 演示模式走 AuthMockBackend（语义与后端一一对应）。
@@ -693,7 +693,7 @@ sap.ui.define([
                                 AuthDecide:        ["ReqId", "Approve", "Message"],
                                 AuthRevoke:        ["ReqId", "Message"],
                                 AuthTableSave:     ["Tabname", "Descr", "Discover", "Active", "FmapJson"],
-                                AuthRuleSave:      ["TcodePat", "Tabname", "RuleMode", "AllowAll", "Active", "Delete"],
+                                AuthRuleSave:      ["TcodePat", "Tabname", "RuleMode", "AllowAll", "Active", "Delete", "FmapJson"],   // FmapJson：20261023 规则字段映射（SEGW 需同步加参数）
                                 AuthList:          ["Status", "User", "Tcode", "Top", "Skip"],
                                 AuthTableDescribe: ["Tabname"]
                         };

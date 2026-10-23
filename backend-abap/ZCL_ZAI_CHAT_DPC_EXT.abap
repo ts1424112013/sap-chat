@@ -107,6 +107,12 @@
 *   ★ 重贴后核对标记: 定义区有 chattexts_create_entity REDEFINITION 与
 *   resolve_text; EXECUTE_ACTION 参数循环后有 find( val = lv_question
 *   sub = gc_text_prefix ) = 0
+* V15.7 20261023(权限: 事务码规则带字段映射): AUTHRULESAVE 分支多读一个参数
+*   FmapJson, 传给 ZCL_AI_AUTH_SERVICE=>save_rule 的 iv_fmap_json(V1.2 起有, 可选)。
+*   需先 SE11 建 ZAI_AUTH_RMAP、重贴 ZCL_AI_AUTH_SERVICE V1.2, SEGW 给 AuthRuleSave
+*   加参数 FmapJson(Edm.String, 勾 Nullable: 旧前端不发它也不 404)并 Generate。
+*   现场 DPC 若还留着 〇-D 的诊断捕获块, 不要整类重贴, 只在 AUTHRULESAVE 分支加这一行。其余分支不变
+*   ★ 重贴后核对标记: AUTHRULESAVE 分支里有 iv_fmap_json = v8_param( ... 'FmapJson' )
 *=======================================================================
 * V15(P1~P3) 20261007: Agent 多业务任务与报表分析接口
 *   新增函数导入分支(全部旁路, 不改既有分支; SEGW 未建 metadata 前
@@ -333,7 +339,8 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
                          iv_rule_mode = v8_param( it_parameter = it_parameter iv_name = 'RuleMode' )
                          iv_allow_all = v8_param( it_parameter = it_parameter iv_name = 'AllowAll' )
                          iv_active    = v8_param( it_parameter = it_parameter iv_name = 'Active' )
-                         iv_delete    = v8_param( it_parameter = it_parameter iv_name = 'Delete' ) ).
+                         iv_delete    = v8_param( it_parameter = it_parameter iv_name = 'Delete' )
+                         iv_fmap_json = v8_param( it_parameter = it_parameter iv_name = 'FmapJson' ) ).   " V15.7
         copy_data_to_ref( EXPORTING is_data = to_generic_odata(
                             auth_reply( iv_error = ls_au6-error iv_message = ls_au6-message iv_data = ls_au6 ) )
                           CHANGING cr_data = er_data ).

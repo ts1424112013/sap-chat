@@ -256,27 +256,12 @@
                                         </HBox>
                                 </VBox>
 
-                                <VBox renderType="Bare" class="admEditor">
+                                <!-- 字段映射（列表与事务码规则共用 AuthFieldMap 片段；本卡片绑定 /editTable） -->
+                                <VBox renderType="Bare" class="admEditor" binding="{auth>/editTable}">
                                         <Text text="{i18n>admMapTitle}" class="admSecTitle"/>
-                                        <HBox renderType="Bare" class="admFldRow admFldHead" visible="{= ${auth>/editTable/fields}.length > 0 }">
-                                                <Text text="{i18n>authFldName}"/>
-                                                <Text text="{i18n>authFldKey}"/>
-                                                <Text text="{i18n>authFldType}"/>
-                                                <Text text="{i18n>authFldMap}"/>
-                                                <Text text="{i18n>authFldConst}"/>
-                                        </HBox>
-                                        <VBox items="{path: 'auth>/editTable/fields', templateShareable: false}" class="admFldList">
-                                                <HBox renderType="Bare" class="admFldRow">
-                                                        <Text text="{auth>fieldname}" class="admFldName"/>
-                                                        <Text text="{= ${auth>keyflag} === 'X' ? '●' : '' }" class="admFldKey"/>
-                                                        <Text text="{= ${auth>datatype} + ' · ' + ${auth>leng} }" class="admFldType"/>
-                                                        <Select selectedKey="{auth>mapType}" items="{path: 'auth>/mapTypes', templateShareable: false}" class="admSel">
-                                                                <core:Item key="{auth>key}" text="{auth>text}"/>
-                                                        </Select>
-                                                        <Input value="{auth>constVal}" maxLength="60" enabled="{= ${auth>mapType} === 'CONST' }" class="aplInput admFldConst"/>
-                                                </HBox>
-                                        </VBox>
-                                        <Text text="{i18n>authDescribeFirst}" class="aplHint admFldEmpty" visible="{= ${auth>/editTable/fields}.length === 0 }"/>
+                                        <Text text="{auth>ownRulesText}" class="admNote admNoteTight" visible="{= !!${auth>ownRulesText} }"/>
+                                        <core:Fragment fragmentName="zai.chat.view.AuthFieldMap" type="XML"/>
+                                        <Text text="{i18n>authDescribeFirst}" class="aplHint admFldEmpty" visible="{= ${auth>fields}.length === 0 }"/>
                                 </VBox>
                         </VBox>
 
@@ -301,6 +286,7 @@
                                                                         <Text text="{auth>targetText}" class="admArrow"/>
                                                                         <Text text="{i18n>admRuleOff}" class="apvChip" visible="{= ${auth>active} !== 'X' }"/>
                                                                         <Text text="{i18n>admAllowAllTag}" class="apvChip" visible="{= ${auth>allowAll} === 'X' }"/>
+                                                                        <Text text="{i18n>admOwnMapTag}" class="apvChip admOwnTag" visible="{= ${auth>ownMap} === 'X' }"/>
                                                                 </HBox>
                                                         </VBox>
                                                         <Text text="{auth>modeText}" class="apvStatus" wrapping="false">
@@ -321,7 +307,13 @@
                                                 </VBox>
                                                 <VBox renderType="Bare" class="aplField">
                                                         <Text text="{i18n>authColTable}" class="aplLabel"/>
-                                                        <Input value="{auth>/editRule/tabname}" placeholder="{i18n>authRuleTablePh}" maxLength="30" class="aplInput aplMono"/>
+                                                        <!-- 20261023：改为下拉（只列已登记的表）——字段映射跟着目标表走。
+                                                             单向绑定 + change 里写回（「不指定」的键是 "-"：UI5 把空键当成"没选"）；
+                                                             这样刷新下拉项时不会把正在编辑的目标表改掉 -->
+                                                        <Select selectedKey="{= ${auth>/editRule/tabname} || '-' }" items="{path: 'auth>/ruleTables', templateShareable: false}"
+                                                                forceSelection="false" width="100%" change=".onAuthRuleTable" class="admSel admSelTall">
+                                                                <core:Item key="{auth>key}" text="{auth>text}"/>
+                                                        </Select>
                                                 </VBox>
                                         </HBox>
                                         <VBox renderType="Bare" class="aplField">
@@ -361,6 +353,46 @@
                                                 </VBox>
                                                 <Switch state="{auth>/editRule/active}"/>
                                         </HBox>
+                                </VBox>
+
+                                <!-- 20261023：本规则的字段映射（沿用权限表的 / 本规则单独一份）；本卡片绑定 /editRule -->
+                                <VBox renderType="Bare" class="admEditor" binding="{auth>/editRule}">
+                                        <Text text="{i18n>admMapTitle}" class="admSecTitle"/>
+                                        <Text text="{i18n>admRuleMapNoTable}" class="aplHint admFldEmpty" visible="{= !${auth>tabname} }"/>
+                                        <VBox renderType="Bare" visible="{= !!${auth>tabname} }">
+                                                <HBox renderType="Bare" class="admPills admMapPills">
+                                                        <Button text="{i18n>admRuleMapInherit}" type="Transparent" press=".onAdmRuleMap" class="admPill">
+                                                                <customData>
+                                                                        <core:CustomData key="map" value="inherit"/>
+                                                                        <core:CustomData key="on" value="{= ${auth>ownMap} ? 'no' : 'yes' }" writeToDom="true"/>
+                                                                </customData>
+                                                        </Button>
+                                                        <Button text="{i18n>admRuleMapOwn}" type="Transparent" press=".onAdmRuleMap" class="admPill">
+                                                                <customData>
+                                                                        <core:CustomData key="map" value="own"/>
+                                                                        <core:CustomData key="on" value="{= ${auth>ownMap} ? 'yes' : 'no' }" writeToDom="true"/>
+                                                                </customData>
+                                                        </Button>
+                                                </HBox>
+                                                <!-- 沿用：一行只读摘要 -->
+                                                <VBox renderType="Bare" class="admMapSum" visible="{= !${auth>ownMap} }">
+                                                        <Text text="{auth>baseHint}" class="admMapSumHead"/>
+                                                        <HBox renderType="Bare" items="{path: 'auth>baseMap', templateShareable: false}" class="admMapChips">
+                                                                <Text text="{auth>text}" class="admMapChip"/>
+                                                        </HBox>
+                                                        <Text text="{i18n>admRuleMapInheritTip}" class="aplMsg"/>
+                                                </VBox>
+                                                <!-- 单独：与权限表配置同一个映射列表 -->
+                                                <VBox renderType="Bare" visible="{= !!${auth>ownMap} }">
+                                                        <HBox alignItems="Center" justifyContent="SpaceBetween" class="admMapBar">
+                                                                <Text text="{auth>ownHint}" class="admMapSumHead">
+                                                                        <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                                                </Text>
+                                                                <Button text="{i18n>admRuleMapRecopy}" icon="sap-icon://copy" type="Transparent" press=".onAuthRuleRecopy" class="admLink"/>
+                                                        </HBox>
+                                                        <core:Fragment fragmentName="zai.chat.view.AuthFieldMap" type="XML"/>
+                                                </VBox>
+                                        </VBox>
                                 </VBox>
                         </VBox>
                 </VBox>
