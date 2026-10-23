@@ -172,15 +172,15 @@
                                                                                                 tooltip="{i18n>roleManage}" press=".onOpenRoleManage" class="roleMngBtn"/>
                                                                                 </HBox>
                                                                                 <!-- 20261020：模型选择（会话级，每个对话各自记住；对话 / Agent 两模式都显示） -->
-                                                                                <HBox alignItems="Center" class="skillSlot" visible="{skill>/visible}">
-                                                                                        <Button id="skillBtnHero" text="{skill>/label}" icon="sap-icon://learning-assistant" type="Transparent"
-                                                                                                tooltip="{skill>/hint}" enabled="{= ${skill>/canPick} &amp;&amp; !${chat>/busy} }" press=".onOpenSkills" class="skillPill"/>
-                                                                                        <Button icon="sap-icon://refresh" type="Transparent" tooltip="重新读取技能" press=".onRefreshSkills"
-                                                                                                visible="{= !!${skill>/error} }" enabled="{= !${chat>/busy} }" class="skillClear"/>
-                                                                                        <Button icon="sap-icon://decline" type="Transparent" tooltip="取消技能" press=".onClearSkill"
+                                                                                <!-- 20261024：技能胶囊（设计稿 01/03/07）：未选「技能 ▾」；选中后与 × 合成一个蓝色胶囊；
+                                                                                     不可用时虚线变灰。外观由 SkillPanel._paintSkill 给本 HBox 切 skillOn / skillWarn / skillOff / skillOpen -->
+                                                                                <HBox id="skillSlotHero" alignItems="Center" class="skillSlot" visible="{skill>/visible}">
+                                                                                        <Button id="skillBtnHero" text="{skill>/label}" type="Transparent" ariaHasPopup="Dialog"
+                                                                                                tooltip="{skill>/tooltip}" enabled="{= ${skill>/canPick} &amp;&amp; !${chat>/busy} }" press=".onOpenSkills" class="skillPill"/>
+                                                                                        <Button icon="sap-icon://decline" type="Transparent" tooltip="不用这个技能" press=".onClearSkill"
                                                                                                 visible="{= !!${skill>/selected} }" enabled="{= !${chat>/busy} }" class="skillClear"/>
-                                                                                        <Button icon="sap-icon://hint" type="Transparent" tooltip="查看做法" press=".onViewSkill"
-                                                                                                visible="{= !!${skill>/selected} }" class="skillClear"/>
+                                                                                        <Button icon="sap-icon://refresh" type="Transparent" tooltip="重新读取技能" press=".onRefreshSkills"
+                                                                                                visible="{= !!${skill>/error} }" enabled="{= !${chat>/busy} }" class="skillRetry"/>
                                                                                 </HBox>
                                                                                 <Button id="modelBtnHero" icon="sap-icon://ai" text="{chat>/currentModelName}" tooltip="{i18n>modelPickTip}"
                                                                                         type="Transparent" press=".onOpenModelPicker" class="modelPill"/>
@@ -201,7 +201,22 @@
                                                                                 </HBox>
                                                                         </HBox>
                                                                 </VBox>
-                                                                <Text text="{skill>/hint}" visible="{skill>/visible}" class="skillHint"/>
+                                                                <!-- 20261024：技能提示行（只在已选技能 / 场景不支持 / 出错时出现；「查看做法」就地展开正文） -->
+                                                                <VBox renderType="Bare" class="skillHintWrap" visible="{= ${skill>/visible} &amp;&amp; ${skill>/hintVisible} }">
+                                                                        <HBox alignItems="Center" justifyContent="SpaceBetween" class="skillHintRow">
+                                                                                <customData>
+                                                                                        <core:CustomData key="kind" value="{skill>/hintKind}" writeToDom="true"/>
+                                                                                </customData>
+                                                                                <Text text="{skill>/hint}" class="skillHintText"/>
+                                                                                <HBox alignItems="Center" class="skillHintLinks">
+                                                                                        <Link text="{= ${skill>/bodyOpen} ? '收起做法' : '查看做法' }" press=".onViewSkill"
+                                                                                                visible="{skill>/canViewBody}" class="skillHintLink"/>
+                                                                                        <Link text="重试" press=".onRefreshSkills" visible="{= !!${skill>/error} }" class="skillHintLink"/>
+                                                                                </HBox>
+                                                                        </HBox>
+                                                                        <Text text="{skill>/selected/body}" visible="{= ${skill>/bodyOpen} &amp;&amp; ${skill>/canViewBody} }"
+                                                                                renderWhitespace="true" class="skillBody"/>
+                                                                </VBox>
                                                                 <!-- V16：建议标签（输入卡下方一行，点击填入输入框；替代原漂浮泡泡，
                                                                      对话 = 快捷指令，Agent = 示例问题；控制器 _renderHeroBubbles 渲染） -->
                                                                 <HBox id="bubbleField" class="heroChips" wrap="Wrap" justifyContent="Center"/>
@@ -262,15 +277,14 @@
                                                                                                 tooltip="{i18n>roleManage}" press=".onOpenRoleManage" class="roleMngBtn"/>
                                                                                 </HBox>
                                                                                 <!-- 20261020：模型选择（会话级） -->
-                                                                                <HBox alignItems="Center" class="skillSlot" visible="{skill>/visible}">
-                                                                                        <Button id="skillBtnDock" text="{skill>/label}" icon="sap-icon://learning-assistant" type="Transparent"
-                                                                                                tooltip="{skill>/hint}" enabled="{= ${skill>/canPick} &amp;&amp; !${chat>/busy} }" press=".onOpenSkills" class="skillPill"/>
-                                                                                        <Button icon="sap-icon://refresh" type="Transparent" tooltip="重新读取技能" press=".onRefreshSkills"
-                                                                                                visible="{= !!${skill>/error} }" enabled="{= !${chat>/busy} }" class="skillClear"/>
-                                                                                        <Button icon="sap-icon://decline" type="Transparent" tooltip="取消技能" press=".onClearSkill"
+                                                                                <!-- 20261024：技能胶囊（同首页；对话中不放提示行，占位文字写明“仍按某技能的做法”，设计稿 05） -->
+                                                                                <HBox id="skillSlotDock" alignItems="Center" class="skillSlot" visible="{skill>/visible}">
+                                                                                        <Button id="skillBtnDock" text="{skill>/label}" type="Transparent" ariaHasPopup="Dialog"
+                                                                                                tooltip="{skill>/tooltip}" enabled="{= ${skill>/canPick} &amp;&amp; !${chat>/busy} }" press=".onOpenSkills" class="skillPill"/>
+                                                                                        <Button icon="sap-icon://decline" type="Transparent" tooltip="不用这个技能" press=".onClearSkill"
                                                                                                 visible="{= !!${skill>/selected} }" enabled="{= !${chat>/busy} }" class="skillClear"/>
-                                                                                        <Button icon="sap-icon://hint" type="Transparent" tooltip="查看做法" press=".onViewSkill"
-                                                                                                visible="{= !!${skill>/selected} }" class="skillClear"/>
+                                                                                        <Button icon="sap-icon://refresh" type="Transparent" tooltip="重新读取技能" press=".onRefreshSkills"
+                                                                                                visible="{= !!${skill>/error} }" enabled="{= !${chat>/busy} }" class="skillRetry"/>
                                                                                 </HBox>
                                                                                 <Button id="modelBtnDock" icon="sap-icon://ai" text="{chat>/currentModelName}" tooltip="{i18n>modelPickTip}"
                                                                                         type="Transparent" press=".onOpenModelPicker" class="modelPill"/>
@@ -289,7 +303,6 @@
                                                                                         <Button id="sendBtn" icon="sap-icon://paper-plane" press=".onSend" type="Emphasized" tooltip="{i18n>send}" class="sendBtn"/>
                                                                                 </HBox>
                                                                         </HBox>
-                                                                        <Text text="{skill>/hint}" visible="{skill>/visible}" class="skillHint"/>
                                                                 </VBox>
                                                         </HBox>
                                                 </VBox>

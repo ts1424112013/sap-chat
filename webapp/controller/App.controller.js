@@ -1142,6 +1142,7 @@ sap.ui.define([
                         oChatModel.setProperty(sPath + "/thinkingLabel", "");
                         oChatModel.setProperty(sPath + "/thinking", oFinished);
                         oChatModel.setProperty(sPath + "/meta", this._agentMeta(oRes));
+                        oChatModel.setProperty(sPath + "/skillTag", this._skillTagOf(oFinished));
                         // V1.3：数据分析结果（ChatService._sanitizeAnalysis 已复核，
                         // 无数据分析路径时为 null，不影响普通 Agent 回答）
                         // V16：只渲染数据表 + 工具条，图表由用户点"生成图表"自行选择
@@ -1720,9 +1721,14 @@ sap.ui.define([
                         } else if (oFinished.status === "STOPPED") {
                                 return oRB.getText("stopped");
                         }
-                        var oSkillTrace = oFinished.phases.filter(function (t) { return t.phase === "SKILL"; })[0];
-                        if (oSkillTrace) { sBase += " · " + oSkillTrace.label; }
+                        // 20261024：技能不再拼进 meta 文字，改由标题行的技能标签显示（_skillTagOf）
                         return sPrefix ? sPrefix + " · " + sBase : sBase;
+                },
+
+                /** 本轮 Trace 里的技能（SKILL 阶段「使用技能：名称 vN」）→ 标签文字「名称 vN」；没用技能返回空串 */
+                _skillTagOf: function (oFinished) {
+                        var oSkill = (oFinished.phases || []).filter(function (t) { return t.phase === "SKILL"; })[0];
+                        return oSkill ? String(oSkill.label || "").replace(/^使用技能[:：]\s*/, "").replace(/（演示）$/, "").trim() : "";
                 },
 
                 /**
@@ -1943,7 +1949,12 @@ sap.ui.define([
                                 // 用户：米色胶囊靠右。
                                 // V4.2：时间戳从气泡下方移到气泡上方（右对齐、
                                 // 小号弱化灰），胶囊本身只包内容
-                                oCol.addItem(new Text({ text: "{chat>time}" }).addStyleClass("bubbleTime userTimeTop"));
+                                // 20261024：用了技能时，时间左边加技能标签（同一行）
+                                var oUserTop = new HBox({ alignItems: "Center", justifyContent: "End" }).addStyleClass("userTopRow");
+                                oUserTop.addItem(new Text({ text: "{chat>skillTag}", visible: "{= !!${chat>skillTag} }" })
+                                        .addStyleClass("skillTag"));
+                                oUserTop.addItem(new Text({ text: "{chat>time}" }).addStyleClass("bubbleTime userTimeTop"));
+                                oCol.addItem(oUserTop);
                                 var oBubble = new VBox().addStyleClass("chatBubble userBubble");
                                 oBubble.addItem(oBody);
                                 oCol.addItem(oBubble);
@@ -1968,6 +1979,9 @@ sap.ui.define([
                                 oHeadLeft.addItem(new Text({ text: "{chat>time}" }).addStyleClass("bubbleTime aiHeadTime"));
                                 // V5：meta 展示位（如"已停止生成"），空值时 CSS :empty 隐藏
                                 oHeadLeft.addItem(new Text({ text: "{chat>meta}" }).addStyleClass("bubbleMeta aiHeadMeta"));
+                                // 20261024：本轮用了技能 → 标题行末尾的蓝色技能标签
+                                oHeadLeft.addItem(new Text({ text: "{chat>skillTag}", visible: "{= !!${chat>skillTag} }" })
+                                        .addStyleClass("skillTag aiSkillTag"));
 
                                 var oHead = new HBox({ justifyContent: "SpaceBetween", alignItems: "Center" }).addStyleClass("bubbleHead");
                                 oHead.addItem(oHeadLeft);
@@ -2003,6 +2017,15 @@ sap.ui.define([
                                                 templateShareable: false,
                                                 factory: function (sStepId, oStepContext) {
                                                 var p = oStepContext.getObject();
+                                                // 20261024：「使用技能」一行单独样式（技能图标 + 蓝字，不画耗时条，设计稿 05）
+                                                if (p.phase === "SKILL") {
+                                                        var sSk = String(p.label || "").replace(/^使用技能[:：]\s*/, "");
+                                                        var oSkRow = new HBox({ alignItems: "Center" }).addStyleClass("agentThinkingStep agentStepSkill");
+                                                        oSkRow.addItem(new HTML({ content: '<span class="agentStepGlyph skStepIco" aria-hidden="true"></span>', sanitizeContent: false }));
+                                                        oSkRow.addItem(new Text({ text: "使用技能" }).addStyleClass("skStepName"));
+                                                        oSkRow.addItem(new Text({ text: sSk, wrapping: true }).addStyleClass("agentStepLabel skStepDetail"));
+                                                        return oSkRow;
+                                                }
                                                 var bOk = (p.status || "OK") === "OK";
                                                 var sGlyph = bOk ? "✓" : (p.status === "REJECTED" ? "⚠" : "✕");
                                                 var sCost = p.elapsedMs === null ? "--" : p.elapsedMs >= 1000
@@ -2975,8 +2998,16 @@ sap.ui.define([
                                         sText = (sText || "").slice(mRole[0].length);
                                 }
                         }
+                        // 20261024：meta 里的「技能：名称 vN」单独取出，渲染成蓝色技能标签（设计稿 05）
+                        var sSkillTag = "";
+                        var mSkill = /(?:^|\s·\s)技能：([^·]+?)(?=\s·\s|$)/.exec(sMeta || "");
+                        if (mSkill) {
+                                sSkillTag = mSkill[1].trim();
+                                sMeta = (sMeta || "").replace(mSkill[0], "").replace(/^\s·\s/, "").trim();
+                        }
                         var sSender = sRole === "user" ? oRB.getText("me") : oRB.getText("ai");
                         return {
+                                skillTag: sSkillTag,
                                 // V16：稳定标识（数据工具条/内联卡片/运行步骤条按 uid 定位条目，不依赖下标）
                                 uid: "m" + this._newSessionId().substring(0, 12),
                                 extraHtml: "",

@@ -1,67 +1,200 @@
 <core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
-    <Dialog title="技能管理" contentWidth="64rem" contentHeight="36rem" stretchOnPhone="true" class="settingsDlg skillAdminDialog" busy="{skillAdmin>/saving}">
+
+    <!-- ======================= 技能管理（仅 ADMIN；设计稿 08） =======================
+         与权限审批 / 申请 / 管理同一套外壳（.apvDialog / .apv*，表单输入 .aplInput，筛选胶囊 .admPill）：
+         固定头部 + 左侧技能列表（搜索 / 新建 / 场景筛选）+ 右侧编辑区（只有两栏各自滚动）+ 固定页脚。
+         列表、计数、场景胶囊、可勾工具、字数由 SkillPanel._skAdmDerive 推出。 -->
+    <Dialog showHeader="false" contentWidth="62rem" contentHeight="42rem" verticalScrolling="false" horizontalScrolling="false"
+            stretchOnPhone="true" class="apvDialog skAdmDialog" busy="{skillAdmin>/saving}" busyIndicatorDelay="200">
         <content>
-            <HBox class="skillAdminLayout" wrap="Wrap" alignItems="Start">
-                <VBox width="18rem" class="skillAdminSidebar">
-                    <Toolbar>
-                        <Title text="技能目录" level="H4"/>
-                        <ToolbarSpacer/>
-                        <Button icon="sap-icon://refresh" tooltip="刷新目录" press=".onRefreshSkillAdmin"/>
-                        <Button icon="sap-icon://add" tooltip="新建技能" press=".onNewSkill"/>
-                    </Toolbar>
-                    <List items="{skillAdmin>/items}" mode="SingleSelectMaster" selectionChange=".onEditSkill" noDataText="暂无技能，可以导入内置示例">
-                        <StandardListItem title="{skillAdmin>name}" description="{= ${skillAdmin>id} + ' · v' + ${skillAdmin>version} }"
-                            info="{= ${skillAdmin>active} ? '启用' : '停用' }" infoState="{= ${skillAdmin>active} ? 'Success' : 'None' }"/>
-                    </List>
-                    <Button text="导入缺少的内置技能" icon="sap-icon://download" press=".onImportBuiltinSkills" class="sapUiSmallMargin"/>
-                    <Text text="只补缺少的编号，保留已经维护的内容。" class="sapUiSmallMargin"/>
-                </VBox>
-                <VBox class="skillAdminEditor" visible="{= !!${skillAdmin>/edit} }">
-                    <MessageStrip text="{skillAdmin>/error}" type="Error" showIcon="true" visible="{= !!${skillAdmin>/error} }"/>
-                    <Label text="技能编号" required="true"/>
-                    <Input value="{skillAdmin>/edit/id}" maxLength="32" editable="{= !${skillAdmin>/edit/version} }" placeholder="例如 CODE_PERFORMANCE"/>
-                    <Label text="名称" required="true"/>
-                    <Input value="{skillAdmin>/edit/name}" maxLength="60"/>
-                    <Label text="一句话说明" required="true"/>
-                    <Input value="{skillAdmin>/edit/description}" maxLength="200"/>
-                    <Label text="适用场景" required="true"/>
-                    <MultiComboBox width="100%" selectedKeys="{skillAdmin>/edit/scenes}">
-                        <items>
-                            <core:Item key="CODE" text="代码分析"/><core:Item key="DATA" text="数据分析"/>
-                            <core:Item key="REPORT" text="报表结果分析"/><core:Item key="FIORI" text="Fiori 结果分析"/>
-                        </items>
-                    </MultiComboBox>
-                    <Label text="工具子集"/>
-                    <MultiComboBox width="100%" selectedKeys="{skillAdmin>/edit/tools}">
-                        <items>
-                            <core:Item key="read_program_source" text="读源码"/><core:Item key="describe_table" text="表结构"/>
-                            <core:Item key="search_tables" text="找表"/><core:Item key="run_sql" text="只读 SQL"/>
-                            <core:Item key="sap_data_analysis" text="受控数据分析"/>
-                        </items>
-                    </MultiComboBox>
-                    <Text text="留空时使用场景原有工具。报表与 Fiori 结果分析不使用工具。" class="skillFootnote"/>
-                    <Label text="输入提示"/>
-                    <Input value="{skillAdmin>/edit/placeholder}" maxLength="200"/>
-                    <Label text="做法正文（最多 3000 字）" required="true"/>
-                    <TextArea value="{skillAdmin>/edit/body}" maxLength="3000" rows="10" width="100%" valueLiveUpdate="true"
-                        placeholder="步骤、业务口径、输出格式、自查清单"/>
-                    <HBox wrap="Wrap" alignItems="Center" class="sapUiSmallMarginTop">
-                        <Label text="最大轮数" labelFor="skillMaxRounds"/>
-                        <StepInput id="skillMaxRounds" value="{skillAdmin>/edit/maxRounds}" min="2" max="10" width="7rem"/>
-                        <Select selectedKey="{skillAdmin>/edit/visibility}"><items>
-                            <core:Item key="PUBLIC" text="所有已开通用户"/><core:Item key="ADMIN" text="仅管理员"/>
-                        </items></Select>
-                        <Label text="启用"/>
-                        <Switch state="{skillAdmin>/edit/active}"/>
+            <VBox renderType="Bare" class="apvRoot">
+
+                <!-- ===== 头部 ===== -->
+                <VBox class="apvHead skAdmHead">
+                    <HBox alignItems="Start" class="apvHeadRow">
+                        <VBox class="apvHeadText">
+                            <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                            <Title level="H3" text="技能管理" class="apvTitle"/>
+                            <Text text="维护 Agent 的做法、适用场景和工具范围；保存后版本自动加一" class="apvSub"/>
+                        </VBox>
+                        <Button icon="sap-icon://refresh" tooltip="刷新目录" type="Transparent" press=".onRefreshSkillAdmin" class="apvHeadBtn"/>
+                        <Button icon="sap-icon://decline" tooltip="关闭" type="Transparent" press=".onCloseSkillManager" class="apvHeadBtn"/>
                     </HBox>
-                    <Text text="保存后生成新版本。运行记录保留当时的做法快照。" class="skillFootnote sapUiSmallMarginTop"/>
                 </VBox>
-            </HBox>
+
+                <HBox renderType="Bare" class="skAdmBody">
+
+                    <!-- ===== 左：技能列表 ===== -->
+                    <VBox renderType="Bare" class="skAdmSide">
+                        <HBox renderType="Bare" class="skAdmTools">
+                            <Input value="{skillAdmin>/q}" placeholder="搜索技能" liveChange=".onSkillAdmSearch" valueLiveUpdate="true" class="aplInput skAdmSearch"/>
+                            <Button text="新建" icon="sap-icon://add" type="Emphasized" press=".onNewSkill" class="apvBtn skAdmNew"/>
+                        </HBox>
+                        <HBox renderType="Bare" wrap="Wrap" class="admPills skAdmPills">
+                            <Button text="{= '全部 ' + (${skillAdmin>/counts/ALL} || 0) }" type="Transparent" press=".onSkillAdmFilter" class="admPill">
+                                <customData>
+                                    <core:CustomData key="scene" value="ALL"/>
+                                    <core:CustomData key="on" value="{= ${skillAdmin>/filter} === 'ALL' ? 'yes' : 'no' }" writeToDom="true"/>
+                                </customData>
+                            </Button>
+                            <Button text="代码分析" type="Transparent" press=".onSkillAdmFilter" class="admPill">
+                                <customData>
+                                    <core:CustomData key="scene" value="CODE"/>
+                                    <core:CustomData key="on" value="{= ${skillAdmin>/filter} === 'CODE' ? 'yes' : 'no' }" writeToDom="true"/>
+                                </customData>
+                            </Button>
+                            <Button text="数据分析" type="Transparent" press=".onSkillAdmFilter" class="admPill">
+                                <customData>
+                                    <core:CustomData key="scene" value="DATA"/>
+                                    <core:CustomData key="on" value="{= ${skillAdmin>/filter} === 'DATA' ? 'yes' : 'no' }" writeToDom="true"/>
+                                </customData>
+                            </Button>
+                            <Button text="报表执行" type="Transparent" press=".onSkillAdmFilter" class="admPill">
+                                <customData>
+                                    <core:CustomData key="scene" value="REPORT"/>
+                                    <core:CustomData key="on" value="{= ${skillAdmin>/filter} === 'REPORT' ? 'yes' : 'no' }" writeToDom="true"/>
+                                </customData>
+                            </Button>
+                            <Button text="Fiori 报表" type="Transparent" press=".onSkillAdmFilter" class="admPill">
+                                <customData>
+                                    <core:CustomData key="scene" value="FIORI"/>
+                                    <core:CustomData key="on" value="{= ${skillAdmin>/filter} === 'FIORI' ? 'yes' : 'no' }" writeToDom="true"/>
+                                </customData>
+                            </Button>
+                        </HBox>
+                        <List items="{skillAdmin>/view}" showSeparators="None" noDataText="没有匹配的技能" class="skAdmList">
+                            <CustomListItem type="Active" press=".onSkillAdmPick" class="skAdmRow">
+                                <customData>
+                                    <core:CustomData key="on" value="{= ${skillAdmin>on} ? 'yes' : 'no' }" writeToDom="true"/>
+                                </customData>
+                                <HBox alignItems="Center" class="skAdmRowIn">
+                                    <VBox class="skAdmRowText">
+                                        <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                        <Text text="{skillAdmin>name}" wrapping="false" class="skAdmRowName"/>
+                                        <Text text="{skillAdmin>meta}" wrapping="false" class="skAdmRowMeta"/>
+                                    </VBox>
+                                    <Text text="{= ${skillAdmin>active} ? '启用' : '停用' }" class="skAdmState">
+                                        <customData>
+                                            <core:CustomData key="on" value="{= ${skillAdmin>active} ? 'yes' : 'no' }" writeToDom="true"/>
+                                        </customData>
+                                    </Text>
+                                </HBox>
+                            </CustomListItem>
+                        </List>
+                        <Link text="导入缺少的内置技能" tooltip="只补缺少的编号，不覆盖已经维护的内容" press=".onImportBuiltinSkills" class="skAdmImport"/>
+                    </VBox>
+
+                    <!-- ===== 右：编辑区 ===== -->
+                    <VBox renderType="Bare" class="skAdmEdit" visible="{= !!${skillAdmin>/edit} }">
+                        <MessageStrip text="{skillAdmin>/error}" type="Error" showIcon="true" visible="{= !!${skillAdmin>/error} }" class="apvStrip"/>
+                        <HBox alignItems="Center" justifyContent="SpaceBetween" class="skAdmEditHead">
+                            <HBox alignItems="Center" class="skAdmEditTitle">
+                                <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                <Title text="{skillAdmin>/title}" level="H4" class="skAdmName"/>
+                                <Text text="{= 'v' + ${skillAdmin>/edit/version} }" visible="{= ${skillAdmin>/edit/version} > 0 }" class="skVerTag"/>
+                            </HBox>
+                            <HBox alignItems="Center" class="admEnable">
+                                <Text text="启用" class="admEnableText"/>
+                                <Switch state="{skillAdmin>/edit/active}"/>
+                            </HBox>
+                        </HBox>
+
+                        <HBox renderType="Bare" class="skAdmGrid">
+                            <VBox class="aplField">
+                                <Label text="名称" required="true" class="aplLabel"/>
+                                <Input value="{skillAdmin>/edit/name}" maxLength="60" placeholder="动词短语，例如「性能审查」" class="aplInput"/>
+                            </VBox>
+                            <VBox class="aplField">
+                                <Label text="一句话说明（弹层里显示）" required="true" class="aplLabel"/>
+                                <Input value="{skillAdmin>/edit/description}" maxLength="200" placeholder="说清楚怎么做，不写口号" class="aplInput"/>
+                            </VBox>
+                            <VBox class="aplField">
+                                <Label text="技能编号" required="true" class="aplLabel"/>
+                                <Input value="{skillAdmin>/edit/id}" maxLength="32" editable="{= !${skillAdmin>/edit/version} }"
+                                    placeholder="例如 CODE_PERFORMANCE（保存后不能改）" class="aplInput aplMono"/>
+                            </VBox>
+                            <VBox class="aplField">
+                                <Label text="输入提示（选中后输入框的占位文字）" class="aplLabel"/>
+                                <Input value="{skillAdmin>/edit/placeholder}" maxLength="200" placeholder="例如「给出程序名或事务码」" class="aplInput"/>
+                            </VBox>
+                            <VBox class="aplField">
+                                <Label text="适用场景" required="true" class="aplLabel"/>
+                                <HBox renderType="Bare" wrap="Wrap" class="admPills skAdmScenes">
+                                    <Button text="代码分析" type="Transparent" press=".onSkillSceneToggle" class="admPill skScenePill">
+                                        <customData>
+                                            <core:CustomData key="scene" value="CODE"/>
+                                            <core:CustomData key="on" value="{= ${skillAdmin>/sceneOn/CODE} ? 'yes' : 'no' }" writeToDom="true"/>
+                                        </customData>
+                                    </Button>
+                                    <Button text="数据分析" type="Transparent" press=".onSkillSceneToggle" class="admPill skScenePill">
+                                        <customData>
+                                            <core:CustomData key="scene" value="DATA"/>
+                                            <core:CustomData key="on" value="{= ${skillAdmin>/sceneOn/DATA} ? 'yes' : 'no' }" writeToDom="true"/>
+                                        </customData>
+                                    </Button>
+                                    <Button text="报表执行" type="Transparent" press=".onSkillSceneToggle" class="admPill skScenePill">
+                                        <customData>
+                                            <core:CustomData key="scene" value="REPORT"/>
+                                            <core:CustomData key="on" value="{= ${skillAdmin>/sceneOn/REPORT} ? 'yes' : 'no' }" writeToDom="true"/>
+                                        </customData>
+                                    </Button>
+                                    <Button text="Fiori 报表" type="Transparent" press=".onSkillSceneToggle" class="admPill skScenePill">
+                                        <customData>
+                                            <core:CustomData key="scene" value="FIORI"/>
+                                            <core:CustomData key="on" value="{= ${skillAdmin>/sceneOn/FIORI} ? 'yes' : 'no' }" writeToDom="true"/>
+                                        </customData>
+                                    </Button>
+                                </HBox>
+                                <Text text="自动场景不支持技能；报表类只在分析结果时生效" class="aplHint"/>
+                            </VBox>
+                            <VBox class="aplField">
+                                <Label text="可用工具" class="aplLabel"/>
+                                <VBox items="{skillAdmin>/toolOptions}" class="skAdmToolList">
+                                    <CheckBox text="{skillAdmin>label}" selected="{skillAdmin>on}" select=".onSkillToolToggle" class="skAdmCheck"/>
+                                </VBox>
+                                <Text text="{skillAdmin>/toolNote}" class="aplHint"/>
+                            </VBox>
+                        </HBox>
+
+                        <VBox class="aplField skAdmBodyField">
+                            <HBox justifyContent="SpaceBetween" alignItems="Center" class="skAdmBodyHead">
+                                <Label text="做法正文（发给模型的内容）" required="true" class="aplLabel"/>
+                                <Text text="{= ${skillAdmin>/bodyLen} + ' / 3000 字' }" class="skAdmCount"/>
+                            </HBox>
+                            <TextArea value="{skillAdmin>/edit/body}" maxLength="3000" rows="11" width="100%" valueLiveUpdate="true"
+                                liveChange=".onSkillBodyChange" placeholder="【步骤】…&#10;【输出】…&#10;【自查】…" class="aplInput skAdmBodyArea"/>
+                            <Text text="输出格式、权限和工具校验由系统固定，这里写的内容改不了它们" class="aplHint"/>
+                        </VBox>
+
+                        <HBox renderType="Bare" wrap="Wrap" class="skAdmMore">
+                            <VBox class="aplField">
+                                <Label text="最大轮数" class="aplLabel"/>
+                                <StepInput value="{skillAdmin>/edit/maxRounds}" min="2" max="10" width="8rem" class="skAdmStep"/>
+                            </VBox>
+                            <VBox class="aplField">
+                                <Label text="可见范围" class="aplLabel"/>
+                                <Select selectedKey="{skillAdmin>/edit/visibility}" width="12rem" class="skAdmSelect">
+                                    <items>
+                                        <core:Item key="PUBLIC" text="所有已开通用户"/>
+                                        <core:Item key="ADMIN" text="仅管理员"/>
+                                    </items>
+                                </Select>
+                            </VBox>
+                        </HBox>
+                    </VBox>
+                </HBox>
+
+                <!-- ===== 页脚 ===== -->
+                <HBox alignItems="Center" class="aplFoot skAdmFoot">
+                    <Text text="{skillAdmin>/footNote}" class="aplHint admFootHint">
+                        <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                    </Text>
+                    <Button text="用测评用例试跑" press=".onEvalSkill" enabled="{= !!${skillAdmin>/edit/version} &amp;&amp; !${skillAdmin>/saving} }"
+                        class="apvBtn apvBtnReject"/>
+                    <Button text="保存" type="Emphasized" press=".onSaveSkill" enabled="{= !!${skillAdmin>/edit} &amp;&amp; !${skillAdmin>/saving} }"
+                        class="apvBtn"/>
+                </HBox>
+            </VBox>
         </content>
-        <buttons>
-            <Button text="保存技能" type="Emphasized" press=".onSaveSkill" enabled="{= !!${skillAdmin>/edit} &amp;&amp; !${skillAdmin>/saving} }"/>
-            <Button text="用测评用例试跑" icon="sap-icon://play" press=".onEvalSkill" enabled="{= !!${skillAdmin>/edit/version} &amp;&amp; !${skillAdmin>/saving} }"/>
-            <Button text="关闭" press=".onCloseSkillManager"/>
-        </buttons>
     </Dialog>
 </core:FragmentDefinition>
