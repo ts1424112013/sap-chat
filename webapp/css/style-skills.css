@@ -20,6 +20,11 @@
 
 /* ---------------- 输入框底部：技能胶囊 ---------------- */
 .skillSlot { flex-shrink: 0; min-width: 0; margin-right: .1rem; border: 1px solid transparent; border-radius: 999px; box-sizing: border-box; }
+/* Horizon 把 .sapMBtn 外层固定 2.75rem 高 + 4px 上下内边距；胶囊外观画在内层，外层必须收掉，
+   否则选中态把蓝色边框/底色画在 slot 上时会露出 46px 的大胶囊（比模型胶囊高近 50%，20261024 修） */
+.skillPill.sapMBtn, .skillClear.sapMBtn, .skillRetry.sapMBtn {
+    height: auto !important; min-height: 0 !important; padding: 0 !important;
+}
 .skillPill { min-width: 0; }
 .skillPill .sapMBtnInner {
     display: inline-flex !important; align-items: center; max-width: 11rem;
@@ -60,7 +65,6 @@
 .skillOn .skillPill .sapMBtnInner { font-weight: 600; }
 .skillOn .skillPill .sapMBtnInner::after { display: none; }
 .skillOn .skillPill:not(.sapMBtnDisabled):hover .sapMBtnInner { background: transparent !important; border-color: transparent !important; color: var(--accent) !important; }
-.skillClear, .skillRetry { height: auto !important; }
 .skillClear .sapMBtnInner, .skillRetry .sapMBtnInner {
     display: inline-flex !important; align-items: center; justify-content: center;
     width: 1.65rem !important; min-width: 1.65rem !important; height: calc(1.95rem - 2px) !important; min-height: calc(1.95rem - 2px) !important;

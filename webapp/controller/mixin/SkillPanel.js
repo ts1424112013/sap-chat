@@ -184,7 +184,8 @@ sap.ui.define([
                 !this.getView().getModel("chat").getProperty("/heroVisible"));
             var oPill = this.byId(bDock ? "skillBtnDock" : "skillBtnHero") || anchor;
             if (this._skillPopover && this._skillPopover.isOpen()) {
-                if (!slash) { this._skillPopover.close(); return; }
+                // 打开后 300ms 内的第二次按压视为双击/触控板抖动，保持打开（否则表现为「点开就回缩」）
+                if (!slash && Date.now() - (this._skillOpenedAt || 0) > 300) { this._skillPopover.close(); return; }
             }
             this._skillSlash = slash;
             if (!this._skillPopover) {
@@ -208,10 +209,13 @@ sap.ui.define([
             var bDown = bDock ? (above < need && below > above) : (below >= need || below >= above);
             this._skillListMax = Math.max(140, Math.min(320, (bDown ? below : above) - fixed));
             this._skillPopover.setPlacement(bDown ? "Bottom" : "Top");
+            // 窄窗口（嵌入容器 / 分屏）下 26rem 会超出视口：收缩到「视口 - 左右边距」，弹层不再溢出
+            this._skillPopover.setContentWidth(Math.min(416, Math.max(280, window.innerWidth - 24)) + "px");
             this._skillQuery = slash ? Skills.slash(this.getView().getModel("chat").getProperty("/input") || "") || "" : "";
             this._skillHi = 0;
             this._skillPopHtml.setContent(this._skillPopMarkup());
             if (this._skillPopover.isOpen()) { this._focusSkillSearch(); return; }
+            this._skillOpenedAt = Date.now();
             this._skillPopover.openBy(oPill);
         },
         _skillPopMarkup: function () {
