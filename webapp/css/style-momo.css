@@ -1,7 +1,5 @@
 /* Momo · 水沫：两种主题共用深色方块和渐变双泡，动效与确认的预览一致。 */
 .momoMark {
-        --momo-look-x: 0%;
-        --momo-look-y: 0%;
         position: relative;
         display: inline-block;
         flex-shrink: 0;
@@ -19,15 +17,11 @@
         pointer-events: none;
         border-radius: 0;
 }
-.momoMark .momoGaze {
-        transform: translate(var(--momo-look-x), var(--momo-look-y));
-        transition: transform 160ms ease-out;
-}
 .momoMark .momoDrop { transform-origin: 73.4375% 34.0625%; }
 .momoMark .momoEyeLeft { transform-origin: 28.9% 57.2%; }
 .momoMark .momoEyeRight { transform-origin: 71.1% 61.6%; }
-.momoMark .momoEye { animation: momoEyeBlink 6.8s linear infinite; }
 .momoMark .momoHappy { opacity: 0; transition: opacity 140ms ease; }
+.momoMark--thinking .momoEye { animation: momoEyeBlink 6.8s linear infinite; }
 .momoMark--thinking .momoGaze { animation: momoEyeThink 6.2s ease-in-out infinite; }
 .momoMark--thinking .momoDropTravel { animation: momoDropTravel 4.8s linear infinite; }
 .momoMark--thinking .momoDrop { animation: momoDropHop 4.8s ease-in-out infinite; }

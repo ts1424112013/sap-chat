@@ -44,29 +44,8 @@ sap.ui.define([
                         if (oDom && sOld !== sNext) {
                                 oDom.classList.remove("momoMark--" + sOld);
                                 oDom.classList.add("momoMark--" + sNext);
-                                oDom.style.removeProperty("--momo-look-x");
-                                oDom.style.removeProperty("--momo-look-y");
                         }
                         return this;
-                },
-
-                onmousemove: function (oEvent) {
-                        if (this.getState() !== "idle") { return; }
-                        var oDom = this.getDomRef();
-                        if (!oDom) { return; }
-                        var oRect = oDom.getBoundingClientRect();
-                        var x = Math.max(-1, Math.min(1, (oEvent.clientX - oRect.left - oRect.width / 2) / 150));
-                        var y = Math.max(-1, Math.min(1, (oEvent.clientY - oRect.top - oRect.height / 2) / 150));
-                        oDom.style.setProperty("--momo-look-x", (x * 4.8) + "%");
-                        oDom.style.setProperty("--momo-look-y", (y * 2.4) + "%");
-                },
-
-                onmouseout: function (oEvent) {
-                        var oDom = this.getDomRef();
-                        if (oDom && (!oEvent.relatedTarget || !oDom.contains(oEvent.relatedTarget))) {
-                                oDom.style.removeProperty("--momo-look-x");
-                                oDom.style.removeProperty("--momo-look-y");
-                        }
                 },
 
                 renderer: {
