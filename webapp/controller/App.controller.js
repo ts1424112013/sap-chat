@@ -21,6 +21,8 @@ sap.ui.define([
         "zai/chat/utils/ChartBuilder",
         "zai/chat/utils/AskCard",
         "zai/chat/utils/DataGrid",
+        "zai/chat/control/MomoMark",
+        "zai/chat/utils/MomoState",
         "zai/chat/controller/mixin/SceneModels",
         "zai/chat/controller/mixin/SettingsPanel",
         "zai/chat/controller/mixin/EvalPanel",
@@ -31,7 +33,7 @@ sap.ui.define([
         "zai/chat/controller/mixin/FioriPanel",
         "zai/chat/controller/mixin/SessionMessages",
         "zai/chat/controller/mixin/SkillPanel"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, DataGrid, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel) {
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, DataGrid, MomoMark, MomoState, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel) {
         "use strict";
 
         /**
@@ -66,6 +68,8 @@ sap.ui.define([
          * =====================================================================
          */
         return Controller.extend("zai.chat.controller.App", Object.assign({
+
+                momoActivityState: MomoState.activity,
 
                 /** localStorage 存储（保存连接配置与当前会话） */
                 _oStorage: new Storage(Storage.Type.local, "zaiChat"),
@@ -498,10 +502,7 @@ sap.ui.define([
 
                         var oVBox = new sap.m.VBox().addStyleClass("appLoginBody")
                                 .addItem(new sap.m.HBox({ justifyContent: "Center" }).addStyleClass("appLoginChip")
-                                        .addItem(new sap.m.Image({
-                                                src: sap.ui.require.toUrl("zai/chat/images/momo-mark.svg"),
-                                                width: "56px", height: "56px", decorative: true, densityAware: false
-                                        })))
+                                        .addItem(new MomoMark({ size: "56px" })))
                                 .addItem(new sap.m.Title({
                                         level: "H2", text: oRB.getText("appLoginTitle"),
                                         textAlign: "Center", width: "100%"
@@ -1336,6 +1337,7 @@ sap.ui.define([
                         var aMsgs = oChatModel.getProperty("/messages");
                         var oLast = aMsgs && aMsgs[aMsgs.length - 1];
                         if (oLast && oLast.streaming) {
+                                oLast.avatarStopped = true;
                                 oLast.streaming = false;
                                 oLast.waiting = false;
                                 if (oLast.requestPending) {
@@ -1350,6 +1352,7 @@ sap.ui.define([
 
                         oChatModel.setProperty("/busy", false);
                         this._setSendBtnBusy(false);
+                        this._syncActivity();
                         this._refreshMessages();
                 },
 
@@ -2118,9 +2121,17 @@ sap.ui.define([
                                 oRow.addItem(oCol);
                         } else {
                                 // Momo · 水沫：与侧栏、首页共用双泡头像
-                                var oLogo = new sap.m.Image({
-                                        src: sap.ui.require.toUrl("zai/chat/images/momo-mark.svg"),
-                                        width: "26px", height: "26px", decorative: true, densityAware: false
+                                var oLogo = new MomoMark({
+                                        size: "32px",
+                                        state: {
+                                                parts: [
+                                                        { path: "chat>waiting" }, { path: "chat>streaming" },
+                                                        { path: "chat>requestPending" }, { path: "chat>thinking/status" },
+                                                        { path: "chat>runPhase" }, { path: "chat>localResult" },
+                                                        { path: "chat>avatarStopped" }
+                                                ],
+                                                formatter: MomoState.message
+                                        }
                                 }).addStyleClass("chatAvatar avatarAI");
                                 oRow = new HBox({ alignItems: "Start" });
                                 oRow.addItem(oLogo);

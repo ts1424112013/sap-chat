@@ -69,6 +69,7 @@ sap.ui.define([
                         o.count = 0;
                         o.empty = 0;
                         o.timer = -1;   // 非空 = 跟踪中；真正的定时器由 _scheduleRunPoll 在每次查询后设置
+                        this._renderRun(o);
                         this._syncActivity();
                         this._pollRun(o);
                 },
@@ -234,7 +235,9 @@ sap.ui.define([
                                                 ? '<button type="button" class="dtBtn dtPrimary" data-act="run-refresh">' + esc(oRB.getText("runRefresh")) + "</button>" : "")) +
                                 "</div></div>";
                         oHit.entry.runHtml = s;
+                        oHit.entry.runPhase = o.phase;
                         if (this._sMessagesSession === o.sessionId) {
+                                this.getView().getModel("chat").setProperty("/messages/" + oHit.index + "/runPhase", o.phase);
                                 this.getView().getModel("chat").setProperty("/messages/" + oHit.index + "/runHtml", s);
                         }
                 },

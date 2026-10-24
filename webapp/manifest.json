@@ -78,6 +78,9 @@
                                 },
                                 {
                                         "uri": "css/style-skills.css"
+                                },
+                                {
+                                        "uri": "css/style-momo.css"
                                 }
                         ]
                 },

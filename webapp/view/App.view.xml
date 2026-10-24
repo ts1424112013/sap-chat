@@ -5,6 +5,7 @@
         xmlns="sap.m"
         xmlns:f="sap.ui.layout.form"
         xmlns:u="sap.ui.unified"
+        xmlns:momo="zai.chat.control"
         xmlns:core="sap.ui.core">
 
         <App id="app">
@@ -17,7 +18,7 @@
                                                 <VBox id="sideBar" class="sideBar" width="17rem">
                                                         <!-- Momo · 水沫：双泡图标 + 英文字标 + 中文名 -->
                                                         <HBox class="brandRow" alignItems="Center">
-                                                                <Image src="images/momo-mark.svg" width="32px" height="32px" decorative="true" densityAware="false" class="brandLogoImage"/>
+                                                                <momo:MomoMark size="32px" state="{parts: [{path: 'chat>/busy'}, {path: 'chat>/activityText'}], formatter: '.momoActivityState'}" class="brandLogoImage"/>
                                                                 <Title level="H3" text="{i18n>brandName}" class="brandName"/>
                                                                 <Text text="{i18n>brandAlias}" class="brandAlias"/>
                                                         </HBox>
@@ -133,7 +134,7 @@
                                                                 <layoutData>
                                                                         <FlexItemData growFactor="1"/>
                                                                 </layoutData>
-                                                                <Image src="images/momo-mark.svg" width="56px" height="56px" decorative="true" densityAware="false" class="heroMark"/>
+                                                                <momo:MomoMark size="56px" class="heroMark"/>
                                                                 <Title level="H2" text="{chat>/heroTitle}" class="heroTitle"/>
                                                                 <!-- V7：hero 副标题；V13：Agent 模式换为 Agent 引导文案 -->
                                                                 <Text text="{chat>/heroSub}" class="heroSub"/>

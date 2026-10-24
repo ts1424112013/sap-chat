@@ -1,0 +1,71 @@
+/* Momo · 水沫：两种主题共用深色方块和渐变双泡，动效与确认的预览一致。 */
+.momoMark {
+        --momo-look-x: 0%;
+        --momo-look-y: 0%;
+        position: relative;
+        display: inline-block;
+        flex-shrink: 0;
+        vertical-align: middle;
+        border-radius: 23.4375%;
+        background: #24424D;
+        overflow: hidden;
+}
+.momoMark .momoLayer, .momoMark .momoGaze, .momoMark .momoDropTravel {
+        position: absolute;
+        inset: 0;
+        display: block;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        border-radius: 0;
+}
+.momoMark .momoGaze {
+        transform: translate(var(--momo-look-x), var(--momo-look-y));
+        transition: transform 160ms ease-out;
+}
+.momoMark .momoDrop { transform-origin: 73.4375% 34.0625%; }
+.momoMark .momoEyeLeft { transform-origin: 28.9% 57.2%; }
+.momoMark .momoEyeRight { transform-origin: 71.1% 61.6%; }
+.momoMark .momoEye { animation: momoEyeBlink 6.8s linear infinite; }
+.momoMark .momoHappy { opacity: 0; transition: opacity 140ms ease; }
+.momoMark--thinking .momoGaze { animation: momoEyeThink 6.2s ease-in-out infinite; }
+.momoMark--thinking .momoDropTravel { animation: momoDropTravel 4.8s linear infinite; }
+.momoMark--thinking .momoDrop { animation: momoDropHop 4.8s ease-in-out infinite; }
+.momoMark--done .momoGaze { transform: none; }
+.momoMark--done .momoEye { animation: none; opacity: 0; }
+.momoMark--done .momoHappy { opacity: 1; }
+.chatAvatar.avatarAI.momoMark {
+        flex: 0 0 32px;
+        background: #24424D !important;
+        border-radius: 23.4375%;
+}
+.chatAvatar.avatarAI.momoMark img { border-radius: 0; }
+@keyframes momoEyeThink {
+        0%, 10%, 100% { transform: translate(0, 0); }
+        22%, 40% { transform: translate(4.5%, -2.2%); }
+        55%, 72% { transform: translate(-4.2%, 1.4%); }
+        86% { transform: translate(0, 0); }
+}
+@keyframes momoEyeBlink {
+        0%, 27%, 34%, 76%, 83%, 100% { transform: scaleY(1); }
+        28%, 77% { transform: scaleY(1.1); }
+        30%, 31%, 79%, 80% { transform: scaleY(.02); }
+        33%, 82% { transform: scaleY(1.06); }
+}
+@keyframes momoDropTravel {
+        0%, 11%, 79%, 100% { transform: translateX(0); }
+        35%, 55% { transform: translateX(-44.53125%); }
+}
+@keyframes momoDropHop {
+        0%, 7%, 43%, 51%, 87%, 100% { transform: translateY(0) scale(1); }
+        11%, 55% { transform: translateY(0) scale(1.16, .82); animation-timing-function: cubic-bezier(.16, .7, .3, 1); }
+        23%, 67% { transform: translateY(-15.625%) scale(.94, 1.08); animation-timing-function: cubic-bezier(.5, 0, .85, .35); }
+        35%, 79% { transform: translateY(0) scale(1.18, .8); }
+}
+@media (prefers-reduced-motion: reduce) {
+        .momoMark .momoLayer, .momoMark .momoGaze, .momoMark .momoDropTravel {
+                animation: none !important;
+                transition: none !important;
+                transform: none !important;
+        }
+}

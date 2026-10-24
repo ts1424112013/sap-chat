@@ -36,6 +36,7 @@ function Storage() {}
 Storage.Type = { local: 'local' };
 const service = {};
 const registry = {
+  'zai/chat/control/MomoMark': Control,
   'sap/ui/core/mvc/Controller': { extend: (_, methods) => methods },
   'sap/ui/util/Storage': Storage,
   'sap/m/MessageToast': { show() {} },
@@ -206,9 +207,12 @@ async function test(name, fn) { await fn(); passed++; console.log('  ✅ ' + nam
     service.getReportRunStatus = (id) => statuses[id].promise;
     service.getReportResult = () => artifact.promise;
     activate(c, 'A'); const a = add(c, '执行A'); c._trackRun(a.uid, 'RA', 'A');
+    assert.equal(a.runPhase, 'active');
     activate(c, 'B'); const b = add(c, '执行B'); c._trackRun(b.uid, 'RB', 'B');
     statuses.RA.resolve({ status: 'READY', artifactId: 'ART-A' }); await flush();
     assert.ok(a.runHtml.includes('run-ready'));
+    assert.equal(a.runPhase, 'ready');
+    assert.equal(c.models.chat.getProperty('/messages/0/runPhase'), 'active');
     assert.ok(c._mRuns.RB.timer); // B 不会中断 A，A 完成也不会停止 B
     artifact.resolve(result); await flush();
     assert.equal(c.models.chat.getProperty('/messages').length, 1);
@@ -222,6 +226,7 @@ async function test(name, fn) { await fn(); passed++; console.log('  ✅ ' + nam
     await c._loadRunResult(c._mRuns.RA); assert.equal(messages.length, 2);
     statuses.RB.resolve({ status: 'FAILED' }); await flush();
     assert.ok(b.runHtml.includes('run-failed'));
+    assert.equal(b.runPhase, 'failed');
   });
   await test('提交请求返回前切走，仍会启动原会话的后台跟踪', async () => {
     const c = controller(), submission = deferred(), status = deferred();
