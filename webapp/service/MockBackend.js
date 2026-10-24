@@ -179,6 +179,11 @@ sap.ui.define([], function () {
                         if (sSceneNow === "FIORI" && Service._mockFioriAgent) {
                                 return Service._mockFioriAgent(oPayload);
                         }
+                        // 20261024：「报表执行」会话里的「执行 <TCode>」→ 演示参数卡（其余问题照旧走通用演示）
+                        var pReport = sSceneNow === "REPORT" && Service._mockReportAgent ? Service._mockReportAgent(oPayload) : null;
+                        if (pReport) {
+                                return pReport;
+                        }
                         return new Promise(function (fnResolve) {
                                 setTimeout(function () {
                                         var sQ = (oPayload.question || "").toLowerCase();

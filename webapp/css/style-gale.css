@@ -1113,3 +1113,20 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .apvDeptIcon { font-size: .72rem !important; color: var(--sub) !important; }
 .apvDept { font-size: .78rem !important; color: var(--text-2) !important; }
 .admWho { font-size: .76rem !important; color: var(--text-2) !important; margin-right: .2rem; }
+
+/* ==================== 报表参数卡：选择项 + 折叠（20261024，10.24 记录 #03a；utils/AskCard.js）====================
+   单选组沿用 .askEnumBtn 胶囊；复选框是带小方框的开关胶囊（没勾 = 空框，勾上 = 蓝底白勾）；
+   选填项多时折进「更多筛选条件（N）」 */
+.askBools { gap: .4rem; }
+.askBoolBtn .sapMBtnIcon { display: inline-flex !important; align-items: center; justify-content: center; box-sizing: border-box;
+        width: .9rem !important; height: .9rem !important; margin-right: .4rem !important; border: 1.5px solid var(--line-strong); border-radius: 4px;
+        font-size: .58rem !important; line-height: 1 !important; color: transparent !important; background: var(--surface); transition: background .12s, border-color .12s; }
+.askBoolBtn .sapMBtnInner { align-items: center !important; }   /* 内层是 flex、默认拉伸，小方框会贴顶 */
+.askBoolBtn .sapMToggleBtnPressed .sapMBtnIcon { background: var(--accent) !important; border-color: var(--accent); color: #FFFFFF !important; }
+.askMoreRow { margin: -.1rem 0 0; }
+.askMoreBtn { height: auto !important; }
+.askMoreBtn .sapMBtnInner { height: 1.9rem !important; min-height: 1.9rem !important; padding: 0 .35rem !important; border-radius: 8px !important; background: transparent !important; border: none !important; box-shadow: none !important; }
+.askMoreBtn .sapMBtnText { font-size: .8rem !important; font-weight: 500; color: var(--accent) !important; }
+.askMoreBtn .sapMBtnIcon { font-size: .72rem !important; color: var(--accent) !important; margin-left: .3rem !important; }
+.askMoreBtn:hover .sapMBtnInner { background: var(--accent-soft) !important; }
+.askMoreBox { gap: .55rem; padding: .6rem 0 .1rem; border-top: 1px dashed var(--line); }

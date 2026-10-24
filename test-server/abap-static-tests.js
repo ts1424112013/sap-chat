@@ -9,6 +9,7 @@
  *      不再有 URL 通道、现场 DPC 捕获块调用的两个空壳方法还在、函数模块接口与调用一致
  *   3) 权限自助申请（ZCL_AI_AUTH_SERVICE V1.3，20261024）：读写目标表 / 规则映射表只在约定的方法里；USER_ADDR 只在 fill_user_info；
  *      DPC 每个权限 FI 读的参数 = 前端恒发的参数清单（SAP 上 FI 参数全必填）
+ *   4) 报表选择项（10.24 记录 #03a）：REPORT_SERVICE V1.0.13 整理 R / C / F、EXEC_SAP V1.1b 组装选择屏
  * 只能查文本层面的约定，语法与运行时仍以 SAP 激活与现场验证为准。
  */
 const fs = require('fs');
@@ -167,6 +168,42 @@ Object.keys(feParams).forEach((fi) => {
 });
 check('AUTHRULESAVE 把 FmapJson 传给 iv_fmap_json', /iv_fmap_json\s*=\s*v8_param\(\s*it_parameter\s*=\s*it_parameter\s+iv_name\s*=\s*'FmapJson'\s*\)/i.test(
   (dpc.match(/WHEN 'AUTHRULESAVE'\.[\s\S]*?WHEN '/) || [''])[0]));
+
+// ---------------------------------------------------------------- 4) 报表选择项（10.24 记录 #03a）
+console.log('\n[4] 报表选择项：单选组 R / 复选框 C / 固定值 F（REPORT_SERVICE V1.0.13 · EXEC_SAP V1.1b）');
+const rsRaw = read('ZCL_AI_REPORT_SERVICE.abap');
+const rs = codeOnly(rsRaw);
+const exRaw = read('ZCL_AI_REPORT_EXEC_SAP.abap');
+const ex = codeOnly(exRaw);
+const methodOf = (src, name) => (src.match(new RegExp('^\\s*METHOD\\s+' + name + '\\.[\\s\\S]*?^\\s*ENDMETHOD\\.', 'im')) || [''])[0];
+const getParams = methodOf(rs, 'get_params');
+const validate = methodOf(rs, 'validate_params');
+const parseOpt = methodOf(rs, 'parse_options');
+const seltab = methodOf(ex, 'build_seltab');
+check('REPORT_SERVICE 版本头有 V1.0.13', /^\* V1\.0\.13 20261024/m.test(rsRaw));
+check('EXEC_SAP 版本头有 V1.1b', /^\* V1\.1b\s+20261024/m.test(exRaw));
+check('ty_param 有 sel_kind / enum_json', /BEGIN OF ty_param,[\s\S]*?sel_kind\s+TYPE string,[\s\S]*?enum_json\s+TYPE string,[\s\S]*?END OF ty_param/i.test(rs));
+check('选项结构不用 key 当组件名（rt[ key = … ] 会被当成二级键语法）', /BEGIN OF ty_opt,\s*name\s+TYPE string,/i.test(rs) && !/\[\s*key\s*=/i.test(rs + ex));
+check('get_params 的 SELECT 清单含 sel_kind（逗号分隔）', /validation_rule, help_text, sort_no, active, sel_kind\s+FROM zai_rpt_param/i.test(getParams));
+check('get_params：F 不返回（WHEN \'F\' → CONTINUE）', /WHEN 'F'\.\s*CONTINUE\./i.test(getParams));
+check('get_params：R 整理成 ENUM（validation_rule = 选项键、enum_json、默认项 → STATIC）', /WHEN 'R'\.[\s\S]*?parse_options\([\s\S]*?default_type\s*=\s*'STATIC'[\s\S]*?data_type\s*=\s*'ENUM'[\s\S]*?validation_rule\s*=\s*lv_keys/i.test(getParams));
+check('get_params：C 整理成 BOOL 并清掉 default_type（校验不套默认）', /WHEN 'C'\.[\s\S]*?data_type\s*=\s*'BOOL'[\s\S]*?CLEAR ls_np-default_type\./i.test(getParams));
+check('parse_options：键限 A-Z 0-9 _ 且 ≤ 8 位、去重、只认第一个默认项', /strlen\( lv_key \) > 8/.test(parseOpt) && /CN 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_'/.test(parseOpt) && /line_exists\( rt\[ name = lv_key \] \)/.test(parseOpt) && /lv_hasd/.test(parseOpt));
+check('validate_params：复选框在默认值处理之前单独处理（空 = 不勾，记进快照）', validate.indexOf("IF ls_p-sel_kind = 'C'.") > 0 && validate.indexOf("IF ls_p-sel_kind = 'C'.") < validate.indexOf('CASE to_upper( ls_p-default_type )'));
+check('validate_params：单选组值统一大写再校验', /IF ls_p-sel_kind = 'R'\.\s*lv_val = to_upper\( condense\( lv_val \) \)\./i.test(validate));
+check('build_seltab 的 SELECT 含 allowed_ops', /SELECT param_id, abap_name, sel_kind, multi_value, range_allowed, allowed_ops\s+FROM zai_rpt_param/i.test(seltab));
+check('build_seltab：F 在读用户参数之前下发登记值', seltab.indexOf("IF lv_kind = 'F'.") > 0 && seltab.indexOf("IF lv_kind = 'F'.") < seltab.indexOf('READ TABLE lt_kv'));
+check('build_seltab：C 找到就下发 X / 空格（取消勾选也下发）', /IF lv_kind = 'C'\.\s*IF lv_found = abap_true\.[\s\S]*?WHEN to_upper\( ls_kv-value \) = 'X' THEN 'X' ELSE space/i.test(seltab));
+check('build_seltab：R 用 parse_options 展开全组，值不在选项里报错不提交', /IF lv_kind = 'R'\.[\s\S]*?zcl_ai_report_service=>parse_options\([\s\S]*?IF NOT line_exists\( lt_opt\[ name = lv_val \] \)\.\s*ev_err[\s\S]*?RETURN\.[\s\S]*?LOOP AT lt_opt/i.test(seltab));
+check('parse_options 是公开方法（EXEC_SAP 要调）', /PUBLIC SECTION\.[\s\S]*?CLASS-METHODS parse_options[\s\S]*?PRIVATE SECTION\./i.test(rs));
+// 通用：语句结束符写成分号（这次写代码时出过一次 ENDIF;）
+const semi = [];
+listAbap(ABAP).forEach((file) => {
+  codeOnly(fs.readFileSync(file, 'utf8')).split('\n').forEach((l, i) => {
+    if (/^\s*(ENDIF|ENDLOOP|ENDCASE|ENDTRY|ENDMETHOD|ENDWHILE|ENDDO|CONTINUE|RETURN|EXIT|ELSE)\s*;/i.test(l)) { semi.push(path.basename(file) + ':' + (i + 1)); }
+  });
+});
+check('没有把语句结束符写成分号（ENDIF; 之类）', semi.length === 0, semi.join(', '));
 
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);

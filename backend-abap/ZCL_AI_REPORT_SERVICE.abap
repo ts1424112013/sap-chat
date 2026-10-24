@@ -119,6 +119,20 @@
 *   注: V1.0.1 起"parse_flat_kv 与 parse_flat_json 同款正则"的标记以本版为准
 * ★ 重贴后核对标记: parse_flat_kv 内有 json_unescape( lv_raw ) 与
 *   (?:[^"\\]|\\.)*; PRIVATE SECTION 有 json_unescape 声明
+* V1.0.13 20261024(10.24 记录 #03a): 报表选择项 —— ZAI_RPT_PARAM.SEL_KIND 新增三种:
+*   R = 单选组(一行登记一组; ALLOWED_OPS 写选项 "P1=已出貨;P2=未出貨;P3=全部*",
+*       键 = 单选按钮名, 文字后带 * = 默认项), C = 复选框(ABAP_NAME = 复选框名;
+*       ALLOWED_OPS 写 X = 默认勾选), F = 固定值(不给用户 / 模型看; ALLOWED_OPS 写
+*       固定下发的值, 如输出方式组强制 ALV)。只用 SE16 能改的 CHAR 字段, 不改表结构。
+*   · get_params 把 R 整理成现有 ENUM 语义(data_type ENUM, validation_rule = 选项键,
+*     enum_json 给参数卡, 默认项 → STATIC 默认), C 整理成 BOOL, F 不返回 —— 参数卡 /
+*     校验 / 报表目录(ReportDefinitions 直接序列化 tt_param, 新字段自动带出)都不用另改
+*   · validate_params: C 空值 = 不勾(快照里记空, EXEC_SAP 下发空格), 不套默认值;
+*     R 的值统一大写后按选项键校验
+*   · 新公开方法 parse_options(EXEC_SAP 组装单选组时用同一份解析)
+*   · ty_param 新增 sel_kind / enum_json(非表字段 enum_json 由 get_params 计算)
+* ★ 重贴后核对标记: get_params 的 SELECT 清单含 sel_kind; 有 METHOD parse_options;
+*   get_params 里 WHEN 'F' 后是 CONTINUE; validate_params 里有 IF ls_p-sel_kind = 'C'
 *=======================================================================
 CLASS zcl_ai_report_service DEFINITION
   PUBLIC
@@ -175,8 +189,19 @@ CLASS zcl_ai_report_service DEFINITION
              help_text      TYPE string,
              sort_no        TYPE i,
              active         TYPE abap_bool,
+             sel_kind       TYPE string,  " V1.0.13: P / S / R 单选组 / C 复选框(F 固定值不返回)
+             enum_json      TYPE string,  " V1.0.13: R 的选项 [{"key","text"}](get_params 计算, 非表字段)
            END OF ty_param.
     TYPES tt_param TYPE STANDARD TABLE OF ty_param WITH DEFAULT KEY.
+
+    " V1.0.13: 单选组选项(ALLOWED_OPS 解析结果; name = 单选按钮名。
+    " 不叫 key: 表达式 rt[ key = ... ] 会被当成二级键语法)
+    TYPES: BEGIN OF ty_opt,
+             name       TYPE string,
+             text       TYPE string,
+             is_default TYPE abap_bool,
+           END OF ty_opt.
+    TYPES tt_opt TYPE STANDARD TABLE OF ty_opt WITH DEFAULT KEY.
 
     " 参数校验错误(DEFAULTED 类不进 errors, 单独放 defaulted)
     TYPES: BEGIN OF ty_perr,
@@ -360,6 +385,12 @@ CLASS zcl_ai_report_service DEFINITION
       IMPORTING iv_text    TYPE string
       RETURNING VALUE(rv)  TYPE string.
 
+    " V1.0.13: 单选组选项解析 "P1=已出貨;P2=未出貨;P3=全部*"(中文分号也认; * = 默认项;
+    " 没写文字用键; 键只留 A-Z 0-9 _ 且不超过 8 位(选择屏参数名上限), 不合法 / 重复的项丢弃)
+    CLASS-METHODS parse_options
+      IMPORTING iv_text     TYPE string
+      RETURNING VALUE(rt)   TYPE tt_opt.
+
   PRIVATE SECTION.
 
     " V1.0.12(BE-11): JSON 字符串内容反转义(\" \\ \n \uXXXX 等)
@@ -520,16 +551,125 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
     ENDIF.
 
     " V1.0.3: strict mode(含 @宿主变量)要求 SELECT 清单逗号分隔
+    " V1.0.13: 加 sel_kind(V1.0.10 起表里就有这列)
     SELECT param_id, abap_name, display_label, data_type, type_length,
            type_decimals, required, multi_value, range_allowed,
            default_type, default_value, allowed_ops, value_source,
-           validation_rule, help_text, sort_no, active
+           validation_rule, help_text, sort_no, active, sel_kind
       FROM zai_rpt_param
       WHERE report_id = @iv_report_id
         AND config_version = @lv_ver
         AND active = 'X'
       ORDER BY sort_no, param_id
       INTO CORRESPONDING FIELDS OF TABLE @rt.
+
+    " V1.0.13: 控件类型整理 —— 调用方(参数卡 / 校验 / 报表目录)只看到现有语义:
+    "   R 单选组 → ENUM(选项键进 validation_rule, 选项进 enum_json, 带 * 的默认项 → STATIC 默认)
+    "   C 复选框 → BOOL(ALLOWED_OPS = X 时默认勾选; 只用于参数卡初始状态, 校验不套默认)
+    "   F 固定值 → 不返回(只在 EXEC_SAP 组装选择屏时下发)
+    DATA: lt_out  TYPE tt_param,
+          lt_opt  TYPE tt_opt,
+          ls_opt  TYPE ty_opt,
+          lv_keys TYPE string,
+          lv_enum TYPE string.
+    LOOP AT rt INTO DATA(ls_np).
+      ls_np-sel_kind = to_upper( condense( ls_np-sel_kind ) ).
+      CASE ls_np-sel_kind.
+        WHEN 'F'.
+          CONTINUE.
+        WHEN 'R'.
+          lt_opt = parse_options( ls_np-allowed_ops ).
+          IF lt_opt IS INITIAL.
+            CONTINUE.   " 选项没登记好: 不出现在参数卡(EXEC_SAP 同样不下发 → 保持程序默认)
+          ENDIF.
+          CLEAR: lv_keys, lv_enum.
+          LOOP AT lt_opt INTO ls_opt.
+            IF lv_keys IS INITIAL.
+              lv_keys = ls_opt-name.
+              lv_enum = `[`.
+            ELSE.
+              lv_keys = lv_keys && `,` && ls_opt-name.
+              lv_enum = lv_enum && `,`.
+            ENDIF.
+            lv_enum = lv_enum && `{"key":"` && ls_opt-name && `","text":"` && json_escape( ls_opt-text ) && `"}`.
+            IF ls_opt-is_default = abap_true AND ls_np-default_type IS INITIAL.
+              ls_np-default_type  = 'STATIC'.
+              ls_np-default_value = ls_opt-name.
+            ENDIF.
+          ENDLOOP.
+          ls_np-data_type       = 'ENUM'.
+          ls_np-validation_rule = lv_keys.
+          ls_np-enum_json       = lv_enum && `]`.
+          ls_np-multi_value     = abap_false.
+          ls_np-range_allowed   = abap_false.
+        WHEN 'C'.
+          ls_np-data_type     = 'BOOL'.
+          ls_np-multi_value   = abap_false.
+          ls_np-range_allowed = abap_false.
+          IF ls_np-default_value IS INITIAL AND to_upper( condense( ls_np-allowed_ops ) ) = 'X'.
+            ls_np-default_value = 'X'.
+          ENDIF.
+          CLEAR ls_np-default_type.
+      ENDCASE.
+      APPEND ls_np TO lt_out.
+    ENDLOOP.
+    rt = lt_out.
+
+  ENDMETHOD.
+
+
+  METHOD parse_options.
+
+    DATA: lv_txt   TYPE string,
+          lt_parts TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
+          lv_part  TYPE string,
+          lv_key   TYPE string,
+          lv_lbl   TYPE string,
+          lv_len   TYPE i,
+          lv_def   TYPE abap_bool,
+          lv_hasd  TYPE abap_bool.
+
+    CLEAR rt.
+    lv_txt = iv_text.
+    REPLACE ALL OCCURRENCES OF `；` IN lv_txt WITH `;`.
+    SPLIT lv_txt AT `;` INTO TABLE lt_parts.
+    LOOP AT lt_parts INTO lv_part.
+      CLEAR: lv_key, lv_lbl, lv_def.
+      SPLIT lv_part AT `=` INTO lv_key lv_lbl.
+      CONDENSE: lv_key, lv_lbl.
+      " 默认项标记 * 可以写在文字后, 也可以写在键后
+      lv_len = strlen( lv_lbl ).
+      IF lv_len > 0 AND substring( val = lv_lbl off = lv_len - 1 len = 1 ) = `*`.
+        lv_def = abap_true.
+        lv_lbl = substring( val = lv_lbl off = 0 len = lv_len - 1 ).
+        CONDENSE lv_lbl.
+      ENDIF.
+      lv_len = strlen( lv_key ).
+      IF lv_len > 0 AND substring( val = lv_key off = lv_len - 1 len = 1 ) = `*`.
+        lv_def = abap_true.
+        lv_key = substring( val = lv_key off = 0 len = lv_len - 1 ).
+        CONDENSE lv_key.
+      ENDIF.
+      lv_key = to_upper( lv_key ).
+      IF lv_key IS INITIAL OR strlen( lv_key ) > 8
+         OR lv_key CN 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_'.
+        CONTINUE.
+      ENDIF.
+      IF line_exists( rt[ name = lv_key ] ).
+        CONTINUE.
+      ENDIF.
+      IF lv_lbl IS INITIAL.
+        lv_lbl = lv_key.
+      ENDIF.
+      " 只认第一个默认项
+      IF lv_def = abap_true AND lv_hasd = abap_true.
+        lv_def = abap_false.
+      ENDIF.
+      IF lv_def = abap_true.
+        lv_hasd = abap_true.
+      ENDIF.
+      APPEND VALUE #( name = lv_key text = lv_lbl is_default = lv_def ) TO rt.
+    ENDLOOP.
 
   ENDMETHOD.
 
@@ -1409,6 +1549,28 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
 
       DATA(lv_val) = COND string( WHEN sy-subrc = 0 THEN ls_kv-value ELSE `` ).
 
+      " V1.0.13: 复选框 —— 空 = 不勾, 快照里明确记空(EXEC_SAP 下发空格), 不套默认值
+      IF ls_p-sel_kind = 'C'.
+        DATA: lv_cnorm TYPE string,
+              lv_cerr  TYPE string.
+        CLEAR: lv_cnorm, lv_cerr.
+        IF lv_val IS NOT INITIAL.
+          validate_one( EXPORTING is_p = ls_p iv_val = lv_val
+                        IMPORTING ev_norm = lv_cnorm ev_err = lv_cerr ).
+        ENDIF.
+        IF lv_cerr IS NOT INITIAL.
+          rs-ok = abap_false.
+          APPEND VALUE #( param_id = ls_p-param_id
+                          code     = lv_cerr
+                          message  = |{ ls_p-display_label }: 值 "{ lv_val }" 校验未通过({ lv_cerr })| )
+            TO rs-errors.
+        ELSE.
+          APPEND VALUE #( name = to_lower( ls_p-param_id ) value = lv_cnorm )
+            TO lt_norm.
+        ENDIF.
+        CONTINUE.
+      ENDIF.
+
       " 缺值 → 默认值补齐或必填报错
       IF lv_val IS INITIAL.
         CASE to_upper( ls_p-default_type ).
@@ -1435,6 +1597,11 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
         IF lv_val IS INITIAL.
           CONTINUE.
         ENDIF.
+      ENDIF.
+
+      " V1.0.13: 单选组的值是选项键(单选按钮名), 统一大写后按选项键校验
+      IF ls_p-sel_kind = 'R'.
+        lv_val = to_upper( condense( lv_val ) ).
       ENDIF.
 
       " 单值校验(类型/范围/值域)

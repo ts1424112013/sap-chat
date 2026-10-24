@@ -332,7 +332,21 @@ async function rejects(name, promise, re) {
   check('FIORI_ENABLED 关闭 → Agent 说明能力未开启', /能力未开启/.test(turn('选择报表：shipment報表').answer));
   fakeWindow.localStorage.removeItem('zaiChat.cfg.FIORI_ENABLED');
   r = await svc.getReportCatalog();
-  check('演示模式的报表执行目录：3 张、一张未开放（大写键）', r.defs.length === 3 && r.defs.filter((d) => d.EXEC_ENABLED !== 'X').length === 1);
+  check('演示模式的报表执行目录：4 张（20261024 加了 ZDPSD012）、一张未开放（大写键）', r.defs.length === 4 && r.defs.filter((d) => d.EXEC_ENABLED !== 'X').length === 1);
+  {
+    // 20261024：演示 ZDPSD012 的参数定义与后端 get_params 整理后同口径；演示 Agent「执行 ZDPSD012」只给类型
+    const d12 = r.defs.filter((d) => d.TCODE === 'ZDPSD012')[0];
+    const kinds = d12.PARAMS.map((p) => p.SEL_KIND).join('');
+    check('演示 ZDPSD012：有单选组 R ×2、复选框 C ×2，没有 F；R 是 ENUM 带 ENUM_JSON 与默认项', /RR/.test(kinds) && /CC/.test(kinds) && kinds.indexOf('F') < 0 &&
+      d12.PARAMS.filter((p) => p.SEL_KIND === 'R').every((p) => p.DATA_TYPE === 'ENUM' && JSON.parse(p.ENUM_JSON).length === 3 && !!p.DEFAULT_VALUE));
+    const t12 = await svc._mockReportAgent({ sessionId: 'S12', question: '执行 zdpsd012' });
+    const pj = JSON.parse(t12.pendingParamsJson);
+    check('演示 Agent「执行 ZDPSD012」→ 参数卡：只带类型（单选组 ENUM、复选框 BOOL），不带选项和默认值（前端补）', t12.needsInput === true && t12.taskModule === 'REPORT' && pj.report_id === 'ZDPSD012' &&
+      pj.params.filter((p) => p.data_type === 'ENUM').length === 2 && pj.params.filter((p) => p.data_type === 'BOOL').length === 2 && pj.params.every((p) => p.enum_json === undefined));
+    check('演示 Agent：不是「执行 X」的问题交回通用演示（返回 null）', svc._mockReportAgent({ sessionId: 'S12', question: '统计一下出货' }) === null);
+    const tNo = await svc._mockReportAgent({ sessionId: 'S12', question: '执行 ZNOPE01' });
+    check('演示 Agent：未登记的事务码 → 说明未登记、不出卡片', tNo.needsInput === false && /未登记/.test(tNo.answer) && !tNo.pendingParamsJson);
+  }
 
   /* ---------------- 5) AskCard ENUM / 闸门 HTML / 场景 ---------------- */
   console.log('\n━━ AskCard ENUM、分析闸门、场景列表');
@@ -341,6 +355,47 @@ async function rejects(name, promise, re) {
   check('坏的 enum_json 不报错，返回空', AskCard.enumOptions({ enum_json: '{bad' }).length === 0);
   check('提交回显用选项文字', AskCard.valueDisplay(pEnum, 'SHMODE,REGION') === 'ship mode、region');
   check('普通参数回显不变（范围 ~，多值 、）', AskCard.valueDisplay({ range_allowed: true }, '20261001,20261031') === '2026-10-01 ~ 2026-10-31');
+
+  {
+  // ---- 20261024（10.24 记录 #03a）：报表选择项 + 参数卡排版 ----
+  console.log('\n━━ AskCard 报表选择项（单选组 / 复选框 / 固定值）与排版');
+  const rPend = [
+    { param_id: 'P_PLANT', label: '工廠', required: true, data_type: 'CHAR', multi_value: true },
+    { param_id: 'RB_SHIP', label: '出貨狀態', required: false, data_type: 'ENUM' },
+    { param_id: 'RB_NODEF', label: '無默認', required: false, data_type: 'ENUM' },
+    { param_id: 'P_CANCEL', label: '含取消發票', required: false, data_type: 'BOOL' },
+    { param_id: 'P_ERR', label: '只看異常', required: false, data_type: 'BOOL' },
+    { param_id: 'P_HID', label: '輸出', data_type: 'CHAR' },
+    { param_id: 'S_X', label: '其他', data_type: 'CHAR' }
+  ];
+  const defP = [
+    { PARAM_ID: 'P_PLANT', SEL_KIND: 'S' },
+    { PARAM_ID: 'RB_SHIP', SEL_KIND: 'R', DEFAULT_VALUE: 'P_ALL', ENUM_JSON: '[{"key":"P_SHIP","text":"已出貨"},{"key":"P_ALL","text":"全部"}]' },
+    { PARAM_ID: 'RB_NODEF', SEL_KIND: 'R', ENUM_JSON: '[{"key":"A1","text":"甲"},{"key":"A2","text":"乙"}]' },
+    { PARAM_ID: 'P_CANCEL', SEL_KIND: 'C' },
+    { PARAM_ID: 'P_ERR', SEL_KIND: 'C', DEFAULT_VALUE: 'X', HELP_TEXT: '數量不一致的行' },
+    { PARAM_ID: 'P_HID', SEL_KIND: 'F' }
+  ];
+  let mg = AskCard.mergeParamDefs(rPend, defP, {});
+  const byId = (id) => mg.params.filter((x) => x.param_id === id)[0];
+  check('合并：单选组拿到选项（enum_json）、单选、默认项填进 values', AskCard.enumOptions(byId('RB_SHIP')).map((o) => o.key).join() === 'P_SHIP,P_ALL' && byId('RB_SHIP').multi_value === false && mg.values.RB_SHIP === 'P_ALL');
+  check('合并：有默认项的单选组 keep_one（不能点掉），没默认的不 keep 且加「不选 = 程序默认」说明', byId('RB_SHIP').keep_one === true && byId('RB_NODEF').keep_one === false && /程序的默认/.test(byId('RB_NODEF').help_text));
+  check('合并：复选框是 BOOL，默认 X 的预先勾上，说明文字带过来', byId('P_ERR').data_type === 'BOOL' && mg.values.P_ERR === 'X' && mg.values.P_CANCEL === undefined && byId('P_ERR').help_text === '數量不一致的行');
+  check('合并：定义里 sel_kind = F 的兜底隐藏；目录里没有的参数原样保留', !byId('P_HID') && !!byId('S_X') && mg.params.length === 6);
+  mg = AskCard.mergeParamDefs(rPend, defP, { RB_SHIP: 'P_SHIP', P_ERR: '' });
+  check('合并：用户已有的值（含取消勾选的空串）不被默认值覆盖', mg.values.RB_SHIP === 'P_SHIP' && mg.values.P_ERR === '');
+  check('合并：小写 / camelCase 键的定义也认', AskCard.mergeParamDefs([{ param_id: 'c1', data_type: 'BOOL' }], [{ paramId: 'C1', selKind: 'C', defaultValue: 'X' }], {}).values.c1 === 'X');
+  check('复选框回显：X → 是，空 → 否', AskCard.valueDisplay({ data_type: 'BOOL' }, 'X') === '是' && AskCard.valueDisplay({ data_type: 'BOOL' }, '') === '否');
+  const mk = (n, o) => Array.from({ length: n }, (_, i) => Object.assign({ param_id: 'O' + i, label: 'O' + i }, o || {}));
+  let lay = AskCard.layoutParams([].concat(mk(2, { required: true }), [{ param_id: 'E', data_type: 'ENUM', enum_json: [{ key: 'A' }] }, { param_id: 'B1', data_type: 'BOOL' }], mk(6).map((p, i) => Object.assign(p, { param_id: 'X' + i }))));
+  check('排版：单选组 1、平铺 3（必填 2 + 补 1 个选填）、开关 1、折叠 5', lay.enums.length === 1 && lay.shown.length === 3 && lay.bools.length === 1 && lay.more.length === 5 && lay.shown[2].param_id === 'X0');
+  lay = AskCard.layoutParams(mk(4));
+  check('排版：只有 4 个选填 → 平铺 3 + 剩 1 个不折叠（一起平铺）', lay.shown.length === 4 && lay.more.length === 0);
+  lay = AskCard.layoutParams(mk(5));
+  check('排版：5 个选填 → 平铺 3、折叠 2', lay.shown.length === 3 && lay.more.length === 2);
+  lay = AskCard.layoutParams([{ param_id: 'M', data_type: 'ENUM', multi_value: true, required: true, enum_json: [{ key: 'A' }] }]);
+  check('排版：多选 ENUM（Fiori 维度）不放进顶部单选组，按必填 / 选填排', lay.enums.length === 0 && lay.shown.length === 1);
+  }
 
   const FP = load('zai/chat/controller/mixin/FioriPanel');
   const fctx = Object.assign({ _rb: () => rb }, FP);

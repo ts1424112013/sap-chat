@@ -55,10 +55,19 @@
 *         → StartReportRun 恒报 HTTP 500(10-22 部署实锤: /IWFND/ERROR_LOG
 *         ERROR_INFO "REPORT_CAPTURE_LEGACY 不是 C(20,0) 的有效值");
 *         SM30 输入超长键会被静默截成 20 位, 不会提示。配置键一律 <= 20 字符
+* V1.1b   20261024(10.24 记录 #03a): build_seltab 支持报表选择项(SEL_KIND R / C / F,
+*         登记口径见 ZCL_AI_REPORT_SERVICE V1.0.13):
+*         ① R 单选组: 组内每个单选按钮都明确下发(选中 'X', 其余空格), 不依赖程序
+*           DEFAULT —— 原先只能下发 'X', 程序里 DEFAULT 'X' 的按钮关不掉, 同组两个 X;
+*           值不在登记选项里 → 报错不提交(快照已过 validate_params, 这里再拦一次)
+*         ② C 复选框: 快照里有就一定下发('X' / 空格), 用户取消勾选才能盖掉 DEFAULT 'X'
+*         ③ F 固定值: 不看用户参数, 按 ALLOWED_OPS 登记值下发(空 = 空格), 如 0003C
+*           输出方式组强制 P_ALV; ZRMM_IDP_0702 的 P2 / P_FILE 仍按原硬编码下发(不动)
 * ★ 重贴后核对标记: JOB_CLOSE 处 strtimmed = 'X'; 两处 JOB_CLOSE 都有
 *   job_was_released = lv_released; 全文无 SUBMIT (iv_program);
 *   read_result 输出以 {"columns": 开头; submit 内有 lv_runner / ZAI_RPT_RUNNER;
-*   PUBLIC SECTION 有 run_captured; submit 内是 read_cfg_str( 'RPT_CAPTURE_LEGACY' )
+*   PUBLIC SECTION 有 run_captured; submit 内是 read_cfg_str( 'RPT_CAPTURE_LEGACY' );
+*   V1.1b: build_seltab 的 SELECT 含 allowed_ops, 有 zcl_ai_report_service=>parse_options(
 *=======================================================================
 CLASS zcl_ai_report_exec_sap DEFINITION
   PUBLIC
@@ -495,6 +504,7 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
   METHOD build_seltab.
     " 选择参数构建: selname = ZAI_RPT_PARAM.ABAP_NAME(必须与程序参数名一致)
     " SEL_KIND: P=PARAMETER(单值) / S=SELECT-OPTION(多值/范围/通配)
+    "   V1.1b: R=单选组(组内按钮全下发) / C=复选框(X 或空格) / F=固定值(ALLOWED_OPS)
     " 强制: ZRMM_IDP_0702 → P2='X'(查询模式; P1 上传/P3 删除绝不提交)
     "       + P_FILE 默认值(OBLIGATORY); 所有报表 → P_AICAP/P_RUNID(AI 采集通道)
     " (选择屏上不存在的 selname 会被 SUBMIT 忽略, 不影响其他登记报表)
@@ -504,6 +514,7 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
              sel_kind      TYPE string,
              multi_value   TYPE abap_bool,
              range_allowed TYPE abap_bool,
+             allowed_ops   TYPE string,     " V1.1b: R 选项 / C 默认 / F 固定值
            END OF ty_prow.
     DATA: lt_p     TYPE STANDARD TABLE OF ty_prow,
           lt_kv    TYPE zcl_ai_report_service=>tt_kv,
@@ -527,7 +538,7 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
     ENDIF.
 
     " V1.0e: 按运行冻结的配置版本取参数(与 validate_params 同口径, 防多版本重复)
-    SELECT param_id, abap_name, sel_kind, multi_value, range_allowed
+    SELECT param_id, abap_name, sel_kind, multi_value, range_allowed, allowed_ops
       FROM zai_rpt_param
       WHERE report_id      = @lv_rid
         AND config_version = @lv_ver
@@ -579,20 +590,69 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
 
     " 登记参数: 按 param_id 从参数快照取值, 按 ABAP_NAME/SEL_KIND 提交
     LOOP AT lt_p INTO DATA(ls_p).
+      lv_sel = to_upper( ls_p-abap_name ).
+      CONDENSE lv_sel NO-GAPS.
+      lv_kind = to_upper( ls_p-sel_kind ).
+      CONDENSE lv_kind NO-GAPS.
+
+      " V1.1b: 固定值(F) —— 不看用户参数, 按登记值下发(空 = 空格)
+      IF lv_kind = 'F'.
+        CLEAR ls_sel.
+        ls_sel-selname = lv_sel.
+        ls_sel-kind    = 'P'.
+        ls_sel-sign    = 'I'.
+        ls_sel-option  = 'EQ'.
+        ls_sel-low     = condense( ls_p-allowed_ops ).
+        APPEND ls_sel TO et_seltab.
+        CONTINUE.
+      ENDIF.
+
       " V1.0d: 快照键已小写, 登记 PARAM_ID/ABAP_NAME 可能大写 → 归一后匹配
       CLEAR ls_kv.
       READ TABLE lt_kv INTO ls_kv WITH KEY name = to_lower( ls_p-param_id ).
       IF sy-subrc <> 0.
         READ TABLE lt_kv INTO ls_kv WITH KEY name = to_lower( ls_p-abap_name ).
       ENDIF.
-      IF sy-subrc <> 0 OR ls_kv-value IS INITIAL.
-        CONTINUE.   " 未提交的参数交给程序自身必填校验兜底
+      DATA(lv_found) = xsdbool( sy-subrc = 0 ).
+
+      " V1.1b: 复选框(C) —— 快照里有就一定下发('X' / 空格), 取消勾选才能盖掉程序 DEFAULT 'X'
+      IF lv_kind = 'C'.
+        IF lv_found = abap_true.
+          CLEAR ls_sel.
+          ls_sel-selname = lv_sel.
+          ls_sel-kind    = 'P'.
+          ls_sel-sign    = 'I'.
+          ls_sel-option  = 'EQ'.
+          ls_sel-low     = COND #( WHEN to_upper( ls_kv-value ) = 'X' THEN 'X' ELSE space ).
+          APPEND ls_sel TO et_seltab.
+        ENDIF.
+        CONTINUE.
       ENDIF.
 
-      lv_sel = to_upper( ls_p-abap_name ).
-      CONDENSE lv_sel NO-GAPS.
-      lv_kind = to_upper( ls_p-sel_kind ).
-      CONDENSE lv_kind NO-GAPS.
+      IF lv_found = abap_false OR ls_kv-value IS INITIAL.
+        CONTINUE.   " 未提交的参数交给程序自身必填校验兜底(单选组没选 = 保持程序默认)
+      ENDIF.
+
+      " V1.1b: 单选组(R) —— 组内每个按钮都明确下发(选中 'X', 其余空格), 不依赖程序默认
+      IF lv_kind = 'R'.
+        DATA(lt_opt) = zcl_ai_report_service=>parse_options( ls_p-allowed_ops ).
+        lv_val = to_upper( ls_kv-value ).
+        CONDENSE lv_val NO-GAPS.
+        IF NOT line_exists( lt_opt[ name = lv_val ] ).
+          ev_err = |单选组 { ls_p-param_id } 的值 { lv_val } 不在登记的选项里, 本次未提交|.
+          RETURN.
+        ENDIF.
+        LOOP AT lt_opt INTO DATA(ls_opt).
+          CLEAR ls_sel.
+          ls_sel-selname = ls_opt-name.
+          ls_sel-kind    = 'P'.
+          ls_sel-sign    = 'I'.
+          ls_sel-option  = 'EQ'.
+          ls_sel-low     = COND #( WHEN ls_opt-name = lv_val THEN 'X' ELSE space ).
+          APPEND ls_sel TO et_seltab.
+        ENDLOOP.
+        CONTINUE.
+      ENDIF.
       " V1.0e: SUBMIT 不做选择屏的大写转换, 这里按 PAI 默认口径转大写
       lv_val = to_upper( ls_kv-value ).
 

@@ -12,6 +12,7 @@ sap.ui.define([], function () {
          *  · 返回结构转换 FLAT / PIVOT / EXPAND + 统一清洗 + 数值列判断 + 后端统计
          *  · Agent 一轮（选择报表 → 参数卡；一句话找报表；分析闸门；重跑）
          *  · 另带「报表执行」目录的演示清单（_mockReportDefs，键用大写，和真实 ReportDefinitions 一样）
+         *    与「执行 <TCode>」的演示 Agent（_mockReportAgent，20261024：出参数卡，不提交作业）
          * 开关：localStorage zaiChat.cfg.FIORI_ENABLED（未设 = 开），用来演示"能力未开启"。
          * 以 mixin 方式并入 ChatService（方法里的 this 就是 ChatService）；方法名统一 _mockFiori / _fiori 前缀。
          * =====================================================================
@@ -72,7 +73,31 @@ sap.ui.define([], function () {
                 { REPORT_ID: "ZDPMM455", TCODE: "ZDPMM455", NAME: "物料收发汇总", DESCRIPTION: "按期间汇总物料收发数量（演示）", EXEC_ENABLED: "X",
                   PARAMS: [{ PARAM_ID: "WERKS" }, { PARAM_ID: "BUDAT" }, { PARAM_ID: "MATNR" }] },
                 { REPORT_ID: "ZDPSD010", TCODE: "ZDPSD010", NAME: "出货差异对账", DESCRIPTION: "出货与开票差异（演示：暂未开放执行）",
-                  PARAMS: [{ PARAM_ID: "VKORG" }] }
+                  PARAMS: [{ PARAM_ID: "VKORG" }] },
+                // 20261024（10.24 记录 #03a）：仿 ZRSD_IDP_0012 —— 两组单选（R）、两个复选框（C）、一堆选填条件。
+                // PARAMS 写成后端 get_params 整理后的样子：R → ENUM + ENUM_JSON + 默认项；C → BOOL；F（固定值）不返回
+                { REPORT_ID: "ZDPSD012", TCODE: "ZDPSD012", PROGNAME: "ZRSD_IDP_0012", NAME: "出貨明細報表", DESCRIPTION: "按工廠、出貨日期查出貨明細（演示：單選組 / 複選框 / 選填條件折疊）", EXEC_ENABLED: "X",
+                  PARAMS: [
+                        { PARAM_ID: "P_PLANT", ABAP_NAME: "P_PLANT", DISPLAY_LABEL: "工廠", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, REQUIRED: true, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 10 },
+                        { PARAM_ID: "S_ERDAT", ABAP_NAME: "S_ERDAT", DISPLAY_LABEL: "出貨日期", DATA_TYPE: "DATE", TYPE_LENGTH: 8, REQUIRED: true, RANGE_ALLOWED: true, SEL_KIND: "S", SORT_NO: 20 },
+                        { PARAM_ID: "RB_SHIP", ABAP_NAME: "G_SHIP", DISPLAY_LABEL: "出貨狀態", DATA_TYPE: "ENUM", SEL_KIND: "R", SORT_NO: 30,
+                          ALLOWED_OPS: "P_SHIP=已出貨;P_OPEN=未出貨;P_ALL=全部*", VALIDATION_RULE: "P_SHIP,P_OPEN,P_ALL", DEFAULT_TYPE: "STATIC", DEFAULT_VALUE: "P_ALL",
+                          ENUM_JSON: '[{"key":"P_SHIP","text":"已出貨"},{"key":"P_OPEN","text":"未出貨"},{"key":"P_ALL","text":"全部"}]' },
+                        { PARAM_ID: "RB_PACK", ABAP_NAME: "G_PACK", DISPLAY_LABEL: "包裝", DATA_TYPE: "ENUM", SEL_KIND: "R", SORT_NO: 40,
+                          ALLOWED_OPS: "P_SINGLE=單體;P_MULTI=多體;P_PKALL=所有包裝*", VALIDATION_RULE: "P_SINGLE,P_MULTI,P_PKALL", DEFAULT_TYPE: "STATIC", DEFAULT_VALUE: "P_PKALL",
+                          ENUM_JSON: '[{"key":"P_SINGLE","text":"單體"},{"key":"P_MULTI","text":"多體"},{"key":"P_PKALL","text":"所有包裝"}]' },
+                        { PARAM_ID: "P_CANCEL", ABAP_NAME: "P_CANCEL", DISPLAY_LABEL: "含取消發票", DATA_TYPE: "BOOL", SEL_KIND: "C", SORT_NO: 50 },
+                        { PARAM_ID: "P_ERRONLY", ABAP_NAME: "P_ERRONLY", DISPLAY_LABEL: "只看異常", DATA_TYPE: "BOOL", SEL_KIND: "C", SORT_NO: 60, ALLOWED_OPS: "X", DEFAULT_VALUE: "X",
+                          HELP_TEXT: "出貨數量與開票數量不一致的行" },
+                        { PARAM_ID: "S_KUNNR", ABAP_NAME: "S_KUNNR", DISPLAY_LABEL: "客戶代碼", DATA_TYPE: "CHAR", TYPE_LENGTH: 10, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 70 },
+                        { PARAM_ID: "S_VKORG", ABAP_NAME: "S_VKORG", DISPLAY_LABEL: "銷售組織", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 80 },
+                        { PARAM_ID: "S_MODEL", ABAP_NAME: "S_MODEL", DISPLAY_LABEL: "機種", DATA_TYPE: "CHAR", TYPE_LENGTH: 18, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 90 },
+                        { PARAM_ID: "S_BSTNK", ABAP_NAME: "S_BSTNK", DISPLAY_LABEL: "客戶PO", DATA_TYPE: "CHAR", TYPE_LENGTH: 20, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 100 },
+                        { PARAM_ID: "S_GSBER", ABAP_NAME: "S_GSBER", DISPLAY_LABEL: "業務範圍", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 110 },
+                        { PARAM_ID: "S_VBELN", ABAP_NAME: "S_VBELN", DISPLAY_LABEL: "交貨單號", DATA_TYPE: "CHAR", TYPE_LENGTH: 10, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 120 },
+                        { PARAM_ID: "S_FKART", ABAP_NAME: "S_FKART", DISPLAY_LABEL: "發票類型", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 130 },
+                        { PARAM_ID: "S_INVNO", ABAP_NAME: "S_INVNO", DISPLAY_LABEL: "發票號碼", DATA_TYPE: "CHAR", TYPE_LENGTH: 10, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 140 }
+                  ] }
         ];
 
         /** 参数校验用：完整数值形态 */
@@ -350,6 +375,70 @@ sap.ui.define([], function () {
 
                 _mockReportDefs: function () {
                         return Promise.resolve({ defs: JSON.parse(JSON.stringify(TCODE_DEFS)), message: "" });
+                },
+
+                /**
+                  * 20261024：「报表执行」会话的演示 Agent —— 只认「执行 <TCode>」，其余返回 null（交回通用演示）。
+                  * 待填参数与后端 AGENT_SERVICE.build_report_intro 同格式：只带 param_id / label / required /
+                  * data_type / multi_value / range_allowed（不带选项和默认值），前端再按目录定义补齐（_enrichReportAsk）。
+                  */
+                _mockReportAgent: function (oPayload) {
+                        var m = /执行\s*([A-Za-z0-9_]{3,20})/.exec(String(oPayload.question || ""));
+                        if (!m) {
+                                return null;
+                        }
+                        var Service = this;
+                        var sTc = m[1].toUpperCase();
+                        var oDef = TCODE_DEFS.filter(function (d) { return d.TCODE === sTc; })[0];
+                        var aP = ((oDef && oDef.PARAMS) || []).filter(function (p) { return p.SEL_KIND !== "F"; });
+                        var bCard = !!(oDef && oDef.EXEC_ENABLED === "X" && aP.length);
+                        var sAnswer;
+                        if (!oDef) {
+                                sAnswer = "【报表未登记】事务代码 " + sTc + " 未在系统报表登记表中，或已被停用。（演示模式）";
+                        } else {
+                                sAnswer = "【报表 " + oDef.NAME + "】(" + oDef.TCODE + " / " + oDef.REPORT_ID + ")\n" + (oDef.DESCRIPTION || "") + "\n\n" +
+                                        "【需要填写参数】(在任务卡表单中填写后提交执行; 聊天内不会直接提交作业, 参数由服务端二次校验)\n" +
+                                        aP.map(function (p) {
+                                                return "- " + (p.DISPLAY_LABEL || p.PARAM_ID) + "(" + (p.REQUIRED ? "必填" : "可选") +
+                                                        (p.MULTI_VALUE ? ", 支持多值" : p.RANGE_ALLOWED ? ", 支持范围" : "") + ")";
+                                        }).join("\n") + "\n\n(演示模式: 不会提交后台作业。)";
+                        }
+                        var sPending = bCard ? JSON.stringify({
+                                report_id: oDef.REPORT_ID, tcode: oDef.TCODE,
+                                params: aP.map(function (p) {
+                                        return { param_id: p.PARAM_ID, label: p.DISPLAY_LABEL || p.PARAM_ID, required: !!p.REQUIRED,
+                                                data_type: p.DATA_TYPE || "CHAR", multi_value: !!p.MULTI_VALUE, range_allowed: !!p.RANGE_ALLOWED };
+                                })
+                        }) : "";
+                        return new Promise(function (fnResolve) {
+                                setTimeout(function () {
+                                        var oStore = Service._mockStore();
+                                        var aHist = oStore.messages[oPayload.sessionId] = oStore.messages[oPayload.sessionId] || [];
+                                        var sNow = Service._mockTime();
+                                        aHist.push({ SessionId: oPayload.sessionId, MsgSeq: "", Role: "user", Content: oPayload.question, ProgramName: "AGENT", CreatedAt: sNow, Status: "OK" });
+                                        aHist.push({ SessionId: oPayload.sessionId, MsgSeq: "", Role: "assistant", Content: sAnswer, ProgramName: "AGENT", CreatedAt: sNow, Status: "OK" });
+                                        var oSess = oStore.sessions.filter(function (x) { return x.SessionId === oPayload.sessionId; })[0];
+                                        if (!oSess) {
+                                                oStore.sessions.unshift({
+                                                        SessionId: oPayload.sessionId, Title: oPayload.question.substring(0, 24), ModelId: oPayload.modelId || "",
+                                                        MsgCount: "2", CreatedAt: sNow, ChangedAt: sNow, Mode: "AGENT", AgentType: "REPORT", Status: "COMPLETED"
+                                                });
+                                        } else {
+                                                oSess.ChangedAt = sNow;
+                                                oSess.MsgCount = String((parseInt(oSess.MsgCount || "0", 10) || 0) + 2);
+                                        }
+                                        Service._mockSave(oStore);
+                                        fnResolve({
+                                                answer: sAnswer, status: "OK", elapsedMs: 0, rounds: 0, message: "", modelId: oPayload.modelId || "AUTO",
+                                                trace: [{ phase: "UNDERSTANDING", label: "理解问题", status: "OK", elapsedMs: 0 },
+                                                        { phase: "COMPOSING", label: bCard ? "整理报表参数" : "报表未登记", status: "OK", elapsedMs: 0 }],
+                                                analysis: null,
+                                                taskId: bCard ? "RTASK" + String(oPayload.sessionId || "").substring(0, 8) : "",
+                                                taskModule: "REPORT", taskStatus: bCard ? "WAITING_INPUT" : "",
+                                                needsInput: bCard, pendingParamsJson: sPending, artifactRefsJson: ""
+                                        });
+                                }, 400);
+                        });
                 },
 
                 /** 待填参数 JSON（与后端 agent_turn 输出同格式；键用下划线，AskCard 直接渲染） */

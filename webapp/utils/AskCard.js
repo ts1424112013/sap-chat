@@ -21,6 +21,11 @@ sap.ui.define([
          * 卡片只负责交互与收集，业务动作由控制器 onAction(oAsk, oPick) 执行。
          * 20261020（Fiori 报表）：参数 data_type = ENUM 时按 enum_json（[{key,text}]）渲染成可点选的标签，
          * multi_value 决定单选 / 多选，提交值为选项 key 逗号拼接；oAsk.values 可预填（重跑时带上次的参数）。
+         * 20261024（10.24 记录 #03a）：报表选择项 + 参数卡重新排版 ——
+         *  · data_type = BOOL（复选框，SEL_KIND C）→ 开关胶囊，提交 "X" / ""（空 = 不勾，后端会明确下发空格）
+         *  · 排版：单选组（单选 ENUM）在最上，必填项随后，开关集中一行，选填项超过 1 个且总数多时
+         *    折进「更多筛选条件（N）」（有预填值时自动展开）；字段少时与原来一样全部平铺
+         *  · mergeParamDefs：TCode 报表的待填参数（Agent 只给类型）按 ReportDefinitions 补选项 / 默认值 / 说明
          */
 
         /** ENUM 选项：enum_json 可以是 JSON 字符串或数组；坏数据返回 [] */
@@ -40,6 +45,85 @@ sap.ui.define([
                 return String((oP && oP.data_type) || "").toUpperCase() === "ENUM" && enumOptions(oP).length > 0;
         }
 
+        /** 20261024：复选框（SEL_KIND C → data_type BOOL） */
+        function isBool(oP) {
+                return String((oP && oP.data_type) || "").toUpperCase() === "BOOL";
+        }
+
+        /** 取字段：兼容 snake_case / 大写（ReportDefinitions 没设 pretty_name）/ camelCase */
+        function pick(o, sKey) {
+                if (!o) {
+                        return undefined;
+                }
+                var sCamel = sKey.replace(/_([a-z])/g, function (x, c) { return c.toUpperCase(); });
+                var aTry = [sKey, sKey.toUpperCase(), sCamel];
+                for (var i = 0; i < aTry.length; i++) {
+                        if (o[aTry[i]] !== undefined && o[aTry[i]] !== null) {
+                                return o[aTry[i]];
+                        }
+                }
+                return undefined;
+        }
+
+        /**
+          * 20261024：TCode 报表待填参数 + ReportDefinitions 的参数定义 → 补齐选项、默认值、说明。
+          * Agent 的待填参数只有 param_id / label / required / data_type / multi / range（后端 get_params 已把
+          * 单选组整理成 ENUM、复选框整理成 BOOL、固定值不返回），选项（enum_json）与默认值要从目录定义里取。
+          * 默认值只填用户还没碰过的（values 里没有这个键）；定义里 sel_kind = F 的再兜底隐藏一次。
+          * @param {object[]} aPending 待填参数
+          * @param {object[]} aDefParams ReportDefinitions 里该报表的 PARAMS
+          * @param {object} [mValues] 已有填写值（会被就地补默认值）
+          * @returns {{params: object[], values: object}}
+          */
+        function mergeParamDefs(aPending, aDefParams, mValues) {
+                var mVals = mValues || {};
+                var mDef = {};
+                (aDefParams || []).forEach(function (d) {
+                        var sId = String(pick(d, "param_id") || "").toUpperCase();
+                        if (sId) {
+                                mDef[sId] = d;
+                        }
+                });
+                var aOut = [];
+                (aPending || []).forEach(function (p) {
+                        var d = p && mDef[String(p.param_id || "").toUpperCase()];
+                        if (!d) {
+                                aOut.push(p);
+                                return;
+                        }
+                        var sKind = String(pick(d, "sel_kind") || "").toUpperCase();
+                        if (sKind === "F") {
+                                return;
+                        }
+                        var q = Object.assign({}, p, { sel_kind: sKind });
+                        var sHelp = pick(d, "help_text");
+                        if (sHelp && !q.help_text) {
+                                q.help_text = String(sHelp);
+                        }
+                        if (sKind === "R") {
+                                q.data_type = "ENUM";
+                                q.multi_value = false;
+                                q.range_allowed = false;
+                                q.enum_json = pick(d, "enum_json") || q.enum_json || "";
+                                // 有默认项或必填的单选组和 SAP 单选按钮一样，总要选中一个（不能点掉）
+                                q.keep_one = !!(q.required || pick(d, "default_value"));
+                                if (!q.help_text && !q.keep_one) {
+                                        q.help_text = "不选 = 按报表程序的默认";
+                                }
+                        } else if (sKind === "C") {
+                                q.data_type = "BOOL";
+                                q.multi_value = false;
+                                q.range_allowed = false;
+                        }
+                        var sDef = pick(d, "default_value");
+                        if ((sKind === "R" || sKind === "C") && sDef && mVals[q.param_id] === undefined) {
+                                mVals[q.param_id] = String(sDef);
+                        }
+                        aOut.push(q);
+                });
+                return { params: aOut, values: mVals };
+        }
+
         function dateDisplay(s) {
                 return /^\d{8}$/.test(s) ? s.substring(0, 4) + "-" + s.substring(4, 6) + "-" + s.substring(6, 8) : s;
         }
@@ -57,6 +141,9 @@ sap.ui.define([
 
         /** 提交后回显：范围 "从 ~ 至"，多值 "a、b"，日期转 yyyy-MM-dd，ENUM 显示选项文字 */
         function valueDisplay(oP, sVal) {
+                if (isBool(oP)) {
+                        return sVal === "X" ? "是" : "否";
+                }
                 if (isEnum(oP)) {
                         var aOpt = enumOptions(oP);
                         return String(sVal || "").split(",").filter(Boolean).map(function (k) {
@@ -114,6 +201,11 @@ sap.ui.define([
                                         text: o.text,
                                         pressed: aSel.indexOf(o.key) >= 0,
                                         press: function (e) {
+                                                // 20261024：keep_one（单选组有默认 / 必填）时不能把唯一选中的点掉
+                                                if (!bMulti && oP.keep_one && !e.getParameter("pressed")) {
+                                                        e.getSource().setPressed(true);
+                                                        return;
+                                                }
                                                 if (!bMulti && e.getParameter("pressed")) {
                                                         oRec.enumBtns.forEach(function (b) {
                                                                 if (b !== e.getSource()) { b.setPressed(false); }
@@ -149,11 +241,62 @@ sap.ui.define([
                 return oRec;
         }
 
+        /** 20261024：复选框 → 开关胶囊（按下 = "X"）；同一张卡的开关集中放一行 */
+        function buildBool(oP, mVals) {
+                var sId = oP.param_id;
+                var oRec = { id: sId, label: oP.label || sId, required: false };
+                oRec.bool = new ToggleButton({
+                        text: oRec.label,
+                        icon: "sap-icon://accept",
+                        pressed: mVals[sId] === "X",
+                        tooltip: oP.help_text || oRec.label,
+                        press: function (e) { mVals[sId] = e.getParameter("pressed") ? "X" : ""; }
+                }).addStyleClass("askEnumBtn askBoolBtn");
+                return oRec;
+        }
+
+        /**
+          * 20261024：参数排版 —— 单选组（单选 ENUM）→ 必填 → 开关 → 选填；
+          * 选填项：先补足到 3 个平铺，剩下 ≥ 2 个才折叠（只剩 1 个就直接平铺）
+          * @returns {{enums: object[], shown: object[], bools: object[], more: object[]}} 参数定义分组（保持原相对顺序）
+          */
+        function layoutParams(aParams) {
+                var o = { enums: [], shown: [], bools: [], more: [] };
+                var aOpt = [];
+                (aParams || []).forEach(function (p) {
+                        if (!p || !p.param_id) {
+                                return;
+                        }
+                        if (isBool(p)) {
+                                o.bools.push(p);
+                        } else if (isEnum(p) && p.multi_value !== true) {
+                                o.enums.push(p);
+                        } else if (p.required === true) {
+                                o.shown.push(p);
+                        } else {
+                                aOpt.push(p);
+                        }
+                });
+                while (o.shown.length < 3 && aOpt.length) {
+                        o.shown.push(aOpt.shift());
+                }
+                if (aOpt.length <= 1) {
+                        o.shown = o.shown.concat(aOpt);
+                        aOpt = [];
+                }
+                o.more = aOpt;
+                return o;
+        }
+
         /** 收集参数值；必填缺失的控件标红，返回 {values, missing[]} */
         function collect(aRecs) {
                 var mOut = {}, aMissing = [];
                 aRecs.forEach(function (r) {
                         var sV;
+                        if (r.bool) {
+                                mOut[r.id] = r.bool.getPressed() ? "X" : "";
+                                return;
+                        }
                         if (r.enumBtns) {
                                 sV = r.enumBtns.filter(function (b) { return b.getPressed(); })
                                         .map(function (b) { return b.data("key"); }).join(",");
@@ -222,17 +365,57 @@ sap.ui.define([
                 }).addStyleClass("askHead"));
 
                 // —— 参数表单（params 形态） ——
+                // 20261015：参数一行一个；20261024：单选组 → 必填 → 开关 → 选填（多时折叠）
                 if (oAsk.kind === "params" && (oAsk.params || []).length) {
                         oAsk.values = oAsk.values || {};
-                        // 20261015：参数一行一个（原 HBox 换行网格一行挤 2~3 个）
+                        var oLay = layoutParams(oAsk.params.slice(0, 40));
                         var oFields = new VBox().addStyleClass("askFields");
-                        oAsk.params.slice(0, 20).forEach(function (p) {
-                                if (p && p.param_id) {
+                        oLay.enums.concat(oLay.shown).forEach(function (p) {
+                                var r = buildParam(p, oAsk.values, !!oAsk.error);
+                                aRecs.push(r);
+                                oFields.addItem(r.cell);
+                        });
+                        if (oLay.bools.length) {
+                                var aBoolRecs = oLay.bools.map(function (p) { return buildBool(p, oAsk.values); });
+                                aRecs = aRecs.concat(aBoolRecs);
+                                oFields.addItem(new VBox({
+                                        items: [new Label({ text: "选项", wrapping: true }).addStyleClass("askFieldLabel"),
+                                                new HBox({ wrap: "Wrap", items: aBoolRecs.map(function (r) { return r.bool; }) }).addStyleClass("askEnum askBools")]
+                                }).addStyleClass("askField"));
+                        }
+                        if (oLay.more.length) {
+                                var oMoreBox = new VBox().addStyleClass("askMoreBox");
+                                var iFilled = 0;
+                                oLay.more.forEach(function (p) {
                                         var r = buildParam(p, oAsk.values, !!oAsk.error);
                                         aRecs.push(r);
-                                        oFields.addItem(r.cell);
+                                        oMoreBox.addItem(r.cell);
+                                        if (oAsk.values[p.param_id]) { iFilled++; }
+                                });
+                                if (oAsk.moreOpen === undefined) {
+                                        oAsk.moreOpen = iFilled > 0;
                                 }
-                        });
+                                var fnMoreText = function () {
+                                        return (oAsk.moreOpen ? "收起筛选条件" : "更多筛选条件（" + oLay.more.length + "）") +
+                                                (iFilled && !oAsk.moreOpen ? " · 已填 " + iFilled : "");
+                                };
+                                oMoreBox.setVisible(!!oAsk.moreOpen);
+                                var oMoreBtn = new Button({
+                                        text: fnMoreText(),
+                                        icon: oAsk.moreOpen ? "sap-icon://slim-arrow-up" : "sap-icon://slim-arrow-down",
+                                        iconFirst: false,
+                                        type: "Transparent",
+                                        enabled: !bBusy,
+                                        press: function () {
+                                                oAsk.moreOpen = !oAsk.moreOpen;
+                                                oMoreBox.setVisible(oAsk.moreOpen);
+                                                oMoreBtn.setText(fnMoreText());
+                                                oMoreBtn.setIcon(oAsk.moreOpen ? "sap-icon://slim-arrow-up" : "sap-icon://slim-arrow-down");
+                                        }
+                                }).addStyleClass("askMoreBtn");
+                                oFields.addItem(new HBox({ alignItems: "Center", items: [oMoreBtn] }).addStyleClass("askMoreRow"));
+                                oFields.addItem(oMoreBox);
+                        }
                         oCard.addItem(oFields);
                 }
 
@@ -362,7 +545,7 @@ sap.ui.define([
                                         var bTyping = oAct && oAct.tagName === "TEXTAREA" && (oAct.value || "").trim();
                                         if (!bTyping) {
                                                 setTimeout(function () {
-                                                        var oFirst = aRecs.length && (aRecs[0].input || aRecs[0].low || (aRecs[0].enumBtns || [])[0]);
+                                                        var oFirst = aRecs.length && (aRecs[0].input || aRecs[0].low || (aRecs[0].enumBtns || [])[0] || aRecs[0].bool);
                                                         if (oFirst) { oFirst.focus(); } else { oDom.focus(); }
                                                 }, 60);
                                         }
@@ -411,5 +594,6 @@ sap.ui.define([
                 };
         }
 
-        return { render: render, detectChoices: detectChoices, dateDisplay: dateDisplay, valueDisplay: valueDisplay, enumOptions: enumOptions };
+        return { render: render, detectChoices: detectChoices, dateDisplay: dateDisplay, valueDisplay: valueDisplay, enumOptions: enumOptions,
+                mergeParamDefs: mergeParamDefs, layoutParams: layoutParams };
 });

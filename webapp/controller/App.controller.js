@@ -3392,12 +3392,47 @@ sap.ui.define([
                                         freePh: oRB.getText("askParamsFreePh"),
                                         taskId: oTask.taskId,
                                         reportId: oTask.reportId,
+                                        tcode: oTask.tcode,
                                         module: oTask.module,
                                         sessionId: sSessionId,
                                         sel: 0,
                                         autoFocus: true
                                 };
+                                this._enrichReportAsk(oEntry);
                         }
+                },
+
+                /**
+                  * 20261024（10.24 记录 #03a）：TCode 报表参数卡补齐单选组选项 / 复选框与单选组默认值 / 说明。
+                  * Agent 的待填参数只带类型（单选组 = ENUM、复选框 = BOOL，后端 get_params 已整理），
+                  * 选项与默认值在 ReportDefinitions 的参数定义里（enum_json / default_value）。
+                  * 取不到定义时卡片保持原样（单选组退化成输入框，后端仍按选项校验）。
+                  */
+                _enrichReportAsk: function (oEntry) {
+                        var that = this;
+                        var oAsk = oEntry && oEntry.ask;
+                        if (!oAsk || oAsk.fiori || (!oAsk.reportId && !oAsk.tcode)) {
+                                return;
+                        }
+                        ChatService.getReportCatalog().then(function (o) {
+                                var fnStr = function (d, a) {
+                                        for (var i = 0; i < a.length; i++) {
+                                                if (d[a[i]] !== undefined && d[a[i]] !== null) { return String(d[a[i]]); }
+                                        }
+                                        return "";
+                                };
+                                var oDef = ((o && o.defs) || []).filter(function (d) {
+                                        return oAsk.reportId ? fnStr(d, ["REPORT_ID", "report_id", "reportId"]) === oAsk.reportId
+                                                : fnStr(d, ["TCODE", "tcode"]) === oAsk.tcode;
+                                })[0];
+                                if (!oDef || oEntry.ask !== oAsk || oAsk.state !== "open") {
+                                        return;
+                                }
+                                var oRes = AskCard.mergeParamDefs(oAsk.params, oDef.PARAMS || oDef.params || [], oAsk.values || {});
+                                oAsk.params = oRes.params;
+                                oAsk.values = oRes.values;
+                                that._renderAsk(oEntry.uid);
+                        }).catch(function () { /* 目录取不到：卡片保持原样 */ });
                 },
 
                 /** V16：按 uid 找消息条目（不依赖下标） */

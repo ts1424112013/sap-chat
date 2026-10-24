@@ -13,6 +13,7 @@ class Control {
   setVisible(v) { this.o.visible = v; return this; }
   setValueState(v) { this.o.valueState = v; return this; }
   setText(v) { this.o.text = v; return this; }
+  setIcon(v) { this.o.icon = v; return this; }
   setPressed(v) { this.o.pressed = v; return this; }
   getPressed() { return this.o.pressed; }
   getValue() { return this.o.value || ''; }
@@ -130,6 +131,54 @@ async function test(name, fn) { await fn(); passed++; console.log('  ✅ ' + nam
     controls.find((o) => o.events.liveChange && o.o.value === '旧值').fire('liveChange', '');
     controls.find((o) => o.d.key === 'B').fire('press', true);
     assert.deepEqual(ask.values, { T: '', E: 'B' });
+  });
+  await test('20261024：复选框是开关胶囊（X / 空），单选组有默认时点不掉，选填多时折叠且可展开', () => {
+    const ask = { kind: 'params', state: 'open', options: [], values: { RB: 'A' }, params: [
+      { param_id: 'W', label: '工厂', required: true },
+      { param_id: 'RB', label: '状态', data_type: 'ENUM', keep_one: true, enum_json: [{ key: 'A', text: '甲' }, { key: 'B', text: '乙' }] },
+      { param_id: 'C1', label: '含取消', data_type: 'BOOL' },
+      ...Array.from({ length: 6 }, (_, i) => ({ param_id: 'O' + i, label: '选填' + i }))
+    ] };
+    const controls = render(ask);
+    const chip = controls.find((o) => o.o.text === '含取消' && o.o.icon === 'sap-icon://accept');
+    chip.fire('press', true); assert.equal(ask.values.C1, 'X');
+    chip.fire('press', false); assert.equal(ask.values.C1, '');
+    const a = controls.find((o) => o.d.key === 'A');
+    a.fire('press', false);                       // 点掉唯一选中的 → 恢复选中、值不变
+    assert.equal(a.o.pressed, true); assert.equal(ask.values.RB, 'A');
+    controls.find((o) => o.d.key === 'B').fire('press', true);
+    assert.equal(ask.values.RB, 'B');
+    const more = controls.find((o) => /^更多筛选条件（4）/.test(o.o.text || ''));
+    assert.ok(more, '应有「更多筛选条件（4）」');   // 必填 1 + 补 2 个选填平铺，剩 4 个折叠
+    assert.equal(ask.moreOpen, false);
+    more.fire('press'); assert.equal(ask.moreOpen, true); assert.equal(more.o.text, '收起筛选条件');
+  });
+  await test('20261024：选填项有预填值时折叠区自动展开', () => {
+    const ask = { kind: 'params', state: 'open', options: [], values: { O5: '1000' },
+      params: Array.from({ length: 6 }, (_, i) => ({ param_id: 'O' + i, label: '选填' + i })) };
+    render(ask);
+    assert.equal(ask.moreOpen, true);
+  });
+  await test('20261024：TCode 报表参数卡按 ReportDefinitions 补齐选项 / 默认值，固定值不显示，已填的不覆盖', async () => {
+    const c = controller(); activate(c, 'A');
+    service.getReportCatalog = () => Promise.resolve({ defs: [{ REPORT_ID: 'R1', TCODE: 'ZT1', PARAMS: [
+      { PARAM_ID: 'RB', SEL_KIND: 'R', DEFAULT_VALUE: 'P2', ENUM_JSON: '[{"key":"P1","text":"已出货"},{"key":"P2","text":"全部"}]' },
+      { PARAM_ID: 'CB', SEL_KIND: 'C', DEFAULT_VALUE: 'X' }, { PARAM_ID: 'HID', SEL_KIND: 'F' }] }] });
+    const e = add(c, '参数');
+    e.ask = { kind: 'params', state: 'open', reportId: 'R1', tcode: 'ZT1', values: { W: '1000' }, params: [
+      { param_id: 'W', label: '工厂', required: true }, { param_id: 'RB', label: '状态', data_type: 'ENUM' },
+      { param_id: 'CB', label: '含取消', data_type: 'BOOL' }, { param_id: 'HID', label: '输出' }] };
+    c._enrichReportAsk(e); await flush();
+    assert.equal(JSON.stringify(e.ask.params.map((p) => p.param_id)), '["W","RB","CB"]');   // 沙箱里的数组跨 realm，用 JSON 比
+    assert.equal(JSON.stringify(e.ask.values), '{"W":"1000","RB":"P2","CB":"X"}');
+    assert.equal(AskCard.enumOptions(e.ask.params[1]).length, 2);
+    // 卡片已提交 / 目录里没有这张报表 → 不动
+    const e2 = add(c, '参数2'); e2.ask = { kind: 'params', state: 'done', reportId: 'R1', values: {}, params: [{ param_id: 'RB', data_type: 'ENUM' }] };
+    c._enrichReportAsk(e2); await flush();
+    assert.equal(e2.ask.params[0].enum_json, undefined);
+    const e3 = add(c, '参数3'); e3.ask = { kind: 'params', state: 'open', reportId: 'NOPE', values: {}, params: [{ param_id: 'RB', data_type: 'ENUM' }] };
+    c._enrichReportAsk(e3); await flush();
+    assert.equal(e3.ask.params[0].enum_json, undefined);
   });
   await test('A→B→A 保留原 uid、输入卡、数据表、图表、步骤条，恢复时不重读覆盖', async () => {
     const c = controller(); activate(c, 'A');
