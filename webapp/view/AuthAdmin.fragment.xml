@@ -116,6 +116,7 @@
                                                         <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
                                                         <HBox alignItems="Center" class="apvChips admChips">
                                                                 <Text text="{auth>targetUser}" class="admUser"/>
+                                                                <Text text="{auth>whoSub}" class="admWho" wrapping="false" visible="{= !!${auth>whoSub} }"/>
                                                                 <Text text="{auth>tcode}" class="apvChip apvChipTcode"/>
                                                                 <Text text="{auth>werksText}" class="apvChip"/>
                                                                 <Text text="{auth>tabname}" class="apvTabname" visible="{= !!${auth>tabname} }"/>

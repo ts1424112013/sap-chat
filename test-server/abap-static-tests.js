@@ -7,7 +7,7 @@
  *      CX_SY_OPEN_SQL_DATA_ERROR → 网关 500。10-22 部署实锤：REPORT_CAPTURE_LEGACY 21 字符）
  *   2) Fiori 取数通道（ZCL_AI_ODATA_CLIENT V1.3 + Z_AI_ODATA_GET）：默认走 RFC 新会话、
  *      不再有 URL 通道、现场 DPC 捕获块调用的两个空壳方法还在、函数模块接口与调用一致
- *   3) 权限自助申请（ZCL_AI_AUTH_SERVICE V1.2，20261023）：读写目标表 / 规则映射表只在约定的方法里；
+ *   3) 权限自助申请（ZCL_AI_AUTH_SERVICE V1.3，20261024）：读写目标表 / 规则映射表只在约定的方法里；USER_ADDR 只在 fill_user_info；
  *      DPC 每个权限 FI 读的参数 = 前端恒发的参数清单（SAP 上 FI 参数全必填）
  * 只能查文本层面的约定，语法与运行时仍以 SAP 激活与现场验证为准。
  */
@@ -140,6 +140,13 @@ check('规则映射在申请（find_tables）与审批（decide）两处套用',
 check('decide 按当前规则重选映射（find_rule 后比对目标表）', /find_rule\([\s\S]*?IF ls_rule-tabname = ls_tab-tabname/i.test(methods.decide || ''));
 check('删除规则时一并删映射', /iv_delete = 'X'[\s\S]*?DELETE FROM zai_auth_rule[\s\S]*?DELETE FROM zai_auth_rmap[\s\S]*?RETURN\./i.test(methods.save_rule || ''));
 check('规则不指定权限表时拒绝单独映射', /lv_json IS NOT INITIAL[\s\S]*?lv_tab IS INITIAL/i.test(methods.save_rule || ''));
+// V1.3 20261024（10.24 记录 #00a）：审批卡显示申请人姓名 / 部门
+check('服务类版本头有 V1.3', /^\* V1\.3 20261024/m.test(authRaw));
+check('申请记录 ty_request 有 target_name / target_dept（DPC camelCase → targetName / targetDept）', /BEGIN OF ty_request,[\s\S]*?target_name\s+TYPE string,[\s\S]*?target_dept\s+TYPE string,[\s\S]*?END OF ty_request/i.test(auth));
+check('USER_ADDR 只在 fill_user_info 里读', inMethods(/\buser_addr\b/i).join() === 'fill_user_info', inMethods(/\buser_addr\b/i).join());
+check('list_requests 末尾调 fill_user_info', /fill_user_info\(\s*CHANGING ct_requests = rs-requests\s*\)[\s\S]*?ENDMETHOD\./i.test(methods.list_requests || ''));
+check('fill_user_info 字段列表动态 + 捕获动态 SQL 异常（字段名不符只是查不到，不影响激活）', /SELECT \(lv_cols\) FROM user_addr/i.test(methods.fill_user_info || '') && /CATCH cx_sy_dynamic_osql_error/i.test(methods.fill_user_info || ''));
+check('fill_user_info 只读（没有 INSERT / UPDATE / MODIFY / DELETE）', !/\b(INSERT|UPDATE|MODIFY|DELETE)\b/i.test(methods.fill_user_info || ''));
 
 // DPC 每个权限 FI 读的参数名 == 前端 _authCall 恒发的参数清单（SAP 上 FI 参数全必填，多一个少一个都会 404）
 const dpcParams = {};

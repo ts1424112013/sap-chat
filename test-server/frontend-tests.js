@@ -60,7 +60,10 @@ const registry = {
   'sap/ui/model/odata/v2/ODataModel': function () {},
   'sap/ui/model/Filter': function () {},
   'sap/ui/model/FilterOperator': {},
-  'sap/ui/model/Sorter': function () {}
+  'sap/ui/model/Sorter': function () {},
+  // 20261024：DataGrid 只测纯函数，Dialog / HTML 给空壳
+  'sap/m/Dialog': function () {},
+  'sap/ui/core/HTML': function () {}
 };
 function load(name) {
   if (registry[name]) { return registry[name]; }
@@ -241,6 +244,52 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   check('演示模式 _taskCall 不发请求', r.success === false && fetchLog.length === 0);
   const mockUsers = await ChatService.getUsersData();
   check('演示模式用户列表带一行只读的内置管理员', mockUsers.length >= 1 && mockUsers[0].UserId === 'ADMIN' && mockUsers[0].BuiltIn === true && fetchLog.length === 0, JSON.stringify(mockUsers));
+
+  // ---------- 20261024（10.24 记录 #02）：大结果集预览 + 分页查看器 ----------
+  console.log('\n━━ DataGrid（大结果集预览 / 分页查看器）');
+  const DG = load('zai/chat/utils/DataGrid');
+  const rows = [];
+  for (let i = 0; i < 250; i++) { rows.push(['P' + (i % 3), 'M' + i, i % 7 === 0 ? '' : String(1000 - i) + '.5', i === 5 ? '12.5-' : 'x']); }
+  check('预览 50 行、每页 100 行', DG.PREVIEW_ROWS === 50 && DG.PAGE_SIZE === 100);
+  let pg = DG.pageOf(rows, 1);
+  check('第 1 页：1–100，共 3 页', pg.rows.length === 100 && pg.from === 1 && pg.to === 100 && pg.pages === 3 && pg.total === 250);
+  pg = DG.pageOf(rows, 3);
+  check('最后一页：201–250', pg.rows.length === 50 && pg.from === 201 && pg.to === 250);
+  check('页码越界夹回（0 → 1，99 → 3）', DG.pageOf(rows, 0).page === 1 && DG.pageOf(rows, 99).page === 3);
+  pg = DG.pageOf([], 1);
+  check('空数据：1 页、from/to 为 0', pg.pages === 1 && pg.from === 0 && pg.to === 0 && pg.rows.length === 0);
+  check('搜索不分大小写、任一格命中', DG.filterRows(rows, 'p1').length === 83 && DG.filterRows(rows, 'M249').length === 1 && DG.filterRows(rows, '  ').length === 250);
+  check('搜索不改原数组', DG.filterRows(rows, 'zzz').length === 0 && rows.length === 250);
+  let srt = DG.sortRows(rows, 2, 'asc');
+  check('数值列升序按数值比（不是按字符串），空值排最后', srt[0][2] === '751.5' && srt[srt.length - 1][2] === '' && Number(srt[1][2]) > Number(srt[0][2]));
+  srt = DG.sortRows(rows, 2, 'desc');
+  check('降序：最大在前，空值仍在最后', srt[0][2] === '999.5' && srt[srt.length - 1][2] === '');
+  srt = DG.sortRows([['b'], ['12.5-'], ['3']], 0, 'asc');
+  check('SAP 后置负号按负数比；数字与文字混排时按文本比', DG.sortRows([['5'], ['12.5-'], ['3']], 0, 'asc').map((r) => r[0]).join() === '12.5-,3,5' && srt.length === 3);
+  check('稳定排序：相同值保持原顺序', DG.sortRows([['1', 'a'], ['0', 'b'], ['1', 'c']], 0, 'asc').map((r) => r[1]).join() === 'b,a,c');
+  check('不排序（列 < 0）返回副本', DG.sortRows(rows, -1, 'asc') !== rows && DG.sortRows(rows, -1, 'asc')[0] === rows[0]);
+  const cols = [{ label: '<b>工厂</b>' }, { label: '物料' }, { label: '金额', numeric: true }];
+  const longVal = '很长很长很长很长很长很长很长很长很长很长很长很长很长很长';
+  let th = DG.tableHtml(cols, [['<img src=x onerror=1>', longVal, '1,234.5']], { cls: 'analysisTable' });
+  check('表格转义列名与单元格', th.indexOf('<img') < 0 && th.indexOf('&lt;img') >= 0 && th.indexOf('&lt;b&gt;工厂') >= 0);
+  check('长文本格加 title（悬停看全），短的不加', (th.match(/title="/g) || []).length === 1 && th.indexOf('title="' + longVal + '"') >= 0);
+  check('数值列右对齐 class=num；额外 class 带上', /<td class="num">1,234.5<\/td>/.test(th) && th.indexOf('dgTable analysisTable') >= 0);
+  th = DG.tableHtml(cols, [['a', 'b', 'c'], ['d', 'e', 'f']], { rowNo: 101, sortable: true, sortCol: 1, sortDir: 'desc', sortTip: 't' });
+  check('查看器表格：行号从 101 起、列头可排序、当前排序列带 ↓', /<td class="dgNo">101<\/td>/.test(th) && /<td class="dgNo">102<\/td>/.test(th) && (th.match(/data-col="/g) || []).length === 3 && th.indexOf('dgSort') >= 0 && th.indexOf('↓') >= 0);
+  const T = DG.TEXTS;
+  const st = { ds: { name: 'D', columns: cols, rows: rows, truncated: true, total: 1200 }, query: '', sortCol: -1, sortDir: 'asc', page: 3 };
+  let vb = DG.viewerBodyHtml(st, T);
+  check('查看器第 3 页：范围文字、上一页可点、下一页禁用', vb.foot.indexOf('第 201–250 行，共 250 行') >= 0 && /data-act="prev">/.test(vb.foot) && /data-act="next" disabled/.test(vb.foot) && (vb.table.match(/<tr>/g) || []).length === 51);
+  check('规模说明：250 行 × 3 列 + 后端共 1200 行', vb.meta.indexOf('250 行 × 3 列') >= 0 && vb.meta.indexOf('1200') >= 0);
+  st.query = 'M24'; st.page = 9;
+  vb = DG.viewerBodyHtml(st, T);
+  check('搜索后：匹配行数、页码夹回第 1 页、只有一页（上下页都禁用）', vb.meta.indexOf('匹配 11 行') >= 0 && st.page === 1 && /data-act="prev" disabled/.test(vb.foot) && /data-act="next" disabled/.test(vb.foot) && vb.hits.length === 11);
+  st.query = 'zzz';
+  vb = DG.viewerBodyHtml(st, T);
+  check('搜不到：显示没有匹配的行', vb.table.indexOf('dgEmpty') >= 0 && vb.table.indexOf(T.noMatch) >= 0 && vb.foot.indexOf('dgRange"></span>') >= 0);
+  const tools = Formatter.dataToolsHtml(0, '', '查看全部 300 行');
+  check('工具条：给了「查看全部」时它在最前且是主按钮，生成图表退为普通按钮', /^<div class="dataTools" data-ds="0"><button type="button" class="dtBtn dtPrimary" data-act="all">查看全部 300 行<\/button><button type="button" class="dtBtn" data-act="chart">/.test(tools));
+  check('工具条：没给时和原来一样（生成图表是主按钮，没有 all）', Formatter.dataToolsHtml(0).indexOf('data-act="all"') < 0 && Formatter.dataToolsHtml(0).indexOf('dtBtn dtPrimary" data-act="chart"') >= 0);
 
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);

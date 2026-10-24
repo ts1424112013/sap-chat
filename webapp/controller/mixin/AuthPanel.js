@@ -112,6 +112,8 @@ sap.ui.define([
                                         : r.werks === "ALL" ? oRB.getText("apvWerksAll") : oRB.getText("apvWerks", [r.werks]);
                                 x.mineSub = [r.message || "", fmtTime(r.createdAt)].filter(Boolean).join("  ·  ");
                                 x.recSub = [x.channelText, x.createdAtText].filter(Boolean).join("  ·  ");
+                                // 20261024：姓名 · 部门（后端从 USER_ADDR 补，查不到为空）
+                                x.whoSub = [r.targetName, r.targetDept].map(function (v) { return String(v || "").trim(); }).filter(Boolean).join(" · ");
                                 x.canDecide = r.status === "PENDING";
                                 x.canRevoke = r.revocable === "X";
                                 return x;

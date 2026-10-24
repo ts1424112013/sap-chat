@@ -160,6 +160,31 @@ async function rejects(name, promise, re) {
   check('点选发出的文字', rb.getText('catSendReport', ['ZDPMM702']) === '执行 ZDPMM702' && rb.getText('catSendFiori', ['shipment報表']) === '选择报表：shipment報表');
   check('有目录的场景只有报表执行和 Fiori 报表', ctx._catScene('REPORT') && ctx._catScene('FIORI') && !ctx._catScene('DATA') && !ctx._catScene('AUTO'));
 
+  /* ---------------- 2b) 20261024：报表执行目录按模块分类（10.24 记录 #01） ---------------- */
+  console.log('\n━━ 报表执行目录 · 模块分类');
+  check('事务码 ZDP + 模块：ZDPMM702 / ZDPSD012 / ZDPPP123', RC.moduleOf('ZDPMM702') === 'MM' && RC.moduleOf('ZDPSD012') === 'SD' && RC.moduleOf('ZDPPP123') === 'PP');
+  check('事务码 Z + 模块：ZFI001 / zmm05（不分大小写、去空格）', RC.moduleOf('ZFI001') === 'FI' && RC.moduleOf(' zmm05 ') === 'MM');
+  check('事务码推不出时看程序名：ZRSD_IDP_0022_NEW / ZRMM_IDP_0003C', RC.moduleOf('', 'ZRSD_IDP_0022_NEW') === 'SD' && RC.moduleOf('ZX999', 'ZRMM_IDP_0003C') === 'MM');
+  check('登记表显式模块优先（以后加 MODULE 列可人工修正）', RC.moduleOf('ZDPMM702', 'ZRMM_IDP_0702', 'pp') === 'PP');
+  check('都推不出返回空串', RC.moduleOf('ZNOTABLE', 'ZTEST_PROG') === '' && RC.moduleOf('', '') === '' && RC.moduleOf(undefined, null) === '');
+  check('不把非模块前缀误判（ZDEMO001 / SE16N）', RC.moduleOf('ZDEMO001') === '' && RC.moduleOf('SE16N') === '');
+  const mods = [{ id: '1', category: 'SD' }, { id: '2', category: '其他' }, { id: '3', category: 'MM' }, { id: '4', category: 'LE' }, { id: '5', category: 'MM' }, { id: '6', category: 'PP' }];
+  check('按模块稳定排序：MM → PP → SD → 其他显式模块 → 「其他」', RC.sortByModule(mods, '其他').map((x) => x.id).join() === '3,5,6,1,4,2');
+  check('排序不改原数组', mods.map((x) => x.id).join() === '1,2,3,4,5,6');
+  it = ctx._catReportItem({ REPORT_ID: 'R1', TCODE: 'ZDPSD012', PROGNAME: 'ZRSD_IDP_0012', NAME: 'n', EXEC_ENABLED: 'X', PARAMS: [] });
+  check('目录行 category = 由事务码推出的模块', it.category === 'SD');
+  it = ctx._catReportItem({ REPORT_ID: 'R2', TCODE: '', PROGNAME: 'ZRMM_IDP_0003C', NAME: 'n', PARAMS: [] });
+  check('没有事务码按程序名推', it.category === 'MM');
+  it = ctx._catReportItem({ REPORT_ID: 'R3', TCODE: 'ZNOTABLE', NAME: 'n', PARAMS: [] });
+  check('推不出 → 「其他」', it.category === I18N.catModOther && I18N.catModOther === '其他');
+  check('报表执行目录配置 categoryChip，Fiori 不配', ctx._catCfg('REPORT').categoryChip === true && !ctx._catCfg('FIORI').categoryChip);
+  const mmOnly = [{ id: 'a', title: 'A', code: 'ZDPMM702', category: 'MM', paramCount: 1 }, { id: 'b', title: 'B', code: 'ZDPMM004A', category: 'MM', paramCount: 2 }];
+  const chip = RC.html({ texts: T, categories: null, categoryChip: true }, { status: 'ready', items: mmOnly, query: '', category: '' });
+  check('只有一个模块：不出页签，但每行标出模块', chip.indexOf('bizTabs') < 0 && (chip.match(/class="biz"/g) || []).length === 2);
+  const multi = RC.html({ texts: T, categories: ['MM', 'SD'], categoryChip: true }, { status: 'ready', items: mmOnly.concat([{ id: 'c', title: 'C', code: 'ZDPSD012', category: 'SD' }]), query: '', category: '' });
+  check('多个模块：出页签（全部 3 · MM 2 · SD 1）并分组', /全部 <small>3/.test(multi) && /MM <small>2/.test(multi) && /SD <small>1/.test(multi) && (multi.match(/class="catGroup"/g) || []).length === 2);
+  check('搜索词能搜模块名', RC.filterItems(mmOnly.concat([{ id: 'c', title: 'C', category: 'SD' }]), 'sd').map((x) => x.id).join() === 'c');
+
   /* ---------------- 3) ChatService 对后端的调用约定 ---------------- */
   console.log('\n━━ ChatService · 对后端的调用约定');
   const svc = load('zai/chat/service/ChatService');

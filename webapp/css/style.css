@@ -1492,8 +1492,16 @@ html:not(.zai-keynav) [id$="newChatBtn"]:focus .sapMBtnHoverable {
 }
 
 /* ==================== 对话框（模型管理/设置）：冷色遮罩 + 16px 圆角 ==================== */
+/* 20261024：Horizon 主题给遮罩层另设了 opacity: .2，叠上这里的半透明底色实际只暗约 8%，
+   弹窗背后的内容几乎原样露出（10.24 记录 #04：设置弹窗旁边露出参数卡的「确认」按钮，像是弹窗按钮溢出）。
+   透明度改由底色自带、opacity 拉回 1，实际变暗约 38%。 */
 .sapUiBLy {
-        background: rgba(38, 40, 50, .4) !important;
+        background: rgba(20, 24, 33, .38) !important;
+        opacity: 1 !important;
+}
+
+[data-theme="dark"] .sapUiBLy {
+        background: rgba(0, 0, 0, .55) !important;
 }
 
 .sapMDialog {

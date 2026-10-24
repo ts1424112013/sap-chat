@@ -20,6 +20,7 @@ sap.ui.define([
         "zai/chat/utils/ChartRenderer",
         "zai/chat/utils/ChartBuilder",
         "zai/chat/utils/AskCard",
+        "zai/chat/utils/DataGrid",
         "zai/chat/controller/mixin/SceneModels",
         "zai/chat/controller/mixin/SettingsPanel",
         "zai/chat/controller/mixin/EvalPanel",
@@ -30,7 +31,7 @@ sap.ui.define([
         "zai/chat/controller/mixin/FioriPanel",
         "zai/chat/controller/mixin/SessionMessages",
         "zai/chat/controller/mixin/SkillPanel"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel) {
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, DataGrid, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel) {
         "use strict";
 
         /**
@@ -1207,9 +1208,14 @@ sap.ui.define([
                                                 '<div class="analysisDsError">⚠ ' + esc(oRB.getText("analysisDsError")) +
                                                 "：" + esc(oDs.error || "") + "</div>";
                                 } else {
-                                        var aMeta = [oRB.getText("analysisRows", [oDs.rows.length])];
+                                        // 20261024（10.24 记录 #02）：超过 DataGrid.PREVIEW_ROWS 行只画预览，完整数据走「查看全部」分页查看器
+                                        var bPreview = oDs.rows.length > DataGrid.PREVIEW_ROWS;
+                                        var aMeta = [oRB.getText("analysisRowsCols", [oDs.rows.length, oDs.columns.length])];
                                         if (oDs.truncated) {
-                                                aMeta.push(oRB.getText("analysisTruncated"));
+                                                aMeta.push(oDs.total > oDs.rows.length ? oRB.getText("analysisTotalRows", [oDs.total]) : oRB.getText("analysisTruncated"));
+                                        }
+                                        if (bPreview) {
+                                                aMeta.push(oRB.getText("dgPreviewMeta", [DataGrid.PREVIEW_ROWS]));
                                         }
                                         if (oDs.elapsedMs) {
                                                 aMeta.push(oDs.elapsedMs + "ms");
@@ -1219,25 +1225,13 @@ sap.ui.define([
                                         if (!oDs.rows.length) {
                                                 s += '<div class="analysisDsEmpty">' + esc(oRB.getText("analysisEmpty")) + "</div>";
                                         } else {
-                                                s += '<div class="mdTableWrap"><table class="mdTable analysisTable"><thead><tr>';
-                                                oDs.columns.forEach(function (col) {
-                                                        s += "<th>" + esc(col.label) + "</th>";
-                                                });
-                                                s += "</tr></thead><tbody>";
-                                                oDs.rows.forEach(function (row) {
-                                                        s += "<tr>";
-                                                        oDs.columns.forEach(function (col, idx) {
-                                                                var sCls = col.numeric ? ' class="num"' : "";
-                                                                s += "<td" + sCls + ">" +
-                                                                        esc(row[idx] === undefined ? "" : row[idx]) + "</td>";
-                                                        });
-                                                        s += "</tr>";
-                                                });
-                                                s += "</tbody></table></div>";
+                                                s += DataGrid.tableHtml(oDs.columns, bPreview ? oDs.rows.slice(0, DataGrid.PREVIEW_ROWS) : oDs.rows,
+                                                        { cls: "analysisTable" });
                                                 // V16：不自动画图 —— 工具条由用户选择；后端推荐的图形仅作提示
                                                 var oHint = that._chartHint(oAnalysis, oDs);
                                                 s += Formatter.dataToolsHtml(iDs, oHint ? oRB.getText("chartSuggest",
-                                                        [ChartRenderer.typeText(oHint.type)]) : "");
+                                                        [ChartRenderer.typeText(oHint.type)]) : "",
+                                                        bPreview ? oRB.getText("dgShowAll", [oDs.rows.length]) : "");
                                                 // 20261011：该表生成的图表就放在这张表下方
                                                 s += oEntry ? that._chartDeckHtml(oEntry, "ds:" + iDs) : "";
                                         }
@@ -3745,13 +3739,34 @@ sap.ui.define([
                         if (!oDs) {
                                 return;
                         }
-                        if (sAct === "copy") {
+                        if (sAct === "all") {
+                                this._openDataGrid(oDs);
+                        } else if (sAct === "copy") {
                                 this._copyText(ChartRenderer.toDelimited(oDs, "\t"), this._rb().getText("copiedForExcel"));
                         } else if (sAct === "csv") {
                                 this._download("\uFEFF" + ChartRenderer.toDelimited(oDs, ","), (oDs.name || this._rb().getText("dataDefaultName")) + ".csv", "text/csv;charset=utf-8");
                         } else if (sAct === "chart") {
                                 this._openChartFor(oEntry, oDs, oHint, sSrc);
                         }
+                },
+
+                /** 20261024：「查看全部」分页查看器（复制 / 导出复用表格工具条的同一套实现，导出的是查看器当前的搜索 + 排序结果） */
+                _openDataGrid: function (oDs) {
+                        var that = this;
+                        var oRB = this._rb();
+                        var mT = {};
+                        Object.keys(DataGrid.TEXTS).forEach(function (k) {
+                                mT[k] = oRB.getText("dg" + k.charAt(0).toUpperCase() + k.slice(1));
+                        });
+                        DataGrid.open(oDs, {
+                                texts: mT,
+                                onCopy: function (oView) {
+                                        that._copyText(ChartRenderer.toDelimited(oView, "\t"), oRB.getText("copiedForExcel"));
+                                },
+                                onCsv: function (oView) {
+                                        that._download("\uFEFF" + ChartRenderer.toDelimited(oView, ","), (oView.name || oRB.getText("dataDefaultName")) + ".csv", "text/csv;charset=utf-8");
+                                }
+                        });
                 },
 
                 /** 打开图表面板；不适合出图时说明原因（不硬画）。sSrc = 来源表格锚点（图表放在其下方） */

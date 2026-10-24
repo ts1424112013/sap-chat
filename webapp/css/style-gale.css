@@ -1017,3 +1017,99 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .settingsDlg .sapMText.modelCellName { font-weight: 600; color: var(--text) !important; }
 .settingsDlg .sapMText.modelCellSub { display: block; margin-top: .15rem; font-size: .75rem; color: var(--sub) !important; }
 .settingsDlg .sapMText.modelCellUrl { color: var(--text-2) !important; }
+
+/* ==================== 设置对话框重做（20261024，10.24 记录 #04）====================
+   外壳复用 .apvDialog / .apv*（自绘头部 + 下划线页签 + 只有内容区滚动，无 UI5 标题栏 / 底栏 / 拖拽角）；
+   连接页竖排表单复用 .aplField / .aplLabel / .aplInput / .aplHint，下面只补设置页自己的部件。 */
+.setDlg .apvTabs { gap: 1.35rem; }
+@media (max-width: 599px) { .setDlg .apvTabs { gap: .85rem; } }   /* 手机宽度五个页签放得下 */
+.setDlg .setGap { gap: .7rem; }
+.setDlg .setGap > .hintText { margin: 0 !important; }
+/* 登录账号卡 */
+.setAcct { gap: .75rem; padding: .75rem .9rem; margin-bottom: 1.15rem; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.setAcctId { display: block !important; font-size: .92rem !important; font-weight: 700 !important; color: var(--text) !important; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important; letter-spacing: .01em; }
+.setAcctSub { display: block !important; margin-top: .1rem; font-size: .76rem !important; color: var(--sub) !important; }
+.setLogout .sapMBtnInner { height: 2rem !important; min-height: 2rem !important; padding: 0 .7rem !important; border-radius: 8px !important; background: transparent !important; border: 1px solid var(--line) !important; box-shadow: none !important; }
+.setLogout .sapMBtnText, .setLogout .sapMBtnIcon { color: var(--text-2) !important; font-size: .8rem !important; font-weight: 500; }
+.setLogout:hover .sapMBtnInner { border-color: var(--line-strong) !important; background: var(--hover) !important; }
+/* 服务模式下拉：与 .aplInput 同一套（10px 圆角、浅底、聚焦蓝环） */
+.setSel.sapMSlt { width: 100% !important; max-width: none; height: 2.5rem; box-sizing: border-box; border-radius: 10px !important; border: 1px solid var(--line) !important; background: var(--bg) !important; box-shadow: none !important; }
+.setSel.sapMSlt::before, .setSel.sapMSlt::after { content: none !important; }
+.setSel.sapMSlt:hover { border-color: var(--line-strong) !important; }
+.setSel.sapMSltFocused, .setSel.sapMSlt:focus-within { background: var(--surface) !important; border-color: var(--accent) !important; box-shadow: var(--ring) !important; }
+.setSel .sapMSltLabel { padding-left: .8rem !important; font-size: .9rem !important; color: var(--text) !important; line-height: 2.4rem !important; }
+.setSel .sapMSltArrow, .setSel .sapMSltIcon { background: transparent !important; }
+.setSel.sapMSltReadonly, .setSel.sapMSltDisabled { background: transparent !important; }
+/* 只读（普通用户）时输入框不要浅底 + 悬停效果，看起来就是一段文字 */
+.setDlg .aplInput.sapMInputBaseReadonly .sapMInputBaseContentWrapper { background: transparent !important; border-style: dashed !important; }
+/* 会话 ID：等宽灰字，放不下省略；「重置会话」在右 */
+.setSessRow { min-height: 2.5rem; box-sizing: border-box; padding: 0 .25rem 0 .8rem; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.setSessId { font-size: .84rem !important; color: var(--text-2) !important; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important; }
+.setNote { margin: .35rem 0 .5rem !important; }
+.setSecLabel { margin-top: .6rem; margin-bottom: 0; }
+/* 模型 / 用户表：圆角描边卡片，列头浅底 */
+.setTable.sapMList { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface) !important; }
+.setTable .sapMListTblHeader, .setTable .sapMListTblHeaderCell { background: var(--hover) !important; }
+.setTable .sapMListTblHeaderCell .sapMText { font-size: .78rem !important; font-weight: 600; color: var(--text-2) !important; }
+.setTable .sapMTB { border-bottom: 1px solid var(--line) !important; background: transparent !important; }
+/* 暗色：上面「设置对话框 · 暗色」把 .settingsDlg 里所有 .sapMText 统一成正文色，这里把说明类文字还回灰色 */
+[data-theme="dark"] .settingsDlg .sapMText.apvSub,
+[data-theme="dark"] .settingsDlg .sapMText.aplHint,
+[data-theme="dark"] .settingsDlg .sapMText.setAcctSub,
+[data-theme="dark"] .settingsDlg .sapMText.setSessId { color: var(--sub) !important; }
+[data-theme="dark"] .settingsDlg .sapMText.admNote { color: var(--text-2) !important; }
+[data-theme="dark"] .settingsDlg .setSel.sapMSlt { background: var(--bg) !important; border-color: var(--line-strong) !important; }
+/* 对话框内容区滚动条：Horizon 全局滚动条是白色轨道，暗色下一条白边；改细滚动条 + token 色（审批 / 申请 / 管理 / 设置共用） */
+.apvScroll { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+
+/* ==================== 大结果集：聊天预览表 + 分页查看器（20261024，10.24 记录 #02；utils/DataGrid.js）====================
+   聊天里的结果表单元格不折行（原来 word-break 把窄列撑成好几行高），放不下省略，长文本悬停看全（td title）。 */
+.dgTable th, .dgTable td { white-space: nowrap; word-break: normal; vertical-align: middle; }
+.dgTable td { max-width: 18rem; overflow: hidden; text-overflow: ellipsis; }
+.dgTable td.num, .dgTable th.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* 查看器外壳：复用 .apvDialog 圆角 / 底色；头部（标题 + 规模 + 搜索 + 复制 / 导出 + ×）、表格区（唯一滚动区）、页脚（分页） */
+.dgDialog .sapMDialogScrollCont { height: 100%; padding: 0 !important; box-sizing: border-box; }
+.dgDialog.sapMDialog { max-width: 84rem; }
+.dgDialog .sapMDialogSection { max-width: 100%; }
+.dgDialog .sapUiHTML, .dgRoot { height: 100%; }
+.dgRoot { display: flex; flex-direction: column; min-height: 0; }
+.dgHead { flex: none; display: flex; align-items: center; gap: .5rem; padding: .9rem .9rem .85rem 1.3rem; border-bottom: 1px solid var(--line); }
+.dgTitleBox { flex: 1 1 auto; min-width: 0; }
+.dgTitle { font-size: 1.05rem; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dgMeta { margin-top: .15rem; font-size: .78rem; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dgSearch { display: flex; align-items: center; height: 32px; width: 15rem; max-width: 40vw; padding: 0 10px; margin-right: .25rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); box-sizing: border-box; }
+.dgSearch:focus-within { border-color: var(--accent); box-shadow: var(--ring); }
+.dgSearch input { border: none; outline: none; background: transparent; width: 100%; font-size: 13px; color: var(--text); font-family: inherit; }
+.dgClose { flex: none; width: 2rem; height: 2rem; margin-left: .25rem; border: none; border-radius: 8px; background: transparent; color: var(--sub); font-size: .9rem; cursor: pointer; }
+.dgClose:hover { background: var(--hover); color: var(--text); }
+.dgBody { flex: 1 1 auto; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+/* 表格区自己滚动：外层包裹不再各自滚动 / 描边，列头吸顶，行号列灰字 */
+.dgBody .dgWrap { margin: 0; border: none; border-radius: 0; overflow: visible; background: transparent; }
+.dgFull { width: max-content; min-width: 100%; }
+.dgFull thead th { position: sticky; top: 0; z-index: 1; background: var(--surface-solid, var(--surface)) !important; box-shadow: inset 0 -1px 0 var(--line); cursor: pointer; user-select: none; }
+.dgFull thead th:hover { color: var(--accent) !important; }
+.dgFull td { max-width: 22rem; }
+.dgFull .dgNo { position: sticky; left: 0; z-index: 1; min-width: 2.6rem; text-align: right; color: var(--sub); font-variant-numeric: tabular-nums; background: var(--surface-solid, var(--surface)); box-shadow: inset -1px 0 0 var(--line); cursor: default; }
+.dgFull thead .dgNo { z-index: 2; }
+.dgFull tbody tr:hover .dgNo { background: var(--hover); }
+.dgSort { color: var(--accent); font-weight: 700; }
+.dgEmpty { padding: 3rem 1rem; text-align: center; font-size: .86rem; color: var(--sub); }
+.dgFoot { flex: none; display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .6rem 1.3rem; border-top: 1px solid var(--line); }
+.dgRange { font-size: .78rem; color: var(--sub); font-variant-numeric: tabular-nums; }
+.dgPager { display: flex; align-items: center; gap: .35rem; }
+.dgPageNo { min-width: 4.5rem; text-align: center; font-size: .8rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.dgPager .dtBtn:disabled { opacity: .4; cursor: default; border-color: var(--line); color: var(--sub); }
+@media (max-width: 599px) {
+        .dgHead { flex-wrap: wrap; }
+        .dgTitleBox { flex-basis: calc(100% - 2.5rem); }
+        .dgSearch { order: 5; flex: 1 1 auto; width: auto; max-width: none; }
+}
+
+/* ==================== 审批卡：申请人姓名 / 部门（20261024，10.24 记录 #00a）==================== */
+.apvWho { gap: .45rem; min-width: 0; }
+.apvWho > .sapMFlexItem:first-child { min-width: 0; }
+.apvUserId { font-size: .76rem !important; color: var(--sub) !important; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important; letter-spacing: .01em; }
+.apvDeptRow { gap: .3rem; margin-top: .15rem; min-width: 0; }
+.apvDeptIcon { font-size: .72rem !important; color: var(--sub) !important; }
+.apvDept { font-size: .78rem !important; color: var(--text-2) !important; }
+.admWho { font-size: .76rem !important; color: var(--text-2) !important; margin-right: .2rem; }

@@ -272,6 +272,7 @@ sap.ui.define([
                         };
                         var iTotal = parseInt(oRes.rowCount, 10) || oDs.rows.length;
                         oDs.truncated = iTotal > oDs.rows.length;
+                        oDs.total = iTotal;   // 20261024：分页查看器标明「后端共 N 行，这里是已取回的部分」
                         var sText = (oOpt && oOpt.text) ? oOpt.text(iTotal, oDs) :
                                 oRB.getText("runResultText", [String(sRunId || "").substring(0, 8), iTotal,
                                         oDs.truncated ? oRB.getText("runResultSample", [oDs.rows.length]) : ""]) +

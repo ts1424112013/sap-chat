@@ -231,5 +231,18 @@ async function test(name, fn) { await fn(); passed++; console.log('  ✅ ' + nam
     c._clearSessionMessages(); artifact.resolve(result); await read;
     assert.equal(c.models.chat.getProperty('/messages').length, 0);
   });
+  await test('20261024：报表结果超过 50 行时聊天里只画 50 行 + 「查看全部 N 行」，数据集仍保留全部行', () => {
+    const c = controller(); activate(c, 'A');
+    const big = { schemaJson: '{"columns":[{"name":"M","label":"物料"},{"name":"Q","label":"数量"}]}',
+      rowsJson: JSON.stringify(Array.from({ length: 120 }, (_, i) => ['M' + i, i])), rowCount: 500 };
+    const e = c._pushReportResult(big, 'RBIG');
+    assert.equal(e.analysis.datasets[0].rows.length, 120);
+    assert.equal(e.analysis.datasets[0].total, 500);
+    assert.equal((e.extraHtml.match(/<tr>/g) || []).length, 51);   // 表头 1 + 预览 50
+    assert.ok(e.extraHtml.includes('data-act="all"') && e.extraHtml.includes('120'));
+    assert.ok(e.extraHtml.includes('500'));                         // 后端共 500 行
+    const small = c._pushReportResult(result, 'RSMALL');
+    assert.ok(!small.extraHtml.includes('data-act="all"'));
+  });
   console.log(`\n━━ 结果：${passed} 通过，0 失败`);
 })().catch((err) => { console.error(err); process.exitCode = 1; });

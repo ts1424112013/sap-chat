@@ -27,6 +27,8 @@ sap.ui.define([], function () {
         var TCODES = ["ZDPMM051", "ZDPMM052", "ZDPMM702", "ZDEMO001", "ZDEMO002", "ZDEMO003", "ZNOTABLE"];
         var PLANTS = ["1000", "2000", "3000"];
         var USERS = ["DEMOUSER", "USERA", "USERB"];
+        // 20261024：演示用 USER_ADDR（账号 → [姓名, 部门]）；USERB 没有部门、其他账号查不到，演示降级显示
+        var ADDR = { DEMOUSER: ["演示用户", "信息技术部"], USERA: ["张三", "生产管理部 · 计划课"], USERB: ["Li Si", ""] };
         var LOCKED = ["LOCKED"];
         var MAP_OK = ["TCODE", "USER", "WERKS", "CONST", "DATE", "TIME", "BY", "INITIAL"];
         var TYPE_OK = ["CHAR", "NUMC", "DATS", "TIMS"];
@@ -441,6 +443,9 @@ sap.ui.define([], function () {
                         return { total: rows.length, error: "", requests: rows.slice(skip, skip + top).map(function (r) {
                                 var x = clone(r);
                                 x.revocable = r.status === "DONE" && r.keyJson ? "X" : "";
+                                var a = ADDR[String(r.targetUser || "").toUpperCase()] || ["", ""];
+                                x.targetName = a[0];
+                                x.targetDept = a[1];
                                 delete x.keyJson;
                                 return x;
                         }) };

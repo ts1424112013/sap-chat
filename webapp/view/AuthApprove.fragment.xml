@@ -62,9 +62,19 @@
                                                                         </Text>
                                                                         <VBox class="apvMain">
                                                                                 <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                                                                <!-- 20261024（10.24 记录 #00a）：有姓名时「姓名（粗）+ 账号（灰、等宽）」，部门单独一行；
+                                                                                     USER_ADDR 查不到就和原来一样只显示账号 -->
                                                                                 <HBox alignItems="Baseline" justifyContent="SpaceBetween">
-                                                                                        <Text text="{auth>targetUser}" class="apvUser" wrapping="false"/>
+                                                                                        <HBox alignItems="Baseline" class="apvWho">
+                                                                                                <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                                                                                <Text text="{= ${auth>targetName} || ${auth>targetUser} }" class="apvUser" wrapping="false"/>
+                                                                                                <Text text="{auth>targetUser}" class="apvUserId" wrapping="false" visible="{= !!${auth>targetName} }"/>
+                                                                                        </HBox>
                                                                                         <Text text="{auth>timeText}" class="apvTime" wrapping="false"/>
+                                                                                </HBox>
+                                                                                <HBox alignItems="Center" class="apvDeptRow" visible="{= !!${auth>targetDept} }">
+                                                                                        <core:Icon src="sap-icon://building" class="apvDeptIcon"/>
+                                                                                        <Text text="{auth>targetDept}" class="apvDept" wrapping="false"/>
                                                                                 </HBox>
                                                                                 <HBox wrap="Wrap" alignItems="Center" class="apvChips">
                                                                                         <Text text="{auth>tcode}" class="apvChip apvChipTcode" wrapping="false"/>
@@ -125,7 +135,7 @@
                                                                 </Text>
                                                                 <VBox class="apvMain">
                                                                         <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
-                                                                        <Text text="{= ${auth>targetUser} + '  ·  ' + ${auth>tcode} + '  ·  ' + ${auth>werksText} }" class="apvDoneMain" wrapping="false"/>
+                                                                        <Text text="{= ${auth>whoText} + '  ·  ' + ${auth>tcode} + '  ·  ' + ${auth>werksText} }" class="apvDoneMain" wrapping="false"/>
                                                                         <Text text="{auth>doneSub}" class="apvDoneSub" wrapping="false"/>
                                                                 </VBox>
                                                                 <Text text="{auth>statusText}" class="apvStatus" wrapping="false">

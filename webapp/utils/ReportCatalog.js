@@ -62,6 +62,60 @@ sap.ui.define([
                 });
         }
 
+        /* ---------- 20261024（10.24 记录 #01）：报表执行目录按模块分类 ---------- */
+
+        /** 认识的模块代码（顺序 = 页签顺序） */
+        var MODULES = ["MM", "PP", "SD", "FI", "CO", "QM", "PM", "WM", "PS", "HR"];
+        var RE_MOD = "(" + MODULES.join("|") + ")";
+        // 事务码：Z/Y + 两位前缀 + 模块（公司惯例 ZDP + MM702 / ZDP + SD012 / ZDP + PP123），或 Z/Y 后紧跟模块（ZMM001）
+        var RE_TCODE = [new RegExp("^[ZY][A-Z0-9]{2}" + RE_MOD), new RegExp("^[ZY]" + RE_MOD)];
+        // 程序名：ZR + 模块 + _（ZRMM_IDP_0702 / ZRSD_IDP_0012），或 Z/Y 后紧跟模块
+        var RE_PROG = [new RegExp("^[ZY]R" + RE_MOD + "[_0-9]"), new RegExp("^[ZY]" + RE_MOD + "[_0-9]")];
+
+        /**
+          * 报表所属模块：登记表显式值优先（以后 ZAI_RPT_DEF 加 MODULE 列即可人工修正），
+          * 否则按事务码、再按程序名的命名推断；推不出返回空串（调用方显示为「其他」）。
+          * @param {string} sTcode 事务码
+          * @param {string} sProg 程序名
+          * @param {string} [sExplicit] 登记表里的模块（可空）
+          * @returns {string} 模块代码（大写）或空串
+          */
+        function moduleOf(sTcode, sProg, sExplicit) {
+                var sEx = String(sExplicit || "").trim().toUpperCase();
+                if (sEx) {
+                        return sEx;
+                }
+                var aTry = [[String(sTcode || "").trim().toUpperCase(), RE_TCODE], [String(sProg || "").trim().toUpperCase(), RE_PROG]];
+                for (var i = 0; i < aTry.length; i++) {
+                        for (var j = 0; j < aTry[i][1].length; j++) {
+                                var m = aTry[i][1][j].exec(aTry[i][0]);
+                                if (m) {
+                                        return m[1];
+                                }
+                        }
+                }
+                return "";
+        }
+
+        /**
+          * 按模块排序（稳定：同一模块内保持登记顺序）：认识的模块按 MODULES 顺序，
+          * 其他显式模块排在后面，「其他」（sOther）最后。
+          * @param {object[]} aItems 目录行（category = 模块）
+          * @param {string} sOther 「其他」分类的文字
+          * @returns {object[]} 新数组
+          */
+        function sortByModule(aItems, sOther) {
+                var rank = function (c) {
+                        var i = MODULES.indexOf(c);
+                        return i >= 0 ? i : (c && c !== sOther ? 50 : 99);
+                };
+                return (aItems || []).map(function (it, i) { return { it: it, i: i }; })
+                        .sort(function (a, b) {
+                                return (rank(a.it.category) - rank(b.it.category)) || (a.i - b.i);
+                        })
+                        .map(function (x) { return x.it; });
+        }
+
         /** 每个分类的报表数：{ "": 总数, 分类: 数量 } */
         function countByCategory(aItems) {
                 var m = { "": (aItems || []).length };
@@ -170,7 +224,8 @@ sap.ui.define([
                                         sLast = it.category || "";
                                         s += '<div class="catGroup" data-group="' + esc(sLast) + '">' + esc(sLast) + "</div>";
                                 }
-                                s += rowHtml(it, { texts: t, icon: cfg.icon, showCategory: !!cfg.categories && !bGroup });
+                                // 20261024：cfg.categoryChip —— 只有一个分类、不出页签时，行上仍标出分类（报表执行目录的模块）
+                                s += rowHtml(it, { texts: t, icon: cfg.icon, showCategory: (!!cfg.categories || !!cfg.categoryChip) && !bGroup });
                         });
                         s += '<div class="catEmpty catNoMatch" hidden>' + esc(t.noMatch) + "</div>";
                 }
@@ -491,6 +546,8 @@ sap.ui.define([
                 update: update,
                 filterItems: filterItems,
                 countByCategory: countByCategory,
+                moduleOf: moduleOf,
+                sortByModule: sortByModule,
                 rowHtml: rowHtml,
                 html: html
         };

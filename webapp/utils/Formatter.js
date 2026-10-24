@@ -257,12 +257,16 @@ sap.ui.define([], function () {
                 /**
                  * V16：数据工具条（表格下方）。不自动画图 —— 由用户点击"生成图表"选择图形。
                  * @param {string} [sDsIdx] 数据集下标（分析结果表格携带；Markdown 表格为空，按 DOM 位置定位）
+                 * @param {string} [sHint] 右侧提示（后端推荐的图形）
+                 * @param {string} [sAllText] 20261024：给了就加「查看全部」主按钮（data-act="all"）
                  * @returns {string} HTML（全部为常量标签，无动态文本）
                  */
-                dataToolsHtml: function (sDsIdx, sHint) {
+                dataToolsHtml: function (sDsIdx, sHint, sAllText) {
                         var sDs = sDsIdx === undefined ? "" : ' data-ds="' + String(parseInt(sDsIdx, 10) || 0) + '"';
+                        // 20261024：大结果集只画了预览时，最前面加「查看全部 N 行」（打开分页查看器），它当主按钮
                         return '<div class="dataTools"' + sDs + ">" +
-                                '<button type="button" class="dtBtn dtPrimary" data-act="chart">生成图表</button>' +
+                                (sAllText ? '<button type="button" class="dtBtn dtPrimary" data-act="all">' + this.escapeHtml(sAllText) + "</button>" : "") +
+                                '<button type="button" class="dtBtn' + (sAllText ? "" : " dtPrimary") + '" data-act="chart">生成图表</button>' +
                                 '<button type="button" class="dtBtn" data-act="copy">复制表格</button>' +
                                 '<button type="button" class="dtBtn" data-act="csv">导出 CSV</button>' +
                                 (sHint ? '<span class="dtHint">' + this.escapeHtml(sHint) + "</span>" : "") +

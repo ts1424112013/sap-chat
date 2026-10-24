@@ -45,6 +45,20 @@ sap.ui.define([
                         : (s || "");
         }
 
+        /** 20261024：头像文字 —— 有中文姓名取后两个字（王小明 → 小明），西文姓名取首字母，没有姓名退回账号前两位 */
+        function avatarText(sName, sUser) {
+                var n = String(sName || "").trim();
+                if (n && /[\u4e00-\u9fff]/.test(n)) {
+                        n = n.replace(/\s+/g, "");
+                        return n.length > 2 ? n.slice(-2) : n;
+                }
+                if (n) {
+                        var w = n.split(/\s+/);
+                        return (w.length > 1 ? w[0].charAt(0) + w[1].charAt(0) : n.substring(0, 2)).toUpperCase();
+                }
+                return String(sUser || "").substring(0, 2).toUpperCase() || "?";
+        }
+
         /** 账号 → 头像底色编号（同一账号颜色固定） */
         function hueOf(sUser) {
                 var n = 0;
@@ -71,7 +85,12 @@ sap.ui.define([
                         return (aRows || []).map(function (r) {
                                 var x = Object.assign({}, r);
                                 var sUser = String(r.targetUser || "");
-                                x.initials = sUser.substring(0, 2).toUpperCase() || "?";
+                                // 20261024（10.24 记录 #00a）：后端从 USER_ADDR 补的姓名 / 部门；查不到为空，只显示账号
+                                var sName = String(r.targetName || "").trim();
+                                x.targetName = sName;
+                                x.targetDept = String(r.targetDept || "").trim();
+                                x.whoText = sName ? oRB.getText("apvWho", [sName, sUser]) : sUser;
+                                x.initials = avatarText(sName, sUser);
                                 x.hue = hueOf(sUser);
                                 x.werksText = !r.werks ? oRB.getText("apvWerksNone")
                                         : r.werks === "ALL" ? oRB.getText("apvWerksAll") : oRB.getText("apvWerks", [r.werks]);
@@ -287,7 +306,7 @@ sap.ui.define([
                         });
                         oModel.setProperty(oCtx.getPath() + "/note", "");
                         oModel.setProperty(oCtx.getPath() + "/error", "");
-                        oModel.setProperty(oCtx.getPath() + "/confirmText", oRB.getText(sMode === "reject" ? "apvConfirmReject" : "apvConfirmApprove", [r.targetUser, r.tcode, r.werksText]));
+                        oModel.setProperty(oCtx.getPath() + "/confirmText", oRB.getText(sMode === "reject" ? "apvConfirmReject" : "apvConfirmApprove", [r.whoText || r.targetUser, r.tcode, r.werksText]));
                         oModel.setProperty(oCtx.getPath() + "/mode", sMode);
                 },
 

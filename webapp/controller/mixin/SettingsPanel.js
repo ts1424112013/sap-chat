@@ -31,8 +31,21 @@ sap.ui.define([
                         // V8：登录账号信息 + 权限（页签/编辑能力按角色显隐）
                         var oUser = ChatService.getAppUser() || {};
                         var oSettings = this.getView().getModel("settings");
-                        oSettings.setProperty("/isAdmin", ChatService.isAdmin());
+                        var bAdmin = ChatService.isAdmin();
+                        oSettings.setProperty("/isAdmin", bAdmin);
                         oSettings.setProperty("/loginUserId", (oUser.userId || "") + (oUser.role === "ADMIN" ? " · " + this._rb().getText("roleAdminTag") : ""));
+                        // 20261024：连接页账号卡（头像缩写 / 账号 / 姓名 · 角色）
+                        var sId = String(oUser.userId || "");
+                        var sName = String(oUser.userName || "");
+                        var sRole = this._rb().getText(oUser.role === "ADMIN" ? "roleAdminTag" : "roleUserTag");
+                        oSettings.setProperty("/loginId", sId || "-");
+                        oSettings.setProperty("/loginInitials", (sId || "?").substring(0, 2).toUpperCase());
+                        oSettings.setProperty("/loginRoleText", sName && sName.toUpperCase() !== sId.toUpperCase() ? sName + " · " + sRole : sRole);
+                        // 20261024：页签改由 /setTab 切换；普通用户停在管理员页签上时退回「连接」
+                        var sTab = oSettings.getProperty("/setTab");
+                        if (!sTab || (!bAdmin && ["eval", "users", "skills"].indexOf(sTab) >= 0)) {
+                                oSettings.setProperty("/setTab", "connection");
+                        }
                         this._oSettingsDialog.open();
 
                         // V8：刷新用户管理页签（仅管理员）
@@ -154,6 +167,14 @@ sap.ui.define([
                 onCloseSettings: function () {
                         if (this._oSettingsDialog) {
                                 this._oSettingsDialog.close();
+                        }
+                },
+
+                /** 20261024：设置对话框下划线页签（按钮 customData tab = connection / models / eval / users / skills） */
+                onSetTab: function (oEvent) {
+                        var sTab = oEvent.getSource().data("tab");
+                        if (sTab) {
+                                this.getView().getModel("settings").setProperty("/setTab", sTab);
                         }
                 },
 

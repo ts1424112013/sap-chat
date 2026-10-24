@@ -55,7 +55,8 @@ function resetFetch(queue) { fetchLog = []; fetchQueue = queue.slice(); }
 const registry = {
   'sap/base/Log': { error() {}, warning() {}, info() {}, debug() {} },
   'sap/ui/model/odata/v2/ODataModel': function () {}, 'sap/ui/model/Filter': function () {},
-  'sap/ui/model/FilterOperator': {}, 'sap/ui/model/Sorter': function () {}
+  'sap/ui/model/FilterOperator': {}, 'sap/ui/model/Sorter': function () {},
+  'sap/m/MessageToast': { show() {} }   // 20261024：加载 AuthApprove 测审批卡映射
 };
 function load(name) {
   if (registry[name]) { return registry[name]; }
@@ -373,6 +374,28 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   const all = await svc.authList({ Top: '5', Skip: '0' });
   const page2 = await svc.authList({ Top: '5', Skip: '5' });
   check('分页：总数一致、第二页不与第一页重叠', all.total > 5 && all.requests.length === 5 && page2.total === all.total && page2.requests.every((x) => !all.requests.some((y) => y.reqId === x.reqId)));
+
+  console.log('\n━━ 申请人姓名 / 部门（20261024，10.24 记录 #00a，后端 USER_ADDR）');
+  const lst = await svc.authList({ Top: '200', Skip: '0' });
+  const ua = lst.requests.find((x) => x.targetUser === 'USERA');
+  const other = lst.requests.find((x) => ['DEMOUSER', 'USERA', 'USERB'].indexOf(x.targetUser) < 0);
+  check('列表行带 targetName / targetDept（演示 USER_ADDR：USERA = 张三 · 生产管理部）', ua && ua.targetName === '张三' && /生产管理部/.test(ua.targetDept), ua && JSON.stringify(ua));
+  check('USER_ADDR 查不到的账号：姓名 / 部门为空串', !other || (other.targetName === '' && other.targetDept === ''), other && other.targetUser);
+  const I18N = {};
+  fs.readFileSync(path.join(WEBAPP, 'i18n/i18n.properties'), 'utf8').split(/\r?\n/).forEach((l) => { const m = /^([A-Za-z0-9_.]+)=(.*)$/.exec(l); if (m) { I18N[m[1]] = m[2]; } });
+  const rb = { getText: (k, a) => String(I18N[k] === undefined ? k : I18N[k]).replace(/\{(\d+)\}/g, (x, i) => (a && a[+i] !== undefined ? a[+i] : x)) };
+  const AA = Object.assign({ _rb: () => rb }, load('zai/chat/controller/mixin/AuthApprove'));
+  const dec = AA._apvDecorate([
+    { targetUser: 'USERA', targetName: '张三', targetDept: '生产管理部', tcode: 'ZDPSD012', werks: '2000', status: 'PENDING' },
+    { targetUser: 'USERX', targetName: '王小明', targetDept: '', tcode: 'Z1', werks: 'ALL', status: 'PENDING' },
+    { targetUser: 'USERB', targetName: 'Li Si', tcode: 'Z1', werks: '', status: 'PENDING' },
+    { targetUser: 'F1246311', tcode: 'Z1', werks: '1000', status: 'PENDING' }
+  ]);
+  check('有姓名：whoText = 姓名（账号），头像用姓名', dec[0].whoText === '张三（USERA）' && dec[0].initials === '张三' && dec[0].targetDept === '生产管理部');
+  check('中文姓名超过两个字取后两个字（王小明 → 小明）', dec[1].initials === '小明' && dec[1].targetDept === '');
+  check('西文姓名取两个词的首字母（Li Si → LS）', dec[2].initials === 'LS' && dec[2].targetDept === '');
+  check('没有姓名（USER_ADDR 查不到）：和原来一样只用账号', dec[3].whoText === 'F1246311' && dec[3].initials === 'F1' && dec[3].targetName === '' && dec[3].targetDept === '');
+  check('同一账号头像底色不随姓名变（按账号算）', AA._apvDecorate([{ targetUser: 'USERA', status: 'PENDING' }])[0].hue === dec[0].hue);
 
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);

@@ -1,263 +1,293 @@
 <core:FragmentDefinition
         xmlns="sap.m"
-        xmlns:f="sap.ui.layout.form"
         xmlns:core="sap.ui.core">
 
-        <!-- ======================= 设置对话框：连接配置 + 模型管理 ======================= -->
-        <!-- 20261021：settingsDlg 供暗色补层限定范围（style-gale.css「设置对话框 · 暗色」） -->
-        <Dialog id="settingsDialog"
-                class="settingsDlg"
-                contentWidth="40rem"
-                resizable="true"
-                draggable="true">
-                <!-- V5.2：自定义头部（标题 + 右上角 × 关闭） -->
-                <customHeader>
-                        <Toolbar class="dlgHeadToolbar" design="Transparent">
-                                <Title level="H3" text="{i18n>settings}" class="dlgHeadTitle"/>
-                                <ToolbarSpacer/>
-                                <Button icon="sap-icon://decline" type="Transparent"
-                                        tooltip="{i18n>close}" press=".onCloseSettings" class="dlgCloseBtn"/>
-                        </Toolbar>
-                </customHeader>
+        <!-- ======================= 设置对话框：连接 / 模型管理 / 测评 / 用户管理 / 技能 =======================
+             20261024 重做（10.24 记录 #04）：外壳与权限审批对话框同一套（.apvDialog / .apv*）——
+             不用 UI5 标题栏 / 底栏 / 大图标页签：头部（标题 + 一句说明 + ×）与下划线页签固定，只有内容区滚动；
+             页签由 settings>/setTab 切换（onSetTab）。连接页改竖排：标签在上、输入框通栏（原来后端地址被
+             description 挤成半宽）。settingsDlg 保留，暗色补层（style-gale.css「设置对话框 · 暗色」）继续生效。 -->
+        <Dialog id="settingsDialog" showHeader="false" contentWidth="44rem" contentHeight="38rem"
+                verticalScrolling="false" horizontalScrolling="false" class="apvDialog settingsDlg setDlg">
                 <content>
-                        <!-- 20261021：expandable=false —— 默认再点一次当前页签会把内容区整个收起，看着像页面坏了 -->
-                        <IconTabBar id="settingsTabs" headerBackgroundDesign="Transparent" upperCase="false" expandable="false">
-                                <items>
-                                        <!-- ========== 页签1：连接配置 ========== -->
-                                        <IconTabFilter icon="sap-icon://world" text="{i18n>tabConnection}" key="connection">
-                                                <f:SimpleForm editable="true"
-                                                        layout="ResponsiveGridLayout"
-                                                        labelSpanL="4" labelSpanM="4" labelSpanS="12"
-                                                        emptySpanL="1" emptySpanM="1"
-                                                        columnsL="1" columnsM="1"
-                                                        singleContainerFullSize="false">
-                                                        <f:content>
-                                                                <!-- V8：登录账号与退出（强制登录取代 SAP Basic 弹窗） -->
-                                                                <Label text="{i18n>loginStateTitle}"/>
-                                                                <HBox alignItems="Center">
-                                                                        <Text text="{settings>/loginUserId}" class="sessionText"/>
-                                                                        <ToolbarSpacer/>
-                                                                        <Button text="{i18n>logoutBtn}" icon="sap-icon://log" press=".onAppLogout" type="Transparent"/>
-                                                                </HBox>
-                                                                <Label text="{i18n>serviceMode}"/>
-                                                                <Select id="modeSelect"
-                                                                        selectedKey="{settings>/mode}"
-                                                                        change=".onModeChange"
-                                                                        editable="{settings>/isAdmin}">
-                                                                        <items>
-                                                                                <core:Item key="mock" text="{i18n>modeMock}"/>
-                                                                                <core:Item key="backend" text="{i18n>modeBackend}"/>
-                                                                        </items>
-                                                                </Select>
-                                                                <Label text="{i18n>backendHost}"/>
-                                                                <Input value="{settings>/host}"
-                                                                        placeholder="{i18n>backendHostPh}"
-                                                                        editable="{settings>/isAdmin}"
-                                                                        description="（留空走本地代理）"/>
-                                                                <Label text="{i18n>servicePath}"/>
-                                                                <Input value="{settings>/path}"
-                                                                        placeholder="/sap/opu/odata/sap/ZAI_CHAT_SRV/"
-                                                                        editable="{settings>/isAdmin}"/>
-                                                                <Label text="{i18n>sessionId}"/>
-                                                                <!-- 20261021：会话 ID 放不下时省略号截断（悬停看全），不再撑出单元格压住「重置会话」 -->
-                                                                <HBox alignItems="Center" justifyContent="SpaceBetween" width="100%" renderType="Bare" class="sessionIdRow">
-                                                                        <Text text="{settings>/sessionId}" tooltip="{settings>/sessionId}" class="sessionText sessionIdText" wrapping="false"/>
-                                                                        <Button icon="sap-icon://refresh" text="{i18n>resetSession}" press=".onNewSession" type="Transparent"/>
-                                                                </HBox>
-                                                                <!-- 20261021：提示前补一个空 Label，让它单独占一行。
-                                                                     原来没有 Label，SimpleForm 把它和会话 ID 挤在同一行（4 + 3 栏），盖住了「重置会话」 -->
-                                                                <Label text=""/>
-                                                                <VBox>
-                                                                        <Text text="{i18n>connectionHint}" class="hintText" wrapping="true"/>
-                                                                        <!-- V8：普通用户提示（连接设置仅管理员可改） -->
-                                                                        <Text text="{i18n>settingsReadonlyTip}" class="hintText" wrapping="true"
-                                                                                visible="{= !${settings>/isAdmin} }"/>
-                                                                </VBox>
-                                                        </f:content>
-                                                </f:SimpleForm>
-                                        </IconTabFilter>
+                        <VBox renderType="Bare" class="apvRoot">
 
-                                        <!-- ========== 页签2：模型管理（新增/维护大模型，无需改后台代码） ========== -->
-                                        <IconTabFilter icon="sap-icon://wrench" text="{i18n>tabModels}" key="models">
-                                                <VBox class="sapUiSmallMargin">
-                                                        <Text text="{i18n>modelMgmtHint}" class="hintText" wrapping="true"/>
-                                                        <!-- V10：超长源码分块分析全局开关（仅管理员可改，存后端配置表）；
-                                                             模型级开关在"模型编辑"里逐模型配置 -->
-                                                        <VBox id="codeAclCard" class="codeAclCard">
-                                                                <HBox alignItems="Center">
-                                                                        <Title level="H5" text="{i18n>chunkTitle}" class="codeAclTitle"/>
-                                                                        <ToolbarSpacer/>
-                                                                        <Switch id="chunkSwitch"
-                                                                                state="{settings>/chunkMode}"
-                                                                                change=".onChunkModeChange"
-                                                                                enabled="{settings>/isAdmin}"
-                                                                                tooltip="{i18n>chunkTitle}"/>
-                                                                </HBox>
-                                                                <Text text="{i18n>chunkHint}" class="codeAclHint" wrapping="true"/>
-                                                                <Text text="{i18n>codeAclReadonly}" class="codeAclHint" wrapping="true"
-                                                                        visible="{= !${settings>/isAdmin} }"/>
-                                                        </VBox>
-                                                        <!-- 20261011：Agent 可用模型（ZAI_CHAT_CFG AGENT_MODELS[_场景]；空 = 不限制；后端强制校验） -->
-                                                        <VBox id="agentModelCard" class="codeAclCard" visible="{settings>/isAdmin}">
-                                                                <HBox alignItems="Center" justifyContent="SpaceBetween">
-                                                                        <Title level="H5" text="{i18n>agentModelsTitle}" class="codeAclTitle"/>
-                                                                        <Button text="{i18n>agentModelsSave}" type="Emphasized" press=".onSaveAgentModelRules"/>
-                                                                </HBox>
-                                                                <Text text="{i18n>agentModelsHint}" class="codeAclHint" wrapping="true"/>
-                                                                <Label text="{i18n>agentModelsAll}" class="agentModelLbl"/>
-                                                                <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/ALL}"
-                                                                        items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsAny}">
-                                                                        <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
-                                                                </MultiComboBox>
-                                                                <Label text="{i18n>agentModelsReport}" class="agentModelLbl"/>
-                                                                <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/REPORT}"
-                                                                        items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
-                                                                        <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
-                                                                </MultiComboBox>
-                                                                <Label text="{i18n>agentModelsFiori}" class="agentModelLbl"/>
-                                                                <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/FIORI}"
-                                                                        items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
-                                                                        <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
-                                                                </MultiComboBox>
-                                                                <Label text="{i18n>agentModelsData}" class="agentModelLbl"/>
-                                                                <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/DATA}"
-                                                                        items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
-                                                                        <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
-                                                                </MultiComboBox>
-                                                                <Label text="{i18n>agentModelsInventory}" class="agentModelLbl"/>
-                                                                <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/INVENTORY}"
-                                                                        items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
-                                                                        <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
-                                                                </MultiComboBox>
-                                                                <Label text="{i18n>agentModelsCode}" class="agentModelLbl"/>
-                                                                <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/CODE}"
-                                                                        items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
-                                                                        <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
-                                                                </MultiComboBox>
-                                                        </VBox>
-                                                        <Table id="modelTable"
-                                                                items="{settings>/modelList}"
-                                                                noDataText="{i18n>noModels}"
-                                                                growing="true"
-                                                                growingThreshold="20">
-                                                                <headerToolbar>
-                                                                        <Toolbar>
-                                                                                <ToolbarSpacer/>
-                                                                                <Button text="{i18n>addModel}" icon="sap-icon://add" press=".onAddModel" type="Emphasized"/>
-                                                                        </Toolbar>
-                                                                </headerToolbar>
-                                                                <!-- 20261022：原来 7 列定宽合计 38rem，比对话框内容区还宽，「服务地址」被挤成一个字宽、地址竖着排。
-                                                                     改为 5 列：模型（名称 + ID · 类型两行）定宽、服务地址单行省略（悬停看全）占剩余宽度，
-                                                                     启用 / 测试 / 编辑收窄居中 -->
-                                                                <columns>
-                                                                        <Column width="11rem"><Text text="{i18n>colModel}"/></Column>
-                                                                        <Column><Text text="{i18n>colEndpoint}"/></Column>
-                                                                        <Column width="4rem" hAlign="Center"><Text text="{i18n>colActive}"/></Column>
-                                                                        <Column width="4.5rem" hAlign="Center"><Text text="{i18n>colTest}"/></Column>
-                                                                        <Column width="3.5rem" hAlign="Center"><Text text="{i18n>colEdit}"/></Column>
-                                                                </columns>
-                                                                <items>
-                                                                        <ColumnListItem>
-                                                                                <cells>
-                                                                                        <VBox>
-                                                                                                <Text text="{settings>ModelName}" tooltip="{settings>ModelName}" wrapping="false" class="modelCellName"/>
-                                                                                                <Text text="{= ${settings>ModelId} + (${settings>ModelType} ? ' · ' + ${settings>ModelType} : '') }"
-                                                                                                        wrapping="false" class="modelCellSub"/>
-                                                                                        </VBox>
-                                                                                        <Text text="{settings>EndpointUrl}" tooltip="{settings>EndpointUrl}" wrapping="false" class="modelCellUrl"/>
-                                                                                        <ObjectStatus state="{settings>ActiveState}" text="{settings>IsActive}"/>
-                                                                                        <Button text="{i18n>testConn}" type="Transparent" press=".onTestModel" tooltip="{i18n>testConnTip}" class="testBtn">
-                                                                                                <customData>
-                                                                                                        <core:CustomData key="modelId" value="{settings>ModelId}"/>
-                                                                                                </customData>
-                                                                                        </Button>
-                                                                                        <Button icon="sap-icon://edit" type="Transparent" press=".onEditModel" tooltip="{i18n>edit}">
-                                                                                                <customData>
-                                                                                                        <core:CustomData key="modelId" value="{settings>ModelId}"/>
-                                                                                                </customData>
-                                                                                        </Button>
-                                                                                </cells>
-                                                                        </ColumnListItem>
-                                                                </items>
-                                                        </Table>
+                                <!-- ===== 头部 ===== -->
+                                <VBox class="apvHead">
+                                        <HBox alignItems="Start" class="apvHeadRow">
+                                                <VBox class="apvHeadText">
+                                                        <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                                        <Title level="H3" text="{i18n>settings}" class="apvTitle"/>
+                                                        <Text text="{i18n>settingsSub}" class="apvSub"/>
                                                 </VBox>
-                                        </IconTabFilter>
+                                                <Button icon="sap-icon://decline" tooltip="{i18n>close}" type="Transparent" press=".onCloseSettings" class="apvHeadBtn"/>
+                                        </HBox>
+                                        <HBox renderType="Bare" class="apvTabs">
+                                                <Button text="{i18n>tabConnection}" type="Transparent" press=".onSetTab" class="apvTabBtn">
+                                                        <customData>
+                                                                <core:CustomData key="tab" value="connection"/>
+                                                                <core:CustomData key="on" value="{= ${settings>/setTab} === 'connection' ? 'yes' : 'no' }" writeToDom="true"/>
+                                                        </customData>
+                                                </Button>
+                                                <Button text="{i18n>tabModels}" type="Transparent" press=".onSetTab" class="apvTabBtn">
+                                                        <customData>
+                                                                <core:CustomData key="tab" value="models"/>
+                                                                <core:CustomData key="on" value="{= ${settings>/setTab} === 'models' ? 'yes' : 'no' }" writeToDom="true"/>
+                                                        </customData>
+                                                </Button>
+                                                <Button text="{i18n>tabEval}" type="Transparent" press=".onSetTab" class="apvTabBtn" visible="{settings>/isAdmin}">
+                                                        <customData>
+                                                                <core:CustomData key="tab" value="eval"/>
+                                                                <core:CustomData key="on" value="{= ${settings>/setTab} === 'eval' ? 'yes' : 'no' }" writeToDom="true"/>
+                                                        </customData>
+                                                </Button>
+                                                <Button text="{i18n>tabUsers}" type="Transparent" press=".onSetTab" class="apvTabBtn" visible="{settings>/isAdmin}">
+                                                        <customData>
+                                                                <core:CustomData key="tab" value="users"/>
+                                                                <core:CustomData key="on" value="{= ${settings>/setTab} === 'users' ? 'yes' : 'no' }" writeToDom="true"/>
+                                                        </customData>
+                                                </Button>
+                                                <Button text="{i18n>tabSkills}" type="Transparent" press=".onSetTab" class="apvTabBtn" visible="{settings>/isAdmin}">
+                                                        <customData>
+                                                                <core:CustomData key="tab" value="skills"/>
+                                                                <core:CustomData key="on" value="{= ${settings>/setTab} === 'skills' ? 'yes' : 'no' }" writeToDom="true"/>
+                                                        </customData>
+                                                </Button>
+                                        </HBox>
+                                </VBox>
+
+                                <!-- ===== 内容（只有这里滚动） ===== -->
+                                <VBox renderType="Bare" class="apvScroll">
+
+                                        <!-- ========== 连接 ========== -->
+                                        <VBox renderType="Bare" class="apvPane" visible="{= ${settings>/setTab} === 'connection' }">
+                                                <!-- 登录账号卡：头像 + 账号 + 角色，右侧退出登录 -->
+                                                <HBox alignItems="Center" class="setAcct">
+                                                        <Text text="{settings>/loginInitials}" class="apvAvatar"/>
+                                                        <VBox class="apvMain">
+                                                                <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                                                <Text text="{settings>/loginId}" class="setAcctId" wrapping="false"/>
+                                                                <Text text="{settings>/loginRoleText}" class="setAcctSub" wrapping="false"/>
+                                                        </VBox>
+                                                        <Button text="{i18n>logoutBtn}" icon="sap-icon://log" type="Transparent" press=".onAppLogout" class="apvBtn setLogout"/>
+                                                </HBox>
+
+                                                <VBox class="aplField">
+                                                        <Label text="{i18n>serviceMode}" class="aplLabel"/>
+                                                        <Select id="modeSelect" width="100%"
+                                                                selectedKey="{settings>/mode}"
+                                                                change=".onModeChange"
+                                                                editable="{settings>/isAdmin}"
+                                                                class="setSel">
+                                                                <items>
+                                                                        <core:Item key="mock" text="{i18n>modeMock}"/>
+                                                                        <core:Item key="backend" text="{i18n>modeBackend}"/>
+                                                                </items>
+                                                        </Select>
+                                                </VBox>
+                                                <VBox class="aplField">
+                                                        <Label text="{i18n>backendHost}" class="aplLabel"/>
+                                                        <Input value="{settings>/host}" width="100%"
+                                                                placeholder="{i18n>backendHostPh}"
+                                                                editable="{settings>/isAdmin}"
+                                                                class="aplInput aplMono"/>
+                                                        <Text text="{i18n>backendHostHint}" class="aplHint"/>
+                                                </VBox>
+                                                <VBox class="aplField">
+                                                        <Label text="{i18n>servicePath}" class="aplLabel"/>
+                                                        <Input value="{settings>/path}" width="100%"
+                                                                placeholder="/sap/opu/odata/sap/ZAI_CHAT_SRV/"
+                                                                editable="{settings>/isAdmin}"
+                                                                class="aplInput aplMono"/>
+                                                </VBox>
+                                                <VBox class="aplField">
+                                                        <Label text="{i18n>sessionId}" class="aplLabel"/>
+                                                        <!-- 会话 ID 放不下时省略号截断（悬停看全），不压住「重置会话」 -->
+                                                        <HBox alignItems="Center" justifyContent="SpaceBetween" width="100%" renderType="Bare" class="sessionIdRow setSessRow">
+                                                                <Text text="{settings>/sessionId}" tooltip="{settings>/sessionId}" class="sessionIdText setSessId" wrapping="false"/>
+                                                                <Button icon="sap-icon://refresh" text="{i18n>resetSession}" press=".onNewSession" type="Transparent" class="admLink"/>
+                                                        </HBox>
+                                                </VBox>
+
+                                                <Text text="{i18n>connectionHint}" class="admNote setNote"/>
+                                                <!-- 普通用户提示（连接设置仅管理员可改） -->
+                                                <Text text="{i18n>settingsReadonlyTip}" class="aplHint" visible="{= !${settings>/isAdmin} }"/>
+                                        </VBox>
+
+                                        <!-- ========== 模型管理（新增/维护大模型，无需改后台代码） ========== -->
+                                        <VBox renderType="Bare" class="apvPane setGap" visible="{= ${settings>/setTab} === 'models' }">
+                                                <Text text="{i18n>modelMgmtHint}" class="hintText" wrapping="true"/>
+                                                <!-- V10：超长源码分块分析全局开关（仅管理员可改，存后端配置表）；
+                                                     模型级开关在"模型编辑"里逐模型配置 -->
+                                                <VBox id="codeAclCard" class="codeAclCard">
+                                                        <HBox alignItems="Center">
+                                                                <Title level="H5" text="{i18n>chunkTitle}" class="codeAclTitle"/>
+                                                                <ToolbarSpacer/>
+                                                                <Switch id="chunkSwitch"
+                                                                        state="{settings>/chunkMode}"
+                                                                        change=".onChunkModeChange"
+                                                                        enabled="{settings>/isAdmin}"
+                                                                        tooltip="{i18n>chunkTitle}"/>
+                                                        </HBox>
+                                                        <Text text="{i18n>chunkHint}" class="codeAclHint" wrapping="true"/>
+                                                        <Text text="{i18n>codeAclReadonly}" class="codeAclHint" wrapping="true"
+                                                                visible="{= !${settings>/isAdmin} }"/>
+                                                </VBox>
+                                                <!-- 20261011：Agent 可用模型（ZAI_CHAT_CFG AGENT_MODELS[_场景]；空 = 不限制；后端强制校验） -->
+                                                <VBox id="agentModelCard" class="codeAclCard" visible="{settings>/isAdmin}">
+                                                        <HBox alignItems="Center" justifyContent="SpaceBetween">
+                                                                <Title level="H5" text="{i18n>agentModelsTitle}" class="codeAclTitle"/>
+                                                                <Button text="{i18n>agentModelsSave}" type="Emphasized" press=".onSaveAgentModelRules"/>
+                                                        </HBox>
+                                                        <Text text="{i18n>agentModelsHint}" class="codeAclHint" wrapping="true"/>
+                                                        <Label text="{i18n>agentModelsAll}" class="agentModelLbl"/>
+                                                        <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/ALL}"
+                                                                items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsAny}">
+                                                                <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
+                                                        </MultiComboBox>
+                                                        <Label text="{i18n>agentModelsReport}" class="agentModelLbl"/>
+                                                        <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/REPORT}"
+                                                                items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
+                                                                <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
+                                                        </MultiComboBox>
+                                                        <Label text="{i18n>agentModelsFiori}" class="agentModelLbl"/>
+                                                        <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/FIORI}"
+                                                                items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
+                                                                <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
+                                                        </MultiComboBox>
+                                                        <Label text="{i18n>agentModelsData}" class="agentModelLbl"/>
+                                                        <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/DATA}"
+                                                                items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
+                                                                <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
+                                                        </MultiComboBox>
+                                                        <Label text="{i18n>agentModelsInventory}" class="agentModelLbl"/>
+                                                        <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/INVENTORY}"
+                                                                items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
+                                                                <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
+                                                        </MultiComboBox>
+                                                        <Label text="{i18n>agentModelsCode}" class="agentModelLbl"/>
+                                                        <MultiComboBox width="100%" selectedKeys="{settings>/agentRules/CODE}"
+                                                                items="{path: 'settings>/modelList', templateShareable: false}" placeholder="{i18n>agentModelsInherit}">
+                                                                <core:Item key="{settings>ModelId}" text="{settings>ModelName} ({settings>ModelId})"/>
+                                                        </MultiComboBox>
+                                                </VBox>
+                                                <Table id="modelTable"
+                                                        items="{settings>/modelList}"
+                                                        noDataText="{i18n>noModels}"
+                                                        growing="true"
+                                                        growingThreshold="20"
+                                                        class="setTable">
+                                                        <headerToolbar>
+                                                                <Toolbar design="Transparent" style="Clear">
+                                                                        <ToolbarSpacer/>
+                                                                        <Button text="{i18n>addModel}" icon="sap-icon://add" press=".onAddModel" type="Emphasized"/>
+                                                                </Toolbar>
+                                                        </headerToolbar>
+                                                        <!-- 20261022：5 列：模型（名称 + ID · 类型两行）定宽、服务地址单行省略（悬停看全）占剩余宽度，
+                                                             启用 / 测试 / 编辑收窄居中 -->
+                                                        <columns>
+                                                                <Column width="11rem"><Text text="{i18n>colModel}"/></Column>
+                                                                <Column><Text text="{i18n>colEndpoint}"/></Column>
+                                                                <Column width="4rem" hAlign="Center"><Text text="{i18n>colActive}"/></Column>
+                                                                <Column width="4.5rem" hAlign="Center"><Text text="{i18n>colTest}"/></Column>
+                                                                <Column width="3.5rem" hAlign="Center"><Text text="{i18n>colEdit}"/></Column>
+                                                        </columns>
+                                                        <items>
+                                                                <ColumnListItem>
+                                                                        <cells>
+                                                                                <VBox>
+                                                                                        <Text text="{settings>ModelName}" tooltip="{settings>ModelName}" wrapping="false" class="modelCellName"/>
+                                                                                        <Text text="{= ${settings>ModelId} + (${settings>ModelType} ? ' · ' + ${settings>ModelType} : '') }"
+                                                                                                wrapping="false" class="modelCellSub"/>
+                                                                                </VBox>
+                                                                                <Text text="{settings>EndpointUrl}" tooltip="{settings>EndpointUrl}" wrapping="false" class="modelCellUrl"/>
+                                                                                <ObjectStatus state="{settings>ActiveState}" text="{settings>IsActive}"/>
+                                                                                <Button text="{i18n>testConn}" type="Transparent" press=".onTestModel" tooltip="{i18n>testConnTip}" class="testBtn">
+                                                                                        <customData>
+                                                                                                <core:CustomData key="modelId" value="{settings>ModelId}"/>
+                                                                                        </customData>
+                                                                                </Button>
+                                                                                <Button icon="sap-icon://edit" type="Transparent" press=".onEditModel" tooltip="{i18n>edit}">
+                                                                                        <customData>
+                                                                                                <core:CustomData key="modelId" value="{settings>ModelId}"/>
+                                                                                        </customData>
+                                                                                </Button>
+                                                                        </cells>
+                                                                </ColumnListItem>
+                                                        </items>
+                                                </Table>
+                                        </VBox>
 
                                         <!-- ========== 20261011：Agent 测评入口（仅管理员） ========== -->
-                                        <IconTabFilter icon="sap-icon://performance" text="{i18n>tabEval}" key="eval"
-                                                visible="{settings>/isAdmin}">
-                                                <VBox class="sapUiSmallMargin">
-                                                        <Text text="{i18n>evalIntro}" wrapping="true" class="hintText"/>
+                                        <VBox renderType="Bare" class="apvPane setGap" visible="{= ${settings>/setTab} === 'eval' }">
+                                                <Text text="{i18n>evalIntro}" wrapping="true" class="hintText"/>
+                                                <HBox>
                                                         <Button text="{i18n>evalOpen}" icon="sap-icon://performance" type="Emphasized"
                                                                 press=".onOpenEval" class="sapUiSmallMarginTop"/>
-                                                </VBox>
-                                        </IconTabFilter>
+                                                </HBox>
+                                        </VBox>
 
-                                        <!-- ========== 页签3：用户管理（V8，仅管理员可见） ========== -->
-                                        <IconTabFilter icon="sap-icon://group" text="{i18n>tabUsers}" key="users"
-                                                visible="{settings>/isAdmin}">
-                                                <VBox class="sapUiSmallMargin">
-                                                        <Text text="{i18n>usersHint}" class="hintText" wrapping="true"/>
-                                                        <!-- 20261021：加载失败时空表显示失败原因，不再一律"暂无用户" -->
-                                                        <Table id="userTable"
-                                                                items="{settings>/userList}"
-                                                                noDataText="{= ${settings>/userListError} || ${i18n>noUsers} }"
-                                                                growing="true">
-                                                                <columns>
-                                                                        <Column width="9rem"><Text text="{i18n>colUserId}"/></Column>
-                                                                        <Column width="9rem"><Text text="{i18n>colUserName}"/></Column>
-                                                                        <Column width="9rem"><Text text="{i18n>colUserRole}"/></Column>
-                                                                        <Column width="5rem"><Text text="{i18n>colUserActive}"/></Column>
-                                                                        <Column width="4.5rem"><Text text="{i18n>colUserDel}"/></Column>
-                                                                </columns>
+                                        <!-- ========== 用户管理（V8，仅管理员可见） ========== -->
+                                        <VBox renderType="Bare" class="apvPane setGap" visible="{= ${settings>/setTab} === 'users' }">
+                                                <Text text="{i18n>usersHint}" class="hintText" wrapping="true"/>
+                                                <!-- 20261021：加载失败时空表显示失败原因，不再一律"暂无用户" -->
+                                                <Table id="userTable"
+                                                        items="{settings>/userList}"
+                                                        noDataText="{= ${settings>/userListError} || ${i18n>noUsers} }"
+                                                        growing="true"
+                                                        class="setTable">
+                                                        <columns>
+                                                                <Column width="9rem"><Text text="{i18n>colUserId}"/></Column>
+                                                                <Column width="9rem"><Text text="{i18n>colUserName}"/></Column>
+                                                                <Column width="9rem"><Text text="{i18n>colUserRole}"/></Column>
+                                                                <Column width="5rem"><Text text="{i18n>colUserActive}"/></Column>
+                                                                <Column width="4.5rem"><Text text="{i18n>colUserDel}"/></Column>
+                                                        </columns>
+                                                        <items>
+                                                                <ColumnListItem>
+                                                                        <cells>
+                                                                                <Text text="{settings>UserId}"/>
+                                                                                <Text text="{settings>UserName}"/>
+                                                                                <Text text="{settings>Role}"/>
+                                                                                <ObjectStatus state="{settings>ActiveState}" text="{settings>IsActive}"/>
+                                                                                <!-- 20261021：内置管理员、自己、已停用的行不给停用按钮 -->
+                                                                                <Button icon="sap-icon://decline" type="Transparent" press=".onDeleteUser" tooltip="{i18n>userDisableTip}"
+                                                                                        visible="{settings>CanDisable}">
+                                                                                        <customData>
+                                                                                                <core:CustomData key="userId" value="{settings>UserId}"/>
+                                                                                        </customData>
+                                                                                </Button>
+                                                                        </cells>
+                                                                </ColumnListItem>
+                                                        </items>
+                                                </Table>
+                                                <!-- 开通用户：SAP 用户名 + 姓名 + 初始密码 + 角色（两列网格随宽度伸缩）。
+                                                     初始密码只在演示模式有用（SAP 上用户用自己的 SAP 密码登录，SaveUser 不收密码），后端模式隐藏。 -->
+                                                <Label text="{i18n>addUserTitle}" class="aplLabel setSecLabel"/>
+                                                <VBox renderType="Bare" class="userAddGrid">
+                                                        <Input value="{settings>/newUserId}" placeholder="{i18n>addUserPh}" width="100%" maxLength="40"/>
+                                                        <Input value="{settings>/newUserName}" placeholder="{i18n>addUserNamePh}" width="100%" maxLength="40"/>
+                                                        <Input value="{settings>/newUserPwd}" placeholder="{i18n>addUserPwdPh}" width="100%" type="Password" maxLength="40"
+                                                                visible="{= ${settings>/mode} === 'mock' }"/>
+                                                        <Select width="100%" selectedKey="{settings>/newUserRole}">
                                                                 <items>
-                                                                        <ColumnListItem>
-                                                                                <cells>
-                                                                                        <Text text="{settings>UserId}"/>
-                                                                                        <Text text="{settings>UserName}"/>
-                                                                                        <Text text="{settings>Role}"/>
-                                                                                        <ObjectStatus state="{settings>ActiveState}" text="{settings>IsActive}"/>
-                                                                                        <!-- 20261021：内置管理员、自己、已停用的行不给停用按钮 -->
-                                                                                        <Button icon="sap-icon://decline" type="Transparent" press=".onDeleteUser" tooltip="{i18n>userDisableTip}"
-                                                                                                visible="{settings>CanDisable}">
-                                                                                                <customData>
-                                                                                                        <core:CustomData key="userId" value="{settings>UserId}"/>
-                                                                                                </customData>
-                                                                                        </Button>
-                                                                                </cells>
-                                                                        </ColumnListItem>
+                                                                        <core:Item key="USER" text="{i18n>userRoleUserLabel}"/>
+                                                                        <core:Item key="ADMIN" text="{i18n>userRoleAdminLabel}"/>
                                                                 </items>
-                                                        </Table>
-                                                        <!-- 开通用户：SAP 用户名 + 姓名 + 初始密码 + 角色
-                                                             20261021：原来一行四个定宽框（9/8/11/7rem），提示文字和下拉都被截断；改两列网格随宽度伸缩。
-                                                             初始密码只在演示模式有用（SAP 上用户用自己的 SAP 密码登录，SaveUser 不收密码），后端模式隐藏。 -->
-                                                        <Label text="{i18n>addUserTitle}" class="sapUiSmallMarginTop"/>
-                                                        <VBox renderType="Bare" class="userAddGrid sapUiTinyMarginTop">
-                                                                <Input value="{settings>/newUserId}" placeholder="{i18n>addUserPh}" width="100%" maxLength="40"/>
-                                                                <Input value="{settings>/newUserName}" placeholder="{i18n>addUserNamePh}" width="100%" maxLength="40"/>
-                                                                <Input value="{settings>/newUserPwd}" placeholder="{i18n>addUserPwdPh}" width="100%" type="Password" maxLength="40"
-                                                                        visible="{= ${settings>/mode} === 'mock' }"/>
-                                                                <Select width="100%" selectedKey="{settings>/newUserRole}">
-                                                                        <items>
-                                                                                <core:Item key="USER" text="{i18n>userRoleUserLabel}"/>
-                                                                                <core:Item key="ADMIN" text="{i18n>userRoleAdminLabel}"/>
-                                                                        </items>
-                                                                </Select>
-                                                                <Button text="{i18n>userAdd}" icon="sap-icon://add" type="Emphasized" press=".onAddUser" class="userAddBtn"/>
-                                                        </VBox>
+                                                        </Select>
+                                                        <Button text="{i18n>userAdd}" icon="sap-icon://add" type="Emphasized" press=".onAddUser" class="userAddBtn"/>
                                                 </VBox>
-                                        </IconTabFilter>
-                                        <IconTabFilter icon="sap-icon://learning-assistant" text="技能" key="skills" visible="{settings>/isAdmin}">
-                                                <VBox class="sapUiSmallMargin" renderType="Bare">
-                                                        <Text text="维护 Agent 的做法、适用场景和工具范围；保存后版本自动增加。"/>
-                                                        <Button text="管理技能" press=".onOpenSkillManager" type="Emphasized" class="sapUiSmallMarginTop"/>
-                                                </VBox>
-                                        </IconTabFilter>
-                                </items>
-                        </IconTabBar>
+                                        </VBox>
+
+                                        <!-- ========== 技能（仅管理员） ========== -->
+                                        <VBox renderType="Bare" class="apvPane setGap" visible="{= ${settings>/setTab} === 'skills' }">
+                                                <Text text="{i18n>skillsIntro}" wrapping="true" class="hintText"/>
+                                                <HBox>
+                                                        <Button text="{i18n>skillsOpen}" icon="sap-icon://learning-assistant" press=".onOpenSkillManager" type="Emphasized" class="sapUiSmallMarginTop"/>
+                                                </HBox>
+                                        </VBox>
+                                </VBox>
+                        </VBox>
                 </content>
-                <buttons>
-                        <Button text="{i18n>close}" press=".onCloseSettings"/>
-                </buttons>
         </Dialog>
 </core:FragmentDefinition>

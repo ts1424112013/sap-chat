@@ -11,7 +11,8 @@ sap.ui.define([
          * =====================================================================
          * 设计：功能计划书/报表执行目录/01-方案与开发计划_V1.0、Fiori报表分析/01-方案与开发计划 §6。
          *  · 只在 Agent 空会话首页显示（目录容器在 hero 里，发出第一条消息后随 hero 一起隐藏）
-         *  · 「报表执行」：ReportDefinitions（已有接口）→ 单选，点选发出「执行 <TCode>」，之后走现有报表链路
+         *  · 「报表执行」：ReportDefinitions（已有接口）→ 单选，点选发出「执行 <TCode>」，之后走现有报表链路；
+         *    20261024 起按模块分页签（模块由事务码 / 程序名推断，见 ReportCatalog.moduleOf）
          *  · 「Fiori 报表」：FioriReportDefs → 按业务分类页签，点选发出「选择报表：<报表名>」
          *  · 清单每个场景取一次缓存在控制器里；点「重试」重新取
          * 以 mixin 方式并入 zai.chat.controller.App（方法里的 this 就是控制器）；方法名统一 _cat 前缀。
@@ -98,6 +99,7 @@ sap.ui.define([
                         return {
                                 icon: bF ? "chart" : "doc",
                                 categories: null,
+                                categoryChip: !bF,   // 20261024：报表执行目录只有一个模块时不出页签，行上仍标模块
                                 collapsible: true,
                                 collapsed: this._catFolded(),
                                 onToggle: this._catOnToggle.bind(this),
@@ -138,7 +140,12 @@ sap.ui.define([
                                 oCat.loading = false;
                                 oCat.loaded = true;
                                 var aItems = (o.defs || []).map(sScene === "FIORI" ? that._catFioriItem.bind(that) : that._catReportItem.bind(that));
-                                if (sScene === "FIORI") {
+                                if (sScene === "REPORT") {
+                                        // 20261024（10.24 记录 #01）：报表执行目录按模块（MM / PP / SD …）分类；
+                                        // 后端按 REPORT_ID 排序，这里按模块稳定排序，分组标题才不会重复出现
+                                        aItems = ReportCatalog.sortByModule(aItems, that._rb().getText("catModOther"));
+                                }
+                                if (sScene === "FIORI" || sScene === "REPORT") {
                                         // 分类页签按清单里出现的顺序（后端已按 CATEGORY、SORT_NO 排好）
                                         var aCats = [];
                                         aItems.forEach(function (it) {
@@ -164,6 +171,9 @@ sap.ui.define([
                                 title: String(pick(d, "name") || pick(d, "report_name") || pick(d, "tcode") || ""),
                                 code: String(pick(d, "tcode") || ""),
                                 desc: String(pick(d, "description") || ""),
+                                // 20261024：模块 = 登记表 MODULE（有就用）→ 事务码 / 程序名命名推断 → 「其他」
+                                category: ReportCatalog.moduleOf(pick(d, "tcode"), pick(d, "progname"), pick(d, "module")) ||
+                                        oRB.getText("catModOther"),
                                 paramCount: Array.isArray(aP) ? aP.length : 0,
                                 badges: [oRB.getText("catBadgeJob")],
                                 disabled: pick(d, "exec_enabled") !== "X" && pick(d, "exec_enabled") !== true,

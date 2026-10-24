@@ -35,13 +35,19 @@
 *     查重按选中映射比对; 撤销仍按 KEY_JSON 原始主键, 与映射无关; 自动发现不变
 *   · save_rule 新增可选参数 iv_fmap_json(空 = 沿用权限表映射并清掉本规则映射);
 *     删除规则一并删映射; get_config 的规则带 own_map / fields
+* V1.3 20261024(10.24 记录 #00a): 审批卡显示申请人姓名 / 部门 —— 申请记录(ty_request)新增
+*   target_name / target_dept, list_requests 末尾经新私有方法 fill_user_info 按账号查 USER_ADDR
+*   (BNAME → NAME_TEXTC / DEPARTMENT)补齐; DPC 不用改(整个结构 camelCase 输出 targetName / targetDept)。
+*   字段列表写成动态(SELECT (lv_cols) FROM user_addr), 万一字段名与系统不符只是查不到(留空、
+*   前端只显示账号), 不会让整个类激活失败; 只读 USER_ADDR, 不碰任何权限表
 * ★ 重贴后核对标记: "INSERT (" 只在 METHOD grant_row, "DELETE FROM (" 只在 METHOD
 *   revoke_row; "SELECT SINGLE * FROM (" 只在 row_exists(查重)与 tcode_known(自动发现, 只读);
 *   有 METHOD quote(不依赖 cl_abap_dyn_prg); decide 内有 'PENDING' 状态校验;
 *   save_table / save_rule / get_config / describe_table 调 gate 时带
 *   iv_need_enabled = abap_false; run_submit 内有 line_exists( ls_tab-fields[ map_type = 'WERKS' ] );
 *   V1.2: 有 METHOD check_fmap 与 METHOD apply_rule_map; zai_auth_rmap 出现在 save_rule
-*   (删 / 写)、apply_rule_map(读)、get_config(读) 三个方法里
+*   (删 / 写)、apply_rule_map(读)、get_config(读) 三个方法里;
+*   V1.3: user_addr 只出现在 METHOD fill_user_info, list_requests 末尾调它
 *=======================================================================
 CLASS zcl_ai_auth_service DEFINITION
   PUBLIC
@@ -84,6 +90,8 @@ CLASS zcl_ai_auth_service DEFINITION
              created_at  TYPE string,
              decided_at  TYPE string,
              revocable   TYPE string,    " X = 已开通且有原始主键, 可撤销
+             target_name TYPE string,    " V1.3: 姓名(USER_ADDR-NAME_TEXTC), 查不到为空
+             target_dept TYPE string,    " V1.3: 部门(USER_ADDR-DEPARTMENT), 查不到为空
            END OF ty_request.
     TYPES tt_request TYPE STANDARD TABLE OF ty_request WITH DEFAULT KEY.
 
@@ -235,6 +243,10 @@ CLASS zcl_ai_auth_service DEFINITION
              v TYPE string,
            END OF ty_key.
     TYPES tt_key TYPE STANDARD TABLE OF ty_key WITH DEFAULT KEY.
+
+    " V1.3: 申请记录补姓名 / 部门(USER_ADDR), 查不到留空
+    CLASS-METHODS fill_user_info
+      CHANGING ct_requests TYPE tt_request.
 
     " ---- 通用小工具 ----
     CLASS-METHODS gate
@@ -676,6 +688,52 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
         ls_out-revocable = 'X'.
       ENDIF.
       APPEND ls_out TO rs-requests.
+    ENDLOOP.
+
+    " V1.3: 审批卡显示姓名 / 部门
+    fill_user_info( CHANGING ct_requests = rs-requests ).
+
+  ENDMETHOD.
+
+
+  METHOD fill_user_info.
+    " V1.3 20261024: 按账号(BNAME)查 USER_ADDR 补姓名 / 部门, 只读。
+    " 字段列表动态: 万一某个字段名与系统不符, 只是查不到(留空, 前端只显示账号), 不会让整个类激活失败
+    TYPES: BEGIN OF ty_addr,
+             bname      TYPE xubname,
+             name_textc TYPE c LENGTH 80,
+             department TYPE c LENGTH 40,
+           END OF ty_addr.
+    DATA: lr_users TYPE RANGE OF xubname,
+          lt_addr  TYPE STANDARD TABLE OF ty_addr WITH DEFAULT KEY,
+          ls_addr  TYPE ty_addr,
+          lv_cols  TYPE string VALUE `BNAME, NAME_TEXTC, DEPARTMENT`.
+    FIELD-SYMBOLS <ls_req> TYPE ty_request.
+
+    LOOP AT ct_requests ASSIGNING <ls_req> WHERE target_user IS NOT INITIAL.
+      IF NOT line_exists( lr_users[ low = <ls_req>-target_user ] ).
+        APPEND VALUE #( sign = 'I' option = 'EQ' low = <ls_req>-target_user ) TO lr_users.
+      ENDIF.
+    ENDLOOP.
+    IF lr_users IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    TRY.
+        SELECT (lv_cols) FROM user_addr
+          WHERE bname IN @lr_users
+          INTO CORRESPONDING FIELDS OF TABLE @lt_addr.
+      CATCH cx_sy_dynamic_osql_error cx_sy_open_sql_db.
+        RETURN.
+    ENDTRY.
+    SORT lt_addr BY bname.
+
+    LOOP AT ct_requests ASSIGNING <ls_req>.
+      READ TABLE lt_addr INTO ls_addr WITH KEY bname = <ls_req>-target_user BINARY SEARCH.
+      IF sy-subrc = 0.
+        <ls_req>-target_name = condense( ls_addr-name_textc ).
+        <ls_req>-target_dept = condense( ls_addr-department ).
+      ENDIF.
     ENDLOOP.
 
   ENDMETHOD.
