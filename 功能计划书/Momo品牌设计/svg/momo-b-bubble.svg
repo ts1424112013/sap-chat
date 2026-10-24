@@ -1,0 +1,9 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs><linearGradient id="g" x1="10" y1="6" x2="54" y2="60" gradientUnits="userSpaceOnUse"><stop stop-color="#37A5FF"/><stop offset=".52" stop-color="#2F6BFF"/><stop offset="1" stop-color="#8B5CF6"/></linearGradient></defs>
+  <!-- B 气泡脸：对话气泡 + Momo 的两个 o 变成眼睛 -->
+  <rect x="6" y="8" width="52" height="42" rx="19" fill="url(#g)"/>
+  <path d="M 13 40 L 9 57 L 26 47 Z" fill="url(#g)" stroke="url(#g)" stroke-width="3" stroke-linejoin="round"/>
+  <rect x="21.5" y="22" width="6" height="10" rx="3" fill="#fff"/>
+  <rect x="36.5" y="22" width="6" height="10" rx="3" fill="#fff"/>
+  <path d="M 27.5 37 Q 32 40.5 36.5 37" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+</svg>

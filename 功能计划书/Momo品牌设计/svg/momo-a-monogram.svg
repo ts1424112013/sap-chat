@@ -1,0 +1,7 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs><linearGradient id="g" x1="10" y1="6" x2="54" y2="60" gradientUnits="userSpaceOnUse"><stop stop-color="#37A5FF"/><stop offset=".52" stop-color="#2F6BFF"/><stop offset="1" stop-color="#8B5CF6"/></linearGradient></defs>
+  <!-- A 字母型：渐变圆角底 + 手写感小写 m，右腿收成对话尾巴 -->
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#g)"/>
+  <path d="M 16.25 43 V 28.5 A 6.75 6.75 0 0 1 29.75 28.5 V 43 M 29.75 28.5 A 6.75 6.75 0 0 1 43.25 28.5 V 37.5 Q 43.25 43.5 48.75 43.5"
+        stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

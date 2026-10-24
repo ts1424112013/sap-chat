@@ -17,9 +17,10 @@
         pointer-events: none;
         border-radius: 0;
 }
-.momoMark .momoDrop { transform-origin: 73.4375% 34.0625%; }
-.momoMark .momoEyeLeft { transform-origin: 28.9% 57.2%; }
-.momoMark .momoEyeRight { transform-origin: 71.1% 61.6%; }
+/* 原点 = 图形坐标 ÷ 64（已含整体上移 2）：圆点底部 (47, 19.8)，左眼中心 (18.5, 33.8)，右眼中心 (45.5, 36.6) */
+.momoMark .momoDrop { transform-origin: 73.4375% 30.9375%; }
+.momoMark .momoEyeLeft { transform-origin: 28.9% 52.8%; }
+.momoMark .momoEyeRight { transform-origin: 71.1% 57.2%; }
 .momoMark--thinking .momoEye { animation: momoEyeBlink 6.8s linear infinite; }
 .momoMark--thinking .momoGaze { animation: momoEyeThink 6.2s ease-in-out infinite; }
 .momoMark--thinking .momoDropTravel { animation: momoDropTravel 4.8s linear infinite; }
@@ -49,7 +50,8 @@
 @keyframes momoDropHop {
         0%, 7%, 43%, 51%, 87%, 100% { transform: translateY(0) scale(1); }
         11%, 55% { transform: translateY(0) scale(1.16, .82); animation-timing-function: cubic-bezier(.16, .7, .3, 1); }
-        23%, 67% { transform: translateY(-15.625%) scale(.94, 1.08); animation-timing-function: cubic-bezier(.5, 0, .85, .35); }
+        /* 起跳点随图形上移了 2，跳高相应减 2（-12.5% = -8），最高点与原来一致，不贴方块上沿 */
+        23%, 67% { transform: translateY(-12.5%) scale(.94, 1.08); animation-timing-function: cubic-bezier(.5, 0, .85, .35); }
         35%, 79% { transform: translateY(0) scale(1.18, .8); }
 }
 @media (prefers-reduced-motion: reduce) {

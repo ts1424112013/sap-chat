@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Momo Logo 方案</title>
+<style>
+  :root {
+    --bg: #F3F4F6; --card: #FFFFFF; --text: #111827; --text-2: #4B5563; --sub: #8A93A2; --line: #E6E8EC;
+    --app-light: #F2F4F7; --app-dark: #15171B; --app-dark-text: #E8EAED; --app-light-text: #111827;
+    --accent: #2563EB; --accent-soft: #EEF3FE;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0D0F12; --card: #171A1F; --text: #E8EAED; --text-2: #AEB4BE; --sub: #727B88; --line: #262A31;
+      --accent: #6B9BFF; --accent-soft: rgba(107,155,255,.14);
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: "72", -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", "Microsoft YaHei", sans-serif; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 26px; letter-spacing: -.02em; margin: 0 0 6px; }
+  .lead { color: var(--text-2); margin: 0 0 24px; font-size: 14px; }
+
+  /* 快速对比条：四个方案放进同一条侧边栏品牌行 */
+  .strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
+  .strip .cell { border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+  .brandRow { display: flex; align-items: center; gap: 10px; padding: 14px 16px; }
+  .brandRow img { width: 30px; height: 30px; border-radius: 8px; flex: none; }
+  .brandRow b { font-size: 17px; letter-spacing: -.01em; }
+  .light { background: var(--app-light); color: var(--app-light-text); }
+  .dark { background: var(--app-dark); color: var(--app-dark-text); }
+  .strip .tag { font-size: 12px; padding: 6px 16px 10px; color: var(--sub); background: var(--card); }
+
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+  .card h2 { font-size: 18px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+  .pill { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+  .idea { font-size: 13.5px; color: var(--text-2); margin: 0 0 16px; line-height: 1.6; }
+
+  .big { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .big div { height: 168px; border-radius: 12px; display: grid; place-items: center; }
+  .big img { width: 112px; height: 112px; }
+
+  .ladder { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .ladder div { border-radius: 12px; display: flex; align-items: center; justify-content: center; gap: 22px; padding: 14px; }
+  .ladder img:nth-child(1) { width: 52px; height: 52px; border-radius: 14px; }
+  .ladder img:nth-child(2) { width: 30px; height: 30px; border-radius: 8px; }
+  .ladder img:nth-child(3) { width: 16px; height: 16px; }
+
+  .mocks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .mocks > div { border-radius: 12px; overflow: hidden; }
+  .tab { display: flex; align-items: center; gap: 8px; margin: 10px 12px 12px; padding: 7px 12px; border-radius: 8px; font-size: 12.5px; }
+  .light .tab { background: #FFFFFF; }
+  .dark .tab { background: #22262D; }
+  .tab img { width: 16px; height: 16px; }
+  .cap { font-size: 11.5px; color: var(--sub); margin: 8px 2px 0; }
+
+  @media (max-width: 860px) {
+    .grid { grid-template-columns: 1fr; }
+    .strip { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 480px) {
+    .strip { grid-template-columns: 1fr; }
+    .big div { height: 140px; }
+    .big img { width: 88px; height: 88px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Momo · Logo 方案</h1>
+  <p class="lead">V1.0 · 2026-10-25 · 4 个方向，配色沿用现有蓝紫渐变（#37A5FF → #2F6BFF → #8B5CF6），每个方案都看了浅色 / 深色和 52 / 30 / 16px 三档尺寸。</p>
+
+  <div class="strip" id="strip"></div>
+  <div class="grid" id="grid"></div>
+</div>
+
+<script>
+  /*SVG_BEGIN*/ const SVGS = {"svg/momo-a-monogram.svg": "<svg width=\"64\" height=\"64\" viewBox=\"0 0 64 64\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">\n  <defs><linearGradient id=\"g\" x1=\"10\" y1=\"6\" x2=\"54\" y2=\"60\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#37A5FF\"/><stop offset=\".52\" stop-color=\"#2F6BFF\"/><stop offset=\"1\" stop-color=\"#8B5CF6\"/></linearGradient></defs>\n  <!-- A 字母型：渐变圆角底 + 手写感小写 m，右腿收成对话尾巴 -->\n  <rect x=\"4\" y=\"4\" width=\"56\" height=\"56\" rx=\"16\" fill=\"url(#g)\"/>\n  <path d=\"M 16.25 43 V 28.5 A 6.75 6.75 0 0 1 29.75 28.5 V 43 M 29.75 28.5 A 6.75 6.75 0 0 1 43.25 28.5 V 37.5 Q 43.25 43.5 48.75 43.5\"\n        stroke=\"#fff\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>\n", "svg/momo-b-bubble.svg": "<svg width=\"64\" height=\"64\" viewBox=\"0 0 64 64\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">\n  <defs><linearGradient id=\"g\" x1=\"10\" y1=\"6\" x2=\"54\" y2=\"60\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#37A5FF\"/><stop offset=\".52\" stop-color=\"#2F6BFF\"/><stop offset=\"1\" stop-color=\"#8B5CF6\"/></linearGradient></defs>\n  <!-- B 气泡脸：对话气泡 + Momo 的两个 o 变成眼睛 -->\n  <rect x=\"6\" y=\"8\" width=\"52\" height=\"42\" rx=\"19\" fill=\"url(#g)\"/>\n  <path d=\"M 13 40 L 9 57 L 26 47 Z\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"3\" stroke-linejoin=\"round\"/>\n  <rect x=\"21.5\" y=\"22\" width=\"6\" height=\"10\" rx=\"3\" fill=\"#fff\"/>\n  <rect x=\"36.5\" y=\"22\" width=\"6\" height=\"10\" rx=\"3\" fill=\"#fff\"/>\n  <path d=\"M 27.5 37 Q 32 40.5 36.5 37\" stroke=\"#fff\" stroke-width=\"3\" stroke-linecap=\"round\"/>\n</svg>\n", "svg/momo-c-cat.svg": "<svg width=\"64\" height=\"64\" viewBox=\"0 0 64 64\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">\n  <defs><linearGradient id=\"g\" x1=\"10\" y1=\"6\" x2=\"54\" y2=\"60\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#37A5FF\"/><stop offset=\".52\" stop-color=\"#2F6BFF\"/><stop offset=\"1\" stop-color=\"#8B5CF6\"/></linearGradient></defs>\n  <!-- C 猫耳型：Momo 是常见猫名；两只耳朵的轮廓正好是 M -->\n  <path d=\"M 10 30 L 14 7 L 30 18 Z\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"4\" stroke-linejoin=\"round\"/>\n  <path d=\"M 54 30 L 50 7 L 34 18 Z\" fill=\"url(#g)\" stroke=\"url(#g)\" stroke-width=\"4\" stroke-linejoin=\"round\"/>\n  <rect x=\"7\" y=\"16\" width=\"50\" height=\"40\" rx=\"18\" fill=\"url(#g)\"/>\n  <ellipse cx=\"24\" cy=\"34.5\" rx=\"3.4\" ry=\"4.6\" fill=\"#fff\"/>\n  <ellipse cx=\"40\" cy=\"34.5\" rx=\"3.4\" ry=\"4.6\" fill=\"#fff\"/>\n  <path d=\"M 28 43 Q 30 45.6 32 43 Q 34 45.6 36 43\" stroke=\"#fff\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>\n", "svg/momo-d-dialog.svg": "<svg width=\"64\" height=\"64\" viewBox=\"0 0 64 64\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">\n  <defs><clipPath id=\"L\"><circle cx=\"23\" cy=\"29\" r=\"16\"/></clipPath></defs>\n  <!-- D 对话型：Momo 的两个 o = 一问一答两个气泡，重叠处是\"听懂了\" -->\n  <circle cx=\"23\" cy=\"29\" r=\"16\" fill=\"#38A3FF\"/>\n  <path d=\"M 9.5 35 L 5.5 47.5 L 19 42.5 Z\" fill=\"#38A3FF\" stroke=\"#38A3FF\" stroke-width=\"2.5\" stroke-linejoin=\"round\"/>\n  <circle cx=\"41\" cy=\"35\" r=\"16\" fill=\"#8B5CF6\"/>\n  <path d=\"M 54.5 41 L 58.5 53.5 L 45 48.5 Z\" fill=\"#8B5CF6\" stroke=\"#8B5CF6\" stroke-width=\"2.5\" stroke-linejoin=\"round\"/>\n  <circle cx=\"41\" cy=\"35\" r=\"16\" fill=\"#2F5BFF\" clip-path=\"url(#L)\"/>\n</svg>\n"}; /*SVG_END*/
+  // SVG 内嵌成 data URI，单独打开 HTML 也能显示（svg/ 目录里是同一份源文件）
+  const src = f => 'data:image/svg+xml,' + encodeURIComponent(SVGS[f] || '');
+  const concepts = [
+    { key: 'a', file: 'svg/momo-a-monogram.svg', name: 'A · 字母 m', tone: '专业',
+      idea: '圆角渐变底上一个手写感的小写 m，右腿收笔时向外一甩，像对话气泡的尾巴。和 SAP 界面最搭，最像正式产品。' },
+    { key: 'b', file: 'svg/momo-b-bubble.svg', name: 'B · 气泡脸', tone: '亲和',
+      idea: '对话气泡加一张小脸：Momo 的两个 o 变成眼睛，再加一个微笑。延续了 Gale 的气泡尾巴，一眼能看出是聊天助手。' },
+    { key: 'c', file: 'svg/momo-c-cat.svg', name: 'C · 猫耳', tone: '可爱',
+      idea: 'Momo 是很常见的猫名。两只猫耳的轮廓正好拼出一个 M，嘴巴是 ω。最有记忆点，适合当吉祥物。' },
+    { key: 'd', file: 'svg/momo-d-dialog.svg', name: 'D · 双气泡', tone: '专业',
+      idea: 'Momo 的两个 o 变成一问一答两个气泡，重叠的部分代表"听懂了"。偏抽象，更像企业品牌标识。' },
+  ];
+  const strip = document.getElementById('strip');
+  const grid = document.getElementById('grid');
+  for (const c of concepts) {
+    c.file = src(c.file);
+    strip.insertAdjacentHTML('beforeend', `
+      <div class="cell">
+        <div class="brandRow light"><img src="${c.file}" alt=""><b>Momo</b></div>
+        <div class="brandRow dark"><img src="${c.file}" alt=""><b>Momo</b></div>
+        <div class="tag">${c.name} · ${c.tone}</div>
+      </div>`);
+    grid.insertAdjacentHTML('beforeend', `
+      <section class="card">
+        <h2>${c.name} <span class="pill">${c.tone}</span></h2>
+        <p class="idea">${c.idea}</p>
+        <div class="big"><div class="light"><img src="${c.file}" alt=""></div><div class="dark"><img src="${c.file}" alt=""></div></div>
+        <div class="ladder">
+          <div class="light"><img src="${c.file}" alt=""><img src="${c.file}" alt=""><img src="${c.file}" alt=""></div>
+          <div class="dark"><img src="${c.file}" alt=""><img src="${c.file}" alt=""><img src="${c.file}" alt=""></div>
+        </div>
+        <div class="mocks">
+          <div class="light"><div class="brandRow"><img src="${c.file}" alt=""><b>Momo</b></div><div class="tab"><img src="${c.file}" alt="">Momo</div></div>
+          <div class="dark"><div class="brandRow"><img src="${c.file}" alt=""><b>Momo</b></div><div class="tab"><img src="${c.file}" alt="">Momo</div></div>
+        </div>
+        <p class="cap">从上到下：大图 · 52 / 30 / 16px · 侧边栏品牌行 + 浏览器标签页图标</p>
+      </section>`);
+  }
+</script>
+</body>
+</html>

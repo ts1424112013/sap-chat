@@ -31,7 +31,7 @@
                 "technology": "UI5",
                 "icons": {
                         "icon": "images/momo-mark.svg",
-                        "favIcon": "images/momo-mark.svg",
+                        "favIcon": "images/momo-favicon.svg",
                         "phone": "",
                         "phone@2": "",
                         "tablet": "",

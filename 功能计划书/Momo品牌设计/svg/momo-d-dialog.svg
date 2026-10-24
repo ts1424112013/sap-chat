@@ -1,0 +1,9 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs><clipPath id="L"><circle cx="23" cy="29" r="16"/></clipPath></defs>
+  <!-- D 对话型：Momo 的两个 o = 一问一答两个气泡，重叠处是"听懂了" -->
+  <circle cx="23" cy="29" r="16" fill="#38A3FF"/>
+  <path d="M 9.5 35 L 5.5 47.5 L 19 42.5 Z" fill="#38A3FF" stroke="#38A3FF" stroke-width="2.5" stroke-linejoin="round"/>
+  <circle cx="41" cy="35" r="16" fill="#8B5CF6"/>
+  <path d="M 54.5 41 L 58.5 53.5 L 45 48.5 Z" fill="#8B5CF6" stroke="#8B5CF6" stroke-width="2.5" stroke-linejoin="round"/>
+  <circle cx="41" cy="35" r="16" fill="#2F5BFF" clip-path="url(#L)"/>
+</svg>

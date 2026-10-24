@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
+  <title>Momo · 水沫</title>
+  <!-- 浏览器标签页专用（16–24px）：图形放大 12%，眼睛和圆点开大，小尺寸下看得清 -->
+  <defs>
+    <linearGradient id="foam" x1="8" y1="48" x2="55" y2="23" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9180FF"/><stop offset=".32" stop-color="#5C9BFF"/><stop offset=".66" stop-color="#31C9E2"/><stop offset="1" stop-color="#75EFC7"/>
+    </linearGradient>
+    <linearGradient id="drop" x1="44" y1="19" x2="50" y2="17" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7896FF"/><stop offset="1" stop-color="#42D9E4"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="#24424D"/>
+  <g transform="translate(32 32) scale(1.12) translate(-32.1 -33.5)">
+    <path fill="url(#foam)" d="M8.2 37.7C9.6 30.7 15.1 21.3 21.7 21.3C27.1 21.3 29.6 25.1 32.4 29.9C34.6 33.6 36.5 33.9 39.3 30.6C43.3 25.9 47.3 24.8 51.5 28.8C56.2 33.4 58 39.4 55.1 44.3C51.8 49.9 46.2 49 41.5 45.2L35.2 40.1C33.4 38.8 31.6 38.9 29.3 40.6C24.1 44.7 19.6 48.2 14.1 47.2C8.7 46.3 6.9 43 8.2 37.7Z"/>
+    <ellipse cx="18.5" cy="35.4" rx="5.4" ry="6.3" fill="#24424D"/>
+    <ellipse cx="45.5" cy="38.2" rx="4.3" ry="4.4" fill="#24424D"/>
+    <circle cx="47" cy="17.4" r="4.4" fill="url(#drop)"/>
+  </g>
+</svg>

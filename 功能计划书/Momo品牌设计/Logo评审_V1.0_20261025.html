@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Momo Logo 评审</title>
+<style>
+  :root { --bg:#F3F4F6; --card:#fff; --text:#111827; --text-2:#4B5563; --sub:#8A93A2; --line:#E6E8EC; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0D0F12; --card:#171A1F; --text:#E8EAED; --text-2:#AEB4BE; --sub:#727B88; --line:#262A31; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:"72",-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:28px 16px 64px; }
+  h1 { font-size:24px; margin:0 0 6px; letter-spacing:-.02em; }
+  .lead { color:var(--text-2); font-size:14px; margin:0 0 20px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; }
+  .card h2 { font-size:16px; margin:0 0 4px; }
+  .note { font-size:13px; color:var(--text-2); margin:0 0 12px; line-height:1.6; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
+  .light { background:#F2F4F7; color:#111827; } .dark { background:#15171B; color:#E8EAED; } .white { background:#fff; color:#111827; }
+  .big { height:180px; border-radius:12px; display:grid; place-items:center; }
+  .big img { width:128px; height:128px; border-radius:30px; }
+  .lad { border-radius:12px; display:flex; align-items:center; justify-content:center; gap:20px; padding:14px; }
+  .lad img:nth-child(1){ width:56px; height:56px; border-radius:13px; } .lad img:nth-child(2){ width:32px; height:32px; border-radius:7.5px; }
+  .lad img:nth-child(3){ width:24px; height:24px; border-radius:5.6px; } .lad img:nth-child(4){ width:16px; height:16px; }
+  .brand { border-radius:12px; display:flex; align-items:center; gap:10px; padding:14px 16px; }
+  .brand img { width:32px; height:32px; border-radius:7.5px; } .brand b { font-size:17px; letter-spacing:-.01em; }
+  .tab { border-radius:12px; padding:10px; } .tab span { display:flex; align-items:center; gap:8px; padding:7px 12px; border-radius:8px; font-size:12.5px; }
+  .light .tab span, .tab.light span { background:#fff; } .tab.dark span { background:#22262D; } .tab img { width:16px; height:16px; }
+  .gray img { filter: grayscale(1); }
+  .cap { font-size:11.5px; color:var(--sub); margin:8px 2px 0; }
+  /* 三个版本并排，卡片内浅色在上、深色在下，横向逐行对比 */
+  .wrap { max-width:1280px; }
+  .grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+  .card { padding:12px; }
+  .row { grid-template-columns:1fr; }
+  .big { height:150px; } .big img { width:112px; height:112px; border-radius:26px; }
+  .lad { gap:14px; padding:12px 8px; }
+  @media (max-width:640px) { .grid { grid-template-columns:1fr; } }
+  .px { display:flex; gap:8px; flex-wrap:wrap; } .px canvas { width:30%; aspect-ratio:1; image-rendering:pixelated; border-radius:6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Momo · 水沫 Logo 评审</h1>
+  <p class="lead">把现有 logo 和优化稿放在同样的尺寸、背景下对比。</p>
+  <div class="grid" id="grid"></div>
+</div>
+<script>
+  /*SVG_BEGIN*/ const SVGS = {"0-current.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"64\" height=\"64\" viewBox=\"0 0 64 64\" fill=\"none\">\n  <title>Momo · 水沫</title>\n  <defs>\n    <linearGradient id=\"foam\" x1=\"8\" y1=\"48\" x2=\"55\" y2=\"23\" gradientUnits=\"userSpaceOnUse\">\n      <stop stop-color=\"#8263F2\"/><stop offset=\".32\" stop-color=\"#528CF7\"/><stop offset=\".66\" stop-color=\"#31C9E2\"/><stop offset=\"1\" stop-color=\"#75EFC7\"/>\n    </linearGradient>\n    <linearGradient id=\"drop\" x1=\"44\" y1=\"19\" x2=\"50\" y2=\"17\" gradientUnits=\"userSpaceOnUse\">\n      <stop stop-color=\"#7896FF\"/><stop offset=\"1\" stop-color=\"#42D9E4\"/>\n    </linearGradient>\n  </defs>\n  <rect width=\"64\" height=\"64\" rx=\"15\" fill=\"#24424D\"/>\n  <path fill=\"url(#foam)\" d=\"M8.2 37.7C9.6 30.7 15.1 21.3 21.7 21.3C27.1 21.3 29.6 25.1 32.4 29.9C34.6 33.6 36.5 33.9 39.3 30.6C43.3 25.9 47.3 24.8 51.5 28.8C56.2 33.4 58 39.4 55.1 44.3C51.8 49.9 46.2 49 41.5 45.2L35.2 40.1C33.4 38.8 31.6 38.9 29.3 40.6C24.1 44.7 19.6 48.2 14.1 47.2C8.7 46.3 6.9 43 8.2 37.7Z\"/>\n  <ellipse cx=\"18.5\" cy=\"36.6\" rx=\"5.15\" ry=\"6.3\" fill=\"#24424D\"/>\n  <ellipse cx=\"45.5\" cy=\"39.4\" rx=\"3.9\" ry=\"4.2\" fill=\"#24424D\"/>\n  <circle cx=\"47\" cy=\"18.4\" r=\"3.4\" fill=\"url(#drop)\"/>\n</svg>\n", "1-optimized.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"64\" height=\"64\" viewBox=\"0 0 64 64\" fill=\"none\">\n  <title>Momo · 水沫</title>\n  <defs>\n    <linearGradient id=\"foam\" x1=\"8\" y1=\"48\" x2=\"55\" y2=\"23\" gradientUnits=\"userSpaceOnUse\">\n      <stop stop-color=\"#9180FF\"/><stop offset=\".32\" stop-color=\"#5C9BFF\"/><stop offset=\".66\" stop-color=\"#31C9E2\"/><stop offset=\"1\" stop-color=\"#75EFC7\"/>\n    </linearGradient>\n    <linearGradient id=\"drop\" x1=\"44\" y1=\"19\" x2=\"50\" y2=\"17\" gradientUnits=\"userSpaceOnUse\">\n      <stop stop-color=\"#7896FF\"/><stop offset=\"1\" stop-color=\"#42D9E4\"/>\n    </linearGradient>\n  </defs>\n  <rect width=\"64\" height=\"64\" rx=\"15\" fill=\"#24424D\"/>\n  <!-- 整体上移 2：水沫重心回到方块中心 -->\n  <g transform=\"translate(0 -2)\">\n    <path fill=\"url(#foam)\" d=\"M8.2 37.7C9.6 30.7 15.1 21.3 21.7 21.3C27.1 21.3 29.6 25.1 32.4 29.9C34.6 33.6 36.5 33.9 39.3 30.6C43.3 25.9 47.3 24.8 51.5 28.8C56.2 33.4 58 39.4 55.1 44.3C51.8 49.9 46.2 49 41.5 45.2L35.2 40.1C33.4 38.8 31.6 38.9 29.3 40.6C24.1 44.7 19.6 48.2 14.1 47.2C8.7 46.3 6.9 43 8.2 37.7Z\"/>\n    <!-- 眼睛上移 0.8：下沿的边加厚，小尺寸不断 -->\n    <ellipse cx=\"18.5\" cy=\"35.8\" rx=\"5.15\" ry=\"6.3\" fill=\"#24424D\"/>\n    <ellipse cx=\"45.5\" cy=\"38.6\" rx=\"3.9\" ry=\"4.2\" fill=\"#24424D\"/>\n    <!-- 水滴略放大，底部位置不变 -->\n    <circle cx=\"47\" cy=\"18\" r=\"3.8\" fill=\"url(#drop)\"/>\n  </g>\n</svg>\n", "2-favicon.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"64\" height=\"64\" viewBox=\"0 0 64 64\" fill=\"none\">\n  <title>Momo · 水沫</title>\n  <defs>\n    <linearGradient id=\"foam\" x1=\"8\" y1=\"48\" x2=\"55\" y2=\"23\" gradientUnits=\"userSpaceOnUse\">\n      <stop stop-color=\"#9180FF\"/><stop offset=\".32\" stop-color=\"#5C9BFF\"/><stop offset=\".66\" stop-color=\"#31C9E2\"/><stop offset=\"1\" stop-color=\"#75EFC7\"/>\n    </linearGradient>\n    <linearGradient id=\"drop\" x1=\"44\" y1=\"19\" x2=\"50\" y2=\"17\" gradientUnits=\"userSpaceOnUse\">\n      <stop stop-color=\"#7896FF\"/><stop offset=\"1\" stop-color=\"#42D9E4\"/>\n    </linearGradient>\n  </defs>\n  <rect width=\"64\" height=\"64\" rx=\"15\" fill=\"#24424D\"/>\n  <!-- 16–24px 专用：图形放大 12%、眼睛上移、水滴放大，保证浏览器标签里看得清 -->\n  <g transform=\"translate(32 32) scale(1.12) translate(-32.1 -33.5)\">\n    <path fill=\"url(#foam)\" d=\"M8.2 37.7C9.6 30.7 15.1 21.3 21.7 21.3C27.1 21.3 29.6 25.1 32.4 29.9C34.6 33.6 36.5 33.9 39.3 30.6C43.3 25.9 47.3 24.8 51.5 28.8C56.2 33.4 58 39.4 55.1 44.3C51.8 49.9 46.2 49 41.5 45.2L35.2 40.1C33.4 38.8 31.6 38.9 29.3 40.6C24.1 44.7 19.6 48.2 14.1 47.2C8.7 46.3 6.9 43 8.2 37.7Z\"/>\n    <ellipse cx=\"18.5\" cy=\"35.4\" rx=\"5.4\" ry=\"6.3\" fill=\"#24424D\"/>\n    <ellipse cx=\"45.5\" cy=\"38.2\" rx=\"4.3\" ry=\"4.4\" fill=\"#24424D\"/>\n    <circle cx=\"47\" cy=\"17.4\" r=\"4.4\" fill=\"url(#drop)\"/>\n  </g>\n</svg>\n"}; /*SVG_END*/
+  const src = f => 'data:image/svg+xml,' + encodeURIComponent(SVGS[f] || '');
+  const NOTES = /*NOTES_BEGIN*/{"0-current.svg": {"title": "现版", "note": "左半边紫色和深青底色太接近，灰度下左泡几乎沉下去；图形整体偏下；16px 时眼睛和水滴糊成一团。"}, "1-optimized.svg": {"title": "优化 · 主图标", "note": "提亮左侧紫色和蓝色，左右亮度更平衡；整体上移 2 个单位让重心居中；眼睛略上移、下沿加厚；水滴略放大。造型、配色方向、动画都不变。"}, "2-favicon.svg": {"title": "优化 · 标签页小图标", "note": "在主图标基础上把图形放大 12%，眼睛开大一点，水滴再放大，专门给浏览器标签页图标用。"}}/*NOTES_END*/;
+  const grid = document.getElementById('grid');
+  for (const f of Object.keys(SVGS)) {
+    const s = src(f), n = NOTES[f] || {};
+    grid.insertAdjacentHTML('beforeend', `
+      <section class="card">
+        <h2>${n.title || f}</h2>
+        <p class="note">${n.note || ''}</p>
+        <div class="row"><div class="big light"><img src="${s}"></div><div class="big dark"><img src="${s}"></div></div>
+        <div class="row"><div class="lad light"><img src="${s}"><img src="${s}"><img src="${s}"><img src="${s}"></div>
+                         <div class="lad dark"><img src="${s}"><img src="${s}"><img src="${s}"><img src="${s}"></div></div>
+        <div class="row"><div class="brand light"><img src="${s}"><b>Momo</b></div><div class="brand dark"><img src="${s}"><b>Momo</b></div></div>
+        <div class="row"><div class="tab light"><span><img src="${s}">Momo · 水沫</span></div><div class="tab dark"><span><img src="${s}">Momo · 水沫</span></div></div>
+        <div class="row"><div class="lad white gray"><img src="${s}"><img src="${s}"><img src="${s}"><img src="${s}"></div><div class="lad white"><span style="font-size:12px;color:#8A93A2">← 灰度：看明暗层次</span></div></div>
+        <div class="px" data-f="${f}" style="margin-top:8px"></div>
+        <p class="cap">大图 · 56 / 32 / 24 / 16px · 侧栏品牌行 · 浏览器标签 · 灰度 · 16px 实际像素放大 8 倍（浅 / 深 / 灰度）</p>
+      </section>`);
+  }
+  // 16px 实际像素：先画到 16×16 画布，再放大显示，看清浏览器标签里真正的样子
+  document.querySelectorAll('.px').forEach(box => {
+    const img = new Image();
+    img.onload = () => [['#F2F4F7', false], ['#15171B', false], ['#FFFFFF', true]].forEach(([bg, gray]) => {
+      const c = document.createElement('canvas'); c.width = c.height = 16;
+      const x = c.getContext('2d'); x.fillStyle = bg; x.fillRect(0, 0, 16, 16);
+      if (gray) x.filter = 'grayscale(1)';
+      x.drawImage(img, 0, 0, 16, 16); box.appendChild(c);
+    });
+    img.src = src(box.dataset.f);
+  });
+</script>
+</body>
+</html>

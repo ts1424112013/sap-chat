@@ -1,0 +1,10 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs><linearGradient id="g" x1="10" y1="6" x2="54" y2="60" gradientUnits="userSpaceOnUse"><stop stop-color="#37A5FF"/><stop offset=".52" stop-color="#2F6BFF"/><stop offset="1" stop-color="#8B5CF6"/></linearGradient></defs>
+  <!-- C 猫耳型：Momo 是常见猫名；两只耳朵的轮廓正好是 M -->
+  <path d="M 10 30 L 14 7 L 30 18 Z" fill="url(#g)" stroke="url(#g)" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M 54 30 L 50 7 L 34 18 Z" fill="url(#g)" stroke="url(#g)" stroke-width="4" stroke-linejoin="round"/>
+  <rect x="7" y="16" width="50" height="40" rx="18" fill="url(#g)"/>
+  <ellipse cx="24" cy="34.5" rx="3.4" ry="4.6" fill="#fff"/>
+  <ellipse cx="40" cy="34.5" rx="3.4" ry="4.6" fill="#fff"/>
+  <path d="M 28 43 Q 30 45.6 32 43 Q 34 45.6 36 43" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
