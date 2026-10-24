@@ -13,7 +13,8 @@
     "test:auth": "node auth-tests.js",
     "test:fiori": "node fiori-tests.js",
     "test:abap": "node abap-static-tests.js",
-    "test:skills": "node --test skill-tests.js"
+    "test:skills": "node --test skill-tests.js",
+    "test:rptscan": "node rpt-scan-tests.js"
   },
   "dependencies": {
     "express": "^4.18.2",

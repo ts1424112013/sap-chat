@@ -10,6 +10,7 @@
  *   3) 权限自助申请（ZCL_AI_AUTH_SERVICE V1.3，20261024）：读写目标表 / 规则映射表只在约定的方法里；USER_ADDR 只在 fill_user_info；
  *      DPC 每个权限 FI 读的参数 = 前端恒发的参数清单（SAP 上 FI 参数全必填）
  *   4) 报表选择项（10.24 记录 #03a）：REPORT_SERVICE V1.0.13 整理 R / C / F、EXEC_SAP V1.1b 组装选择屏
+ *   5) 报表自动登记（10.24 记录 #03b）：ZCL_AI_RPT_SCANNER / ZAI_RPT_REG 只在约定处写表；全库行长 ≤ 255
  * 只能查文本层面的约定，语法与运行时仍以 SAP 激活与现场验证为准。
  */
 const fs = require('fs');
@@ -204,6 +205,50 @@ listAbap(ABAP).forEach((file) => {
   });
 });
 check('没有把语句结束符写成分号（ENDIF; 之类）', semi.length === 0, semi.join(', '));
+
+// ---------------------------------------------------------------- 5) 报表自动登记（10.24 记录 #03b）
+console.log('\n[5] 报表自动登记：ZCL_AI_RPT_SCANNER V1.0 / ZAI_RPT_REG V1.0 / REPORT_SERVICE V1.0.14');
+const scRaw = read('ZCL_AI_RPT_SCANNER.abap');
+const sc = codeOnly(scRaw);
+const regRaw = read('ZAI_RPT_REG.abap');
+const reg = codeOnly(regRaw);
+const scMethods = {};
+(sc.match(/^\s*METHOD\s+\w+\.[\s\S]*?^\s*ENDMETHOD\./gim) || []).forEach((m) => { scMethods[m.match(/METHOD\s+(\w+)\./i)[1].toLowerCase()] = m; });
+const scIn = (re) => Object.keys(scMethods).filter((k) => re.test(scMethods[k])).sort();
+check('扫描类版本头 V1.0、有 scan / save / class_constructor', /^\* V1\.0\s+20261024/m.test(scRaw) && !!scMethods.scan && !!scMethods.save && !!scMethods.class_constructor);
+check('写登记表（INSERT / UPDATE zai_rpt_*）只在 save', scIn(/\b(INSERT|UPDATE|MODIFY|DELETE)\s+(FROM\s+)?zai_rpt_/i).join() === 'save', scIn(/\b(INSERT|UPDATE|MODIFY|DELETE)\s+(FROM\s+)?zai_rpt_/i).join());
+check('save 先校验 ADMIN、事务码不被别的报表占用、出错 ROLLBACK', /v8_get_role\( \) <> 'ADMIN'/.test(scMethods.save || '') && /tcode = @lv_tc AND report_id <> @lv_rid/.test(scMethods.save || '') && /ROLLBACK WORK/.test(scMethods.save || ''));
+check('写入用新配置版本 R + 日期时间（旧版本参数行保留）', /lv_ver = \|R\{ sy-datum \}\{ sy-uzeit \}\|/.test(scMethods.save || ''));
+check('不用 SCAN ABAP-SOURCE / FIND PCRE（自己切语句，规则与 JS 参考一致）', !/SCAN\s+ABAP-SOURCE/i.test(sc) && !/FIND\s+(ALL\s+OCCURRENCES\s+OF\s+)?PCRE/i.test(sc));
+check('源码读取：READ REPORT + Z/Y include 展开（深度 ≤ 3、最多 30 个）；文字：READ TEXTPOOL 依次试四种语言', /READ REPORT iv_prog INTO lt_src STATE 'A'/.test(sc) && /iv_depth >= 3/.test(sc) && /gv_incl < 30/.test(sc) && /READ TEXTPOOL iv_prog INTO lt_tp LANGUAGE lv_l/.test(sc));
+check('键值结构不叫 key（x[ key = … ] 会被当成二级键语法）', /BEGIN OF ty_kv,\s*k\s+TYPE string,\s*v\s+TYPE string,/i.test(sc) && !/\[\s*key\s*=/i.test(sc));
+check('类实现里方法之间没有注释（SE24 源码视图约定）', (() => {
+  const lines = scRaw.slice(scRaw.indexOf('CLASS zcl_ai_rpt_scanner IMPLEMENTATION')).split(/\r?\n/);
+  let between = false, bad = 0;
+  lines.forEach((l) => {
+    if (/^\s*ENDMETHOD\./i.test(l)) { between = true; return; }
+    if (/^\s*(METHOD\s|ENDCLASS)/i.test(l)) { between = false; return; }
+    if (between && l.trim()) { bad++; }
+  });
+  return bad === 0;
+})());
+check('build_rows 排序号不用 sy-tabix（内层 LOOP 会改掉）', /lv_no = lv_no \+ 1\.\s*<ls_r>-sort_no = lv_no \* 10\./.test(scMethods.build_rows || ''));
+check('SE38 程序：三种模式、默认只演练、写前 POPUP_TO_CONFIRM、后台跑不弹窗', /p_list RADIOBUTTON/.test(reg) && /p_scan RADIOBUTTON GROUP g1 DEFAULT 'X'/.test(reg) && /p_test AS CHECKBOX DEFAULT 'X'/.test(reg) &&
+  /CALL FUNCTION 'POPUP_TO_CONFIRM'/.test(reg) && /IF sy-batch = abap_false\./.test(reg));
+check('SE38 程序：只调 ZCL_AI_RPT_SCANNER，不直接写登记表', /zcl_ai_rpt_scanner=>scan\(/.test(reg) && /zcl_ai_rpt_scanner=>save\(/.test(reg) && !/\b(INSERT|UPDATE|MODIFY|DELETE)\s+(FROM\s+)?zai_rpt_/i.test(reg));
+check('WRITE 里不直接写字符串模板（先赋给变量）', !/WRITE:[^.]*\|/.test(reg));
+check('REPORT_SERVICE V1.0.14：DEFAULT_TYPE TODAY = sy-datum + 偏移', /^\* V1\.0\.14 20261024/m.test(rsRaw) && /WHEN 'TODAY'\.[\s\S]*?lv_dday = sy-datum \+ lv_off\./.test(validate));
+// 通用：每行 ≤ 255 字符（ABAP 源码行上限）；INDEX 后面不写算术式
+const longs = [], idxExpr = [];
+listAbap(ABAP).forEach((file) => {
+  const raw = fs.readFileSync(file, 'utf8');
+  raw.split(/\r?\n/).forEach((l, i) => { if (l.length > 255) { longs.push(path.basename(file) + ':' + (i + 1)); } });
+  codeOnly(raw).split('\n').forEach((l, i) => {
+    if (/\bINDEX\s+\w+\s*[-+]\s*\d/i.test(l)) { idxExpr.push(path.basename(file) + ':' + (i + 1)); }
+  });
+});
+check('所有 ABAP 源码每行 ≤ 255 字符', longs.length === 0, longs.slice(0, 5).join(', '));
+check('READ TABLE … INDEX 后面不写算术式（先算进变量）', idxExpr.length === 0, idxExpr.slice(0, 5).join(', '));
 
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);

@@ -133,6 +133,11 @@
 *   · ty_param 新增 sel_kind / enum_json(非表字段 enum_json 由 get_params 计算)
 * ★ 重贴后核对标记: get_params 的 SELECT 清单含 sel_kind; 有 METHOD parse_options;
 *   get_params 里 WHEN 'F' 后是 CONTINUE; validate_params 里有 IF ls_p-sel_kind = 'C'
+* V1.0.14 20261024(10.24 记录 #03b, 报表自动登记): DEFAULT_TYPE 新增 TODAY ——
+*   DEFAULT_VALUE 写天数偏移(空 / 0 = 当天, -1 = 昨天), 缺值时按 sy-datum + 偏移补齐;
+*   ZCL_AI_RPT_SCANNER 从 DEFAULT sy-datum / INITIALIZATION 里 p = sy-datum - 1 识别出来。
+*   另: parse_options 里 substring 的偏移 / 长度先算进变量(不在参数位置写算术式)
+* ★ 重贴后核对标记: validate_params 里有 WHEN 'TODAY'
 *=======================================================================
 CLASS zcl_ai_report_service DEFINITION
   PUBLIC
@@ -626,6 +631,7 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
           lv_key   TYPE string,
           lv_lbl   TYPE string,
           lv_len   TYPE i,
+          lv_last  TYPE i,
           lv_def   TYPE abap_bool,
           lv_hasd  TYPE abap_bool.
 
@@ -637,18 +643,24 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
       CLEAR: lv_key, lv_lbl, lv_def.
       SPLIT lv_part AT `=` INTO lv_key lv_lbl.
       CONDENSE: lv_key, lv_lbl.
-      " 默认项标记 * 可以写在文字后, 也可以写在键后
+      " 默认项标记 * 可以写在文字后, 也可以写在键后(偏移 / 长度先算进变量)
       lv_len = strlen( lv_lbl ).
-      IF lv_len > 0 AND substring( val = lv_lbl off = lv_len - 1 len = 1 ) = `*`.
-        lv_def = abap_true.
-        lv_lbl = substring( val = lv_lbl off = 0 len = lv_len - 1 ).
-        CONDENSE lv_lbl.
+      IF lv_len > 0.
+        lv_last = lv_len - 1.
+        IF substring( val = lv_lbl off = lv_last len = 1 ) = `*`.
+          lv_def = abap_true.
+          lv_lbl = substring( val = lv_lbl off = 0 len = lv_last ).
+          CONDENSE lv_lbl.
+        ENDIF.
       ENDIF.
       lv_len = strlen( lv_key ).
-      IF lv_len > 0 AND substring( val = lv_key off = lv_len - 1 len = 1 ) = `*`.
-        lv_def = abap_true.
-        lv_key = substring( val = lv_key off = 0 len = lv_len - 1 ).
-        CONDENSE lv_key.
+      IF lv_len > 0.
+        lv_last = lv_len - 1.
+        IF substring( val = lv_key off = lv_last len = 1 ) = `*`.
+          lv_def = abap_true.
+          lv_key = substring( val = lv_key off = 0 len = lv_last ).
+          CONDENSE lv_key.
+        ENDIF.
       ENDIF.
       lv_key = to_upper( lv_key ).
       IF lv_key IS INITIAL OR strlen( lv_key ) > 8
@@ -1583,6 +1595,25 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
             lv_val = sy-uname.
             APPEND VALUE #( param_id = ls_p-param_id code = 'DEFAULTED'
                             message = |{ ls_p-display_label } 已按当前用户补齐| )
+              TO rs-defaulted.
+          WHEN 'TODAY'.
+            " V1.0.14: 当天 ± 天数(DEFAULT_VALUE 是偏移, 如 -1 = 昨天)
+            DATA: lv_off  TYPE i,
+                  lv_dday TYPE d,
+                  lv_offs TYPE string.
+            CLEAR lv_off.
+            lv_offs = condense( ls_p-default_value ).
+            IF lv_offs IS NOT INITIAL AND lv_offs CO '0123456789-+'.
+              TRY.
+                  lv_off = lv_offs.
+                CATCH cx_root.
+                  lv_off = 0.
+              ENDTRY.
+            ENDIF.
+            lv_dday = sy-datum + lv_off.
+            lv_val = lv_dday.
+            APPEND VALUE #( param_id = ls_p-param_id code = 'DEFAULTED'
+                            message = |{ ls_p-display_label } 已按日期 { lv_val } 补齐| )
               TO rs-defaulted.
           WHEN OTHERS.
             IF ls_p-required = abap_true.

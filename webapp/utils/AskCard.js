@@ -65,6 +65,21 @@ sap.ui.define([
                 return undefined;
         }
 
+        /** 登记的默认值 → 预填值：STATIC 原值；TODAY = 今天 ± 偏移天数（yyyyMMdd）；其余（USER 等）不预填 */
+        function defaultValueOf(sType, sVal) {
+                if (sType === "STATIC") {
+                        return sVal === undefined || sVal === null ? "" : String(sVal);
+                }
+                if (sType === "TODAY") {
+                        var iOff = parseInt(String(sVal || "0").replace(/^\+/, ""), 10) || 0;
+                        var d = new Date();
+                        d.setDate(d.getDate() + iOff);
+                        var p2 = function (n) { return (n < 10 ? "0" : "") + n; };
+                        return "" + d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate());
+                }
+                return "";
+        }
+
         /**
           * 20261024：TCode 报表待填参数 + ReportDefinitions 的参数定义 → 补齐选项、默认值、说明。
           * Agent 的待填参数只有 param_id / label / required / data_type / multi / range（后端 get_params 已把
@@ -118,6 +133,15 @@ sap.ui.define([
                         var sDef = pick(d, "default_value");
                         if ((sKind === "R" || sKind === "C") && sDef && mVals[q.param_id] === undefined) {
                                 mVals[q.param_id] = String(sDef);
+                        }
+                        // 20261024（自动登记）：其余参数按登记的默认值预填 —— STATIC 原值、TODAY = 今天 ± DEFAULT_VALUE 天
+                        // （与后端 validate_params 缺值补齐同口径）；记下 default_shown，折叠区不会因为预填的默认值自动展开
+                        if (sKind !== "R" && sKind !== "C" && mVals[q.param_id] === undefined) {
+                                var sDefVal = defaultValueOf(String(pick(d, "default_type") || "").toUpperCase(), sDef);
+                                if (sDefVal) {
+                                        mVals[q.param_id] = sDefVal;
+                                        q.default_shown = sDefVal;
+                                }
                         }
                         aOut.push(q);
                 });
@@ -390,7 +414,9 @@ sap.ui.define([
                                         var r = buildParam(p, oAsk.values, !!oAsk.error);
                                         aRecs.push(r);
                                         oMoreBox.addItem(r.cell);
-                                        if (oAsk.values[p.param_id]) { iFilled++; }
+                                        // 预填的默认值不算「已填」（不因为它自动展开）
+                                        var v = oAsk.values[p.param_id];
+                                        if (v && v !== p.default_shown) { iFilled++; }
                                 });
                                 if (oAsk.moreOpen === undefined) {
                                         oAsk.moreOpen = iFilled > 0;
@@ -595,5 +621,5 @@ sap.ui.define([
         }
 
         return { render: render, detectChoices: detectChoices, dateDisplay: dateDisplay, valueDisplay: valueDisplay, enumOptions: enumOptions,
-                mergeParamDefs: mergeParamDefs, layoutParams: layoutParams };
+                mergeParamDefs: mergeParamDefs, layoutParams: layoutParams, defaultValueOf: defaultValueOf };
 });

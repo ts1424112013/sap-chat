@@ -395,6 +395,18 @@ async function rejects(name, promise, re) {
   check('排版：5 个选填 → 平铺 3、折叠 2', lay.shown.length === 3 && lay.more.length === 2);
   lay = AskCard.layoutParams([{ param_id: 'M', data_type: 'ENUM', multi_value: true, required: true, enum_json: [{ key: 'A' }] }]);
   check('排版：多选 ENUM（Fiori 维度）不放进顶部单选组，按必填 / 选填排', lay.enums.length === 0 && lay.shown.length === 1);
+  // 20261024（自动登记）：登记的默认值预填 —— STATIC 原值、TODAY ± n 天；用户已填的不覆盖；记下 default_shown
+  const today = new Date(), ymd = (d) => '' + d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  const yest = new Date(); yest.setDate(yest.getDate() - 1);
+  check('defaultValueOf：STATIC 原值、TODAY 0 / -1 / +1、USER 不预填', AskCard.defaultValueOf('STATIC', 'ABG1') === 'ABG1' && AskCard.defaultValueOf('TODAY', '0') === ymd(today) &&
+    AskCard.defaultValueOf('TODAY', '-1') === ymd(yest) && AskCard.defaultValueOf('TODAY', '') === ymd(today) && AskCard.defaultValueOf('USER', 'x') === '');
+  const mgd = AskCard.mergeParamDefs(
+    [{ param_id: 'P_WERKS', label: '工厂' }, { param_id: 'P_DATE', label: '基准日期', data_type: 'DATE' }, { param_id: 'T_DAY1', label: '天数1' }, { param_id: 'S_X', label: 'x' }],
+    [{ PARAM_ID: 'P_WERKS', SEL_KIND: 'P', DEFAULT_TYPE: 'STATIC', DEFAULT_VALUE: 'ABG1' }, { PARAM_ID: 'P_DATE', SEL_KIND: 'P', DEFAULT_TYPE: 'TODAY', DEFAULT_VALUE: '-1' },
+     { PARAM_ID: 'T_DAY1', SEL_KIND: 'P', DEFAULT_TYPE: 'STATIC', DEFAULT_VALUE: '7' }, { PARAM_ID: 'S_X', SEL_KIND: 'S', DEFAULT_TYPE: 'USER' }],
+    { T_DAY1: '9' });
+  check('合并：工厂预填 ABG1、基准日期预填昨天、用户已填的天数不覆盖、USER 默认不预填', mgd.values.P_WERKS === 'ABG1' && mgd.values.P_DATE === ymd(yest) && mgd.values.T_DAY1 === '9' && mgd.values.S_X === undefined);
+  check('合并：预填的参数带 default_shown（折叠区判断「已填」时不算它）', mgd.params[0].default_shown === 'ABG1' && mgd.params[2].default_shown === undefined);
   }
 
   const FP = load('zai/chat/controller/mixin/FioriPanel');

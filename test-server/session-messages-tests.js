@@ -159,6 +159,12 @@ async function test(name, fn) { await fn(); passed++; console.log('  ✅ ' + nam
     render(ask);
     assert.equal(ask.moreOpen, true);
   });
+  await test('20261024：折叠区里只有预填的默认值时不自动展开，用户改过才展开', () => {
+    const mk = (vals) => ({ kind: 'params', state: 'open', options: [], values: vals,
+      params: Array.from({ length: 6 }, (_, i) => ({ param_id: 'O' + i, label: '选填' + i, default_shown: i === 5 ? '7' : undefined })) });
+    const a = mk({ O5: '7' }); render(a); assert.equal(a.moreOpen, false);
+    const b = mk({ O5: '9' }); render(b); assert.equal(b.moreOpen, true);
+  });
   await test('20261024：TCode 报表参数卡按 ReportDefinitions 补齐选项 / 默认值，固定值不显示，已填的不覆盖', async () => {
     const c = controller(); activate(c, 'A');
     service.getReportCatalog = () => Promise.resolve({ defs: [{ REPORT_ID: 'R1', TCODE: 'ZT1', PARAMS: [
