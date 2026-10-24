@@ -30,8 +30,8 @@
         "sap.ui": {
                 "technology": "UI5",
                 "icons": {
-                        "icon": "sap-icon://world",
-                        "favIcon": "",
+                        "icon": "images/momo-mark.svg",
+                        "favIcon": "images/momo-mark.svg",
                         "phone": "",
                         "phone@2": "",
                         "tablet": "",

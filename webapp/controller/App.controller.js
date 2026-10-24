@@ -499,7 +499,7 @@ sap.ui.define([
                         var oVBox = new sap.m.VBox().addStyleClass("appLoginBody")
                                 .addItem(new sap.m.HBox({ justifyContent: "Center" }).addStyleClass("appLoginChip")
                                         .addItem(new sap.m.Image({
-                                                src: sap.ui.require.toUrl("zai/chat/images/gale-mark.svg"),
+                                                src: sap.ui.require.toUrl("zai/chat/images/momo-mark.svg"),
                                                 width: "56px", height: "56px", decorative: true, densityAware: false
                                         })))
                                 .addItem(new sap.m.Title({
@@ -2117,9 +2117,9 @@ sap.ui.define([
                                 oRow = new HBox({ justifyContent: "End" });
                                 oRow.addItem(oCol);
                         } else {
-                                // V16：Gale 品牌头像
+                                // Momo · 水沫：与侧栏、首页共用双泡头像
                                 var oLogo = new sap.m.Image({
-                                        src: sap.ui.require.toUrl("zai/chat/images/gale-mark.svg"),
+                                        src: sap.ui.require.toUrl("zai/chat/images/momo-mark.svg"),
                                         width: "26px", height: "26px", decorative: true, densityAware: false
                                 }).addStyleClass("chatAvatar avatarAI");
                                 oRow = new HBox({ alignItems: "Start" });
@@ -3122,7 +3122,7 @@ sap.ui.define([
                                 if (m.role === "user") {
                                         aLines.push(oRB.getText("exportMdMe"));
                                 } else if (m.role === "assistant") {
-                                        aLines.push("### 🤖 Gale-SAP");
+                                        aLines.push("### 🤖 " + oRB.getText("ai"));
                                 } else {
                                         return; // error 提示不导出
                                 }

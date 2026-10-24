@@ -27,7 +27,7 @@ sap.ui.define(["zai/chat/utils/Formatter"], function (Formatter) {
                 warm: ["#EA580C", "#F5A524", "#DC2626", "#DB2777", "#CA8A04", "#FB923C", "#E11D48", "#A16207"]
         };
         var PALETTE_LIST = [
-                { key: "gale", text: "Gale 多彩" },
+                { key: "gale", text: "Momo 多彩" },
                 { key: "ocean", text: "海蓝" },
                 { key: "warm", text: "暖阳" }
         ];
