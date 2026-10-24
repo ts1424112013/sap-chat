@@ -99,20 +99,18 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   console.log('\n━━ Momo · 任务表情');
   check('等待、打字和请求未完成时保持思考表情',
     MomoState.message(true, false, false) === 'thinking' &&
-    MomoState.message(false, true, false, 'OK') === 'thinking' &&
+    MomoState.message(false, true, false) === 'thinking' &&
     MomoState.message(false, false, true) === 'thinking');
-  check('成功回复才显示笑眼，失败/超时/拒绝保持普通表情',
-    MomoState.message(false, false, false, 'OK') === 'done' &&
-    ['ERROR', 'TIMEOUT', 'DENIED', 'STOPPED', 'PARTIAL'].every(s => MomoState.message(false, false, false, s) === 'idle'));
+  check('普通对话回复结束恢复原始图标',
+    MomoState.message(false, false, false) === 'idle');
   check('报表后台仍执行时，成功的提交回复也继续思考',
-    MomoState.message(false, false, false, 'OK', 'active') === 'thinking');
-  check('报表结果就绪显示笑眼，失败/停止/失去跟踪不显示完成',
-    MomoState.message(false, false, false, 'OK', 'ready') === 'done' &&
-    ['failed', 'stopped', 'stalled'].every(s => MomoState.message(false, false, false, 'OK', s) === 'idle'));
-  check('中途停止打字后，不沿用已经收到的成功状态显示笑眼',
-    MomoState.message(false, false, false, 'OK', '', false, true) === 'idle');
-  check('本地报表结果显示笑眼，未知历史回复保持普通表情',
-    MomoState.message(false, false, false, '', '', true) === 'done' &&
+    MomoState.message(false, false, false, 'active') === 'thinking');
+  check('报表就绪、失败、停止或失去跟踪后都恢复原始图标',
+    ['ready', 'failed', 'stopped', 'stalled'].every(s => MomoState.message(false, false, false, s) === 'idle'));
+  check('手动停止优先于仍未清理的等待、打字和后台状态',
+    MomoState.message(true, true, true, 'active', true) === 'idle');
+  check('无后台执行的 Agent 回复和历史消息保持原始图标',
+    MomoState.message(false, false, false, '') === 'idle' &&
     MomoState.message(false, false, false) === 'idle');
   check('侧栏跟随回复或后台报表运行，空闲时停跳',
     MomoState.activity(true, '') === 'thinking' &&

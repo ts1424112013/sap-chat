@@ -20,14 +20,10 @@
 .momoMark .momoDrop { transform-origin: 73.4375% 34.0625%; }
 .momoMark .momoEyeLeft { transform-origin: 28.9% 57.2%; }
 .momoMark .momoEyeRight { transform-origin: 71.1% 61.6%; }
-.momoMark .momoHappy { opacity: 0; transition: opacity 140ms ease; }
 .momoMark--thinking .momoEye { animation: momoEyeBlink 6.8s linear infinite; }
 .momoMark--thinking .momoGaze { animation: momoEyeThink 6.2s ease-in-out infinite; }
 .momoMark--thinking .momoDropTravel { animation: momoDropTravel 4.8s linear infinite; }
 .momoMark--thinking .momoDrop { animation: momoDropHop 4.8s ease-in-out infinite; }
-.momoMark--done .momoGaze { transform: none; }
-.momoMark--done .momoEye { animation: none; opacity: 0; }
-.momoMark--done .momoHappy { opacity: 1; }
 .chatAvatar.avatarAI.momoMark {
         flex: 0 0 32px;
         background: #24424D !important;

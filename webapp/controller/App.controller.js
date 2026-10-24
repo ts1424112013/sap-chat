@@ -2126,8 +2126,7 @@ sap.ui.define([
                                         state: {
                                                 parts: [
                                                         { path: "chat>waiting" }, { path: "chat>streaming" },
-                                                        { path: "chat>requestPending" }, { path: "chat>thinking/status" },
-                                                        { path: "chat>runPhase" }, { path: "chat>localResult" },
+                                                        { path: "chat>requestPending" }, { path: "chat>runPhase" },
                                                         { path: "chat>avatarStopped" }
                                                 ],
                                                 formatter: MomoState.message

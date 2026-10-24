@@ -14,12 +14,11 @@ sap.ui.define([
                 face: image('<defs><linearGradient id="foam" x1="8" y1="48" x2="55" y2="23" gradientUnits="userSpaceOnUse"><stop stop-color="#8263F2"/><stop offset=".32" stop-color="#528CF7"/><stop offset=".66" stop-color="#31C9E2"/><stop offset="1" stop-color="#75EFC7"/></linearGradient></defs><path fill="url(#foam)" d="' + sFoam + '"/>'),
                 drop: image('<defs><linearGradient id="drop" x1="44" y1="19" x2="50" y2="17" gradientUnits="userSpaceOnUse"><stop stop-color="#7896FF"/><stop offset="1" stop-color="#42D9E4"/></linearGradient></defs><circle cx="47" cy="18.4" r="3.4" fill="url(#drop)"/>'),
                 left: image('<ellipse cx="18.5" cy="36.6" rx="5.15" ry="6.3" fill="#24424D"/>'),
-                right: image('<ellipse cx="45.5" cy="39.4" rx="3.9" ry="4.2" fill="#24424D"/>'),
-                happy: image('<path d="M14.1 38.3Q18.7 31.9 23 37.7M42.1 40Q45.6 35.3 48.9 39.5" stroke="#24424D" stroke-width="2.7" stroke-linecap="round"/>')
+                right: image('<ellipse cx="45.5" cy="39.4" rx="3.9" ry="4.2" fill="#24424D"/>')
         };
 
         function state(sValue) {
-                return sValue === "thinking" || sValue === "done" ? sValue : "idle";
+                return sValue === "thinking" ? sValue : "idle";
         }
         function layer(oRm, sName, sClass) {
                 oRm.voidStart("img").class("momoLayer");
@@ -61,7 +60,6 @@ sap.ui.define([
                                 oRm.openStart("span").class("momoGaze").openEnd();
                                 layer(oRm, "left", "momoEye momoEyeLeft");
                                 layer(oRm, "right", "momoEye momoEyeRight");
-                                layer(oRm, "happy", "momoHappy");
                                 oRm.close("span").close("span");
                         }
                 }

@@ -6,12 +6,11 @@ sap.ui.define([], function () {
                         return bBusy || sActivity ? "thinking" : "idle";
                 },
 
-                // 后台报表仍在执行时，不能因为本轮文字已经回复就露出完成的笑眼。
-                message: function (bWaiting, bStreaming, bPending, sStatus, sRunPhase, bLocalResult, bStopped) {
+                // 只在实际处理时播放；文字结束且没有后台报表执行时恢复原始图标。
+                message: function (bWaiting, bStreaming, bPending, sRunPhase, bStopped) {
                         if (bStopped) { return "idle"; }
                         if (bWaiting || bStreaming || bPending || sRunPhase === "active") { return "thinking"; }
-                        if (sRunPhase) { return sRunPhase === "ready" ? "done" : "idle"; }
-                        return sStatus === "OK" || sStatus === "COMPLETED" || bLocalResult ? "done" : "idle";
+                        return "idle";
                 }
         };
 });
