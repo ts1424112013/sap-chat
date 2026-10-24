@@ -1131,3 +1131,88 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .askMoreBtn .sapMBtnIcon { font-size: .72rem !important; color: var(--accent) !important; margin-left: .3rem !important; }
 .askMoreBtn:hover .sapMBtnInner { background: var(--accent-soft) !important; }
 .askMoreBox { gap: .55rem; padding: .6rem 0 .1rem; border-top: 1px dashed var(--line); }
+
+/* ==================== 后端不可达 → 演示模式提示（20261025，utils/OfflineNotice.js，替换原 MessageToast）====================
+   已登录：顶部居中浮动卡片（琥珀小图标 + 标题 + 说明 + 重新连接，底部细进度条计时，悬停暂停）；
+   未登录：登录卡片内的琥珀提示条（标题 + 重试 + 本地管理员账号小代码块） */
+:root {
+        --off-warn: #C27803;
+        --off-warn-soft: #FFF5E1;
+        --off-warn-line: rgba(245, 165, 36, .32);
+        --off-shadow: 0 1px 2px rgba(17, 24, 39, .05), 0 12px 32px rgba(17, 24, 39, .12);
+}
+[data-theme="dark"] {
+        --off-warn: #F5B544;
+        --off-warn-soft: rgba(245, 165, 36, .11);
+        --off-warn-line: rgba(245, 165, 36, .26);
+        --off-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 14px 36px rgba(0, 0, 0, .45);
+}
+.offNotice { display: flex; gap: .7rem; box-sizing: border-box; color: var(--text); font-size: .8rem; line-height: 1.5; text-align: left; }
+.offNoticeIco { flex: none; display: flex; align-items: center; justify-content: center; color: var(--off-warn); }
+.offNoticeIcoSvg, .offNoticeRetryIco, .offNoticeCloseIco { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.offNoticeMain { flex: 1 1 auto; min-width: 0; }
+.offNoticeTitle { font-weight: 600; color: var(--text); }
+.offNoticeBody { margin-top: .15rem; color: var(--text-2); }
+
+/* —— 浮动卡片 —— */
+.offNotice--float {
+        position: fixed; z-index: 1200; top: 16px; left: 50%;
+        width: min(25rem, calc(100vw - 32px)); padding: .9rem .85rem .95rem .95rem;
+        background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card); box-shadow: var(--off-shadow);
+        overflow: hidden; transform: translateX(-50%);
+        animation: offNoticeIn .32s var(--ease) both;
+}
+.offNotice--float.is-leaving { animation: offNoticeOut .2s ease-in both; }
+@keyframes offNoticeIn { from { opacity: 0; transform: translate(-50%, -10px) scale(.98); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes offNoticeOut { to { opacity: 0; transform: translate(-50%, -6px) scale(.98); } }
+.offNotice--float .offNoticeIco { width: 2.1rem; height: 2.1rem; border-radius: 10px; background: var(--off-warn-soft); }
+.offNotice--float .offNoticeIcoSvg { width: 1.1rem; height: 1.1rem; }
+.offNotice--float .offNoticeTitle { font-size: .9rem; line-height: 1.35; padding-top: .05rem; }
+.offNoticeActs { margin-top: .6rem; display: flex; }
+.offNoticeClose {
+        flex: none; align-self: flex-start; display: flex; align-items: center; justify-content: center;
+        width: 1.6rem; height: 1.6rem; margin: -.2rem -.15rem 0 0; padding: 0; border: none; border-radius: 7px;
+        background: transparent; color: var(--sub); cursor: pointer; transition: background .15s var(--ease), color .15s var(--ease);
+}
+.offNoticeClose:hover { background: var(--hover); color: var(--text); }
+.offNoticeCloseIco { width: .95rem; height: .95rem; }
+/* 计时条：宽度 100% → 0，结束即收起；悬停暂停 */
+.offNoticeTimer { position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: var(--off-warn); opacity: .45; transform-origin: left; animation: offNoticeTimer linear forwards; }
+.offNotice--float:hover .offNoticeTimer, .offNotice--float:focus-within .offNoticeTimer { animation-play-state: paused; }
+@keyframes offNoticeTimer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+/* —— 重新连接按钮（浮动卡片：描边小胶囊；登录卡片：文字链接） —— */
+.offNoticeRetry {
+        display: inline-flex; align-items: center; gap: .35rem; height: 1.85rem; padding: 0 .75rem; box-sizing: border-box;
+        font: inherit; font-size: .78rem; font-weight: 500; color: var(--text); white-space: nowrap;
+        background: var(--surface); border: 1px solid var(--line-strong); border-radius: 999px; cursor: pointer;
+        transition: background .15s var(--ease), border-color .15s var(--ease), color .15s var(--ease);
+}
+.offNoticeRetry:hover { background: var(--hover); }
+.offNoticeRetry:focus-visible, .offNoticeClose:focus-visible { outline: none; box-shadow: var(--ring); }
+.offNoticeRetryIco { width: .85rem; height: .85rem; color: var(--text-2); }
+.offNoticeRetry.is-busy { cursor: default; color: var(--sub); }
+.offNoticeRetry.is-busy .offNoticeRetryIco { animation: offNoticeSpin .9s linear infinite; }
+.offNoticeRetry.is-fail { color: var(--off-warn); border-color: var(--off-warn-line); animation: offNoticeShake .32s ease-in-out; }
+.offNoticeRetry.is-fail .offNoticeRetryIco { color: var(--off-warn); }
+@keyframes offNoticeSpin { to { transform: rotate(360deg); } }
+@keyframes offNoticeShake { 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+.offNoticeRetry--link { height: auto; padding: .05rem .3rem; margin-right: -.3rem; border: none; border-radius: 6px; background: transparent; color: var(--accent); font-size: .76rem; }
+.offNoticeRetry--link:hover { background: var(--accent-soft); }
+.offNoticeRetry--link.is-fail { color: var(--off-warn); }
+
+/* —— 登录卡片内提示条 —— */
+/* 登录框正文跟随主题（Horizon 浅色主题把 .sapMDialogSection 刷成白色，暗色下标题白字白底看不见） */
+.sapLoginDialog .sapMDialogSection { background: var(--surface) !important; }
+.appLoginOffline { width: 100%; margin: -.35rem 0 1rem; }
+.offNotice--inline { gap: .55rem; padding: .6rem .7rem; background: var(--off-warn-soft); border: 1px solid var(--off-warn-line); border-radius: 10px; }
+.offNotice--inline .offNoticeIco { height: 1.2rem; }
+.offNotice--inline .offNoticeIcoSvg { width: 1rem; height: 1rem; }
+.offNoticeHead { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 1.2rem; }
+.offNotice--inline .offNoticeTitle { font-size: .8rem; }
+.offNoticeCreds { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-top: .3rem; color: var(--text-2); font-size: .75rem; }
+.offNoticeCreds code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .74rem; color: var(--text);
+        padding: .05rem .38rem; background: var(--surface); border: 1px solid var(--off-warn-line); border-radius: 5px;
+}
+.offNoticeCreds code + .offNoticeSep { margin: 0 .15rem; color: var(--sub); }

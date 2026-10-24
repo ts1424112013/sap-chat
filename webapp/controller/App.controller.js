@@ -23,6 +23,7 @@ sap.ui.define([
         "zai/chat/utils/DataGrid",
         "zai/chat/control/MomoMark",
         "zai/chat/utils/MomoState",
+        "zai/chat/utils/OfflineNotice",
         "zai/chat/controller/mixin/SceneModels",
         "zai/chat/controller/mixin/SettingsPanel",
         "zai/chat/controller/mixin/EvalPanel",
@@ -33,7 +34,7 @@ sap.ui.define([
         "zai/chat/controller/mixin/FioriPanel",
         "zai/chat/controller/mixin/SessionMessages",
         "zai/chat/controller/mixin/SkillPanel"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, DataGrid, MomoMark, MomoState, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel) {
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, DataGrid, MomoMark, MomoState, OfflineNotice, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel) {
         "use strict";
 
         /**
@@ -187,19 +188,22 @@ sap.ui.define([
                         // 自动降级演示模式，本地管理员 admin/123456 也能登录看页面
                         this._probeBackend(function (bOk) {
                                 if (!bOk) {
-                                        var oRB = that.getView().getModel("i18n").getResourceBundle();
                                         oSettingsModel.setProperty("/mode", "mock");
                                         ChatService.setConfig({
                                                 mode: "mock",
                                                 host: "",
                                                 path: oSettingsModel.getProperty("/path")
                                         });
-                                        MessageToast.show(oRB.getText("offlineFallback"), { duration: 6000 });
+                                        that._bOfflineFallback = true;
                                         that._updateModeBadge();
                                 }
                                 // 数据加载统一收敛到登录成功后（_afterAppLogin）
+                                // 20261025：降级提示 —— 已登录弹顶部卡片；未登录则嵌进登录卡片（_openAppLogin）
                                 if (ChatService.getAppUser()) {
                                         that._afterAppLogin();
+                                        if (!bOk) {
+                                                that._showOfflineNotice();
+                                        }
                                 } else {
                                         that._openAppLogin();
                                 }
@@ -364,6 +368,29 @@ sap.ui.define([
                         this.byId("attachRowDock").setVisible(bShow);
                 },
 
+                /* 20261025：降级演示模式提示（utils/OfflineNotice.js）——「重新连接」再探测一次，通了就刷新页面 */
+                _offlineNoticeTexts: function (bCompact) {
+                        var that = this;
+                        var oRB = this.getView().getModel("i18n").getResourceBundle();
+                        return {
+                                title: oRB.getText(bCompact ? "offlineLoginTitle" : "offlineTitle"),
+                                body: oRB.getText("offlineBody"),
+                                credUserLabel: oRB.getText("offlineCredUser"),
+                                credUser: "admin",
+                                credPassLabel: oRB.getText("offlineCredPass"),
+                                credPass: "123456",
+                                retryText: oRB.getText(bCompact ? "offlineRetryShort" : "offlineRetry"),
+                                retryingText: oRB.getText("offlineRetrying"),
+                                retryFailText: oRB.getText("offlineRetryFail"),
+                                closeText: oRB.getText("offlineClose"),
+                                onRetry: function (fnDone) { that._probeBackend(fnDone); }
+                        };
+                },
+
+                _showOfflineNotice: function () {
+                        OfflineNotice.show(this._offlineNoticeTexts(false));
+                },
+
                 /* =========================================================
                  * V9：后端可达性探测
                  * $metadata 的状态码语义：200=可用；401/403=服务在、待认证；
@@ -510,7 +537,20 @@ sap.ui.define([
                                 .addItem(new sap.m.Text({
                                         text: oRB.getText("appLoginSub"), wrapping: true,
                                         textAlign: "Center", width: "100%"
-                                }).addStyleClass("appLoginSub"))
+                                }).addStyleClass("appLoginSub"));
+                        // 20261025：启动探测失败降级时，提示条放在登录卡片里（替代压在页面上的吐司）
+                        if (this._bOfflineFallback) {
+                                var oNotice = OfflineNotice.createInline(this._offlineNoticeTexts(true));
+                                var oNoticeHost = new HTML({ content: '<div class="appLoginOffline"></div>', sanitizeContent: false });
+                                oNoticeHost.addEventDelegate({
+                                        onAfterRendering: function () {
+                                                var oRef = oNoticeHost.getDomRef();
+                                                if (oRef && oNotice.parentNode !== oRef) { oRef.appendChild(oNotice); }
+                                        }
+                                });
+                                oVBox.addItem(oNoticeHost);
+                        }
+                        oVBox
                                 .addItem(new sap.m.Label({ text: oRB.getText("appLoginUser") }).addStyleClass("loginLabel"))
                                 .addItem(oUser)
                                 .addItem(new sap.m.Label({ text: oRB.getText("appLoginPass") }).addStyleClass("loginLabel").addStyleClass("sapUiTinyMarginTop"))
@@ -538,6 +578,7 @@ sap.ui.define([
 
                         // V16：不设对话框标题（品牌标题已在卡片内，原先头部与正文重复显示）
                         this._oAppLoginDialog = new sap.m.Dialog({
+                                showHeader: false,   // 20261025：无标题时 UI5 仍画一条空标题栏，收掉
                                 contentWidth: "22rem",
                                 content: oVBox,
                                 afterClose: function () { that._oAppLoginDialog.destroy(); that._oAppLoginDialog = null; }
