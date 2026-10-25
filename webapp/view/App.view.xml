@@ -16,11 +16,10 @@
 
                                                 <!-- ==================== 左侧边栏：品牌 / 工作模式 / 新建 / 历史 ==================== -->
                                                 <VBox id="sideBar" class="sideBar" width="17rem">
-                                                        <!-- Momo · 水沫：双泡图标 + 英文字标 + 中文名 -->
+                                                        <!-- Momo：双泡图标 + 英文字标 -->
                                                         <HBox class="brandRow" alignItems="Center">
                                                                 <momo:MomoMark size="32px" state="{parts: [{path: 'chat>/busy'}, {path: 'chat>/activityText'}], formatter: '.momoActivityState'}" class="brandLogoImage"/>
                                                                 <Title level="H3" text="{i18n>brandName}" class="brandName"/>
-                                                                <Text text="{i18n>brandAlias}" class="brandAlias"/>
                                                         </HBox>
 
                                                         <!-- V12/V13：工作模式分段控件（对话 / Agent）——横向等宽，选中态纯 CSS -->
