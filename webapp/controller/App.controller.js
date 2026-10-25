@@ -20,6 +20,7 @@ sap.ui.define([
         "zai/chat/utils/Formatter",
         "zai/chat/utils/ChartRenderer",
         "zai/chat/utils/ChartBuilder",
+        "zai/chat/utils/ChartFx",
         "zai/chat/utils/AskCard",
         "zai/chat/utils/DataGrid",
         "zai/chat/control/MomoMark",
@@ -38,7 +39,7 @@ sap.ui.define([
         "zai/chat/controller/mixin/SessionMessages",
         "zai/chat/controller/mixin/SkillPanel",
         "zai/chat/controller/mixin/ResultRestore"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, DataGrid, MomoMark, MomoState, OfflineNotice, WelcomeToast, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore) {
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, MomoMark, MomoState, OfflineNotice, WelcomeToast, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore) {
         "use strict";
 
         /**
@@ -228,6 +229,7 @@ sap.ui.define([
                         this.byId("msgInput").addEventDelegate({ onkeydown: fnEnter });
                         this.byId("heroInput").addEventDelegate({ onkeydown: fnEnter });
                         this._bindFileDrop();   // 20261025：拖文件进窗口 = 添加附件
+                        ChartFx.bind();         // 20261025：图表出场动画（只播一次）+ 悬停聚焦与数值提示卡
 
                         // ---------- V8：网关认证由应用层登录承担 ----------
                         // 登录成功后同一账密即网关 Basic 凭据，不再弹 SAP 账密框；
@@ -1506,7 +1508,7 @@ sap.ui.define([
                                         return '<button type="button" class="ccType' + (t.key === ch.cfg.type ? " on" : "") +
                                                 '" data-act="chart-type" data-cid="' + ch.id + '" data-type="' + t.key + '" title="' + t.text + '">' + t.short + "</button>";
                                 }).join("");
-                                s += '<div class="chartCard">' +
+                                s += '<div class="chartCard" data-cid="' + ch.id + '">' +
                                         '<div class="ccHead"><span class="ccTitle">' + esc(ch.cfg.title || ch.ds.name || oRB.getText("chartDefaultTitle")) + "</span>" +
                                         '<span class="ccTypes">' + sTypes + "</span>" +
                                         '<span class="ccActs">' +

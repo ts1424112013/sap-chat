@@ -375,8 +375,7 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .gcGrid { stroke: var(--line); stroke-width: 1; }
 .gcAxis { stroke: var(--line-strong); stroke-width: 1; }
 .gcHole { fill: var(--surface); }
-.gcSlice, .gcSvg rect, .gcDot { transition: opacity .15s ease; }
-.gcSvg rect:hover, .gcSlice:hover { opacity: .82; }
+/* 图元悬停效果见文件末尾「20261025：图表」（ChartFx 驱动：同类目高亮、其余变淡 + 数值提示卡） */
 .cbEmpty { font-size: .8rem; color: var(--sub); padding: 2.5rem 1rem; text-align: center; }
 
 /* —— 图表配置面板 —— */
@@ -1442,3 +1441,57 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .attachRow .attachMeta { color: var(--sub) !important; font-size: .7rem !important; line-height: 1.3; }
 .attachRow .attachDel .sapMBtnInner { width: 1.6rem !important; min-width: 0 !important; height: 1.6rem !important; min-height: 0 !important; border-radius: 7px !important; background: transparent !important; border: none !important; }
 .attachRow .attachDel:hover .sapMBtnInner { background: var(--hover) !important; }
+
+/* ==================== 20261025：图表 —— 出场动画（只播一次）+ 悬停聚焦与数值提示卡（utils/ChartFx.js）====================
+   动画都用 backwards 填充：播完不再占着 transform，悬停时的放大 / 外移才能生效 */
+.gcSvg .gcBar, .gcSvg .gcSlice, .gcSvg .gcVal, .gcSvg .gcLegRow, .gcSvg .gcArea, .gcSvg .gcLine { transition: opacity .2s var(--ease); }
+.gcSvg .gcSlice { transition: opacity .2s var(--ease), transform .28s cubic-bezier(.3, 1.4, .5, 1); }
+.gcSvg .gcDot { transform-box: fill-box; transform-origin: center; transition: transform .22s cubic-bezier(.3, 1.6, .5, 1), opacity .2s var(--ease); }
+.gcSvg .gcHit { cursor: default; }
+.gcSvg .gcGuide { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; transition: opacity .15s var(--ease); }
+
+/* 出场：柱子从基线依次长出（负值往下长），条形从左往右，折线从左往右画出、点依次弹出，面积淡入，饼图旋开 */
+.gcGrow .gcBar { transform-box: fill-box; animation: gcGrowY .62s cubic-bezier(.3, 1.15, .5, 1) backwards; animation-delay: var(--gd, 0s); }
+.gcGrow .gcBar.gcUp { transform-origin: 50% 100%; }
+.gcGrow .gcBar.gcDn { transform-origin: 50% 0; }
+.gcGrow .gcBar.gcRt { transform-origin: 0 50%; animation-name: gcGrowX; }
+.gcGrow .gcBar.gcLt { transform-origin: 100% 50%; animation-name: gcGrowX; }
+@keyframes gcGrowY { from { transform: scaleY(0); } }
+@keyframes gcGrowX { from { transform: scaleX(0); } }
+.gcGrow .gcLine { stroke-dasharray: 1; animation: gcDraw .9s cubic-bezier(.45, 0, .25, 1) backwards; }
+@keyframes gcDraw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.gcGrow .gcDot { animation: gcPop .38s cubic-bezier(.3, 1.6, .5, 1) backwards; animation-delay: calc(var(--gd, 0s) + .15s); }
+@keyframes gcPop { from { transform: scale(0); opacity: 0; } }
+.gcGrow .gcArea { animation: gcFade .7s .3s ease backwards; }
+.gcGrow .gcVal { animation: gcFade .3s ease backwards; animation-delay: calc(var(--gd, 0s) + .4s); }
+.gcGrow .gcPie { animation: gcSpin .75s cubic-bezier(.3, 1.1, .5, 1) backwards; }
+.gcGrow .gcLegRow { animation: gcFade .4s .25s ease backwards; }
+@keyframes gcSpin { from { transform: rotate(-70deg) scale(.55); opacity: 0; } }
+@keyframes gcFade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .gcGrow * { animation: none !important; } }
+
+/* 悬停：同类目保持，其余变淡；折线的点放大并加白边；扇区沿角平分线外移 */
+.gcSvg.gcHover .gcBar:not(.gcOn), .gcSvg.gcHover .gcSlice:not(.gcOn), .gcSvg.gcHover .gcLegRow:not(.gcOn) { opacity: .28; }
+.gcSvg.gcHover .gcVal:not(.gcOn) { opacity: .2; }
+.gcSvg.gcHover .gcLine, .gcSvg.gcHover .gcArea { opacity: .75; }
+.gcSvg .gcDot.gcOn { transform: scale(1.75); stroke: var(--surface); stroke-width: 1.4; }
+.gcSvg .gcSlice.gcOn { transform: translate(var(--px, 0), var(--py, 0)); }
+
+/* 数值提示卡：贴在高亮图元上方（条形图在右侧），淡入 + 轻微上浮 */
+.gcTip {
+        position: fixed; z-index: 1250; left: 0; top: 0; min-width: 7.5rem; max-width: 18rem; box-sizing: border-box;
+        padding: .5rem .65rem .55rem; border-radius: 10px; pointer-events: none;
+        background: var(--surface); border: 1px solid var(--line); color: var(--text);
+        box-shadow: 0 10px 28px -6px rgba(17, 24, 39, .22), 0 2px 6px rgba(17, 24, 39, .08);
+        opacity: 0; transform: translateY(4px) scale(.97); transition: opacity .14s var(--ease), transform .18s var(--ease);
+}
+.gcTip.is-below { transform: translateY(-4px) scale(.97); }
+.gcTip.is-side { transform: translateX(-4px) scale(.97); }
+.gcTip.is-on { opacity: 1; transform: none; }
+.gcTipT { font-size: .74rem; color: var(--sub); line-height: 1.35; margin-bottom: .2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gcTipR { display: flex; align-items: center; gap: .45rem; font-size: .8rem; line-height: 1.55; white-space: nowrap; }
+.gcTipR i { flex: none; width: .55rem; height: .55rem; border-radius: 3px; background: var(--accent); }
+.gcTipS { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
+.gcTipV { font-weight: 650; font-variant-numeric: tabular-nums; color: var(--text); }
+.gcTipV.gcTipBig { font-size: .95rem; }
+.gcTipP { font-size: .72rem; color: var(--sub); font-variant-numeric: tabular-nums; }
