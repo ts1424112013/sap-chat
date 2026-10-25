@@ -1,7 +1,8 @@
 sap.ui.define([
         "zai/chat/control/MomoMark",
-        "zai/chat/utils/ToastStack"
-], function (MomoMark, ToastStack) {
+        "zai/chat/utils/ToastStack",
+        "zai/chat/utils/HeroGreeting"
+], function (MomoMark, ToastStack, HeroGreeting) {
         "use strict";
 
         /**
@@ -34,14 +35,7 @@ sap.ui.define([
 
         return {
                 /** 当前时段的问候语 key（i18n） */
-                greetingKey: function (oDate) {
-                        var h = (oDate || new Date()).getHours();
-                        if (h >= 5 && h < 11) { return "welcomeMorning"; }
-                        if (h >= 11 && h < 13) { return "welcomeNoon"; }
-                        if (h >= 13 && h < 18) { return "welcomeAfternoon"; }
-                        if (h >= 18 && h < 23) { return "welcomeEvening"; }
-                        return "welcomeLate";
-                },
+                greetingKey: HeroGreeting.greetingKey,
 
                 /**
                  * @param {object} o { title, sub, duration }

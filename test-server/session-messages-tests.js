@@ -101,6 +101,23 @@ let passed = 0;
 async function test(name, fn) { await fn(); passed++; console.log('  ✅ ' + name); }
 
 (async () => {
+  await test('首页问候在同一页面同步时不变；换模式或新建会话时抽下一组', () => {
+    const c = controller();
+    activate(c, 'HOME1', 'CHAT');
+    c.models.chat.setProperty('/workspaceMode', 'CHAT');
+    c._syncHeroGreeting();
+    const first = c._oHeroGreeting;
+    c._syncHeroGreeting();
+    assert.equal(c._oHeroGreeting, first);
+    c.models.chat.setProperty('/workspaceMode', 'AGENT');
+    c._syncHeroGreeting();
+    assert.notEqual(c._oHeroGreeting.key, first.key);
+    const second = c._oHeroGreeting;
+    activate(c, 'HOME2');
+    c._syncHeroGreeting();
+    assert.notEqual(c._oHeroGreeting.key, second.key);
+  });
+
   await test('参数未提交、未失焦时重建卡片，文本/多值/范围/日期/枚举/自由输入都保留', () => {
     const ask = { kind: 'params', state: 'open', options: [], values: {}, params: [
       { param_id: 'TXT' }, { param_id: 'MULTI', multi_value: true },

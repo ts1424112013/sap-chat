@@ -27,6 +27,7 @@ sap.ui.define([
         "zai/chat/utils/MomoState",
         "zai/chat/utils/OfflineNotice",
         "zai/chat/utils/WelcomeToast",
+        "zai/chat/utils/HeroGreeting",
         "zai/chat/utils/UndoToast",
         "zai/chat/controller/mixin/SceneModels",
         "zai/chat/controller/mixin/SettingsPanel",
@@ -39,7 +40,7 @@ sap.ui.define([
         "zai/chat/controller/mixin/SessionMessages",
         "zai/chat/controller/mixin/SkillPanel",
         "zai/chat/controller/mixin/ResultRestore"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, MomoMark, MomoState, OfflineNotice, WelcomeToast, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore) {
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, MomoMark, MomoState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore) {
         "use strict";
 
         /**
@@ -122,8 +123,9 @@ sap.ui.define([
                                 modeLabel: "",                  // 顶栏模式徽标文案（仅 对话 / Agent）
                                 newBtnLabel: "",                // 新建按钮文案（随模式）
                                 histLabel: "",                  // 历史区标题文案（随模式）
-                                heroTitle: "",                  // 空状态标题（随模式）
-                                heroSub: "",                    // 空状态副标题（随模式）
+                                heroTitle: "",                  // 空状态问候（按时段 + 随机暖心话）
+                                heroSub: "",                    // 和问候成对的副标题
+                                heroModeHint: "",               // 输入卡下方保留当前模式 / 场景说明
                                 heroPh: "",                     // 输入占位文案（随模式）
                                 inputPh: "",
                                 // ---- V15：多业务任务（只展示后端确认的状态） ----
@@ -896,26 +898,15 @@ sap.ui.define([
                         var oChatModel = this.getView().getModel("chat");
 
                         ChatService.getModels().then(function (aModels) {
-                                // V10：列表首位注入「智能路由」虚拟项（后端 ModelId=AUTO 时按任务类型自动选模型）
-                                // 20261020：pickDesc = 模型选择弹出列表里的说明行
-                                var oRB = that._rb();
-                                var aList = (aModels || []).filter(function (m) { return m.ModelId !== "AUTO"; }).map(function (m) {
+                                // 只使用管理员配置并启用的模型，不再注入 AUTO 虚拟项。
+                                var aList = (aModels || []).filter(function (m) {
+                                        return m.ModelId && m.ModelId.toUpperCase() !== "AUTO" && m.IsActive === "X";
+                                }).map(function (m) {
                                         m.pickDesc = m.ModelDesc || m.ModelType || "";
                                         return m;
                                 });
-                                aList.unshift({
-                                        ModelId: "AUTO",
-                                        ModelName: oRB.getText("modelAutoShort"),
-                                        pickDesc: oRB.getText("modelAutoDesc"),
-                                        IsActive: "X"
-                                });
                                 oChatModel.setProperty("/models", aList);
-                                // 默认「智能路由」；当前会话记住的模型由 _applySessionModel 设置（20261020 会话级）
-                                if (!oChatModel.getProperty("/currentModel")) {
-                                        oChatModel.setProperty("/currentModel", "AUTO");
-                                }
-                                // 20261011：Agent 场景模型白名单（下拉按场景过滤）
-                                that._syncModelList();
+                                that._applySessionModel();
                                 that._loadAgentModelRules();
                         }).catch(function (sErr) {
                                 MessageToast.show(Formatter.escapeHtml(sErr || that._rb().getText("modelsLoadFail")));
@@ -1080,8 +1071,15 @@ sap.ui.define([
                                 });
                         }
 
+                        // 空模型 ID 同样会触发后端自动路由，必须先确定具体模型再提交。
+                        this._syncModelList();
+                        var sModelId = oChatModel.getProperty("/currentModel");
+                        if (!sModelId) {
+                                MessageToast.show(oRB.getText("modelPickEmpty"));
+                                return;
+                        }
+
                         var sText = oCfg.displayText;
-                        var sModelId = oChatModel.getProperty("/currentModel") || "";
                         this._rememberSessionModel(sSessionId, sModelId);   // 20261020：这个会话以后打开还用这个模型
 
                         // 确保左侧历史列表出现当前会话（Agent 任务置进行中）
@@ -1754,10 +1752,9 @@ sap.ui.define([
                                 oRB.getText(sMode === "AGENT" ? "newAgentSession" : "newChatBtnChat"));
                         oChat.setProperty("/histLabel",
                                 oRB.getText(sMode === "AGENT" ? "histAgent" : "histChat"));
-                        oChat.setProperty("/heroTitle",
-                                oRB.getText(sMode === "AGENT" ? "agentHeroTitle" : "heroTitle"));
-                        oChat.setProperty("/heroSub", sMode === "AGENT"
-                                ? (oScene ? oScene.sub : oRB.getText("agentHeroSub")) : oRB.getText("heroSub"));
+                        this._syncHeroGreeting();
+                        oChat.setProperty("/heroModeHint", sMode === "AGENT"
+                                ? (oScene ? oScene.sub : oRB.getText("agentHeroSub")) : oRB.getText("heroChatHint"));
                         var sAgentPh = bScene && oScene.ph ? oScene.ph : oRB.getText("agentInputPh");
                         oChat.setProperty("/heroPh",
                                 sMode === "AGENT" ? sAgentPh : oRB.getText("heroPlaceholder"));
@@ -1771,6 +1768,22 @@ sap.ui.define([
                         this._renderScenePicker();
                         this._syncModelList();
                         this._syncSkills();
+                },
+
+                /** 同一首页保持文案稳定；换模式 / 新会话 / 再次进入首页时抽下一对。 */
+                _syncHeroGreeting: function (bNewVisit) {
+                        var oChat = this.getView().getModel("chat");
+                        var oRB = this._rb();
+                        var sContext = this._wsMode() + "|" + ((oChat.getProperty("/currentSession") || {}).id || "");
+                        if (!this._oHeroGreeting || bNewVisit || this._sHeroGreetingContext !== sContext) {
+                                this._oHeroGreeting = HeroGreeting.pick(this._oHeroGreeting && this._oHeroGreeting.key);
+                                this._sHeroGreetingContext = sContext;
+                        }
+                        var oGreeting = this._oHeroGreeting;
+                        oChat.setProperty("/heroTitle", oRB.getText("heroGreetingTitle", [
+                                oRB.getText(oGreeting.greetingKey), oRB.getText(oGreeting.titleKey)
+                        ]));
+                        oChat.setProperty("/heroSub", oRB.getText(oGreeting.subKey));
                 },
 
                 /** 当前浏览的工作区（"CHAT" | "AGENT"） */
@@ -2959,6 +2972,9 @@ sap.ui.define([
                   */
                 _setViewLayout: function (bList) {
                         var oChatModel = this.getView().getModel("chat");
+                        if (!bList) {
+                                this._syncHeroGreeting(!oChatModel.getProperty("/heroVisible"));
+                        }
                         oChatModel.setProperty("/listVisible", !!bList);
                         oChatModel.setProperty("/heroVisible", !bList);
                         // V16：回到首页（新会话/空会话）→ 重渲染建议标签

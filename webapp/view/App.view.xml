@@ -134,9 +134,8 @@
                                                                         <FlexItemData growFactor="1"/>
                                                                 </layoutData>
                                                                 <momo:MomoMark size="56px" class="heroMark"/>
-                                                                <Title level="H2" text="{chat>/heroTitle}" class="heroTitle"/>
-                                                                <!-- V7：hero 副标题；V13：Agent 模式换为 Agent 引导文案 -->
-                                                                <Text text="{chat>/heroSub}" class="heroSub"/>
+                                                                <Title level="H2" text="{chat>/heroTitle}" wrapping="true" class="heroTitle"/>
+                                                                <Text text="{chat>/heroSub}" textAlign="Center" class="heroSub"/>
                                                                 <!-- 20261011：Agent 场景选择（新会话首条消息前可选，之后固定；控制器 _renderScenePicker 渲染） -->
                                                                 <HBox id="scenePicker" class="scenePicker" wrap="Wrap" justifyContent="Center" visible="false"/>
 
@@ -188,7 +187,7 @@
                                                                                         <Button icon="sap-icon://refresh" type="Transparent" tooltip="重新读取技能" press=".onRefreshSkills"
                                                                                                 visible="{= !!${skill>/error} }" enabled="{= !${chat>/busy} }" class="skillRetry"/>
                                                                                 </HBox>
-                                                                                <Button id="modelBtnHero" icon="sap-icon://ai" text="{chat>/currentModelName}" tooltip="{i18n>modelPickTip}"
+                                                                                <Button id="modelBtnHero" icon="sap-icon://machine" text="{chat>/currentModelName}" tooltip="{i18n>modelPickTip}"
                                                                                         type="Transparent" press=".onOpenModelPicker" class="modelPill"/>
                                                                                 <!-- V9.3：文本附件上传 + 发送；
                                                                                      V13：Agent 模式下附件按钮保留（作为上下文）
@@ -207,6 +206,7 @@
                                                                                 </HBox>
                                                                         </HBox>
                                                                 </VBox>
+                                                                <Text text="{chat>/heroModeHint}" textAlign="Center" class="heroModeHint"/>
                                                                 <!-- 20261024：技能提示行（只在已选技能 / 场景不支持 / 出错时出现；「查看做法」就地展开正文） -->
                                                                 <VBox renderType="Bare" class="skillHintWrap" visible="{= ${skill>/visible} &amp;&amp; ${skill>/hintVisible} }">
                                                                         <HBox alignItems="Center" justifyContent="SpaceBetween" class="skillHintRow">
@@ -297,7 +297,7 @@
                                                                                         <Button icon="sap-icon://refresh" type="Transparent" tooltip="重新读取技能" press=".onRefreshSkills"
                                                                                                 visible="{= !!${skill>/error} }" enabled="{= !${chat>/busy} }" class="skillRetry"/>
                                                                                 </HBox>
-                                                                                <Button id="modelBtnDock" icon="sap-icon://ai" text="{chat>/currentModelName}" tooltip="{i18n>modelPickTip}"
+                                                                                <Button id="modelBtnDock" icon="sap-icon://machine" text="{chat>/currentModelName}" tooltip="{i18n>modelPickTip}"
                                                                                         type="Transparent" press=".onOpenModelPicker" class="modelPill"/>
                                                                                 <!-- V9.3：文本附件上传（V13：Agent 模式保留 —— 附件作为任务上下文拼入提问）
                                                                                      20261012：inputActions 恒靠右 -->
