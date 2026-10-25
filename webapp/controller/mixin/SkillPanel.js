@@ -1,5 +1,5 @@
 sap.ui.define([
-    "sap/ui/model/json/JSONModel", "sap/m/ResponsivePopover", "sap/m/FlexItemData", "sap/m/MessageToast",
+    "sap/ui/model/json/JSONModel", "sap/m/ResponsivePopover", "sap/m/FlexItemData", "zai/chat/utils/Toast",
     "sap/ui/core/HTML", "sap/ui/Device", "zai/chat/service/ChatService", "zai/chat/utils/SkillCatalog", "zai/chat/utils/Formatter"
 ], function (JSONModel, ResponsivePopover, FlexItemData, MessageToast, HTML, Device, Service, Skills, Formatter) {
     "use strict";

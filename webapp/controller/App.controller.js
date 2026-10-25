@@ -2,7 +2,7 @@ sap.ui.define([
         "sap/ui/core/mvc/Controller",
         "sap/ui/model/json/JSONModel",
         "sap/ui/core/Item",
-        "sap/m/MessageToast",
+        "zai/chat/utils/Toast",
         "sap/m/MessageBox",
         "sap/m/CustomListItem",
         "sap/m/HBox",
@@ -3829,7 +3829,57 @@ sap.ui.define([
                 /** 新会话（V13：随当前模式直接新建 —— CHAT=新对话；AGENT=新通用 Agent 会话） */
                 onNewSession: function () {
                         this._startNewSession();
-                        MessageToast.show(this._rb().getText("toastSessionNew"));
+                        // 20261025：不再弹「已开始新会话」—— 画面本身就切到了空会话首页；
+                        // 改为首页内容依次浮现、Momo 跳一下打招呼（_playHeroEnter）
+                        this._playHeroEnter();
+                },
+
+                /**
+                 * 20261025：新会话首页入场 —— 标题、副标题、输入卡、建议标签依次浮现，Momo 弹入跳一下（复用欢迎卡片的 momoMark--greet）。
+                 * 从对话态切回首页时首页是重新渲染出来的，可能晚一拍甚至渲染两次，所以除了马上试一次，
+                 * 首页渲染完成（onAfterRendering）时只要离点击不到 0.6 秒也补上
+                 */
+                _playHeroEnter: function () {
+                        var that = this;
+                        var oHero = this.byId("hero");
+                        if (!oHero || typeof document === "undefined") {
+                                return;
+                        }
+                        this._iHeroEnterAt = Date.now();
+                        if (!this._bHeroEnterHooked) {
+                                this._bHeroEnterHooked = true;
+                                oHero.addEventDelegate({
+                                        onAfterRendering: function () {
+                                                if (Date.now() - (that._iHeroEnterAt || 0) < 600) {
+                                                        that._applyHeroEnter();
+                                                }
+                                        }
+                                });
+                        }
+                        setTimeout(this._applyHeroEnter.bind(this), 0);
+                },
+
+                _applyHeroEnter: function () {
+                        var oDom = this.byId("hero") && this.byId("hero").getDomRef();
+                        if (!oDom) {
+                                return;
+                        }
+                        oDom.classList.remove("heroEnter");
+                        void oDom.offsetWidth;
+                        oDom.classList.add("heroEnter");
+                        var oMark = oDom.querySelector(".heroMark");
+                        if (oMark) {
+                                oMark.classList.remove("momoMark--greet");
+                                void oMark.offsetWidth;
+                                oMark.classList.add("momoMark--greet");
+                        }
+                        clearTimeout(this._iHeroEnterTimer);
+                        this._iHeroEnterTimer = setTimeout(function () {
+                                oDom.classList.remove("heroEnter");
+                                if (oMark) {
+                                        oMark.classList.remove("momoMark--greet");
+                                }
+                        }, 3300);
                 },
 
                 /** 切到当前工作模式下的一个空会话（新建 / 删除当前会话后复位） */

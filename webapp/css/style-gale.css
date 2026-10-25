@@ -1155,7 +1155,8 @@ body, body.sapUiBody { background: var(--bg) !important; }
 /* —— 提示栈（utils/ToastStack.js）：顶部放后端不可达等提示，底部放欢迎卡片；同栈多张上下排开，互不压盖 ——
    栈的 left（及底部栈的 bottom）由 JS 设置：在对话区里居中，对话态浮在底部输入框上方 */
 .toastStack {
-        position: fixed; z-index: 1200; left: 16px; right: 16px;
+        /* 20261025：z-index 提到所有 UI5 弹窗之上（弹窗层级随打开次数递增，1200 用久了会被设置框等压住） */
+        position: fixed; z-index: 100000; left: 16px; right: 16px;
         display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none;
 }
 .toastStack--top { top: 16px; }
@@ -1495,3 +1496,36 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .gcTipV { font-weight: 650; font-variant-numeric: tabular-nums; color: var(--text); }
 .gcTipV.gcTipBig { font-size: .95rem; }
 .gcTipP { font-size: .72rem; color: var(--sub); font-variant-numeric: tabular-nums; }
+
+/* ==================== 20261025：应用内轻提示（utils/Toast.js，替换 sap.m.MessageToast 默认外观）====================
+   与「撤销」卡片同一套：反色小卡 + 左侧圆形状态图标；弹性升起，图标晚一拍弹出；同一句再出现时轻弹一下 */
+.appToast {
+        position: relative; display: flex; align-items: center; gap: .6rem; max-width: min(30rem, 100%); box-sizing: border-box;
+        padding: .55rem .95rem .55rem .6rem; border-radius: 14px; cursor: default;
+        background: var(--text); color: var(--bg);
+        box-shadow: 0 12px 30px -8px rgba(17, 24, 39, .4), 0 2px 6px rgba(17, 24, 39, .14);
+        animation: utIn .4s cubic-bezier(.34, 1.4, .64, 1) both;
+}
+.appToast.is-leaving { animation: utOut .22s ease-in both; }
+.appToast.is-bump { animation: atBump .34s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes atBump { 40% { transform: scale(1.04); } }
+.atIco {
+        flex: none; display: flex; align-items: center; justify-content: center; width: 1.35rem; height: 1.35rem; border-radius: 50%;
+        color: #fff; background: var(--accent-lum);
+        animation: atIcoIn .42s .12s cubic-bezier(.3, 1.7, .5, 1) both;
+}
+.atIco svg { width: .85rem; height: .85rem; }
+.appToast--ok .atIco { background: var(--ok); }
+.appToast--warn .atIco { background: #F59E0B; }
+@keyframes atIcoIn { from { opacity: 0; transform: scale(.3) rotate(-30deg); } }
+.atText {
+        min-width: 0; font-size: .84rem; line-height: 1.4; letter-spacing: .01em;
+        display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
+}
+
+/* —— 新会话首页入场（App.controller _playHeroEnter）：标题、副标题、输入卡、建议标签依次浮现 —— */
+.heroEnter .heroTitle { animation: heroRise .5s .1s var(--ease) both; }
+.heroEnter .heroSub { animation: heroRise .5s .16s var(--ease) both; }
+.heroEnter .heroCard { animation: heroRise .55s .22s var(--ease) both; }
+.heroEnter .scenePicker, .heroEnter .heroChips, .heroEnter .catalogHost { animation: heroRise .5s .3s var(--ease) both; }
+@keyframes heroRise { from { opacity: 0; transform: translateY(14px); } }

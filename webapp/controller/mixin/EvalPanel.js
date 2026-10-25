@@ -1,6 +1,6 @@
 sap.ui.define([
         "sap/ui/model/json/JSONModel",
-        "sap/m/MessageToast",
+        "zai/chat/utils/Toast",
         "zai/chat/service/ChatService",
         "zai/chat/utils/AgentEval"
 ], function (JSONModel, MessageToast, ChatService, AgentEval) {

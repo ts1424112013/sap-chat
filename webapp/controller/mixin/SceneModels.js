@@ -1,5 +1,5 @@
 sap.ui.define([
-        "sap/m/MessageToast",
+        "zai/chat/utils/Toast",
         "sap/m/Button",
         "zai/chat/service/ChatService",
         "zai/chat/utils/Formatter"
