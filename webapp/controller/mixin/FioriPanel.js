@@ -67,12 +67,16 @@ sap.ui.define([
                         });
                 },
 
-                /** 结果 → 新一条回复（表格 + 分析闸门）；记为本会话聚焦结果 */
-                _fioriPushResult: function (oRes, sSessionId) {
+                /** 结果 → 新一条回复（表格 + 分析闸门）；记为本会话聚焦结果。
+                  * 20261025（DATA-01）：oMore {noAppend, time} —— 刷新后恢复时只造条目（插入与聚焦由 ResultRestore 处理） */
+                _fioriPushResult: function (oRes, sSessionId, oMore) {
                         var that = this;
                         var oRB = this._rb();
+                        var bNoAppend = !!(oMore && oMore.noAppend);
                         var oEntry = this._pushReportResult(oRes, oRes.runId, {
                                 sessionId: sSessionId,
+                                noAppend: bNoAppend,
+                                time: oMore && oMore.time,
                                 text: function (iTotal, oDs) {
                                         return oRB.getText("fioriResultText", [oRes.label || oRes.reportId || "", iTotal,
                                                 oDs.truncated ? oRB.getText("runResultSample", [oDs.rows.length]) : "",
@@ -90,7 +94,7 @@ sap.ui.define([
                                         oE.runHtml = that._fioriGateHtml(oE);
                                 }
                         });
-                        if (oEntry && oRes.artifactId) {
+                        if (oEntry && oRes.artifactId && !bNoAppend) {
                                 this._mFocusArt = this._mFocusArt || {};
                                 this._mFocusArt[sSessionId] = oRes.artifactId;
                         }

@@ -34,8 +34,9 @@ sap.ui.define([
         "zai/chat/controller/mixin/CatalogPanel",
         "zai/chat/controller/mixin/FioriPanel",
         "zai/chat/controller/mixin/SessionMessages",
-        "zai/chat/controller/mixin/SkillPanel"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, DataGrid, MomoMark, MomoState, OfflineNotice, WelcomeToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel) {
+        "zai/chat/controller/mixin/SkillPanel",
+        "zai/chat/controller/mixin/ResultRestore"
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, DataGrid, MomoMark, MomoState, OfflineNotice, WelcomeToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore) {
         "use strict";
 
         /**
@@ -2563,6 +2564,7 @@ sap.ui.define([
                         if (this._mFocusArt) {
                                 delete this._mFocusArt[sSid];
                         }
+                        this._rrDropSession(sSid);   // DATA-01：本机记下的图表配置 / 运行号一并清掉
                         if (this.getView().getModel("session").getProperty("/currentId") === sSid) {
                                 this._startNewSession();
                         }
@@ -3378,23 +3380,9 @@ sap.ui.define([
                                 oChatModel.setProperty("/taskBadge", "");
                                 return;
                         }
-                        var aPending = [];
-                        var oPendingObj = null;
-                        if (oRes.pendingParamsJson) {
-                                try {
-                                        // V15.0.2 20261008: 兼容对象 {report_id,tcode,params:[...]}
-                                        // 与旧数组格式; 提交 StartReportRun 需要 report_id
-                                        var oParsed = JSON.parse(oRes.pendingParamsJson) || null;
-                                        if (oParsed && !Array.isArray(oParsed)) {
-                                                oPendingObj = oParsed;
-                                                aPending = oParsed.params || [];
-                                        } else {
-                                                aPending = oParsed || [];
-                                        }
-                                } catch (e) {
-                                        aPending = [];
-                                }
-                        }
+                        var oPend = this._parsePending(oRes.pendingParamsJson);
+                        var aPending = oPend.params;
+                        var oPendingObj = oPend.obj;
                         var oTask = {
                                 taskId: oRes.taskId,
                                 shortId: (oRes.taskId || "").substring(0, 8),
@@ -3409,11 +3397,52 @@ sap.ui.define([
                         this._adoptSkillTask();
                         this._setTaskBadge(oTask.module, oTask.status, oTask.taskId);
                         var oEntry = (oChatModel.getProperty("/messages") || [])[iAssistantIdx];
+                        var oAsk = oEntry && oTask.needsInput ? this._paramAsk(oTask, oPendingObj, aPending, sSessionId) : null;
+                        if (oAsk) {
+                                oEntry.ask = oAsk;
+                                if (!oAsk.fiori) {
+                                        this._enrichReportAsk(oEntry);
+                                }
+                        }
+                },
+
+                /**
+                  * 待填参数 JSON → {obj, params}。
+                  * V15.0.2 20261008: 兼容对象 {report_id,tcode,params:[...]} 与旧数组格式; 提交 StartReportRun 需要 report_id
+                  */
+                _parsePending: function (sJson) {
+                        var oOut = { obj: null, params: [] };
+                        if (!sJson) {
+                                return oOut;
+                        }
+                        try {
+                                var oParsed = JSON.parse(sJson) || null;
+                                if (oParsed && !Array.isArray(oParsed)) {
+                                        oOut.obj = oParsed;
+                                        oOut.params = oParsed.params || [];
+                                } else {
+                                        oOut.params = oParsed || [];
+                                }
+                        } catch (e) {
+                                oOut.params = [];
+                        }
+                        return oOut;
+                },
+
+                /**
+                  * 待填参数 → 内联参数卡（报表执行：提交执行；Fiori：取数）。没有参数返回 null。
+                  * 20261025（DATA-01）：从 _updateTaskState 抽出，刷新后恢复参数卡也用它。
+                  * @param {object} oTask {taskId, module, reportId, tcode}
+                  */
+                _paramAsk: function (oTask, oPendingObj, aPending, sSessionId) {
                         var oRB = this._rb();
+                        if (!aPending || !aPending.length) {
+                                return null;
+                        }
                         // 20261020：Fiori 报表的待填参数（kind = FIORI）→ 同样的内联卡，按钮是「取数」，可带预填值
                         var bFiori = !!(oPendingObj && oPendingObj.kind === "FIORI");
-                        if (oEntry && oTask.needsInput && aPending.length && bFiori) {
-                                oEntry.ask = {
+                        if (bFiori) {
+                                return {
                                         kind: "params",
                                         fiori: true,
                                         state: "open",
@@ -3433,29 +3462,27 @@ sap.ui.define([
                                         sel: 0,
                                         autoFocus: true
                                 };
-                        } else if (oEntry && oTask.needsInput && aPending.length) {
-                                oEntry.ask = {
-                                        kind: "params",
-                                        state: "open",
-                                        title: oRB.getText("askParamsTitle"),
-                                        subtitle: [oTask.tcode, oTask.reportId].filter(Boolean).join(" · "),
-                                        params: aPending,
-                                        values: {},
-                                        options: [
-                                                { key: "submit", label: oRB.getText("askSubmit"), desc: oRB.getText("askSubmitDesc") },
-                                                { key: "cancel", label: oRB.getText("askCancel"), desc: oRB.getText("askCancelDesc") }
-                                        ],
-                                        freePh: oRB.getText("askParamsFreePh"),
-                                        taskId: oTask.taskId,
-                                        reportId: oTask.reportId,
-                                        tcode: oTask.tcode,
-                                        module: oTask.module,
-                                        sessionId: sSessionId,
-                                        sel: 0,
-                                        autoFocus: true
-                                };
-                                this._enrichReportAsk(oEntry);
                         }
+                        return {
+                                kind: "params",
+                                state: "open",
+                                title: oRB.getText("askParamsTitle"),
+                                subtitle: [oTask.tcode, oTask.reportId].filter(Boolean).join(" · "),
+                                params: aPending,
+                                values: {},
+                                options: [
+                                        { key: "submit", label: oRB.getText("askSubmit"), desc: oRB.getText("askSubmitDesc") },
+                                        { key: "cancel", label: oRB.getText("askCancel"), desc: oRB.getText("askCancelDesc") }
+                                ],
+                                freePh: oRB.getText("askParamsFreePh"),
+                                taskId: oTask.taskId,
+                                reportId: oTask.reportId,
+                                tcode: oTask.tcode,
+                                module: oTask.module,
+                                sessionId: sSessionId,
+                                sel: 0,
+                                autoFocus: true
+                        };
                 },
 
                 /**
@@ -3615,6 +3642,7 @@ sap.ui.define([
                                 oAsk.state = "cancelled";
                                 oAsk.resultText = oRB.getText("askCancelled");
                                 this._renderAsk(sUid);
+                                this._rrDismissAsk(oAsk.sessionId, oAsk.taskId);   // 刷新后不再恢复成待填
                                 return;
                         }
                         // 20261011：对话页"转到 Agent 场景"建议
@@ -3775,6 +3803,7 @@ sap.ui.define([
                                 }
                                 if (sAct === "run-stop") {
                                         this._stopRun("stopped", oRun);
+                                        this._rrForgetRun(oRun);   // 用户明确停止：刷新后不再续跟
                                 } else if (oRun.timer) {
                                         this._pollRun(oRun);
                                 } else {
@@ -3789,17 +3818,21 @@ sap.ui.define([
                                 if (!oCh) {
                                         return;
                                 }
+                                // 20261025（DATA-01）：图表增删改都记下配置，刷新后套回恢复的表格
                                 if (sAct === "chart-type") {
                                         oCh.cfg.type = oBtn.getAttribute("data-type");
                                         this._refreshExtra(oEntry, oCh.src);
+                                        this._rrSaveCharts(oEntry);
                                 } else if (sAct === "chart-edit") {
                                         ChartBuilder.open(oCh.ds, oCh.cfg, function (oCfg) {
                                                 oCh.cfg = oCfg;
                                                 that._refreshExtra(oEntry, oCh.src);
+                                                that._rrSaveCharts(oEntry);
                                         }, { edit: true });
                                 } else if (sAct === "chart-del") {
                                         oEntry.userCharts = aCharts.filter(function (c) { return c !== oCh; });
                                         this._refreshExtra(oEntry, oCh.src);
+                                        this._rrSaveCharts(oEntry);
                                 } else if (sAct === "chart-svg") {
                                         var oR = ChartRenderer.render(oCh.ds, oCh.cfg);
                                         if (oR.svg) {
@@ -3877,6 +3910,7 @@ sap.ui.define([
                                         id: "c" + that._newSessionId().substring(0, 8), ds: oDs, cfg: oCfg, src: sSrc || ""
                                 }]);
                                 that._refreshExtra(oEntry, sSrc);
+                                that._rrSaveCharts(oEntry);
                         });
                 },
 
@@ -3977,5 +4011,5 @@ sap.ui.define([
                 hasText: function (s) {
                         return !!(s && s.length);
                 }
-        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel));
+        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore));
 });

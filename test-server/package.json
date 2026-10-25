@@ -14,7 +14,8 @@
     "test:fiori": "node fiori-tests.js",
     "test:abap": "node abap-static-tests.js",
     "test:skills": "node --test skill-tests.js",
-    "test:rptscan": "node rpt-scan-tests.js"
+    "test:rptscan": "node rpt-scan-tests.js",
+    "test:restore": "node result-restore-tests.js"
   },
   "dependencies": {
     "express": "^4.18.2",

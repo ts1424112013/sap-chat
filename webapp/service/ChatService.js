@@ -732,19 +732,101 @@ sap.ui.define([
                 authTableDescribe: function (o) { return this._authCall("AuthTableDescribe", o, false); },
                 authConfig: function () { return this._authCall("AuthConfig", {}, false); },
 
-                /** 会话任务列表 → Promise<[TaskItem]>（能力未开/失败 → []） */
+                /**
+                  * 任务接口的 ResultJson 序列化时没设 pretty_name，键是 ABAP 原名（大写，如 TASK_ID）；
+                  * 补一份小写键（task_id），界面代码一律按小写读，大小写两种都认。
+                  */
+                _lowerKeys: function (o) {
+                        if (!o || typeof o !== "object" || Array.isArray(o)) {
+                                return o;
+                        }
+                        var r = {};
+                        Object.keys(o).forEach(function (k) {
+                                r[k] = o[k];
+                        });
+                        Object.keys(o).forEach(function (k) {
+                                var l = k.toLowerCase();
+                                if (r[l] === undefined) {
+                                        r[l] = o[k];
+                                }
+                        });
+                        return r;
+                },
+
+                /** 会话任务列表 → Promise<[TaskItem]>（能力未开/失败 → []；键统一补小写） */
                 getTasks: function (sSessionId) {
                         if (this._sConfig.mode === "mock") {
                                 return Promise.resolve([]);
                         }
                         return this._taskCall("Tasks", { SessionId: sSessionId }, false)
-                                .then(function (o) { return (o.success && o.result) || []; });
+                                .then(function (o) {
+                                        return o.success && Array.isArray(o.result) ? o.result.map(Service._lowerKeys) : [];
+                                });
                 },
 
                 /** 任务上下文（摘要/待办/结果索引）→ Promise<object|null> */
                 getTaskContext: function (sSessionId, sTaskId) {
                         return this._taskCall("TaskContext", { SessionId: sSessionId, TaskId: sTaskId }, false)
                                 .then(function (o) { return o.result; });
+                },
+
+                /** 刷新后恢复结果时最多看最近几个任务（Tasks 按修改时间倒序） */
+                RESTORE_MAX_TASKS: 12,
+
+                /**
+                  * 20261025（改进清单 DATA-01）：会话里登记过的报表 / Fiori 结果 + 任务列表，供刷新后恢复结果卡。
+                  * 不新增接口：Tasks → 每个任务的 TaskContext.artifacts（ZAI_ARTIFACT 元数据，不含明细行），
+                  * 明细再由界面按类型走 ReportResult / FioriReportResult 取回。只看最近 RESTORE_MAX_TASKS 个任务；
+                  * 任何一步失败都按"没有可恢复的结果"处理，不影响历史消息显示。
+                  * SQL 数据集（TABLE_DATA / INVENTORY_RESULT）后端只登记行数、不存明细，这里不返回。
+                  * @returns {Promise<{tasks: object[], artifacts: object[]}>} artifacts 按登记时间升序：
+                  *   {artifactId, type, taskId, label, rowCount, createdAt, runId}
+                  */
+                getSessionResults: function (sSessionId) {
+                        if (this._sConfig.mode === "mock") {
+                                return Promise.resolve({
+                                        tasks: [],
+                                        artifacts: this._mockFioriArtifacts ? this._mockFioriArtifacts(sSessionId) : []
+                                });
+                        }
+                        var that = this;
+                        var aTasks = [];
+                        return this.getTasks(sSessionId).then(function (a) {
+                                aTasks = a || [];
+                                var aIds = aTasks.map(function (t) { return String(t.task_id || ""); })
+                                        .filter(Boolean).slice(0, that.RESTORE_MAX_TASKS);
+                                return Promise.all(aIds.map(function (sTid) {
+                                        return that.getTaskContext(sSessionId, sTid).catch(function () { return null; });
+                                }));
+                        }).then(function (aCtx) {
+                                var aArt = [], oSeen = {};
+                                aCtx.forEach(function (oCtx) {
+                                        var aRaw = oCtx && Array.isArray(oCtx.artifacts) ? oCtx.artifacts : [];
+                                        aRaw.forEach(function (oRaw) {
+                                                var a = Service._lowerKeys(oRaw) || {};
+                                                var sId = String(a.artifact_id || "");
+                                                var sType = String(a.artifact_type || "");
+                                                if (!sId || oSeen[sId] || (a.status && a.status !== "AVAILABLE") ||
+                                                        (sType !== "REPORT_RESULT" && sType !== "FIORI_RESULT")) {
+                                                        return;
+                                                }
+                                                oSeen[sId] = true;
+                                                aArt.push({
+                                                        artifactId: sId,
+                                                        type: sType,
+                                                        taskId: String(a.task_id || ""),
+                                                        label: String(a.display_label || ""),
+                                                        rowCount: parseInt(a.row_count, 10) || 0,
+                                                        createdAt: String(a.created_at || ""),
+                                                        runId: String(a.report_run_id || a.dataset_id || a.source_ref || "")
+                                                });
+                                        });
+                                });
+                                aArt.sort(function (x, y) { return x.createdAt.localeCompare(y.createdAt); });
+                                return { tasks: aTasks, artifacts: aArt };
+                        }).catch(function () {
+                                return { tasks: aTasks, artifacts: [] };
+                        });
                 },
 
                 /** 登记报表与参数 Schema → Promise<[Definition]>（能力未开 → []） */

@@ -107,6 +107,7 @@ sap.ui.define([
                                         oState.read !== oRead || oState.version !== iVersion) { return; }
                                 var aHistory = aRows.map(function (oRow) {
                                         var oEntry = that._buildEntry(oRow.Role, oRow.Content, oRow.CreatedAt, oRow.SkillMeta || "");
+                                        oEntry.ts = String(oRow.CreatedAt || "");   // DATA-01：恢复的结果卡按这个时间插回原位
                                         if (bAgent && oRow.Role === "assistant") {
                                                 oEntry.sender = that._rb().getText("agentSender");
                                         }
@@ -118,6 +119,8 @@ sap.ui.define([
                                 oState.loaded = true;
                                 oState.refresh = false;
                                 fnShow();
+                                // 20261025（DATA-01）：首次打开（含刷新页面后）补回结果表、图表、续跟运行与参数卡
+                                return that._rrRestore(sSid, oState, bAgent);
                         });
                 },
 

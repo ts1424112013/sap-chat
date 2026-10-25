@@ -22,16 +22,18 @@ sap.ui.define([
                  * TIMEOUT/UNKNOWN 继续查询（不等于作业停止），上限后提示人工核对，不伪造结果
                  * --------------------------------------------------------- */
 
-                _trackRun: function (sUid, sRunId, sSessionId, sShort) {
+                /** iStart：提交时间（毫秒）；刷新后续跟时传记下的时间，耗时从提交算起（20261025 DATA-01） */
+                _trackRun: function (sUid, sRunId, sSessionId, sShort, iStart) {
                         if (!this._sessionMessageState(sSessionId)) { return; }
                         this._mRuns = this._mRuns || Object.create(null);
                         if (this._mRuns[sRunId]) { return; }
                         var oRun = this._mRuns[sRunId] = {
                                 uid: sUid, runId: sRunId, sessionId: sSessionId,
                                 shortId: sShort || String(sRunId || "").substring(0, 8),
-                                start: Date.now(), count: 0, empty: 0,
+                                start: iStart || Date.now(), count: 0, empty: 0,
                                 status: "SUBMITTED", phase: "active", message: ""
                         };
+                        this._rrRememberRun(oRun);   // 刷新页面后按运行号继续跟踪
                         this._resumeRun(oRun);
                 },
 
@@ -83,6 +85,9 @@ sap.ui.define([
                                 o.timer = null;
                         }
                         o.phase = sPhase;
+                        if (sPhase === "ready" || sPhase === "failed") {
+                                this._rrForgetRun(o);   // 有结论了：结果若已登记，刷新后按结果索引恢复
+                        }
                         this._renderRun(o);
                         this._syncActivity();
                 },
@@ -245,12 +250,19 @@ sap.ui.define([
                 /** READY 结果 → 新一条回复（数据表 + 工具条；用户可自行生成图表）
                   * 20261020：可选 oOpt（Fiori 报表结果复用同一套表格逻辑）——
                   * oOpt.text(iTotal, oDs) 换正文；oOpt.decorate(oEntry, oDs, iTotal) 推入前补字段（如分析闸门 runHtml）
-                  * @returns {object} 推入的消息条目 */
+                  * 20261025（DATA-01）：条目带 artifactId（刷新后认出同一份结果、同一份结果不重复插入）；
+                  * oOpt.noAppend 只造条目不插入、oOpt.time 显示时间（刷新后恢复用登记时间）
+                  * @returns {object} 推入（或造出）的消息条目 */
                 _pushReportResult: function (oRes, sRunId, oOpt) {
                         var oRB = this._rb();
                         var sSid = (oOpt && oOpt.sessionId) || this._sMessagesSession;
                         var oState = this._sessionMessageState(sSid);
                         if (!oState) { return null; }
+                        var sArt = (oRes && oRes.artifactId && oRes.artifactId !== "undefined") ? String(oRes.artifactId) : "";
+                        if (sArt && !(oOpt && oOpt.noAppend)) {
+                                var oSame = (oState.messages || []).filter(function (m) { return m.artifactId === sArt; })[0];
+                                if (oSame) { return oSame; }   // 刷新后已恢复过这份结果（续跟的运行随后就绪）
+                        }
                         var aCols = [], aRaw = [];
                         try {
                                 // 20261011：兼容 {"columns":[…]}（MOCK/EXEC_SAP V1.0e）与旧版纯数组 […]（EXEC_SAP V1.0d）
@@ -280,8 +292,9 @@ sap.ui.define([
                                 oRB.getText("runResultText", [String(sRunId || "").substring(0, 8), iTotal,
                                         oDs.truncated ? oRB.getText("runResultSample", [oDs.rows.length]) : ""]) +
                                 (iTotal === 0 ? "\n\n" + oRB.getText("runResultZero") : "");
-                        var oEntry = this._buildEntry("assistant", sText, "", "");
+                        var oEntry = this._buildEntry("assistant", sText, (oOpt && oOpt.time) || "", "");
                         oEntry.localResult = true;
+                        oEntry.artifactId = sArt;
                         if (oState.mode === "AGENT") {
                                 oEntry.sender = this._rb().getText("agentSender");
                         }
@@ -292,7 +305,9 @@ sap.ui.define([
                         if (oOpt && oOpt.decorate) {
                                 oOpt.decorate(oEntry, oDs, iTotal);
                         }
-                        this._appendSessionEntry(sSid, oEntry);
+                        if (!(oOpt && oOpt.noAppend)) {
+                                this._appendSessionEntry(sSid, oEntry);
+                        }
                         return oEntry;
                 }
         };

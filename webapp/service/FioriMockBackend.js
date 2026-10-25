@@ -100,6 +100,10 @@ sap.ui.define([], function () {
                   ] }
         ];
 
+        /** 演示取数结果在 localStorage 里的键与保留份数（DATA-01：刷新后可重读） */
+        var MOCK_FIORI_KEY = "zaiChat.mockFiori.v1";
+        var MOCK_FIORI_KEEP = 30;
+
         /** 参数校验用：完整数值形态 */
         var NUM_RE = /^-?\d+(\.\d+)?$/;
         /** 数值列判断用：另外排除前导零（0045123 这类单据号 / 物料号按文本，转数字会丢零） */
@@ -342,11 +346,69 @@ sap.ui.define([], function () {
 
                 /* ===================== 演示状态 ===================== */
 
+                /**
+                  * 演示状态。20261025（改进清单 DATA-01）：存进 localStorage —— 和真实系统一样，刷新页面后结果还能按
+                  * ArtifactId 重读（FioriReportResult），用来演示 / 测试"刷新后结果表还在"。只留最近 MOCK_FIORI_KEEP 份。
+                  */
                 _mockFioriState: function () {
                         if (!this._oFioriMock) {
-                                this._oFioriMock = { runs: {}, byRequest: {}, seq: 0 };
+                                var st = { runs: {}, byRequest: {}, seq: 0 };
+                                var o = null;
+                                try { o = JSON.parse(window.localStorage.getItem(MOCK_FIORI_KEY) || "null"); } catch (e) { o = null; }
+                                if (o && typeof o === "object" && o.runs && typeof o.runs === "object") {
+                                        st.seq = parseInt(o.seq, 10) || 0;
+                                        Object.keys(o.runs).forEach(function (k) {
+                                                var r = o.runs[k] || {};
+                                                var oDef = r.result ? this._mockFioriDef(r.result.reportId) : null;
+                                                if (!oDef) { return; }
+                                                var oDs;
+                                                try {
+                                                        oDs = { columns: (JSON.parse(r.result.schemaJson || "{}") || {}).columns || [], rows: JSON.parse(r.result.rowsJson || "[]") || [] };
+                                                } catch (e) { return; }
+                                                st.runs[k] = {
+                                                        result: r.result, ds: oDs, def: oDef, params: r.params || {}, sessionId: r.sessionId || "",
+                                                        analyzed: !!r.analyzed, createdAt: r.createdAt || "", summary: this._fioriStats(oDs)
+                                                };
+                                        }, this);
+                                        Object.keys(o.byRequest || {}).forEach(function (sReq) {
+                                                if (st.runs[o.byRequest[sReq]]) { st.byRequest[sReq] = o.byRequest[sReq]; }
+                                        });
+                                }
+                                this._oFioriMock = st;
                         }
                         return this._oFioriMock;
+                },
+
+                /** 写回 localStorage（只存可序列化的部分；ds / def / summary 读取时重建） */
+                _mockFioriSave: function () {
+                        var st = this._oFioriMock;
+                        if (!st) { return; }
+                        var aKeep = Object.keys(st.runs).sort(function (a, b) {
+                                return String(st.runs[a].createdAt || "").localeCompare(String(st.runs[b].createdAt || "")) || a.localeCompare(b);
+                        }).slice(-MOCK_FIORI_KEEP);
+                        var o = { seq: st.seq, byRequest: {}, runs: {} };
+                        aKeep.forEach(function (k) {
+                                var r = st.runs[k];
+                                o.runs[k] = { result: r.result, params: r.params, sessionId: r.sessionId, analyzed: !!r.analyzed, createdAt: r.createdAt || "" };
+                        });
+                        Object.keys(st.byRequest).forEach(function (sReq) {
+                                if (o.runs[st.byRequest[sReq]]) { o.byRequest[sReq] = st.byRequest[sReq]; }
+                        });
+                        try { window.localStorage.setItem(MOCK_FIORI_KEY, JSON.stringify(o)); } catch (e) { /* 存不下：只影响刷新后的演示恢复 */ }
+                },
+
+                /** 会话里登记过的 Fiori 结果（ChatService.getSessionResults 的演示实现，结构同真实系统） */
+                _mockFioriArtifacts: function (sSessionId) {
+                        var st = this._mockFioriState();
+                        return Object.keys(st.runs).filter(function (k) {
+                                return st.runs[k].sessionId === sSessionId;
+                        }).map(function (k) {
+                                var r = st.runs[k];
+                                return {
+                                        artifactId: k, type: "FIORI_RESULT", taskId: "", label: r.def.reportName,
+                                        rowCount: parseInt(r.result.rowCount, 10) || 0, createdAt: r.createdAt || "", runId: r.result.runId || ""
+                                };
+                        }).sort(function (x, y) { return x.createdAt.localeCompare(y.createdAt); });
                 },
 
                 _mockFioriEnabled: function () {
@@ -544,8 +606,12 @@ sap.ui.define([], function () {
                                 rowCount: oDs.rows.length, truncated: "", elapsedMs: 300 + hash(sArt) % 900,
                                 analyzeEnabled: oDef.analyzeEnabled, analyzed: "", requestUri: sUri, message: ""
                         };
-                        st.runs[sArt] = { result: oRes, ds: oDs, def: oDef, params: mVals, sessionId: o.SessionId, analyzed: false, summary: Service._fioriStats(oDs) };
+                        st.runs[sArt] = {
+                                result: oRes, ds: oDs, def: oDef, params: mVals, sessionId: o.SessionId, analyzed: false,
+                                createdAt: Service._mockTime ? Service._mockTime() : "", summary: Service._fioriStats(oDs)
+                        };
                         if (o.ClientRequestId) { st.byRequest[o.ClientRequestId] = sArt; }
+                        this._mockFioriSave();
                         return oRes;
                 },
 
@@ -635,6 +701,7 @@ sap.ui.define([], function () {
                                 }
                                 oRun.analyzed = true;
                                 oRun.result.analyzed = "X";
+                                this._mockFioriSave();
                                 return { kind: "ANALYZE", run: oRun };
                         }
                         if (oRun && /重新取|重取|再取|再查|再跑|重跑|换成|改成|换个|再看/.test(sQ)) {
