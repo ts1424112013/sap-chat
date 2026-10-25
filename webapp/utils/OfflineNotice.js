@@ -1,12 +1,14 @@
-sap.ui.define([], function () {
+sap.ui.define([
+        "zai/chat/utils/ToastStack"
+], function (ToastStack) {
         "use strict";
 
         /**
          * 后端不可达 → 降级演示模式的提示（20261025，替换原 MessageToast）
          * ---------------------------------------------------------------
          * 两种形态，同一套样式（.offNotice*，style-gale.css 末尾）：
-         *   show(o)          已登录：屏幕顶部居中的浮动卡片，默认 10 秒后自动收起，
-         *                    鼠标悬停暂停计时（纯 CSS：底部进度条动画暂停）
+         *   show(o)          已登录：屏幕顶部居中的浮动卡片（放在 ToastStack 最上面），
+         *                    默认 10 秒后自动收起，鼠标悬停暂停计时（底部进度条同步暂停）
          *   createInline(o)  未登录：嵌进登录卡片的提示条，附本地管理员账号
          * 「重新连接」调用 o.onRetry(fnDone)，fnDone(true) 时刷新页面回到后端模式，
          * fnDone(false) 时按钮短暂显示"仍未连通"。
@@ -83,7 +85,7 @@ sap.ui.define([], function () {
                  * @param {object} o { title, body, retryText, retryingText, retryFailText, closeText, onRetry, duration }
                  */
                 show: function (o) {
-                        if (oCurrent) { oCurrent.remove(); }
+                        if (oCurrent) { ToastStack.dismiss(oCurrent); }
                         var oCard = el("div", "offNotice offNotice--float");
                         oCard.setAttribute("role", "status");
                         oCard.setAttribute("aria-live", "polite");
@@ -112,15 +114,13 @@ sap.ui.define([], function () {
                         oCard.appendChild(oTimer);
 
                         var fnHide = function () {
-                                if (!oCard.parentNode || oCard.classList.contains("is-leaving")) { return; }
-                                oCard.classList.add("is-leaving");
-                                setTimeout(function () { oCard.remove(); }, 220);
+                                ToastStack.dismiss(oCard);
                                 if (oCurrent === oCard) { oCurrent = null; }
                         };
                         oClose.addEventListener("click", fnHide);
-                        oTimer.addEventListener("animationend", fnHide);
 
-                        document.body.appendChild(oCard);
+                        ToastStack.mount(oCard, true);
+                        ToastStack.autoDismiss(oCard, o.duration || 10000, fnHide);
                         oCurrent = oCard;
                         return { hide: fnHide };
                 },

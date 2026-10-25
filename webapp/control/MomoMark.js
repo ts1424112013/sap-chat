@@ -27,7 +27,7 @@ sap.ui.define([
                 oRm.attr("src", mImages[sName]).attr("alt", "").attr("draggable", "false").voidEnd();
         }
 
-        return Control.extend("zai.chat.control.MomoMark", {
+        var MomoMark = Control.extend("zai.chat.control.MomoMark", {
                 metadata: {
                         properties: {
                                 size: { type: "sap.ui.core.CSSSize", defaultValue: "32px" },
@@ -65,4 +65,37 @@ sap.ui.define([
                         }
                 }
         });
+
+        /**
+         * 20261025：UI5 树之外的同款头像（如顶部欢迎卡片 utils/WelcomeToast.js），
+         * DOM 结构与上面的 renderer 一致，共用同一组图层，不另存一份图形坐标。
+         */
+        MomoMark.createElement = function (sSize, sExtraClass) {
+                function img(sName, sClass) {
+                        var o = document.createElement("img");
+                        o.className = "momoLayer " + sClass;
+                        o.src = mImages[sName];
+                        o.alt = "";
+                        o.draggable = false;
+                        return o;
+                }
+                var oRoot = document.createElement("span");
+                oRoot.className = "momoMark momoMark--idle" + (sExtraClass ? " " + sExtraClass : "");
+                oRoot.style.width = sSize;
+                oRoot.style.height = sSize;
+                oRoot.setAttribute("aria-hidden", "true");
+                oRoot.appendChild(img("face", "momoFace"));
+                var oTravel = document.createElement("span");
+                oTravel.className = "momoDropTravel";
+                oTravel.appendChild(img("drop", "momoDrop"));
+                oRoot.appendChild(oTravel);
+                var oGaze = document.createElement("span");
+                oGaze.className = "momoGaze";
+                oGaze.appendChild(img("left", "momoEye momoEyeLeft"));
+                oGaze.appendChild(img("right", "momoEye momoEyeRight"));
+                oRoot.appendChild(oGaze);
+                return oRoot;
+        };
+
+        return MomoMark;
 });

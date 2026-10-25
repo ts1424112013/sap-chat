@@ -24,6 +24,7 @@ sap.ui.define([
         "zai/chat/control/MomoMark",
         "zai/chat/utils/MomoState",
         "zai/chat/utils/OfflineNotice",
+        "zai/chat/utils/WelcomeToast",
         "zai/chat/controller/mixin/SceneModels",
         "zai/chat/controller/mixin/SettingsPanel",
         "zai/chat/controller/mixin/EvalPanel",
@@ -34,7 +35,7 @@ sap.ui.define([
         "zai/chat/controller/mixin/FioriPanel",
         "zai/chat/controller/mixin/SessionMessages",
         "zai/chat/controller/mixin/SkillPanel"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, DataGrid, MomoMark, MomoState, OfflineNotice, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel) {
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, DataGrid, MomoMark, MomoState, OfflineNotice, WelcomeToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel) {
         "use strict";
 
         /**
@@ -449,7 +450,11 @@ sap.ui.define([
                         oSettings.setProperty("/userName", oUser ? (oUser.userName || oUser.userId) : "");
                         oSettings.setProperty("/userInitials", oUser ? String(oUser.userId || "").substring(0, 2).toUpperCase() : "");
                         if (oUser) {
-                                MessageToast.show(oRB.getText("loginWelcome") + (oUser.userName || oUser.userId));
+                                // 20261025：顶部欢迎卡片（按时段问候 + Momo 动效），替换原 MessageToast
+                                WelcomeToast.show({
+                                        title: oRB.getText("welcomeTitle", [oRB.getText(WelcomeToast.greetingKey()), oUser.userName || oUser.userId]),
+                                        sub: oRB.getText("welcomeSub")
+                                });
                         }
                 },
 

@@ -54,6 +54,27 @@
         23%, 67% { transform: translateY(-12.5%) scale(.94, 1.08); animation-timing-function: cubic-bezier(.5, 0, .85, .35); }
         35%, 79% { transform: translateY(0) scale(1.18, .8); }
 }
+/* 欢迎卡片（utils/WelcomeToast.js）：头像弹入，圆点跳两下，眨一次眼并看向问候语 */
+.momoMark--greet { animation: momoGreetPop .62s .05s cubic-bezier(.34, 1.56, .64, 1) both; }
+.momoMark--greet .momoDrop { animation: momoGreetHop 1.25s .4s ease-in-out both; }
+.momoMark--greet .momoEye { animation: momoGreetBlink .42s 1.5s linear both; }
+.momoMark--greet .momoGaze { animation: momoGreetGaze 2.6s .55s ease-in-out both; }
+@keyframes momoGreetPop {
+        from { transform: scale(.55) rotate(-10deg); }
+        60% { transform: scale(1.07) rotate(3deg); }
+        to { transform: none; }
+}
+@keyframes momoGreetHop {
+        0%, 100% { transform: translateY(0) scale(1); }
+        12% { transform: translateY(0) scale(1.18, .8); }
+        /* 跳高与 momoDropHop 相同（-12.5%），不贴方块上沿 */
+        32% { transform: translateY(-12.5%) scale(.92, 1.1); }
+        50% { transform: translateY(0) scale(1.16, .82); }
+        64% { transform: translateY(-6%) scale(.96, 1.05); }
+        78% { transform: translateY(0) scale(1.06, .94); }
+}
+@keyframes momoGreetBlink { 0%, 100% { transform: scaleY(1); } 40%, 60% { transform: scaleY(.05); } }
+@keyframes momoGreetGaze { 0%, 100% { transform: translate(0, 0); } 22%, 72% { transform: translate(4.5%, -1.6%); } }
 @media (prefers-reduced-motion: reduce) {
         .momoMark .momoLayer, .momoMark .momoGaze, .momoMark .momoDropTravel {
                 animation: none !important;

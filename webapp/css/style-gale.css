@@ -1153,17 +1153,29 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .offNoticeTitle { font-weight: 600; color: var(--text); }
 .offNoticeBody { margin-top: .15rem; color: var(--text-2); }
 
+/* —— 顶部提示栈（utils/ToastStack.js）：欢迎卡片、浮动提示上下排开，互不压盖 —— */
+.toastStack {
+        position: fixed; z-index: 1200; top: 16px; left: 16px; right: 16px;
+        display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none;
+}
+.toastStack > * { pointer-events: auto; }
+/* 离场后收起高度（margin-bottom 抵掉 gap），下方卡片顺滑上移 */
+.toastStack > .is-collapsing {
+        height: 0 !important; min-height: 0 !important; padding-top: 0 !important; padding-bottom: 0 !important;
+        margin-bottom: -10px; border-width: 0 !important; overflow: hidden;
+        transition: height .26s cubic-bezier(.4, 0, .2, 1), padding .26s cubic-bezier(.4, 0, .2, 1), margin .26s cubic-bezier(.4, 0, .2, 1);
+}
+
 /* —— 浮动卡片 —— */
 .offNotice--float {
-        position: fixed; z-index: 1200; top: 16px; left: 50%;
-        width: min(25rem, calc(100vw - 32px)); padding: .9rem .85rem .95rem .95rem;
+        position: relative; width: min(25rem, 100%); padding: .9rem .85rem .95rem .95rem;
         background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card); box-shadow: var(--off-shadow);
-        overflow: hidden; transform: translateX(-50%);
+        overflow: hidden;
         animation: offNoticeIn .32s var(--ease) both;
 }
-.offNotice--float.is-leaving { animation: offNoticeOut .2s ease-in both; }
-@keyframes offNoticeIn { from { opacity: 0; transform: translate(-50%, -10px) scale(.98); } to { opacity: 1; transform: translate(-50%, 0); } }
-@keyframes offNoticeOut { to { opacity: 0; transform: translate(-50%, -6px) scale(.98); } }
+.offNotice--float.is-leaving { animation: offNoticeOut .24s ease-in both; }
+@keyframes offNoticeIn { from { opacity: 0; transform: translateY(-10px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes offNoticeOut { to { opacity: 0; transform: translateY(-6px) scale(.98); } }
 .offNotice--float .offNoticeIco { width: 2.1rem; height: 2.1rem; border-radius: 10px; background: var(--off-warn-soft); }
 .offNotice--float .offNoticeIcoSvg { width: 1.1rem; height: 1.1rem; }
 .offNotice--float .offNoticeTitle { font-size: .9rem; line-height: 1.35; padding-top: .05rem; }
@@ -1175,10 +1187,11 @@ body, body.sapUiBody { background: var(--bg) !important; }
 }
 .offNoticeClose:hover { background: var(--hover); color: var(--text); }
 .offNoticeCloseIco { width: .95rem; height: .95rem; }
-/* 计时条：宽度 100% → 0，结束即收起；悬停暂停 */
+/* 计时条：宽度 100% → 0，只做显示（收起由 ToastStack 的 JS 计时控制）；悬停与计时一起暂停 */
 .offNoticeTimer { position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: var(--off-warn); opacity: .45; transform-origin: left; animation: offNoticeTimer linear forwards; }
 .offNotice--float:hover .offNoticeTimer, .offNotice--float:focus-within .offNoticeTimer { animation-play-state: paused; }
 @keyframes offNoticeTimer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .offNoticeTimer { display: none; } }
 
 /* —— 重新连接按钮（浮动卡片：描边小胶囊；登录卡片：文字链接） —— */
 .offNoticeRetry {
@@ -1215,3 +1228,59 @@ body, body.sapUiBody { background: var(--bg) !important; }
         padding: .05rem .38rem; background: var(--surface); border: 1px solid var(--off-warn-line); border-radius: 5px;
 }
 .offNoticeCreds code + .offNoticeSep { margin: 0 .15rem; color: var(--sub); }
+
+/* ==================== 登录欢迎卡片（20261025，utils/WelcomeToast.js，替换原 MessageToast「欢迎，xxx」）====================
+   顶部提示栈里；弹性落下 + 去模糊，品牌渐变描边缓慢旋转，一道扫光，头像四周光点迸出，标题/副标题错开浮现 */
+@property --wcAngle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+:root {
+        --wc-ring: #9180FF, #5C9BFF, #31C9E2, #75EFC7, #5C9BFF, #9180FF;
+        --wc-glow: 0 1px 2px rgba(17, 24, 39, .05), 0 14px 34px -8px rgba(92, 155, 255, .34), 0 4px 14px rgba(17, 24, 39, .06);
+        --wc-shine: rgba(92, 155, 255, .2);
+}
+[data-theme="dark"] {
+        --wc-glow: 0 1px 2px rgba(0, 0, 0, .3), 0 16px 38px -8px rgba(92, 155, 255, .32), 0 6px 18px rgba(0, 0, 0, .4);
+        --wc-shine: rgba(140, 180, 255, .12);
+}
+.welcomeToast {
+        position: relative; display: flex; align-items: center; gap: .8rem; max-width: 100%; box-sizing: border-box;
+        padding: .6rem 1.25rem .6rem .6rem; border: 1.5px solid transparent; border-radius: 18px; cursor: default;
+        background: linear-gradient(var(--surface), var(--surface)) padding-box,
+                conic-gradient(from var(--wcAngle), var(--wc-ring)) border-box;
+        box-shadow: var(--wc-glow);
+        animation: wcIn .62s cubic-bezier(.34, 1.56, .64, 1) both, wcSpin 5s linear infinite;
+}
+.welcomeToast.is-leaving { animation: wcOut .24s ease-in both; }
+@keyframes wcIn { from { opacity: 0; transform: translateY(-16px) scale(.9); filter: blur(6px); } 60% { filter: blur(0); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes wcOut { to { opacity: 0; transform: translateY(-8px) scale(.96); filter: blur(3px); } }
+@keyframes wcSpin { to { --wcAngle: 360deg; } }
+
+/* 扫光：自身裁切，不影响光点溢出卡片 */
+.wcShine { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
+.wcShine::before {
+        content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 60%;
+        background: linear-gradient(105deg, transparent, var(--wc-shine) 45%, transparent 90%);
+        transform: translateX(-120%); animation: wcShine 1.1s .5s cubic-bezier(.3, .6, .4, 1) forwards;
+}
+@keyframes wcShine { to { transform: translateX(260%); } }
+
+.wcAvatar { position: relative; flex: none; display: flex; width: 38px; height: 38px; }
+.wcAvatar .momoMark { position: relative; z-index: 1; box-shadow: 0 3px 10px -2px rgba(36, 66, 77, .45); }
+.wcSpark {
+        position: absolute; left: 50%; top: 50%; width: var(--s); height: var(--s); margin: calc(var(--s) / -2) 0 0 calc(var(--s) / -2);
+        border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); opacity: 0; z-index: 0;
+        animation: wcSpark .95s var(--d) cubic-bezier(.2, .75, .3, 1) both;
+}
+.wcSpark--star { border-radius: 0; width: calc(var(--s) * 1.8); height: calc(var(--s) * 1.8); margin: calc(var(--s) * -.9) 0 0 calc(var(--s) * -.9);
+        clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%); }
+@keyframes wcSpark {
+        /* 位移只写首尾两帧，全程一条缓出曲线；透明度另走：快速亮起 → 保持 → 末段淡出 */
+        0% { opacity: 0; transform: translate(calc(var(--dx) * .45), calc(var(--dy) * .45)) scale(.3) rotate(0); }
+        18%, 62% { opacity: 1; }
+        100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1) rotate(90deg); }
+}
+
+.wcText { display: flex; flex-direction: column; min-width: 0; text-align: left; }
+.wcTitle { font-size: .95rem; font-weight: 650; line-height: 1.3; color: var(--text); letter-spacing: .01em; animation: wcRise .5s .14s var(--ease) both; }
+.wcSub { margin-top: .1rem; font-size: .76rem; line-height: 1.35; color: var(--sub); animation: wcRise .5s .24s var(--ease) both; }
+.wcTitle, .wcSub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@keyframes wcRise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
