@@ -155,7 +155,12 @@
                                                                         <!-- V9.3：附件回显行（已选附件名 + 移除），默认隐藏；
                                                                              V13：Agent 模式附件作为任务上下文，同样支持 -->
                                                                         <HBox id="attachRowHero" visible="false" alignItems="Center" class="attachRow">
-                                                                                <Text id="attachNameHero" class="attachName"/>
+                                                                                <!-- 20261025：附件显示成文件小卡片（类型图标 · 文件名 · 大小与行数 · 移除） -->
+                                                                                <core:Icon id="attachIcoHero" src="sap-icon://document-text" class="attachIco"/>
+                                                                                <VBox renderType="Bare" class="attachInfo">
+                                                                                        <Text id="attachNameHero" class="attachName" wrapping="false"/>
+                                                                                        <Text id="attachMetaHero" class="attachMeta" wrapping="false"/>
+                                                                                </VBox>
                                                                                 <Button id="attachDelHero" icon="sap-icon://decline" type="Transparent"
                                                                                         tooltip="{i18n>attachRemove}" press=".onAttachRemove" class="attachDel"/>
                                                                         </HBox>
@@ -260,7 +265,12 @@
                                                                                 class="chatInput"/>
                                                                         <!-- V9.3：附件回显行（V12：仅对话模式显示，控制器统一同步） -->
                                                                         <HBox id="attachRowDock" visible="false" alignItems="Center" class="attachRow">
-                                                                                <Text id="attachNameDock" class="attachName"/>
+                                                                                <!-- 20261025：附件显示成文件小卡片（类型图标 · 文件名 · 大小与行数 · 移除） -->
+                                                                                <core:Icon id="attachIcoDock" src="sap-icon://document-text" class="attachIco"/>
+                                                                                <VBox renderType="Bare" class="attachInfo">
+                                                                                        <Text id="attachNameDock" class="attachName" wrapping="false"/>
+                                                                                        <Text id="attachMetaDock" class="attachMeta" wrapping="false"/>
+                                                                                </VBox>
                                                                                 <Button id="attachDelDock" icon="sap-icon://decline" type="Transparent"
                                                                                         tooltip="{i18n>attachRemove}" press=".onAttachRemove" class="attachDel"/>
                                                                         </HBox>

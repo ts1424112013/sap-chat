@@ -1288,3 +1288,157 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .wcSub { margin-top: .1rem; font-size: .76rem; line-height: 1.35; color: var(--sub); animation: wcRise .5s .24s var(--ease) both; }
 .wcTitle, .wcSub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @keyframes wcRise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+/* ==================== 20261025：交互细节（会话行 / 回复操作条 / 发送动效 / 拖拽附件）====================
+   都是鼠标操作时的即时反馈；系统"减弱动效"时由 style-patches 的全局规则压成瞬间完成 */
+:root { --ok: #16A34A; --ut-action: #9DBCFF; --ut-hover: rgba(255, 255, 255, .12); }
+[data-theme="dark"] { --ok: #4ADE80; --ut-action: #1D4ED8; --ut-hover: rgba(17, 24, 39, .08); }
+
+/* —— ② 会话行 —— */
+/* 悬浮操作排：淡入 + 轻微滑入（原来 display:none → flex 突然出现）；删除键不再单独藏起来 */
+.sessionItem .sessActions {
+        display: flex !important; opacity: 0; transform: translateX(4px); pointer-events: none;
+        transition: opacity .16s var(--ease), transform .2s var(--ease);
+}
+.sessionItem:hover .sessActions, .sessionItem .sessActions:focus-within { opacity: 1; transform: none; pointer-events: auto; }
+.sessionItem .sessDelBtn { visibility: visible !important; }
+/* 就地改名：输入框浮在标题那一行上 */
+.sessionList .sessionItem { position: relative; }
+.sessionItem.sessRenaming .sessActions { opacity: 0 !important; pointer-events: none !important; }
+.sessionItem.sessRenaming .sessTitleRow { visibility: hidden; }
+.sessRenameInput {
+        position: absolute; z-index: 2; top: .3rem; left: .4rem; right: .4rem; height: 1.75rem; box-sizing: border-box;
+        padding: 0 .45rem; font: inherit; font-size: .85rem; font-weight: 500; color: var(--text);
+        background: var(--surface); border: 1px solid var(--accent); border-radius: 8px; outline: none; box-shadow: var(--ring);
+        animation: sessRenIn .18s var(--ease) both;
+}
+@keyframes sessRenIn { from { opacity: .3; transform: scale(.97); } to { opacity: 1; transform: none; } }
+/* 删除：先定住高度再收起 + 往左淡出 */
+.sessionList .sessionItem.sessLeaving {
+        height: 0 !important; min-height: 0 !important; margin-top: 0 !important; margin-bottom: 0 !important;
+        opacity: 0; transform: translateX(-14px); overflow: hidden; pointer-events: none;
+        transition: height .22s var(--ease), margin .22s var(--ease), opacity .16s ease, transform .2s var(--ease);
+}
+/* 撤销删除：从左边弹回来 */
+.sessionList .sessionItem.sessItemBack { animation: sessBack .45s cubic-bezier(.3, 1.3, .5, 1) both; }
+@keyframes sessBack { from { opacity: 0; transform: translateX(-16px) scale(.97); } to { opacity: 1; transform: none; } }
+/* 置顶 / 改名保存后：这一行亮一下再淡掉（盖一层半透明主色，不影响原有的悬停 / 当前底色） */
+.sessionList .sessionItem.sessItemFlash::after {
+        content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+        background: color-mix(in srgb, var(--accent) 13%, transparent);
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 38%, transparent);
+        animation: sessFlash 1.1s ease-out forwards;
+}
+@keyframes sessFlash { 0%, 35% { opacity: 1; } 100% { opacity: 0; } }
+.sessPinBtn.sessPinPop .sapMBtnIcon { animation: replyPop .45s cubic-bezier(.3, 1.6, .5, 1); }
+
+/* 删除后的「撤销」卡片（utils/UndoToast.js，底部提示栈）：反色小卡 + 倒计时条，悬停暂停 */
+.undoToast {
+        position: relative; display: flex; align-items: center; gap: .6rem; max-width: min(26rem, 100%); box-sizing: border-box;
+        padding: .5rem .5rem .5rem .8rem; border-radius: 14px; overflow: hidden;
+        background: var(--text); color: var(--bg);
+        box-shadow: 0 12px 30px -8px rgba(17, 24, 39, .4), 0 2px 6px rgba(17, 24, 39, .14);
+        animation: utIn .4s cubic-bezier(.34, 1.4, .64, 1) both;
+}
+.undoToast.is-leaving { animation: utOut .22s ease-in both; }
+@keyframes utIn { from { opacity: 0; transform: translateY(16px) scale(.94); } to { opacity: 1; transform: none; } }
+@keyframes utOut { to { opacity: 0; transform: translateY(8px) scale(.97); } }
+.utIco { flex: none; display: flex; width: 1rem; height: 1rem; opacity: .7; }
+.utIco svg { width: 100%; height: 100%; }
+.utText { flex: 1 1 auto; min-width: 0; font-size: .82rem; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.utAction {
+        flex: none; height: 1.9rem; padding: 0 .75rem; border: none; border-radius: 9px; cursor: pointer;
+        font: inherit; font-size: .82rem; font-weight: 650; color: var(--ut-action); background: transparent;
+        transition: background .15s var(--ease);
+}
+.utAction:hover { background: var(--ut-hover); }
+.utAction:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ut-action); }
+.utTimer { position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: currentColor; opacity: .35; transform-origin: left; animation: offNoticeTimer linear forwards; }
+.undoToast:hover .utTimer, .undoToast:focus-within .utTimer { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) { .utTimer { display: none; } }
+
+/* —— ③ 回复操作条（复制 / 重新生成 / 有帮助 / 没帮助）—— */
+.replyBar { margin: .3rem 0 0 -.45rem; gap: 2px; opacity: 0; transform: translateY(4px); transition: opacity .18s var(--ease), transform .22s var(--ease); }
+.chatRow:hover .replyBar, .replyBar:focus-within, .replyBar.replyRated,
+[id$="msgList"] .sapMLIB:last-child .replyBar { opacity: 1; transform: none; }
+/* 「重新生成」只在最后一条回复上 */
+.replyBar .replyRegen { display: none !important; }
+[id$="msgList"] .sapMLIB:last-child .replyBar .replyRegen { display: inline-block !important; }
+.replyBtn.sapMBtn { height: 1.9rem !important; min-width: 0 !important; padding: 0 !important; }
+.replyBtn .sapMBtnInner {
+        width: 1.9rem !important; min-width: 0 !important; height: 1.9rem !important; min-height: 0 !important; padding: 0 !important;
+        display: flex; align-items: center; justify-content: center;
+        border: none !important; border-radius: 8px !important; background: transparent !important; box-shadow: none !important;
+        transition: background .15s var(--ease);
+}
+.replyBtn .sapMBtnIcon { width: auto !important; margin: 0 !important; line-height: 1 !important; font-size: .85rem !important; color: var(--sub) !important; transition: color .15s var(--ease); }
+.replyBtn:hover .sapMBtnInner { background: var(--hover) !important; }
+.replyBtn:hover .sapMBtnIcon { color: var(--text) !important; }
+.replyBtn.replyOn .sapMBtnInner { background: var(--accent-soft) !important; }
+.replyBtn.replyOn .sapMBtnIcon { color: var(--accent) !important; }
+.replyBtn.replyOk .sapMBtnIcon { color: var(--ok) !important; animation: replyPop .4s cubic-bezier(.3, 1.6, .5, 1); }
+.replyBtn.replyPop .sapMBtnIcon { animation: replyPop .4s cubic-bezier(.3, 1.6, .5, 1); }
+.replyBtn.replySpin .sapMBtnIcon { animation: replySpin .6s cubic-bezier(.3, .9, .4, 1); }
+@keyframes replyPop { 0% { transform: scale(.6); } 60% { transform: scale(1.25); } 100% { transform: scale(1); } }
+@keyframes replySpin { to { transform: rotate(360deg); } }
+
+/* —— ④ 发送：纸飞机飞出去，提问从输入框方向升起，回复结束飞机落回按钮 —— */
+.sendPlaneGhost {
+        position: fixed !important; z-index: 1300; margin: 0 !important; pointer-events: none;
+        display: flex !important; align-items: center; justify-content: center;
+        color: var(--accent) !important;
+        animation: planeFly .75s linear forwards;
+}
+/* 先往后一缩（蓄力），再加速斜向右上飞走、边飞边变小，后半程淡出；缓动按段写 */
+@keyframes planeFly {
+        0% { transform: translate(0, 0) rotate(0) scale(1); opacity: 1; animation-timing-function: cubic-bezier(.2, .7, .4, 1); }
+        18% { transform: translate(-5px, 5px) rotate(6deg) scale(1.1); opacity: 1; animation-timing-function: cubic-bezier(.5, .1, .7, .7); }
+        55% { opacity: 1; }
+        100% { transform: translate(72px, -80px) rotate(-14deg) scale(.45); opacity: 0; }
+}
+.chatRow.chatRowSent { animation: sentRise .52s cubic-bezier(.3, 1.25, .5, 1) both; transform-origin: right bottom; }
+.chatRow.chatRowSettled { animation: none; }
+@keyframes sentRise { from { opacity: 0; transform: translateY(44px) scale(.94); } 50% { opacity: 1; } to { opacity: 1; transform: none; } }
+.sendBtn.sendBtnStop .sapMBtnIcon { animation: stopIn .28s cubic-bezier(.3, 1.5, .5, 1) both; }
+@keyframes stopIn { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
+.sendBtn.sendBtnLand .sapMBtnIcon { animation: planeLand .5s cubic-bezier(.3, 1.3, .5, 1) both; }
+@keyframes planeLand { from { opacity: 0; transform: translate(-10px, 10px) rotate(12deg) scale(.6); } to { opacity: 1; transform: none; } }
+
+/* —— ⑦ 拖文件进窗口：输入卡蓝色虚线框 + 「松开即可添加」；附件显示成文件小卡片 —— */
+.inputCard { position: relative; transition: border-color .15s var(--ease), box-shadow .15s var(--ease), transform .2s var(--ease); }
+.inputCard.fileDragOver {
+        border-style: dashed !important; border-color: var(--accent) !important;
+        box-shadow: var(--ring), 0 10px 30px rgba(37, 99, 235, .14) !important;
+        transform: scale(1.012);
+}
+.inputCard > .dropHint {
+        position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; gap: .5rem;
+        border-radius: inherit; pointer-events: none;
+        background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+        color: var(--accent); font-size: .92rem; font-weight: 600; letter-spacing: .02em;
+        opacity: 0; transition: opacity .15s var(--ease);
+}
+.inputCard.fileDragOver > .dropHint { opacity: 1; }
+.dropHint svg { width: 1.2rem; height: 1.2rem; }
+.inputCard.fileDragOver > .dropHint svg { animation: dropBob 1s ease-in-out infinite; }
+@keyframes dropBob { 50% { transform: translateY(-3px); } }
+
+.inputCard .attachRow {
+        display: inline-flex !important; align-self: flex-start; gap: .55rem; max-width: min(22rem, 100%); box-sizing: border-box;
+        margin: .2rem 0 .35rem; padding: .38rem .3rem .38rem .4rem !important;
+        background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+        animation: attachIn .36s cubic-bezier(.3, 1.4, .5, 1) both;
+}
+.inputCard .attachRow.attachPop { animation: attachPop .36s cubic-bezier(.3, 1.4, .5, 1) both; }
+@keyframes attachIn { from { opacity: 0; transform: translateY(6px) scale(.9); } to { opacity: 1; transform: none; } }
+@keyframes attachPop { from { opacity: .4; transform: scale(.92); } to { opacity: 1; transform: none; } }
+.attachRow > .sapMFlexItem:nth-child(2) { min-width: 0; }
+.attachIco {
+        flex: none; width: 2rem !important; height: 2rem !important; line-height: 2rem !important; border-radius: 9px;
+        background: var(--accent-soft); color: var(--accent) !important; font-size: .95rem !important; text-align: center;
+}
+.attachInfo { display: flex; flex-direction: column; min-width: 0; padding-right: .1rem; }
+.attachRow .attachName { color: var(--text) !important; font-size: .8rem !important; font-weight: 600; line-height: 1.3; max-width: 15rem; }
+.attachRow .attachMeta { color: var(--sub) !important; font-size: .7rem !important; line-height: 1.3; }
+.attachRow .attachDel .sapMBtnInner { width: 1.6rem !important; min-width: 0 !important; height: 1.6rem !important; min-height: 0 !important; border-radius: 7px !important; background: transparent !important; border: none !important; }
+.attachRow .attachDel:hover .sapMBtnInner { background: var(--hover) !important; }

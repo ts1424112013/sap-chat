@@ -12,6 +12,7 @@ sap.ui.define([
         "sap/m/FlexItemData",
         "sap/m/Dialog",
         "sap/m/Input",
+        "sap/m/InstanceManager",
         "sap/ui/core/HTML",
         "sap/ui/util/Storage",
         "zai/chat/service/ChatService",
@@ -25,6 +26,7 @@ sap.ui.define([
         "zai/chat/utils/MomoState",
         "zai/chat/utils/OfflineNotice",
         "zai/chat/utils/WelcomeToast",
+        "zai/chat/utils/UndoToast",
         "zai/chat/controller/mixin/SceneModels",
         "zai/chat/controller/mixin/SettingsPanel",
         "zai/chat/controller/mixin/EvalPanel",
@@ -36,7 +38,7 @@ sap.ui.define([
         "zai/chat/controller/mixin/SessionMessages",
         "zai/chat/controller/mixin/SkillPanel",
         "zai/chat/controller/mixin/ResultRestore"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, DataGrid, MomoMark, MomoState, OfflineNotice, WelcomeToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore) {
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, AskCard, DataGrid, MomoMark, MomoState, OfflineNotice, WelcomeToast, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore) {
         "use strict";
 
         /**
@@ -225,6 +227,7 @@ sap.ui.define([
                         };
                         this.byId("msgInput").addEventDelegate({ onkeydown: fnEnter });
                         this.byId("heroInput").addEventDelegate({ onkeydown: fnEnter });
+                        this._bindFileDrop();   // 20261025：拖文件进窗口 = 添加附件
 
                         // ---------- V8：网关认证由应用层登录承担 ----------
                         // 登录成功后同一账密即网关 Basic 凭据，不再弹 SAP 账密框；
@@ -282,16 +285,18 @@ sap.ui.define([
                 _iAttachMaxChars: 30000,
 
                 onFileChosen: function (oEvent) {
-                        var that = this;
-                        var oRB = this.getView().getModel("i18n").getResourceBundle();
                         var aFiles = oEvent.getParameter("files");
                         var oFile = aFiles && aFiles[0];
-                        var oUploader = oEvent.getSource();
-                        oUploader.setValue(""); // 允许重复选择同一文件
-
-                        if (!oFile) {
-                                return;
+                        oEvent.getSource().setValue(""); // 允许重复选择同一文件
+                        if (oFile) {
+                                this._readAttachFile(oFile);
                         }
+                },
+
+                /** 读入一个附件文件（点回形针选的、拖进来的共用）：校验类型 / 大小 → 解码 → 挂到输入卡 */
+                _readAttachFile: function (oFile) {
+                        var that = this;
+                        var oRB = this.getView().getModel("i18n").getResourceBundle();
                         var sName = oFile.name || oRB.getText("attachDefaultName");
                         var iBytes = oFile.size || 0;
                         var sExt = (sName.split(".").pop() || "").toLowerCase();
@@ -348,10 +353,126 @@ sap.ui.define([
                                 lines: iLines,
                                 block: sBlock
                         };
-                        var sLabel = oRB.getText(bTrunc ? "attachLabelTrunc" : "attachLabel", [sName, sSize, iLines]);
-                        this.byId("attachNameHero").setText(sLabel);
-                        this.byId("attachNameDock").setText(sLabel);
+                        // 20261025：文件小卡片 —— 类型图标 + 文件名 + 「大小 · 行数」
+                        var sMeta = oRB.getText(bTrunc ? "attachChipMetaTrunc" : "attachChipMeta", [sSize, iLines]);
+                        var sIcon = this._attachIcon(sName);
+                        ["Hero", "Dock"].forEach(function (sSuf) {
+                                this.byId("attachName" + sSuf).setText(sName);
+                                this.byId("attachMeta" + sSuf).setText(sMeta);
+                                this.byId("attachIco" + sSuf).setSrc(sIcon);
+                                this.byId("attachRow" + sSuf).setTooltip(sName);
+                        }, this);
                         this._syncAttachRowVisibility();
+                        // 换了附件（卡片本来就在）也弹一下
+                        var that = this;
+                        setTimeout(function () {
+                                ["attachRowHero", "attachRowDock"].forEach(function (sId) {
+                                        var oDom = that.byId(sId) && that.byId(sId).getDomRef();
+                                        if (oDom) {
+                                                oDom.classList.remove("attachPop");
+                                                void oDom.offsetWidth;
+                                                oDom.classList.add("attachPop");
+                                        }
+                                });
+                        }, 0);
+                },
+
+                /** 附件卡片的类型图标：表格 / 代码 / 其他文本 */
+                _attachIcon: function (sName) {
+                        var sExt = (String(sName).split(".").pop() || "").toLowerCase();
+                        if (sExt === "csv") {
+                                return "sap-icon://table-view";
+                        }
+                        if (["abap", "json", "xml", "yaml", "yml", "html", "htm", "sql", "py", "java", "js", "css", "ts", "xslt", "wsdl"].indexOf(sExt) >= 0) {
+                                return "sap-icon://source-code";
+                        }
+                        return "sap-icon://document-text";
+                },
+
+                /**
+                 * 20261025：把文件拖进窗口 → 输入卡变蓝色虚线框、提示「松开即可添加」；松开 = 和点回形针选文件一样。
+                 * 整个窗口都接（不用瞄准输入框）；有弹窗 / 弹出层开着时不接。不管接不接，都不让浏览器把文件直接打开。
+                 */
+                _bindFileDrop: function () {
+                        if (this._bFileDropBound || typeof document === "undefined") {
+                                return;
+                        }
+                        this._bFileDropBound = true;
+                        var that = this;
+                        var iDepth = 0;
+                        var fnHasFiles = function (e) {
+                                var t = e.dataTransfer && e.dataTransfer.types;
+                                return !!t && Array.prototype.indexOf.call(t, "Files") >= 0;
+                        };
+                        var fnCanDrop = function () {
+                                // MessageToast 也登记在弹出层里（类型是 sap.ui.core.Popup），提示还在时不能因此拒收
+                                var aPop = (InstanceManager.getOpenPopovers() || []).filter(function (p) {
+                                        return !(p && p.getMetadata && p.getMetadata().getName() === "sap.ui.core.Popup");
+                                });
+                                return !!ChatService.getAppUser() && !InstanceManager.hasOpenDialog() && !aPop.length;
+                        };
+                        var fnSet = function (bOn) {
+                                Array.prototype.forEach.call(document.querySelectorAll(".inputCard"), function (oCard) {
+                                        oCard.classList.toggle("fileDragOver", bOn);
+                                        if (bOn && !oCard.querySelector(":scope > .dropHint")) {
+                                                var oHint = document.createElement("div");
+                                                oHint.className = "dropHint";
+                                                oHint.setAttribute("aria-hidden", "true");
+                                                oHint.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" ' +
+                                                        'stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg>' +
+                                                        "<span></span>";
+                                                oHint.querySelector("span").textContent = that._rb().getText("dropHint");
+                                                oCard.appendChild(oHint);
+                                        }
+                                });
+                        };
+                        document.addEventListener("dragenter", function (e) {
+                                if (!fnHasFiles(e)) {
+                                        return;
+                                }
+                                e.preventDefault();
+                                iDepth++;
+                                if (fnCanDrop()) {
+                                        fnSet(true);
+                                }
+                        });
+                        document.addEventListener("dragover", function (e) {
+                                if (!fnHasFiles(e)) {
+                                        return;
+                                }
+                                e.preventDefault();
+                                e.dataTransfer.dropEffect = fnCanDrop() ? "copy" : "none";
+                        });
+                        document.addEventListener("dragleave", function (e) {
+                                if (!fnHasFiles(e)) {
+                                        return;
+                                }
+                                iDepth = Math.max(0, iDepth - 1);
+                                if (!iDepth || !e.relatedTarget) {   // 拖出窗口时 relatedTarget 为空
+                                        iDepth = 0;
+                                        fnSet(false);
+                                }
+                        });
+                        document.addEventListener("drop", function (e) {
+                                if (!fnHasFiles(e)) {
+                                        return;
+                                }
+                                e.preventDefault();
+                                iDepth = 0;
+                                fnSet(false);
+                                var aFiles = e.dataTransfer.files;
+                                if (!fnCanDrop() || !aFiles || !aFiles.length) {
+                                        return;
+                                }
+                                if (aFiles.length > 1) {
+                                        MessageToast.show(that._rb().getText("dropOneFile"));
+                                }
+                                that._readAttachFile(aFiles[0]);
+                                var oInput = that.byId(that.getView().getModel("chat").getProperty("/heroVisible") ? "heroInput" : "msgInput");
+                                if (oInput) {
+                                        oInput.focus();
+                                }
+                        });
                 },
 
                 onAttachRemove: function () {
@@ -844,10 +965,44 @@ sap.ui.define([
                                         this._openSkills(this.byId(oChatModel.getProperty("/heroVisible") ? "heroInput" : "msgInput"), true);
                                         return;
                                 }
+                                this._flySendPlane();
                                 this._sendAgentMessage(sText);
                         } else {
+                                this._flySendPlane();
                                 this._sendChatMessage(sText);
                         }
+                },
+
+                /**
+                 * 20261025：发送时纸飞机从发送键飞出去。飞的是浮在页面最上层的一架"影子"飞机
+                 * （复制发送键的图标），按钮本身照常切成停止键；回复结束时飞机再落回按钮（_setSendBtnBusy）
+                 */
+                _flySendPlane: function () {
+                        if (typeof document === "undefined") {
+                                return;
+                        }
+                        var bHero = this.getView().getModel("chat").getProperty("/heroVisible");
+                        var oBtn = this.byId(bHero ? "sendBtnHero" : "sendBtn");
+                        var oIcon = oBtn && oBtn.getDomRef() && oBtn.getDomRef().querySelector(".sapMBtnIcon");
+                        var r = oIcon && oIcon.getBoundingClientRect();
+                        if (!r || !r.width) {
+                                return;
+                        }
+                        var oGhost = oIcon.cloneNode(true);
+                        oGhost.removeAttribute("id");
+                        oGhost.setAttribute("aria-hidden", "true");
+                        oGhost.classList.add("sendPlaneGhost");
+                        oGhost.style.left = r.left + "px";
+                        oGhost.style.top = r.top + "px";
+                        oGhost.style.width = r.width + "px";
+                        oGhost.style.height = r.height + "px";
+                        oGhost.style.fontSize = window.getComputedStyle(oIcon).fontSize;
+                        document.body.appendChild(oGhost);
+                        setTimeout(function () {
+                                if (oGhost.parentNode) {
+                                        oGhost.parentNode.removeChild(oGhost);
+                                }
+                        }, 800);
                 },
 
                 /**
@@ -935,9 +1090,11 @@ sap.ui.define([
                         this._setViewLayout(true);
 
                         // ---------- 推入用户消息（V13：Agent 也是普通聊天气泡，不标任务目标） ----------
-                        oChatModel.getProperty("/messages").push(
-                                this._buildEntry("user", sText, "", oCfg.meta)
-                        );
+                        // 20261025：记下发给后端的原文（「重新生成」用）和发送时刻（新气泡升起动效用）
+                        var oUserEntry = this._buildEntry("user", sText, "", oCfg.meta);
+                        oUserEntry.question = oCfg.question;
+                        oUserEntry.sentAt = Date.now();
+                        oChatModel.getProperty("/messages").push(oUserEntry);
                         // V16：卡片联动的后续消息（选项/自由输入）不清空用户正在写的草稿
                         if (!oCfg.keepInput) {
                                 oChatModel.setProperty("/input", "");
@@ -1433,6 +1590,16 @@ sap.ui.define([
                         if (!oBtn) {
                                 return;
                         }
+                        // 20261025：停止 → 纸飞机时，飞机从左下角落回按钮（发送时飞出去的那架）
+                        if (!bBusy && oBtn.hasStyleClass("sendBtnStop")) {
+                                oBtn.addStyleClass("sendBtnLand");
+                                clearTimeout(this._iLandTimer);
+                                this._iLandTimer = setTimeout(function () {
+                                        if (!oBtn.isDestroyed()) {
+                                                oBtn.removeStyleClass("sendBtnLand");
+                                        }
+                                }, 700);
+                        }
                         oBtn.setEnabled(true);
                         oBtn.setIcon(bBusy ? "sap-icon://stop" : "sap-icon://paper-plane");
                         oBtn.toggleStyleClass("sendBtnStop", !!bBusy);
@@ -1628,6 +1795,9 @@ sap.ui.define([
                         var oHits = this._oSessHits;
                         var bHits = !!sQ && !!oHits && oHits.q === sQ && oHits.mode === sMode;
                         var aList = bHits ? oHits.rows.slice() : this._localSessions(sMode, sQ);
+                        // 20261025：删除后等待撤销的会话先不显示
+                        var mHidden = this._mDelHidden || {};
+                        aList = aList.filter(function (s) { return !mHidden[s.SessionId]; });
                         var bMore = bHits ? oHits.more : (!sQ && !!(this._mSessMore || {})[sMode]);
                         if (bMore) {
                                 aList.push({ SessionId: "", Title: "", _more: true });
@@ -1962,16 +2132,6 @@ sap.ui.define([
                         var oRB = this.getView().getModel("i18n").getResourceBundle();
                         var bIsUser = oEntry.role === "user";
 
-                        // 复制按钮（仅 AI 回复显示，悬浮出现）
-                        var oCopyBtn = new Button({
-                                icon: "sap-icon://copy",
-                                type: "Transparent",
-                                tooltip: oRB.getText("copy"),
-                                visible: oEntry.copyable === true,
-                                press: this.onCopyMessage.bind(this)
-                        }).addStyleClass("bubbleCopyBtn");
-                        oCopyBtn.data("msgIndex", oContext.getPath().split("/").pop());
-
                         // ★ preferDOM:false 时，HTML 控件会把 content 的根元素
                         //   直接作为自身 DOM 根节点（class 取自内容根元素，
                         //   addStyleClass 会被覆盖）。因此这里包一层 bubbleBody
@@ -2029,7 +2189,6 @@ sap.ui.define([
 
                                 var oHead = new HBox({ justifyContent: "SpaceBetween", alignItems: "Center" }).addStyleClass("bubbleHead");
                                 oHead.addItem(oHeadLeft);
-                                oHead.addItem(oCopyBtn);
 
                                 oCol.addItem(oHead);
 
@@ -2159,6 +2318,11 @@ sap.ui.define([
                                         sanitizeContent: false
                                 }));
 
+                                // 20261025：回复操作条（原标题行右侧只有一个复制键）
+                                if (oEntry.copyable) {
+                                        oCol.addItem(this._buildReplyBar(oEntry));
+                                }
+
                                 oCol.addStyleClass("aiContent");
                         }
 
@@ -2190,6 +2354,16 @@ sap.ui.define([
                         }).addStyleClass(oEntry.rowClass || "chatRow");
                         if (oEntry.streaming) {
                                 oItem.addStyleClass("chatRowStreaming");
+                        }
+                        // 20261025：刚发出的提问从输入框方向升起（只在发送后 1 秒内创建的条目上播一次；
+                        // 播完换成 chatRowSettled = 不再带入场动画，之后重绘也不会重播）
+                        if (bIsUser && oEntry.sentAt && Date.now() - oEntry.sentAt < 1000) {
+                                oItem.addStyleClass("chatRowSent");
+                                setTimeout(function () {
+                                        if (!oItem.isDestroyed()) {
+                                                oItem.addStyleClass("chatRowSettled");
+                                        }
+                                }, 900);
                         }
                         return oItem;
                 },
@@ -2310,64 +2484,134 @@ sap.ui.define([
                 },
 
                 /**
-                 * V10：重命名会话（程序化输入对话框，回显当前标题）。
-                 * 仅改本地标题显示层与后端 ZAI_CHAT_SESS-TITLE，不动消息。
+                 * V10：重命名会话。仅改本地标题显示层与后端 ZAI_CHAT_SESS-TITLE，不动消息。
+                 * 20261025：改为就地编辑（原先弹 UI5 输入对话框）—— 见 _startInlineRename
                  */
                 onRenameSession: function (oEvent) {
-                        var that = this;
-                        var oRB = this.getView().getModel("i18n").getResourceBundle();
-                        var sSid = oEvent.getSource().data("sid");
-                        var oSessionModel = this.getView().getModel("session");
-                        var oMeta = (oSessionModel.getProperty("/sessions") || []).filter(function (s) {
-                                return s.SessionId === sSid;
-                        })[0];
-                        if (!oMeta) {
-                                return;
-                        }
-                        var oInput = new Input({
-                                value: oMeta.Title || "",
-                                width: "100%",
-                                maxLength: 70
-                        });
-                        var oDialog = new Dialog({
-                                title: oRB.getText("sessRenameTitle"),
-                                contentWidth: "22rem",
-                                content: [oInput],
-                                beginButton: new Button({
-                                        text: oRB.getText("save"),
-                                        type: "Emphasized",
-                                        press: function () {
-                                                var sTitle = (oInput.getValue() || "").trim();
-                                                oDialog.close();
-                                                if (!sTitle) {
-                                                        return;
-                                                }
-                                                ChatService.updateSession({ sessionId: sSid, title: sTitle }).then(function () {
-                                                        oMeta.Title = sTitle;
-                                                        oSessionModel.setProperty("/sessions", oSessionModel.getProperty("/sessions"));
-                                                        // 当前会话改了名，顶部标题同步
-                                                        if (oSessionModel.getProperty("/currentId") === sSid) {
-                                                                oSessionModel.setProperty("/title", sTitle);
-                                                        }
-                                                        MessageToast.show(oRB.getText("sessRenamed"));
-                                                }).catch(function (oErr) {
-                                                        MessageToast.show(Formatter.escapeHtml((oErr && oErr.message) || String(oErr)));
-                                                });
-                                        }
-                                }),
-                                endButton: new Button({
-                                        text: oRB.getText("cancel"),
-                                        press: function () { oDialog.close(); }
-                                })
-                        });
-                        this.getView().addDependent(oDialog);
-                        oDialog.open();
+                        this._startInlineRename(oEvent.getSource().data("sid"));
                 },
 
-                /** V10：置顶/取消置顶会话（后端 ZAI_CHAT_SESS-PINNED，仅本人会话） */
+                /** 按会话 ID 找侧栏列表里的条目控件 */
+                _sessItemBySid: function (sSid) {
+                        var oList = this.byId("sessionList");
+                        return ((oList && oList.getItems()) || []).filter(function (o) {
+                                return !!sSid && o.data("sid") === sSid;
+                        })[0] || null;
+                },
+
+                /** 记一个"刚发生"的标记（置顶 / 撤销删除），列表重绘时 2.5 秒内还认 */
+                _isRecentMark: function (oMark, sSid) {
+                        return !!oMark && oMark.sid === sSid && Date.now() - oMark.at < 2500;
+                },
+
+                /**
+                 * 20261025：会话标题就地改名 —— 标题位置换成输入框，回车 / 点别处保存，Esc 取消。
+                 * 先改显示，后端失败再改回来。输入框里的点击、按键不冒泡到列表项（否则会当成"打开会话"）。
+                 */
+                _startInlineRename: function (sSid) {
+                        var that = this;
+                        var oRB = this._rb();
+                        var oItem = this._sessItemBySid(sSid);
+                        var oDom = oItem && oItem.getDomRef();
+                        var oTitle = oDom && oDom.querySelector(".sessItemRow");
+                        var oMeta = this._findSession(sSid) ||
+                                (this.getView().getModel("session").getProperty("/sessions") || []).filter(function (s) {
+                                        return s.SessionId === sSid;
+                                })[0];
+                        if (!oMeta || !oTitle || oDom.querySelector(".sessRenameInput")) {
+                                return;
+                        }
+                        var sOld = oMeta.Title || "";
+                        var oInp = document.createElement("input");
+                        oInp.type = "text";
+                        oInp.className = "sessRenameInput";
+                        oInp.maxLength = 70;
+                        oInp.value = sOld;
+                        oInp.setAttribute("aria-label", oRB.getText("sessRename"));
+                        oTitle.appendChild(oInp);   // 浮在标题那一行上（样式 .sessRenameInput）
+                        oDom.classList.add("sessRenaming");
+                        ["click", "mousedown", "mouseup", "dblclick", "keyup", "keypress", "touchstart"].forEach(function (s) {
+                                oInp.addEventListener(s, function (e) { e.stopPropagation(); });
+                        });
+                        var bDone = false;
+                        var fnEnd = function (bSave) {
+                                if (bDone) {
+                                        return;
+                                }
+                                bDone = true;
+                                var sNew = (oInp.value || "").trim();
+                                if (oInp.parentNode) {
+                                        oInp.parentNode.removeChild(oInp);
+                                }
+                                oDom.classList.remove("sessRenaming");
+                                if (!bSave || !sNew || sNew === sOld) {
+                                        return;
+                                }
+                                that._setSessionTitle(sSid, sNew);
+                                ChatService.updateSession({ sessionId: sSid, title: sNew }).then(function () {
+                                        that._flashSessItem(sSid);
+                                }).catch(function (oErr) {
+                                        that._setSessionTitle(sSid, sOld);
+                                        MessageToast.show(Formatter.escapeHtml((oErr && oErr.message) || String(oErr)));
+                                });
+                        };
+                        oInp.addEventListener("keydown", function (e) {
+                                e.stopPropagation();
+                                if (e.isComposing || e.keyCode === 229) {
+                                        return;   // 拼音还没上屏，回车 / Esc 归输入法
+                                }
+                                if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        fnEnd(true);
+                                } else if (e.key === "Escape") {
+                                        e.preventDefault();
+                                        fnEnd(false);
+                                }
+                        });
+                        oInp.addEventListener("blur", function () { fnEnd(true); });
+                        oInp.focus();
+                        oInp.select();
+                },
+
+                /** 改会话标题的显示层：缓存、搜索结果、侧栏条目、顶栏标题 */
+                _setSessionTitle: function (sSid, sTitle) {
+                        var oSessionModel = this.getView().getModel("session");
+                        var aLists = [this._aAllSessions || [], (this._oSessHits && this._oSessHits.rows) || [],
+                                oSessionModel.getProperty("/sessions") || []];
+                        aLists.forEach(function (a) {
+                                a.forEach(function (s) {
+                                        if (s.SessionId === sSid) {
+                                                s.Title = sTitle;
+                                        }
+                                });
+                        });
+                        var oItem = this._sessItemBySid(sSid);
+                        var oText = oItem && oItem.data("titleCtrl");
+                        if (oText) {
+                                oText.setText(sTitle);
+                        }
+                        if (oSessionModel.getProperty("/currentId") === sSid) {
+                                oSessionModel.setProperty("/title", sTitle);
+                        }
+                },
+
+                /** 侧栏某一行轻闪一下（改名保存后） */
+                _flashSessItem: function (sSid) {
+                        var oItem = this._sessItemBySid(sSid);
+                        var oDom = oItem && oItem.getDomRef();
+                        if (!oDom) {
+                                return;
+                        }
+                        oDom.classList.remove("sessItemFlash");
+                        void oDom.offsetWidth;
+                        oDom.classList.add("sessItemFlash");
+                        setTimeout(function () { oDom.classList.remove("sessItemFlash"); }, 1200);
+                },
+
+                /** V10：置顶/取消置顶会话（后端 ZAI_CHAT_SESS-PINNED，仅本人会话）
+                 *  20261025：不再弹"已置顶"提示 —— 列表重排后这一行轻闪、图钉弹一下 */
                 onPinSession: function (oEvent) {
                         var that = this;
-                        var oRB = this.getView().getModel("i18n").getResourceBundle();
                         var oSrc = oEvent.getSource();
                         var sSid = oSrc.data("sid");
                         var bPinNow = oSrc.data("pinned") === "X";
@@ -2375,7 +2619,7 @@ sap.ui.define([
                                 sessionId: sSid,
                                 pinned: !bPinNow
                         }).then(function () {
-                                MessageToast.show(oRB.getText(bPinNow ? "sessUnpinned" : "sessPinned"));
+                                that._oSessFlash = { sid: sSid, at: Date.now(), kind: bPinNow ? "unpin" : "pin" };
                                 that._refreshSessions();
                         }).catch(function (oErr) {
                                 MessageToast.show(Formatter.escapeHtml((oErr && oErr.message) || String(oErr)));
@@ -2429,7 +2673,8 @@ sap.ui.define([
                                         src: "sap-icon://lightbulb"
                                 }).addStyleClass("sessModeIcon"));
                         }
-                        oTitleRow.addItem(new Text({ text: o.Title || o.SessionId, wrapping: true }).addStyleClass("sessItemTitle"));
+                        var oTitleText = new Text({ text: o.Title || o.SessionId, wrapping: true }).addStyleClass("sessItemTitle");
+                        oTitleRow.addItem(oTitleText);
                         oBox.addItem(oTitleRow);
 
                         // V12：时间行；Agent 任务附带状态徽标（进行中/已完成/部分完成/失败）
@@ -2496,9 +2741,25 @@ sap.ui.define([
                                 content: [oRow]
                         }).addStyleClass("sessionItem");
                         oItem.data("sid", o.SessionId);
+                        oItem.data("titleCtrl", oTitleText);
+                        // 20261025：双击标题就地改名（按钮区里的双击不算）
+                        var that = this;
+                        oItem.attachBrowserEvent("dblclick", function (oEv) {
+                                if (oEv.target && oEv.target.closest && oEv.target.closest(".sessActions, .sessRenameInput")) {
+                                        return;
+                                }
+                                that._startInlineRename(o.SessionId);
+                        });
                         // V10：置顶条目加左侧竖条样式
                         if (o.Pinned === "X") {
                                 oItem.addStyleClass("sessItemPinned");
+                        }
+                        // 20261025：刚置顶 / 撤销删除回来的那一行轻闪一下，眼睛好找；图钉弹一下
+                        if (this._isRecentMark(this._oSessFlash, o.SessionId)) {
+                                oItem.addStyleClass(this._oSessFlash.kind === "back" ? "sessItemBack" : "sessItemFlash");
+                                if (this._oSessFlash.kind === "pin") {
+                                        oPin.addStyleClass("sessPinPop");
+                                }
                         }
                         // V4.1「当前对话」高亮：工厂期按 session>/currentId 打标。
                         // 说明：ListBase 在 mode None 下会强制回退条目的 selected 属性
@@ -2525,22 +2786,102 @@ sap.ui.define([
                         this._loadHistoryFor(sSid, oMeta.Mode === "AGENT");
                 },
 
-                /** 删除会话（带确认） */
+                /** 删除会话（20261025：先收起 + 5 秒内可撤销，替换原确认框；见 _deleteWithUndo） */
                 onDeleteSession: function (oEvent) {
-                        var that = this;
                         var sSid = oEvent.getSource().data("sid");
-                        if (!sSid) {
-                                return;
+                        if (sSid) {
+                                this._deleteWithUndo(sSid);
                         }
-                        MessageBox.confirm(this._rb().getText("sessDeleteConfirm"), {
-                                onClose: function (sAction) {
-                                        if (sAction !== MessageBox.Action.OK) {
+                },
+
+                /** 删除后可撤销的时长 */
+                UNDO_DELETE_MS: 5000,
+
+                /**
+                 * 20261025：删除会话 = 这一行先收起、底部出「已删除 · 撤销」卡片，到时才真正调后端删除。
+                 * - 期间再删别的会话，上一条立即生效（同一时间只有一条待删）；
+                 * - 删的是当前会话：主区先切到空会话，撤销时再打开回来（真正删除前消息缓存都还在）；
+                 * - 关闭 / 刷新页面时，待删的那条立即提交（请求可能来不及发出，最坏是会话没删掉）。
+                 */
+                _deleteWithUndo: function (sSid) {
+                        var that = this;
+                        var oRB = this._rb();
+                        if (this._oPendingDel) {
+                                this._oPendingDel.toast.commit();
+                        }
+                        var oMeta = this._findSession(sSid) || {};
+                        var sTitle = this._stripRolePrefix(oMeta.Title || "");
+                        var oPend = { sid: sSid, state: "pending", switched: false };
+                        this._oPendingDel = oPend;
+                        this._mDelHidden = this._mDelHidden || {};
+
+                        if (!this._bUndoFlushBound && typeof window !== "undefined" && window.addEventListener) {
+                                this._bUndoFlushBound = true;
+                                window.addEventListener("pagehide", function () {
+                                        if (that._oPendingDel) {
+                                                that._oPendingDel.toast.commit();
+                                        }
+                                });
+                        }
+
+                        var fnHide = function () {
+                                if (oPend.state === "undone") {
+                                        return;
+                                }
+                                that._mDelHidden[sSid] = true;
+                                that._applySessionFilter();
+                                if (that.getView().getModel("session").getProperty("/currentId") === sSid) {
+                                        oPend.switched = true;
+                                        that._startNewSession();
+                                }
+                        };
+                        // 行先收起（定住当前高度 → 0 + 淡出），再从列表里拿掉
+                        var oItem = this._sessItemBySid(sSid);
+                        var oDom = oItem && oItem.getDomRef();
+                        if (oDom) {
+                                oDom.style.height = oDom.offsetHeight + "px";
+                                void oDom.offsetHeight;
+                                oDom.classList.add("sessLeaving");
+                                setTimeout(fnHide, 220);
+                        } else {
+                                fnHide();
+                        }
+
+                        oPend.toast = UndoToast.show({
+                                text: sTitle ? oRB.getText("sessDeletedUndo", [sTitle]) : oRB.getText("sessDeletedPlain"),
+                                actionText: oRB.getText("undo"),
+                                duration: this.UNDO_DELETE_MS,
+                                onAction: function () {
+                                        if (oPend.state !== "pending") {
                                                 return;
                                         }
+                                        oPend.state = "undone";
+                                        if (that._oPendingDel === oPend) {
+                                                that._oPendingDel = null;
+                                        }
+                                        delete that._mDelHidden[sSid];
+                                        that._oSessFlash = { sid: sSid, at: Date.now(), kind: "back" };
+                                        that._applySessionFilter();
+                                        if (oPend.switched) {
+                                                that._loadSessionById(sSid);
+                                        }
+                                },
+                                onTimeout: function () {
+                                        if (oPend.state !== "pending") {
+                                                return;
+                                        }
+                                        oPend.state = "done";
+                                        if (that._oPendingDel === oPend) {
+                                                that._oPendingDel = null;
+                                        }
                                         ChatService.deleteSession(sSid).then(function () {
+                                                delete that._mDelHidden[sSid];
                                                 that._forgetSession(sSid);
                                                 that._refreshSessions();
                                         }).catch(function (oErr) {
+                                                // 没删成：这一行放回来
+                                                delete that._mDelHidden[sSid];
+                                                that._applySessionFilter();
                                                 MessageToast.show(Formatter.escapeHtml((oErr && oErr.message) || String(oErr)));
                                         });
                                 }
@@ -3247,26 +3588,221 @@ sap.ui.define([
                         MessageToast.show(oRB.getText("exportCsvDone"));
                 },
 
-                /** 复制 AI 回复原文 */
-                onCopyMessage: function (oEvent) {
-                        var that = this;
-                        var oSource = oEvent.getSource();
-                        // 复制按钮通过 data("msgIndex") 携带消息下标（工厂方式创建）
-                        var sIndex = String(oSource.data("msgIndex"));
-                        var aMsgs = this.getView().getModel("chat").getProperty("/messages");
-                        var oEntry = aMsgs && aMsgs[parseInt(sIndex, 10)];
-                        var sText = (oEntry && oEntry.raw) || "";
-                        var oRB = this.getView().getModel("i18n").getResourceBundle();
+                /* =========================================================
+                 * 20261025：回复操作条 —— 复制 / 重新生成 / 有帮助 / 没帮助
+                 * 鼠标移到回复上浮出，最后一条回复常显（CSS：列表最后一项）；
+                 * 「重新生成」只在最后一条回复上出现（同样由 CSS 控制），点了把上一条提问再发一次
+                 * ========================================================= */
 
-                        if (navigator.clipboard && navigator.clipboard.writeText) {
-                                navigator.clipboard.writeText(sText).then(function () {
-                                        MessageToast.show(oRB.getText("toastCopied"));
-                                }).catch(function () {
-                                        that._copyFallback(sText, oRB);
-                                });
-                        } else {
-                                this._copyFallback(sText, oRB);
+                _buildReplyBar: function (oEntry) {
+                        var oRB = this._rb();
+                        if (oEntry.fb === undefined) {
+                                oEntry.fb = this._replyRateLoad()[this._replyRateKey(oEntry)] || "";
                         }
+                        // 生成中 / 等待中不出操作条；被停止、还没出字的回复也不出
+                        var oBar = new HBox({
+                                alignItems: "Center",
+                                visible: "{= !${chat>streaming} && !${chat>waiting} && !${chat>requestPending} && !!${chat>raw} }"
+                        }).addStyleClass("replyBar" + (oEntry.fb ? " replyRated" : ""));
+                        var fnBtn = function (sIcon, sTip, fnPress, sClass) {
+                                return new Button({ icon: sIcon, type: "Transparent", tooltip: sTip, press: fnPress })
+                                        .addStyleClass("replyBtn" + (sClass ? " " + sClass : ""));
+                        };
+                        oBar.addItem(fnBtn("sap-icon://copy", oRB.getText("replyCopy"), this._onReplyCopy.bind(this), "replyCopy"));
+                        oBar.addItem(fnBtn("sap-icon://refresh", oRB.getText(oEntry.role === "error" ? "replyRetry" : "replyRegen"),
+                                this._onReplyRegen.bind(this), "replyRegen"));
+                        ["up", "down"].forEach(function (sVal) {
+                                var oBtn = fnBtn("sap-icon://thumb-" + sVal, oRB.getText(sVal === "up" ? "replyGood" : "replyBad"),
+                                        this._onReplyRate.bind(this, sVal), "replyRate" + (oEntry.fb === sVal ? " replyOn" : ""));
+                                oBtn.data("rate", sVal);
+                                oBar.addItem(oBtn);
+                        }, this);
+                        return oBar;
+                },
+
+                /** 操作条按钮所在的消息条目（按绑定上下文取，不依赖下标） */
+                _replyEntryOf: function (oCtrl) {
+                        var oCtx = oCtrl && oCtrl.getBindingContext && oCtrl.getBindingContext("chat");
+                        return oCtx ? oCtx.getObject() : null;
+                },
+
+                /** 复制整条回复：图标就地变 ✓（绿色）1.4 秒，不再弹底部提示 */
+                _onReplyCopy: function (oEvent) {
+                        var oBtn = oEvent.getSource();
+                        var oEntry = this._replyEntryOf(oBtn);
+                        var sText = (oEntry && oEntry.raw) || "";
+                        var oRB = this._rb();
+                        var that = this;
+                        var fnOk = function () {
+                                clearTimeout(oBtn._iCopyTimer);
+                                oBtn.setIcon("sap-icon://accept");
+                                oBtn.setTooltip(oRB.getText("replyCopied"));
+                                oBtn.addStyleClass("replyOk");
+                                oBtn._iCopyTimer = setTimeout(function () {
+                                        if (oBtn.isDestroyed()) {
+                                                return;
+                                        }
+                                        oBtn.setIcon("sap-icon://copy");
+                                        oBtn.setTooltip(oRB.getText("replyCopy"));
+                                        oBtn.removeStyleClass("replyOk");
+                                }, 1400);
+                        };
+                        // 剪贴板接口不可用 / 被拒（非 https、页面没焦点）时走旧式复制，成功同样就地打勾
+                        var fnLegacy = function () {
+                                if (that._copyQuiet(sText)) {
+                                        fnOk();
+                                } else {
+                                        MessageToast.show(oRB.getText("copyFail"));
+                                }
+                        };
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                                navigator.clipboard.writeText(sText).then(fnOk).catch(fnLegacy);
+                        } else {
+                                fnLegacy();
+                        }
+                },
+
+                /** 旧式复制（隐藏 textarea + execCommand），不弹提示；返回是否成功 */
+                _copyQuiet: function (sText) {
+                        var oTA = document.createElement("textarea");
+                        oTA.value = sText;
+                        oTA.setAttribute("readonly", "");
+                        oTA.style.position = "fixed";
+                        oTA.style.opacity = "0";
+                        document.body.appendChild(oTA);
+                        oTA.select();
+                        var bOk = false;
+                        try {
+                                bOk = document.execCommand("copy");
+                        } catch (e) {
+                                bOk = false;
+                        }
+                        document.body.removeChild(oTA);
+                        return bOk;
+                },
+
+                /**
+                 * 重新生成：把这条回复之前的那条提问原样再发一次（新的一轮，带「重新生成」标记）。
+                 * 只认最后一轮；生成中不响应。提问原文优先用发送时记下的 question
+                 * （含角色前缀、附件内容），历史里读回来的按显示文本 + 角色还原
+                 */
+                _onReplyRegen: function (oEvent) {
+                        var oChat = this.getView().getModel("chat");
+                        if (oChat.getProperty("/busy")) {
+                                return;
+                        }
+                        var oBtn = oEvent.getSource();
+                        var oEntry = this._replyEntryOf(oBtn);
+                        var aMsgs = oChat.getProperty("/messages") || [];
+                        var iAt = aMsgs.indexOf(oEntry);
+                        if (iAt < 0) {
+                                return;
+                        }
+                        for (var j = iAt + 1; j < aMsgs.length; j++) {
+                                if (aMsgs[j].role === "user") {
+                                        return;   // 后面已经有新提问了，不是最后一轮
+                                }
+                        }
+                        var oUser = null;
+                        for (var i = iAt - 1; i >= 0; i--) {
+                                if (aMsgs[i].role === "user") {
+                                        oUser = aMsgs[i];
+                                        break;
+                                }
+                        }
+                        if (!oUser || !oUser.raw) {
+                                return;
+                        }
+                        var oDom = oBtn.getDomRef();
+                        if (oDom) {
+                                oDom.classList.remove("replySpin");
+                                void oDom.offsetWidth;
+                                oDom.classList.add("replySpin");
+                        }
+                        var oCtx = oChat.getProperty("/currentSession") || {};
+                        this._flySendPlane();
+                        this._executeSend({
+                                mode: oCtx.mode === "AGENT" ? "AGENT" : "CHAT",
+                                agentType: oCtx.agentType || "",
+                                displayText: oUser.raw,
+                                meta: this._rb().getText("regenMeta"),
+                                question: oUser.question || this._questionOf(oUser),
+                                keepInput: true    // 不动输入框里写了一半的内容和附件
+                        });
+                },
+
+                /** 历史里读回来的提问：显示文本 + meta 里的角色还原成发给后端的原文 */
+                _questionOf: function (oUser) {
+                        var sPrefix = this._rb().getText("rolePrefix");
+                        var sMeta = oUser.meta || "";
+                        var iAt = sMeta.indexOf(sPrefix);
+                        if (iAt < 0) {
+                                return oUser.raw;
+                        }
+                        var sRole = sMeta.slice(iAt + sPrefix.length).split(" · ")[0].trim();
+                        return sRole ? "【角色：" + sRole + "】\n" + oUser.raw : oUser.raw;
+                },
+
+                /** 有帮助 / 没帮助：再点一次取消；只记在本机浏览器（后端暂无反馈字段） */
+                _onReplyRate: function (sVal, oEvent) {
+                        var oBtn = oEvent.getSource();
+                        var oEntry = this._replyEntryOf(oBtn);
+                        if (!oEntry) {
+                                return;
+                        }
+                        var sNew = oEntry.fb === sVal ? "" : sVal;
+                        oEntry.fb = sNew;
+                        this._replyRateSave(this._replyRateKey(oEntry), sNew);
+                        var oBar = oBtn.getParent();
+                        oBar.toggleStyleClass("replyRated", !!sNew);
+                        oBar.getItems().forEach(function (b) {
+                                if (b.data("rate")) {
+                                        b.toggleStyleClass("replyOn", b.data("rate") === sNew);
+                                }
+                        });
+                        var oDom = oBtn.getDomRef();
+                        if (oDom && sNew) {
+                                oDom.classList.remove("replyPop");
+                                void oDom.offsetWidth;
+                                oDom.classList.add("replyPop");
+                        }
+                },
+
+                REPLY_RATE_KEY: "zaiChat.replyRate",
+                REPLY_RATE_MAX: 500,
+
+                /** 评价按"会话 + 回复内容"记（历史回读后条目 uid 会变，内容不变） */
+                _replyRateKey: function (oEntry) {
+                        var s = String((oEntry && oEntry.raw) || "");
+                        var h = 5381;
+                        for (var i = 0; i < s.length; i++) {
+                                h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+                        }
+                        return (this._sMessagesSession || "") + "|" + (h >>> 0).toString(36) + "." + s.length;
+                },
+
+                _replyRateLoad: function () {
+                        try {
+                                return JSON.parse(window.localStorage.getItem(this.REPLY_RATE_KEY) || "{}") || {};
+                        } catch (e) {
+                                return {};
+                        }
+                },
+
+                _replyRateSave: function (sKey, sVal) {
+                        try {
+                                var m = this._replyRateLoad();
+                                if (sVal) {
+                                        m[sKey] = sVal;
+                                } else {
+                                        delete m[sKey];
+                                }
+                                var aKeys = Object.keys(m);
+                                if (aKeys.length > this.REPLY_RATE_MAX) {
+                                        aKeys.slice(0, aKeys.length - this.REPLY_RATE_MAX).forEach(function (k) { delete m[k]; });
+                                }
+                                window.localStorage.setItem(this.REPLY_RATE_KEY, JSON.stringify(m));
+                        } catch (e) { /* 存不了就只在本页生效 */ }
                 },
 
                 /** 剪贴板兼容降级方案 */
