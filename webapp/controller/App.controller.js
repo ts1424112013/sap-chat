@@ -2175,9 +2175,11 @@ sap.ui.define([
                                 oHeadLeft.addItem(new Text({ text: oEntry.sender }).addStyleClass("bubbleSender"));
                                 if (oEntry.streaming && !oEntry.agentThinking && !oEntry.thinking) {
                                         // V16：等待计时（"思考中 · 3 秒"）
+                                        // 20261025：只在还在生成时显示 —— 列表条目会被复用，停止生成后这条回复
+                                        // 正文仍为空，原来只看 raw 会一直挂着「思考中…」，和「已停止生成」并排
                                         oHeadLeft.addItem(new Text({
                                                 text: "{= ${i18n>thinkingWait} + (${chat>elapsedText} ? ' · ' + ${chat>elapsedText} : '…') }",
-                                                visible: "{= ${chat>raw} === '' }"
+                                                visible: "{= !!${chat>streaming} && ${chat>raw} === '' }"
                                         }).addStyleClass("headThinking"));
                                 }
                                 oHeadLeft.addItem(new Text({ text: "{chat>time}" }).addStyleClass("bubbleTime aiHeadTime"));
