@@ -1153,11 +1153,15 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .offNoticeTitle { font-weight: 600; color: var(--text); }
 .offNoticeBody { margin-top: .15rem; color: var(--text-2); }
 
-/* —— 顶部提示栈（utils/ToastStack.js）：欢迎卡片、浮动提示上下排开，互不压盖 —— */
+/* —— 提示栈（utils/ToastStack.js）：顶部放后端不可达等提示，底部放欢迎卡片；同栈多张上下排开，互不压盖 ——
+   栈的 left（及底部栈的 bottom）由 JS 设置：在对话区里居中，对话态浮在底部输入框上方 */
 .toastStack {
-        position: fixed; z-index: 1200; top: 16px; left: 16px; right: 16px;
+        position: fixed; z-index: 1200; left: 16px; right: 16px;
         display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none;
 }
+.toastStack--top { top: 16px; }
+.toastStack--bottom { bottom: 40px; }
+.toastStack { transition: left .25s var(--ease), bottom .3s var(--ease); }
 .toastStack > * { pointer-events: auto; }
 /* 离场后收起高度（margin-bottom 抵掉 gap），下方卡片顺滑上移 */
 .toastStack > .is-collapsing {
@@ -1230,7 +1234,7 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .offNoticeCreds code + .offNoticeSep { margin: 0 .15rem; color: var(--sub); }
 
 /* ==================== 登录欢迎卡片（20261025，utils/WelcomeToast.js，替换原 MessageToast「欢迎，xxx」）====================
-   顶部提示栈里；弹性落下 + 去模糊，品牌渐变描边缓慢旋转，一道扫光，头像四周光点迸出，标题/副标题错开浮现 */
+   底部提示栈里（对话区居中）；弹性升起 + 去模糊，品牌渐变描边缓慢旋转，一道扫光，头像四周光点迸出，标题/副标题错开浮现 */
 @property --wcAngle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 :root {
         --wc-ring: #9180FF, #5C9BFF, #31C9E2, #75EFC7, #5C9BFF, #9180FF;
@@ -1250,8 +1254,8 @@ body, body.sapUiBody { background: var(--bg) !important; }
         animation: wcIn .62s cubic-bezier(.34, 1.56, .64, 1) both, wcSpin 5s linear infinite;
 }
 .welcomeToast.is-leaving { animation: wcOut .24s ease-in both; }
-@keyframes wcIn { from { opacity: 0; transform: translateY(-16px) scale(.9); filter: blur(6px); } 60% { filter: blur(0); } to { opacity: 1; transform: none; filter: none; } }
-@keyframes wcOut { to { opacity: 0; transform: translateY(-8px) scale(.96); filter: blur(3px); } }
+@keyframes wcIn { from { opacity: 0; transform: translateY(18px) scale(.9); filter: blur(6px); } 60% { filter: blur(0); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes wcOut { to { opacity: 0; transform: translateY(10px) scale(.96); filter: blur(3px); } }
 @keyframes wcSpin { to { --wcAngle: 360deg; } }
 
 /* 扫光：自身裁切，不影响光点溢出卡片 */

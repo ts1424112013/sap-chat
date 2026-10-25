@@ -7,7 +7,7 @@ sap.ui.define([
         /**
          * 登录欢迎卡片（20261025，替换原 MessageToast「欢迎，xxx」）
          * ---------------------------------------------------------------
-         * 顶部居中：Momo 头像（弹入、圆点跳两下、眨眼并看向文字）+ 四周小光点迸出
+         * 对话区底部居中（20261025 按用户意见从顶部挪下来）：Momo 头像（弹入、圆点跳两下、眨眼并看向文字）+ 四周小光点迸出
          * + 问候语（按时段）+ 副标题；卡片带缓慢旋转的品牌渐变描边、一道扫光。
          * 样式 .welcomeToast / .wc*（style-gale.css 末尾），头像动效 .momoMark--greet（style-momo.css）。
          */
@@ -79,7 +79,7 @@ sap.ui.define([
                         };
                         oCard.addEventListener("click", fnHide);   // 点一下即收起
 
-                        ToastStack.mount(oCard, false);
+                        ToastStack.mount(oCard, { edge: "bottom" });
                         ToastStack.autoDismiss(oCard, o.duration || 4200, fnHide);
                         oCurrent = oCard;
                         return { hide: fnHide };

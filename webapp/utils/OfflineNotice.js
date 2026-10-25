@@ -119,7 +119,7 @@ sap.ui.define([
                         };
                         oClose.addEventListener("click", fnHide);
 
-                        ToastStack.mount(oCard, true);
+                        ToastStack.mount(oCard, { edge: "top", first: true });
                         ToastStack.autoDismiss(oCard, o.duration || 10000, fnHide);
                         oCurrent = oCard;
                         return { hide: fnHide };
