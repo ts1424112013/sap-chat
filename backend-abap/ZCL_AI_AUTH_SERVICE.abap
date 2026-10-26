@@ -40,6 +40,9 @@
 *   (BNAME → NAME_TEXTC / DEPARTMENT)补齐; DPC 不用改(整个结构 camelCase 输出 targetName / targetDept)。
 *   字段列表写成动态(SELECT (lv_cols) FROM user_addr), 万一字段名与系统不符只是查不到(留空、
 *   前端只显示账号), 不会让整个类激活失败; 只读 USER_ADDR, 不碰任何权限表
+* V1.4 20261027: 字段映射新增 RANDOM, 按字段长度逐字符生成(CHAR 大写字母/数字,
+*   NUMC 纯数字); 权限表与规则共用校验, DATS/TIMS 不支持; 随机值不参与业务查重,
+*   撤销沿用授权时的原始主键; 随机主键碰撞报错, 不误报已有权限。
 * ★ 重贴后核对标记: "INSERT (" 只在 METHOD grant_row, "DELETE FROM (" 只在 METHOD
 *   revoke_row; "SELECT SINGLE * FROM (" 只在 row_exists(查重)与 tcode_known(自动发现, 只读);
 *   有 METHOD quote(不依赖 cl_abap_dyn_prg); decide 内有 'PENDING' 状态校验;
@@ -107,7 +110,7 @@ CLASS zcl_ai_auth_service DEFINITION
              datatype  TYPE string,
              leng      TYPE i,
              convexit  TYPE string,
-             map_type  TYPE string,      " TCODE / USER / WERKS / CONST / DATE / TIME / BY / INITIAL
+             map_type  TYPE string,      " TCODE / USER / WERKS / CONST / RANDOM / DATE / TIME / BY / INITIAL
              const_val TYPE string,
            END OF ty_field.
     TYPES tt_field TYPE STANDARD TABLE OF ty_field WITH DEFAULT KEY.
@@ -221,6 +224,10 @@ CLASS zcl_ai_auth_service DEFINITION
       RETURNING VALUE(rs)      TYPE ty_config.
 
   PRIVATE SECTION.
+
+    " 每个内部会话复用生成器, 避免批量授权时逐字段重设种子。
+    CLASS-DATA go_random_char TYPE REF TO cl_abap_random_int.
+    CLASS-DATA go_random_num  TYPE REF TO cl_abap_random_int.
 
     TYPES tt_string TYPE STANDARD TABLE OF string WITH DEFAULT KEY.
 
@@ -358,6 +365,11 @@ CLASS zcl_ai_auth_service DEFINITION
       IMPORTING is_table       TYPE ty_table
                 ir_row         TYPE REF TO data
       EXPORTING ev_where       TYPE string
+                ev_error       TYPE string.
+    CLASS-METHODS random_value
+      IMPORTING iv_datatype    TYPE string
+                iv_length      TYPE i
+      EXPORTING ev_value       TYPE string
                 ev_error       TYPE string.
 
     " ---- 唯一读写目标权限表的三个方法 ----
@@ -1471,7 +1483,7 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
           lv_tcodes = lv_tcodes + 1.
         WHEN 'USER'.
           lv_users = lv_users + 1.
-        WHEN 'WERKS' OR 'CONST' OR 'DATE' OR 'TIME' OR 'BY' OR 'INITIAL'.
+        WHEN 'WERKS' OR 'CONST' OR 'RANDOM' OR 'DATE' OR 'TIME' OR 'BY' OR 'INITIAL'.
           " 合法
         WHEN OTHERS.
           ev_error = |字段 { ls_in-f } 的映射类型不合法: { ls_in-t }|.
@@ -1487,6 +1499,10 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
           ev_error = |字段 { ls_in-f } 太短, 放不下日期 / 时间|.
           EXIT.
         ENDIF.
+      ENDIF.
+      IF ls_in-t = 'RANDOM' AND ( ( ls_f-datatype <> 'CHAR' AND ls_f-datatype <> 'NUMC' ) OR ls_f-leng < 1 ).
+        ev_error = |字段 { ls_in-f } 的随机值只支持长度大于 0 的 CHAR / NUMC 字段|.
+        EXIT.
       ENDIF.
       lv_const = condense( ls_in-c ).
       IF ls_in-t = 'CONST'.
@@ -1562,6 +1578,42 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
   " 组行 / 组条件
   "=====================================================================
 
+  METHOD random_value.
+
+    DATA: lo_random   TYPE REF TO cl_abap_random_int,
+          lv_alphabet TYPE string VALUE '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+          lv_offset   TYPE i.
+
+    CLEAR: ev_value, ev_error.
+    IF ( iv_datatype <> 'CHAR' AND iv_datatype <> 'NUMC' ) OR iv_length < 1.
+      ev_error = '随机值只支持长度大于 0 的 CHAR / NUMC 字段'.
+      RETURN.
+    ENDIF.
+    TRY.
+        IF iv_datatype = 'NUMC'.
+          IF go_random_num IS NOT BOUND.
+            go_random_num = cl_abap_random_int=>create( seed = cl_abap_random=>seed( ) min = 0 max = 9 ).
+          ENDIF.
+          lo_random = go_random_num.
+        ELSE.
+          IF go_random_char IS NOT BOUND.
+            go_random_char = cl_abap_random_int=>create( seed = cl_abap_random=>seed( ) min = 0 max = 35 ).
+          ENDIF.
+          lo_random = go_random_char.
+        ENDIF.
+        " 按字符拼接, 不把整串转成整数; 长 NUMC 与前导零都能完整保留。
+        DO iv_length TIMES.
+          lv_offset = lo_random->get_next( ).
+          ev_value = ev_value && lv_alphabet+lv_offset(1).
+        ENDDO.
+      CATCH cx_abap_random.
+        CLEAR ev_value.
+        ev_error = '随机值生成失败，请重试'.
+    ENDTRY.
+
+  ENDMETHOD.
+
+
   METHOD build_row.
 
     FIELD-SYMBOLS: <row> TYPE any, <val> TYPE any, <conv> TYPE any.
@@ -1589,6 +1641,13 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
           lv_value = iv_werks.
         WHEN 'CONST'.
           lv_value = ls_f-const_val.
+        WHEN 'RANDOM'.
+          random_value( EXPORTING iv_datatype = ls_f-datatype iv_length = ls_f-leng
+                        IMPORTING ev_value = lv_value ev_error = ev_error ).
+          IF ev_error IS NOT INITIAL.
+            ev_error = |字段 { ls_f-fieldname }: { ev_error }|.
+            RETURN.
+          ENDIF.
         WHEN 'DATE'.
           lv_value = sy-datum.
         WHEN 'TIME'.
@@ -1735,7 +1794,11 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
                                                compress    = abap_false
                                                pretty_name = /ui2/cl_json=>pretty_mode-camel_case ).
       WHEN 4.
-        ev_status = 'EXISTS'.             " 主键已存在(并发或字段映射没覆盖到)
+        IF line_exists( is_table-fields[ map_type = 'RANDOM' keyflag = 'X' ] ).
+          ev_error = '随机值与现有主键冲突，请重试或增加随机字段长度'.
+        ELSE.
+          ev_status = 'EXISTS'.           " 主键已存在(并发或字段映射没覆盖到)
+        ENDIF.
       WHEN OTHERS.
         ev_error = '权限写入失败'.
     ENDCASE.

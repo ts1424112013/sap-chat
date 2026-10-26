@@ -23,10 +23,12 @@
                         </VBox>
                         <Text text="{= ${auth>keyflag} === 'X' ? '●' : '' }" class="admFldKey"/>
                         <Text text="{= ${auth>datatype} + ' · ' + ${auth>leng} }" class="admFldType"/>
-                        <Select selectedKey="{auth>mapType}" items="{path: 'auth>/mapTypes', templateShareable: false}" class="admSel">
+                        <Select selectedKey="{auth>mapType}" items="{path: 'auth>/mapTypes', templateShareable: false}" class="admSel"
+                                tooltip="{= ${auth>mapType} === 'RANDOM' ? ${i18n>authMapRandomHint} : '' }">
                                 <core:Item key="{auth>key}" text="{auth>text}"/>
                         </Select>
-                        <Input value="{auth>constVal}" maxLength="60" enabled="{= ${auth>mapType} === 'CONST' }" class="aplInput admFldConst"/>
+                        <Input value="{auth>constVal}" maxLength="60" enabled="{= ${auth>mapType} === 'CONST' }" class="aplInput admFldConst"
+                                placeholder="{= ${auth>mapType} === 'RANDOM' ? ${i18n>authMapRandomAuto} : '' }"/>
                 </HBox>
         </VBox>
 

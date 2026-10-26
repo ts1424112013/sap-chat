@@ -71,7 +71,7 @@ sap.ui.define([
                                 editTable: { tabname: "", descr: "", discover: true, active: true, fields: [], loaded: "", ownRulesText: "" },
                                 editRule: Object.assign(emptyRule(), { baseMap: [], baseHint: "", ownHint: "" }),
                                 ruleTables: [],
-                                mapTypes: ["TCODE", "USER", "WERKS", "CONST", "DATE", "TIME", "BY", "INITIAL"].map(function (k) {
+                                mapTypes: ["TCODE", "USER", "WERKS", "CONST", "RANDOM", "DATE", "TIME", "BY", "INITIAL"].map(function (k) {
                                         return { key: k, text: oRB.getText("authMap" + k) };
                                 })
                         });

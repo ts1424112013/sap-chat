@@ -30,7 +30,7 @@ sap.ui.define([], function () {
         // 20261024：演示用 USER_ADDR（账号 → [姓名, 部门]）；USERB 没有部门、其他账号查不到，演示降级显示
         var ADDR = { DEMOUSER: ["演示用户", "信息技术部"], USERA: ["张三", "生产管理部 · 计划课"], USERB: ["Li Si", ""] };
         var LOCKED = ["LOCKED"];
-        var MAP_OK = ["TCODE", "USER", "WERKS", "CONST", "DATE", "TIME", "BY", "INITIAL"];
+        var MAP_OK = ["TCODE", "USER", "WERKS", "CONST", "RANDOM", "DATE", "TIME", "BY", "INITIAL"];
         var TYPE_OK = ["CHAR", "NUMC", "DATS", "TIMS"];
 
         function clone(v) { return JSON.parse(JSON.stringify(v)); }
@@ -224,6 +224,7 @@ sap.ui.define([], function () {
                                 var c = String(m.c || "").trim();
                                 if (m.t !== "INITIAL" && TYPE_OK.indexOf(f.datatype) < 0) { fail("字段 " + m.f + " 的类型 " + f.datatype + " 不支持写入映射, 只支持 CHAR / NUMC / DATS / TIMS"); }
                                 if ((m.t === "DATE" && f.leng < 8) || (m.t === "TIME" && f.leng < 6)) { fail("字段 " + m.f + " 太短, 放不下日期 / 时间"); }
+                                if (m.t === "RANDOM" && (!/^(CHAR|NUMC)$/.test(f.datatype) || f.leng < 1)) { fail("字段 " + m.f + " 的随机值只支持长度大于 0 的 CHAR / NUMC 字段"); }
                                 if (m.t === "CONST") {
                                         if (!c) { fail("字段 " + m.f + " 选了固定值，但没填值"); }
                                         if (c.length > f.leng || c.length > 60) { fail("字段 " + m.f + " 的固定值过长"); }
@@ -249,6 +250,12 @@ sap.ui.define([], function () {
                                 case "USER": v = user; break;
                                 case "WERKS": v = werks; break;
                                 case "CONST": v = f.constVal; break;
+                                case "RANDOM":
+                                        if (!/^(CHAR|NUMC)$/.test(f.datatype) || f.leng < 1) { fail("字段 " + f.fieldname + " 的随机值只支持长度大于 0 的 CHAR / NUMC 字段"); }
+                                        var alphabet = f.datatype === "NUMC" ? "0123456789" : "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+                                        v = "";
+                                        for (var i = 0; i < f.leng; i++) { v += alphabet.charAt(Math.floor(Math.random() * alphabet.length)); }
+                                        break;
                                 case "DATE": v = now14().substring(0, 8); break;
                                 case "TIME": v = now14().substring(8); break;
                                 case "BY": v = "DEMO"; break;
@@ -275,7 +282,10 @@ sap.ui.define([], function () {
                         var dup = s.rows[tab.tabname].some(function (r) {
                                 return keys.every(function (f) { return r[f.fieldname] === row[f.fieldname]; });
                         });
-                        if (dup) { return { status: "EXISTS", keyJson: "" }; }
+                        if (dup) {
+                                if (keys.some(function (f) { return f.mapType === "RANDOM"; })) { return { error: "随机值与现有主键冲突，请重试或增加随机字段长度" }; }
+                                return { status: "EXISTS", keyJson: "" };
+                        }
                         s.rows[tab.tabname].push(clone(row));
                         return { status: "DONE", keyJson: JSON.stringify(keys.map(function (f) { return { f: f.fieldname, v: row[f.fieldname] || "" }; })) };
                 },
@@ -367,7 +377,8 @@ sap.ui.define([], function () {
                                 r.message = werks === "ALL" && rule.ruleMode !== "APPROVE" ? "申请全部工厂(ALL)需要 IT 审批" : "等待 IT 审批";
                         } else {
                                 var g = svc._mockAuthGrant(s, tab, row);
-                                if (g.status === "EXISTS") { r.status = "EXISTS"; r.message = "相同主键已存在，未重复写入"; }
+                                if (g.error) { r.status = "FAILED"; r.message = g.error; }
+                                else if (g.status === "EXISTS") { r.status = "EXISTS"; r.message = "相同主键已存在，未重复写入"; }
                                 else { r.status = "DONE"; r.keyJson = g.keyJson; r.message = "权限已开通"; }
                         }
                         if (r.status !== "PENDING") { r.decidedBy = channel === "ADMIN" ? ctx.me : "AUTO"; r.decidedAt = now14(); }
@@ -396,6 +407,7 @@ sap.ui.define([], function () {
                                         r.status = "EXISTS"; r.message = "审批时发现已有权限，未重复写入";
                                 } else {
                                         var g = svc._mockAuthGrant(s, tab, row);
+                                        if (g.error) { fail(g.error); }
                                         r.status = g.status; r.keyJson = g.keyJson;
                                         r.message = g.status === "EXISTS" ? "审批时发现已有权限，未重复写入" : (msg || "已批准并开通");
                                 }

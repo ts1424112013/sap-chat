@@ -397,6 +397,72 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   check('没有姓名（USER_ADDR 查不到）：和原来一样只用账号', dec[3].whoText === 'F1246311' && dec[3].initials === 'F1' && dec[3].targetName === '' && dec[3].targetDept === '');
   check('同一账号头像底色不随姓名变（按账号算）', AA._apvDecorate([{ targetUser: 'USERA', status: 'PENDING' }])[0].hue === dec[0].hue);
 
+  console.log('\n━━ 随机值字段映射（CHAR / NUMC）');
+  as('ADMIN', 'ADMIN');
+  let randomState = svc._mockAuthState();
+  randomState.catalog.ZAUTH_RANDOM = [
+    { fieldname: 'ID', keyflag: 'X', datatype: 'CHAR', leng: 32 },
+    { fieldname: 'SEQ', keyflag: 'X', datatype: 'NUMC', leng: 20 },
+    { fieldname: 'TCODE', keyflag: 'X', datatype: 'CHAR', leng: 20 },
+    { fieldname: 'UNAME', keyflag: 'X', datatype: 'CHAR', leng: 12 },
+    { fieldname: 'WERKS', keyflag: 'X', datatype: 'CHAR', leng: 4 },
+    { fieldname: 'NOTE', keyflag: '', datatype: 'CHAR', leng: 64 },
+    { fieldname: 'ERDAT', keyflag: '', datatype: 'DATS', leng: 8 },
+    { fieldname: 'ERZET', keyflag: '', datatype: 'TIMS', leng: 6 }
+  ].map((f) => Object.assign({ convexit: '', mapType: 'INITIAL', constVal: '' }, f));
+  randomState.rows.ZAUTH_RANDOM = [];
+  const randomMap = [['ID', 'RANDOM', '过期固定值'], ['SEQ', 'RANDOM'], ['TCODE', 'TCODE'], ['UNAME', 'USER'],
+    ['WERKS', 'WERKS'], ['NOTE', 'RANDOM'], ['ERDAT', 'DATE'], ['ERZET', 'TIME']];
+  r = await svc.authTableSave({ Tabname: 'ZAUTH_RANDOM', Active: 'X', Discover: 'X', FmapJson: fm(randomMap) });
+  check('权限表保存随机映射，并清除旧固定值', /已保存/.test(r.message) && randomState.tables.ZAUTH_RANDOM.fmap.ID.c === '');
+  for (const field of ['ERDAT', 'ERZET']) {
+    const bad = randomMap.map((x) => x[0] === field ? [field, 'RANDOM'] : x);
+    await rejects(field + ' 日期或时间字段不能使用随机值', svc.authTableSave({ Tabname: 'ZAUTH_RANDOM', Active: 'X', FmapJson: fm(bad) }), /随机值只支持.*CHAR \/ NUMC/);
+  }
+  await rejects('规则自己的随机映射同样校验字段类型', svc.authRuleSave({ TcodePat: 'ZDEMO001', Tabname: 'ZAUTH_RANDOM', RuleMode: 'AUTO', Active: 'X',
+    FmapJson: fm(randomMap.map((x) => x[0] === 'ERDAT' ? ['ERDAT', 'RANDOM'] : x)) }), /本规则的字段映射.*随机值只支持/);
+  randomState = svc._mockAuthState(); // 失败配置会回滚为快照，重新取得当前状态。
+  await svc.authRuleSave({ TcodePat: 'ZDEMO001', Tabname: 'ZAUTH_RANDOM', RuleMode: 'AUTO', Active: 'X' });
+  const savedRandom = (await svc.authConfig()).tables.find((t) => t.tabname === 'ZAUTH_RANDOM');
+  check('配置回读保留随机映射类型', ['ID', 'SEQ', 'NOTE'].every((name) => savedRandom.fields.some((f) => f.fieldname === name && f.mapType === 'RANDOM')));
+  as('USERA');
+  r = await submit({ Tcode: 'ZDEMO001', WerksList: '1000,2000' });
+  const randomRows = randomState.rows.ZAUTH_RANDOM;
+  check('逐工厂生成 CHAR / NUMC 随机值，按完整字段长度写入', statuses(r) === 'DONE,DONE' && randomRows.length === 2 &&
+    randomRows.every((x) => /^[0-9A-Z]{32}$/.test(x.ID) && /^\d{20}$/.test(x.SEQ) && /^[0-9A-Z]{64}$/.test(x.NOTE)), JSON.stringify(r));
+  check('不同行的随机值独立生成', randomRows[0].ID !== randomRows[1].ID && randomRows[0].SEQ !== randomRows[1].SEQ);
+  r = await submit({ Tcode: 'ZDEMO001', WerksList: '1000' });
+  check('随机主键不绕过业务查重：相同权限仍为 EXISTS，不多写行', statuses(r) === 'EXISTS' && randomRows.length === 2);
+  const savedMathRandom = Math.random;
+  try {
+    Math.random = () => 0;
+    const leading = svc._mockAuthBuildRow({ fields: [{ fieldname: 'N', datatype: 'NUMC', leng: 60, mapType: 'RANDOM' }] }, '', '', '');
+    check('长 NUMC 保留前导零，不因整数精度丢失长度', leading.N === '0'.repeat(60));
+    Math.random = () => 1 - Number.EPSILON;
+    const edge = svc._mockAuthBuildRow({ fields: [{ fieldname: 'C', datatype: 'CHAR', leng: 1, mapType: 'RANDOM' }, { fieldname: 'N', datatype: 'NUMC', leng: 1, mapType: 'RANDOM' }] }, '', '', '');
+    check('最短字段与随机字符上界正确：CHAR 可到 Z，NUMC 可到 9', edge.C === 'Z' && edge.N === '9');
+  } finally { Math.random = savedMathRandom; }
+  const collision = svc._mockAuthGrant(randomState, savedRandom, randomRows[0]);
+  check('随机主键碰撞明确报错，不误报已有权限', /随机值与现有主键冲突/.test(collision.error) && !collision.status && randomRows.length === 2);
+  as('ADMIN', 'ADMIN');
+  await svc.authRuleSave({ TcodePat: 'ZDEMO002', Tabname: 'ZAUTH_RANDOM', RuleMode: 'APPROVE', Active: 'X', FmapJson: fm(randomMap) });
+  const ownRandom = (await svc.authConfig()).rules.find((x) => x.tcodePat === 'ZDEMO002');
+  check('事务码规则单独映射也能保存并回读随机值', ownRandom.ownMap === 'X' && ownRandom.fields.some((f) => f.fieldname === 'SEQ' && f.mapType === 'RANDOM'));
+  as('USERB');
+  r = await submit({ Tcode: 'ZDEMO002', WerksList: '3000' });
+  const randomReqId = r.lines[0].reqId;
+  check('待审批时不提前写随机行', statuses(r) === 'PENDING' && randomRows.length === 2);
+  as('ADMIN', 'ADMIN');
+  r = await svc.authDecide({ ReqId: randomReqId, Approve: 'X' });
+  const approvedRandom = randomRows.find((x) => x.UNAME === 'USERB');
+  check('审批通过时按规则生成随机字段', statuses(r) === 'DONE' && approvedRandom && /^[0-9A-Z]{32}$/.test(approvedRandom.ID) && /^\d{20}$/.test(approvedRandom.SEQ));
+  await svc.authRuleSave({ TcodePat: 'ZDEMO002', Tabname: 'ZAUTH_RANDOM', RuleMode: 'AUTO', Active: 'X', FmapJson: fm(randomMap.map((x) => x[1] === 'RANDOM' ? [x[0], 'CONST', '1'] : x)) });
+  r = await svc.authRevoke({ ReqId: randomReqId });
+  check('映射改动后仍按授权时保存的随机主键精准撤销', statuses(r) === 'REVOKED' && randomState.rows.ZAUTH_RANDOM.length === 2 &&
+    !randomState.rows.ZAUTH_RANDOM.some((x) => x.ID === approvedRandom.ID));
+  r = await svc.authBatchAdd({ Users: 'USERB', Tcode: 'ZDEMO001', WerksList: '3000', Reason: '随机字段批量代加' });
+  check('批量代加也使用随机映射', statuses(r) === 'DONE' && randomState.rows.ZAUTH_RANDOM.some((x) => x.UNAME === 'USERB' && /^[0-9A-Z]{32}$/.test(x.ID)));
+
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });
