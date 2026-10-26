@@ -32,10 +32,16 @@ sap.ui.define([
                                 this._oEvalDialog = sap.ui.xmlfragment(this.getView().getId(), "zai.chat.view.EvalDialog", this);
                                 this.getView().addDependent(this._oEvalDialog);
                                 this._oEvalModel = new JSONModel({
-                                        scene: "ALL", repeat: "1", modelId: "AUTO", cleanup: true,
+                                        scene: "ALL", repeat: "1", modelId: "", cleanup: true,
                                         running: false, hasResults: false, rows: [], statusText: "", summaryText: "", detail: ""
                                 });
                                 this._oEvalDialog.setModel(this._oEvalModel, "eval");
+                        }
+                        this._syncModelList();
+                        var oChat = this.getView().getModel("chat");
+                        var sSelected = this._oEvalModel.getProperty("/modelId");
+                        if (!(oChat.getProperty("/models") || []).some(function (m) { return m.ModelId === sSelected; })) {
+                                this._oEvalModel.setProperty("/modelId", oChat.getProperty("/currentModel") || "");
                         }
                         this._oEvalModel.setProperty("/skillId", "");
                         this._oEvalModel.setProperty("/skillLabel", "");
@@ -110,6 +116,13 @@ sap.ui.define([
                                 MessageToast.show(this._rb().getText("evalChatBusy"));
                                 return;
                         }
+                        var sModelId = oM.getProperty("/modelId");
+                        if (!(this.getView().getModel("chat").getProperty("/models") || []).some(function (m) {
+                                return m.ModelId === sModelId;
+                        })) {
+                                MessageToast.show(this._rb().getText("modelPickEmpty"));
+                                return;
+                        }
                         var sScene = oM.getProperty("/scene");
                         var aCases = ((this._oEvalCases && this._oEvalCases.cases) || []).filter(function (c) {
                                 return (sScene === "ALL" || c.scene === sScene) &&
@@ -130,7 +143,7 @@ sap.ui.define([
                         var iT0 = Date.now();
                         this._oEvalRun = {
                                 startedAt: new Date().toLocaleString(),
-                                modelId: oM.getProperty("/modelId") || "AUTO",
+                                modelId: sModelId,
                                 repeat: parseInt(oM.getProperty("/repeat"), 10) || 1,
                                 sceneSupported: bScene,
                                 caseVersion: (this._oEvalCases.source || "") + " " + (this._oEvalCases.version || ""),

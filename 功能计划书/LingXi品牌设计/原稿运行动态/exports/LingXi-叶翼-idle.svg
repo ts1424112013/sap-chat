@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 268" width="260" height="268" class="wing-mark" data-state="idle" role="img" aria-label="灵犀叶翼标志">
+        <defs>
+          <linearGradient id="lingxi-wing-1-stem" x1="15" y1="200" x2="160" y2="160" gradientUnits="userSpaceOnUse"><stop stop-color="#4289FF"/><stop offset=".52" stop-color="#35AFF3"/><stop offset="1" stop-color="#2CD0E2"/></linearGradient>
+          <linearGradient id="lingxi-wing-1-upper" x1="96" y1="168" x2="239" y2="72" gradientUnits="userSpaceOnUse"><stop stop-color="#2EA4F5"/><stop offset="1" stop-color="#2BD0DF"/></linearGradient>
+          <linearGradient id="lingxi-wing-1-lower" x1="121" y1="174" x2="242" y2="249" gradientUnits="userSpaceOnUse"><stop stop-color="#2FACFC"/><stop offset="1" stop-color="#4389FC"/></linearGradient>
+        </defs>
+        <style>
+        .wing-mark{overflow:visible}
+        .wing-mark .wing-stem{transform-origin:66px 217px;transform-box:view-box}
+        .wing-mark .wing-upper{transform-origin:99px 166px;transform-box:view-box}
+        .wing-mark .wing-lower{transform-origin:122px 176px;transform-box:view-box}
+        .wing-mark[data-state="running"] .wing-stem{animation:wing-stem-run 3.6s ease-in-out infinite}
+        .wing-mark[data-state="running"] .wing-upper{animation:wing-upper-run 3.6s ease-in-out infinite}
+        .wing-mark[data-state="running"] .wing-lower{animation:wing-lower-run 3.6s ease-in-out infinite}
+        .wing-mark[data-state="thinking"] .wing-stem{animation:wing-stem-think 5.6s ease-in-out infinite}
+        .wing-mark[data-state="thinking"] .wing-upper{animation:wing-upper-think 5.6s ease-in-out infinite}
+        .wing-mark[data-state="thinking"] .wing-lower{animation:wing-lower-think 5.6s ease-in-out infinite}
+        @keyframes wing-stem-run{0%,10%,92%,100%{transform:translateY(0) scale(1)}30%{transform:translateY(-.65px) scale(1.008,1.015)}65%{transform:translateY(.3px) scale(1.003,.995)}}
+        @keyframes wing-upper-run{0%,7%,61%,100%{transform:rotate(0) translate(0,0)}24%,34%{transform:rotate(-3.8deg) translate(.5px,-.6px)}46%{transform:rotate(-1deg) translate(0,0)}}
+        @keyframes wing-lower-run{0%,31%,96%,100%{transform:rotate(0) translate(0,0)}51%,64%{transform:rotate(3.8deg) translate(.5px,.6px)}79%{transform:rotate(1deg) translate(0,0)}}
+        @keyframes wing-stem-think{0%,100%{transform:scale(1)}50%{transform:scale(1.006,1.012)}}
+        @keyframes wing-upper-think{0%,13%,85%,100%{transform:rotate(0)}36%,50%{transform:rotate(-2.2deg)}}
+        @keyframes wing-lower-think{0%,36%,100%{transform:rotate(0)}60%,74%{transform:rotate(2.2deg)}}
+        @media(prefers-reduced-motion:reduce){.wing-mark *{animation:none!important;transform:none!important}}
+        </style>
+        <g class="wing-stem"><path fill="url(#lingxi-wing-1-stem)" d="M87 14C101 38 94 58 82 79C74 94 76 127 76 156L76 169C74 190 86 201 108 214L159 234H75C40 234 15 213 15 180V103C15 67 82 65 87 14Z"/></g>
+        <g class="wing-upper"><path fill="url(#lingxi-wing-1-upper)" d="M98 158L151 105C178 78 201 72 239 72C215 97 181 124 144 145L102 169C95 173 91 169 98 158Z"/></g>
+        <g class="wing-lower"><path fill="url(#lingxi-wing-1-lower)" d="M120 174C139 164 153 155 169 161C193 170 218 204 240 238C245 246 237 250 225 249C194 246 173 223 148 200L120 174Z"/></g>
+      </svg>

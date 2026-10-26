@@ -39,7 +39,7 @@ function Storage() {}
 Storage.Type = { local: 'local' };
 const service = {};
 const registry = {
-  'zai/chat/control/MomoMark': Control,
+  'zai/chat/control/LingXiMark': Control,
   'sap/ui/core/mvc/Controller': { extend: (_, methods) => methods },
   'sap/ui/util/Storage': Storage,
   'sap/m/MessageToast': { show() {} },

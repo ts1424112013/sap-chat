@@ -1,0 +1,30 @@
+{
+  "bounds": {
+    "minX": 8.730796813964844,
+    "maxX": 243.86785888671875,
+    "minY": 4.1966023445129395,
+    "maxY": 260.8847961425781
+  },
+  "travel": [
+    {
+      "part": "wing-stem",
+      "maxTravel": 13.009437613955713
+    },
+    {
+      "part": "wing-upper",
+      "maxTravel": 47.887212173133925
+    },
+    {
+      "part": "wing-lower",
+      "maxTravel": 14.935981763971277
+    }
+  ],
+  "duration": [
+    2400,
+    2400,
+    2400
+  ],
+  "mobileWidth": 390,
+  "settling": "returns to original pose",
+  "consoleErrors": []
+}

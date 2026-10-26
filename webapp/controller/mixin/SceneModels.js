@@ -125,7 +125,9 @@ sap.ui.define([
                   */
                 _syncModelList: function () {
                         var oChat = this.getView().getModel("chat");
-                        var aAll = oChat.getProperty("/models") || [];
+                        var aAll = (oChat.getProperty("/models") || []).filter(function (m) {
+                                return m.ModelId && m.ModelId.toUpperCase() !== "AUTO" && m.IsActive === "X";
+                        });
                         var aAllow = [];
                         if (oChat.getProperty("/workspaceMode") === "AGENT" && this._mAgentModelRules) {
                                 var sScene = this._curScene();
@@ -133,12 +135,14 @@ sap.ui.define([
                                 aAllow = aScene.length ? aScene : (this._mAgentModelRules.ALL || []);
                         }
                         var aView = !aAllow.length ? aAll : aAll.filter(function (m) {
-                                return m.ModelId === "AUTO" || aAllow.indexOf(String(m.ModelId || "").toUpperCase()) >= 0;
+                                return aAllow.indexOf(String(m.ModelId || "").toUpperCase()) >= 0;
                         });
                         oChat.setProperty("/modelsView", aView);
                         var sCur = oChat.getProperty("/currentModel");
-                        if (sCur && aView.length && !aView.some(function (m) { return m.ModelId === sCur; })) {
-                                oChat.setProperty("/currentModel", "AUTO");
+                        if (!aView.some(function (m) { return m.ModelId === sCur; })) {
+                                var sLast = this._lastModel();
+                                var oDefault = aView.filter(function (m) { return m.ModelId === sLast; })[0] || aView[0];
+                                oChat.setProperty("/currentModel", oDefault ? oDefault.ModelId : "");
                         }
                         this._syncModelLabel();
                 },
@@ -147,7 +151,7 @@ sap.ui.define([
                  * 20261020：会话级模型 —— 模型选择从顶栏移到输入框，每个对话各自记住。
                  * 记在浏览器本地（按账号分开）：zaiChat.sessModel.<账号> = {会话 ID: 模型 ID}；
                  * 没有记录的会话（新会话 / 旧会话）用「上次选的模型」zaiChat.lastModel.<账号>，
-                 * 再没有就是智能路由（AUTO）。不依赖后端 ZAI_CHAT_SESS.MODEL_ID 的口径。
+                 * 再没有就用第一条启用且符合场景白名单的配置。不依赖后端 ZAI_CHAT_SESS.MODEL_ID 的口径。
                  * ========================================================= */
 
                 _modelUserKey: function () {
@@ -189,16 +193,16 @@ sap.ui.define([
                 _applySessionModel: function () {
                         var oChat = this.getView().getModel("chat");
                         var sSid = (oChat.getProperty("/currentSession") || {}).id || "";
-                        oChat.setProperty("/currentModel", (sSid && this._sessModelMap()[sSid]) || this._lastModel() || "AUTO");
+                        oChat.setProperty("/currentModel", (sSid && this._sessModelMap()[sSid]) || this._lastModel() || "");
                         this._syncModelList();   // 校验 Agent 场景白名单，并刷新胶囊上的模型名
                 },
 
-                /** 输入框模型胶囊上的文字（智能路由用短名） */
+                /** 输入框模型胶囊显示实际模型名；无可用配置时明确显示空状态。 */
                 _syncModelLabel: function () {
                         var oChat = this.getView().getModel("chat");
-                        var sCur = oChat.getProperty("/currentModel") || "AUTO";
+                        var sCur = oChat.getProperty("/currentModel") || "";
                         var oHit = (oChat.getProperty("/models") || []).filter(function (m) { return m.ModelId === sCur; })[0];
-                        oChat.setProperty("/currentModelName", oHit ? oHit.ModelName : (sCur === "AUTO" ? this._rb().getText("modelAutoShort") : sCur));
+                        oChat.setProperty("/currentModelName", oHit ? oHit.ModelName : this._rb().getText("modelPickEmpty"));
                 },
 
                 onOpenModelPicker: function (oEvent) {

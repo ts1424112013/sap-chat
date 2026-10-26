@@ -115,6 +115,54 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .sessSearch { margin: 0 .2rem .4rem !important; width: calc(100% - .4rem) !important; }
 .sessSearch .sapMSFF { background: var(--surface) !important; border: 1px solid var(--line) !important; border-radius: 10px !important; }
 .sessionList { padding: 0 !important; }
+/* 会话增多后的原生滚动条：覆盖 Horizon 继承的浅色轨道，仅作用于侧栏。 */
+.sideBar .sessionList {
+        --session-scroll-rest: #B9C2CF;
+        --session-scroll-active: #8996A9;
+        --session-scroll-thumb: var(--session-scroll-rest);
+        color-scheme: light;
+        scrollbar-width: thin;
+        scrollbar-color: var(--session-scroll-thumb) transparent;
+        scrollbar-gutter: stable;
+}
+[data-theme="dark"] .sideBar .sessionList {
+        --session-scroll-rest: #3C4552;
+        --session-scroll-active: #637287;
+        color-scheme: dark;
+}
+.sideBar .sessionList:hover, .sideBar .sessionList:focus-within {
+        --session-scroll-thumb: var(--session-scroll-active);
+}
+.sideBar .sessionList::-webkit-scrollbar {
+        width: 6px !important;
+        height: 6px !important;
+        background: transparent !important;
+}
+.sideBar .sessionList::-webkit-scrollbar:vertical { width: 6px !important; }
+.sideBar .sessionList::-webkit-scrollbar:horizontal { height: 6px !important; }
+.sideBar .sessionList::-webkit-scrollbar-track,
+.sideBar .sessionList::-webkit-scrollbar-track-piece,
+.sideBar .sessionList::-webkit-scrollbar-corner {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+}
+.sideBar .sessionList::-webkit-scrollbar-thumb {
+        background: var(--session-scroll-thumb) !important;
+        background-clip: padding-box !important;
+        border: 1px solid transparent !important;
+        border-radius: 999px !important;
+        min-height: 32px;
+}
+.sideBar .sessionList::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+/* 支持 WebKit 滚动条的浏览器使用精确宽度；Firefox 保留标准 thin 样式。 */
+@supports selector(::-webkit-scrollbar) {
+        .sideBar .sessionList { scrollbar-width: auto; scrollbar-color: auto; }
+}
+@media (forced-colors: active) {
+        .sideBar .sessionList { scrollbar-color: auto; }
+        .sideBar .sessionList::-webkit-scrollbar-thumb { background: ButtonText !important; }
+}
 .sessionList .sessionItem { border-radius: 10px !important; margin: 1px 0 !important; }
 .sessionList .sessionItem .sessItemRow { padding: .5rem .6rem !important; }
 .sessionList .sessionItem .sessItemTitle { font-size: .85rem !important; font-weight: 500 !important; color: var(--text-2) !important; -webkit-line-clamp: 1; }
@@ -182,6 +230,9 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .heroMark img, img.heroMark { border-radius: 14px; }
 .heroTitle { font-size: 1.85rem !important; font-weight: 700 !important; letter-spacing: -.02em !important; margin: 0 0 .45rem !important; }
 .heroSub { font-size: .9rem !important; color: var(--sub) !important; margin: 0 0 1.7rem !important; }
+.heroTitle { max-width: min(46rem, 100%); text-align: center; line-height: 1.35 !important; }
+.heroSub { max-width: min(42rem, 100%); line-height: 1.65; }
+.heroModeHint { max-width: min(46rem, 100%); padding: 0 .75rem; margin: .65rem 0 .1rem; color: var(--text-2) !important; font-size: .75rem !important; line-height: 1.6; }
 .heroBubbleField { display: none !important; }
 .heroChips {
         width: min(100%, var(--content-max));
@@ -1268,7 +1319,7 @@ body, body.sapUiBody { background: var(--bg) !important; }
 @keyframes wcShine { to { transform: translateX(260%); } }
 
 .wcAvatar { position: relative; flex: none; display: flex; width: 38px; height: 38px; }
-.wcAvatar .momoMark { position: relative; z-index: 1; box-shadow: 0 3px 10px -2px rgba(36, 66, 77, .45); }
+.wcAvatar .lingxiMark { position: relative; z-index: 1; }
 .wcSpark {
         position: absolute; left: 50%; top: 50%; width: var(--s); height: var(--s); margin: calc(var(--s) / -2) 0 0 calc(var(--s) / -2);
         border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); opacity: 0; z-index: 0;

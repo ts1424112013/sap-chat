@@ -1,0 +1,17 @@
+{
+  "palette": [
+    "rgb(117, 99, 232)",
+    "rgb(80, 140, 240)",
+    "rgb(67, 197, 214)",
+    "rgb(57, 181, 187)",
+    "rgb(99, 201, 157)",
+    "rgb(169, 217, 135)",
+    "rgb(241, 175, 114)",
+    "rgb(239, 141, 134)",
+    "rgb(218, 118, 164)"
+  ],
+  "animatedParts": 3,
+  "mobileWidth": 390,
+  "exports": "three color states",
+  "consoleErrors": []
+}

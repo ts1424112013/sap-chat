@@ -1,0 +1,1582 @@
+{
+ "url": "功能计划书/Lyux品牌设计/自然动效版/自然动效预览.html",
+ "at": "2026-10-26T13:07:34.311Z",
+ "allow": [],
+ "viewports": [
+  {
+   "width": 1440,
+   "height": 900,
+   "load": "load",
+   "screens": 1,
+   "filled": [
+    0.59
+   ],
+   "motion": {
+    "elements": 10,
+    "css": 10,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "page": {
+     "height": 900,
+     "screens": 1,
+     "words": 41,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 12,
+     "sections": 2,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Lyux，自然有回应。",
+     "words": 1,
+     "chars": 11,
+     "lines": 1,
+     "size": 32,
+     "vw": 2.2,
+     "font": "-apple-system",
+     "weight": 580,
+     "tracking": -0.04,
+     "leading": 1.3,
+     "top": 36,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "Lyux，自然有回应。",
+     "words": 1,
+     "lines": 1,
+     "size": 32,
+     "font": "-apple-system"
+    },
+    "headings": [
+     {
+      "text": "Lyux，自然有回应。",
+      "words": 1,
+      "chars": 11,
+      "lines": 1,
+      "size": 32,
+      "vw": 2.2,
+      "font": "-apple-system",
+      "weight": 580,
+      "tracking": -0.045,
+      "leading": 1.3,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.33,
+      "top": 36,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Lyux 灵犀",
+      "words": 2,
+      "chars": 7,
+      "lines": 1,
+      "size": 28,
+      "vw": 1.9,
+      "font": "-apple-system",
+      "weight": 650,
+      "tracking": -0.04,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.07,
+      "top": 58,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "Lyux 灵犀",
+      "words": 2,
+      "chars": 7,
+      "lines": 2,
+      "size": 39,
+      "vw": 2.7,
+      "font": "-apple-system",
+      "weight": 580,
+      "tracking": -0.05,
+      "leading": 1.3,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "center",
+      "position": "left",
+      "widthRatio": 0.05,
+      "top": 543,
+      "tag": "div",
+      "kind": "heading"
+     },
+     {
+      "text": "Lyux 灵犀",
+      "words": 2,
+      "chars": 7,
+      "lines": 2,
+      "size": 39,
+      "vw": 2.7,
+      "font": "-apple-system",
+      "weight": 580,
+      "tracking": -0.05,
+      "leading": 1.3,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "center",
+      "position": "center",
+      "widthRatio": 0.05,
+      "top": 543,
+      "tag": "div",
+      "kind": "heading"
+     },
+     {
+      "text": "Lyux 灵犀",
+      "words": 2,
+      "chars": 7,
+      "lines": 2,
+      "size": 39,
+      "vw": 2.7,
+      "font": "-apple-system",
+      "weight": 580,
+      "tracking": -0.05,
+      "leading": 1.3,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "center",
+      "position": "right",
+      "widthRatio": 0.05,
+      "top": 543,
+      "tag": "div",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 5,
+     "maxLines": 2,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 3,
+     "medianWords": 2,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "-apple-system",
+       "share": 1,
+       "mono": false
+      }
+     ],
+     "familyCount": 1,
+     "sizes": [
+      13,
+      14,
+      15,
+      16,
+      17,
+      21,
+      28,
+      32,
+      39
+     ],
+     "sizeCount": 9,
+     "notLoaded": [],
+     "body": null,
+     "measureChars": null,
+     "max": {
+      "size": 39,
+      "vw": 2.7,
+      "font": "-apple-system",
+      "text": "Lyux"
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0,
+     "centerShare": 0.13,
+     "smallText": 0
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#f1f4ef",
+     "bodyBgHsl": {
+      "h": 96,
+      "s": 0.19,
+      "l": 0.95
+     },
+     "dark": false,
+     "sectionBgs": [],
+     "textColors": [
+      {
+       "color": "#52665d",
+       "share": 0.63
+      },
+      {
+       "color": "#254a50",
+       "share": 0.36
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.01
+      }
+     ],
+     "button": {
+      "bg": "#2d6266",
+      "hsl": {
+       "h": 184,
+       "s": 0.39,
+       "l": 0.29
+      },
+      "fg": "#ffffff"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 4,
+     "inHero": 4,
+     "radius": 6,
+     "height": 44,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "思考",
+      "完整演示",
+      "暂停动画",
+      "深色背景"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 0,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 3,
+     "hairlineSamples": [
+      "div.usage-row 391px",
+      "div.usage-row 391px",
+      "div.usage-row 391px"
+     ],
+     "outlinedBoxes": 0,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 3,
+     "boxRadius": 12,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 3,
+       "iconTopped": false,
+       "rounded": true,
+       "top": 239
+      }
+     ]
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": false,
+     "height": 77,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": []
+   },
+   "layout": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "pageH": 900,
+    "margins": {
+     "left": 44,
+     "right": 44
+    },
+    "sections": [],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Lyux，自然有回应。",
+      "size": 32,
+      "top": 36,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 44,
+      "n": 1
+     },
+     {
+      "x": 68,
+      "n": 1
+     },
+     {
+      "x": 525,
+      "n": 1
+     },
+     {
+      "x": 981,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 4,
+    "bodySize": 16,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0.07,
+    "voidBox": {
+     "x": 300,
+     "y": 120,
+     "w": 780,
+     "h": 120
+    }
+   },
+   "app": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "dark": false,
+    "ground": "#f1f4ef",
+    "sidebar": null,
+    "topbar": null,
+    "canvas": {
+     "left": 44,
+     "right": 44
+    },
+    "hero": {
+     "text": "Lyux，自然有回应。",
+     "words": 1,
+     "chars": 11,
+     "lines": 1,
+     "size": 32,
+     "vw": 2.2,
+     "font": "-apple-system",
+     "weight": 580,
+     "tracking": -0.04,
+     "leading": 1.3,
+     "top": 36,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 3,
+     "firstScreen": 3,
+     "ragged": [],
+     "voids": [
+      {
+       "gap": 42,
+       "at": 694,
+       "panel": "回声"
+      },
+      {
+       "gap": 42,
+       "at": 694,
+       "panel": "小灵"
+      },
+      {
+       "gap": 42,
+       "at": 694,
+       "panel": "月芽"
+      }
+     ]
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 3,
+     "radii": [
+      [
+       12,
+       3
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 0,
+     "hues": 0,
+     "samples": []
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 6,
+     "tabularShare": 1,
+     "kpiMax": 13
+    },
+    "rows": null,
+    "chartHues": 2,
+    "placeholders": [],
+    "type": {
+     "under13": 0,
+     "tiny": 0,
+     "tinySamples": [],
+     "sizes": [
+      13,
+      14,
+      15,
+      16,
+      17,
+      21,
+      28,
+      32,
+      39
+     ]
+    },
+    "title": {
+     "text": "Lyux，自然有回应。",
+     "size": 32,
+     "top": 36
+    },
+    "colourShare": 0
+   },
+   "consoleErrors": []
+  },
+  {
+   "width": 768,
+   "height": 1024,
+   "load": "load",
+   "screens": 2,
+   "filled": [
+    0.83,
+    0.82
+   ],
+   "motion": {
+    "elements": 10,
+    "css": 10,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "page": {
+     "height": 1556,
+     "screens": 1.5,
+     "words": 40,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 12,
+     "sections": 2,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Lyux，自然有回应。",
+     "words": 1,
+     "chars": 11,
+     "lines": 1,
+     "size": 32,
+     "vw": 4.2,
+     "font": "-apple-system",
+     "weight": 580,
+     "tracking": -0.04,
+     "leading": 1.3,
+     "top": 28,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "Lyux，自然有回应。",
+     "words": 1,
+     "lines": 1,
+     "size": 32,
+     "font": "-apple-system"
+    },
+    "headings": [
+     {
+      "text": "Lyux，自然有回应。",
+      "words": 1,
+      "chars": 11,
+      "lines": 1,
+      "size": 32,
+      "vw": 4.2,
+      "font": "-apple-system",
+      "weight": 580,
+      "tracking": -0.045,
+      "leading": 1.3,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.61,
+      "top": 28,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Lyux",
+      "words": 1,
+      "chars": 4,
+      "lines": 1,
+      "size": 28,
+      "vw": 3.6,
+      "font": "-apple-system",
+      "weight": 650,
+      "tracking": -0.04,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.07,
+      "top": 28,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "Lyux 灵犀",
+      "words": 2,
+      "chars": 7,
+      "lines": 2,
+      "size": 38,
+      "vw": 4.9,
+      "font": "-apple-system",
+      "weight": 580,
+      "tracking": -0.05,
+      "leading": 1.3,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.09,
+      "top": 352,
+      "tag": "div",
+      "kind": "heading"
+     },
+     {
+      "text": "Lyux 灵犀",
+      "words": 2,
+      "chars": 7,
+      "lines": 2,
+      "size": 38,
+      "vw": 4.9,
+      "font": "-apple-system",
+      "weight": 580,
+      "tracking": -0.05,
+      "leading": 1.3,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.09,
+      "top": 768,
+      "tag": "div",
+      "kind": "heading"
+     },
+     {
+      "text": "Lyux 灵犀",
+      "words": 2,
+      "chars": 7,
+      "lines": 2,
+      "size": 38,
+      "vw": 4.9,
+      "font": "-apple-system",
+      "weight": 580,
+      "tracking": -0.05,
+      "leading": 1.3,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.09,
+      "top": 1184,
+      "tag": "div",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 5,
+     "maxLines": 2,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": 2,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "-apple-system",
+       "share": 1,
+       "mono": false
+      }
+     ],
+     "familyCount": 1,
+     "sizes": [
+      13,
+      14,
+      15,
+      16,
+      17,
+      21,
+      28,
+      32,
+      38
+     ],
+     "sizeCount": 9,
+     "notLoaded": [],
+     "body": null,
+     "measureChars": null,
+     "max": {
+      "size": 38,
+      "vw": 4.9,
+      "font": "-apple-system",
+      "text": "Lyux"
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0,
+     "centerShare": 0.07,
+     "smallText": 0
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#f1f4ef",
+     "bodyBgHsl": {
+      "h": 96,
+      "s": 0.19,
+      "l": 0.95
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#ffffff",
+       "top": 231,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#52665d",
+       "share": 0.63
+      },
+      {
+       "color": "#254a50",
+       "share": 0.36
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.01
+      }
+     ],
+     "button": {
+      "bg": "#2d6266",
+      "hsl": {
+       "h": 184,
+       "s": 0.39,
+       "l": 0.29
+      },
+      "fg": "#ffffff"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 4,
+     "inHero": 4,
+     "radius": 6,
+     "height": 44,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "思考",
+      "完整演示",
+      "暂停动画",
+      "深色背景"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 0,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 3,
+     "hairlineSamples": [
+      "div.usage-row 660px",
+      "div.usage-row 660px",
+      "div.usage-row 660px"
+     ],
+     "outlinedBoxes": 0,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 3,
+     "boxRadius": 12,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": false,
+     "height": 77,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": []
+   },
+   "layout": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "pageH": 1556,
+    "margins": {
+     "left": 28,
+     "right": 28
+    },
+    "sections": [
+     {
+      "sel": "article.candidate",
+      "tag": "article",
+      "top": 231,
+      "height": 398,
+      "words": 9,
+      "media": 1,
+      "middle": 113,
+      "heading": {
+       "text": "Lyux",
+       "size": 38,
+       "tag": "div"
+      },
+      "left": 54,
+      "right": 54,
+      "textLeft": 54,
+      "textRight": 54,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "article.candidate",
+      "tag": "article",
+      "top": 647,
+      "height": 398,
+      "words": 9,
+      "media": 1,
+      "middle": 113,
+      "heading": {
+       "text": "Lyux",
+       "size": 38,
+       "tag": "div"
+      },
+      "left": 54,
+      "right": 54,
+      "textLeft": 54,
+      "textRight": 54,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "article.candidate",
+      "tag": "article",
+      "top": 1063,
+      "height": 398,
+      "words": 9,
+      "media": 1,
+      "middle": 113,
+      "heading": {
+       "text": "Lyux",
+       "size": 38,
+       "tag": "div"
+      },
+      "left": 54,
+      "right": 54,
+      "textLeft": 54,
+      "textRight": 54,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Lyux，自然有回应。",
+      "size": 32,
+      "top": 28,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 54,
+      "n": 3
+     },
+     {
+      "x": 28,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 4,
+    "bodySize": 16,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "dark": false,
+    "ground": "#f1f4ef",
+    "sidebar": null,
+    "topbar": null,
+    "canvas": {
+     "left": 28,
+     "right": 28
+    },
+    "hero": {
+     "text": "Lyux，自然有回应。",
+     "words": 1,
+     "chars": 11,
+     "lines": 1,
+     "size": 32,
+     "vw": 4.2,
+     "font": "-apple-system",
+     "weight": 580,
+     "tracking": -0.04,
+     "leading": 1.3,
+     "top": 28,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 3,
+     "firstScreen": 2,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 3,
+     "radii": [
+      [
+       12,
+       3
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 0,
+     "hues": 0,
+     "samples": []
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 6,
+     "tabularShare": 1,
+     "kpiMax": 13
+    },
+    "rows": null,
+    "chartHues": 2,
+    "placeholders": [],
+    "type": {
+     "under13": 0,
+     "tiny": 0,
+     "tinySamples": [],
+     "sizes": [
+      13,
+      14,
+      15,
+      16,
+      17,
+      21,
+      28,
+      32,
+      38
+     ]
+    },
+    "title": {
+     "text": "Lyux，自然有回应。",
+     "size": 32,
+     "top": 28
+    },
+    "colourShare": 0.001
+   },
+   "consoleErrors": []
+  },
+  {
+   "width": 390,
+   "height": 844,
+   "load": "load",
+   "screens": 2,
+   "filled": [
+    0.79,
+    0.91
+   ],
+   "motion": {
+    "elements": 10,
+    "css": 10,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "page": {
+     "height": 1596,
+     "screens": 1.9,
+     "words": 39,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 12,
+     "sections": 2,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Lyux，自然有回应。",
+     "words": 1,
+     "chars": 11,
+     "lines": 1,
+     "size": 27,
+     "vw": 6.9,
+     "font": "-apple-system",
+     "weight": 580,
+     "tracking": -0.05,
+     "leading": 1.3,
+     "top": 24,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "Lyux，自然有回应。",
+     "words": 1,
+     "lines": 1,
+     "size": 27,
+     "font": "-apple-system"
+    },
+    "headings": [
+     {
+      "text": "Lyux，自然有回应。",
+      "words": 1,
+      "chars": 11,
+      "lines": 1,
+      "size": 27,
+      "vw": 6.9,
+      "font": "-apple-system",
+      "weight": 580,
+      "tracking": -0.045,
+      "leading": 1.3,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.81,
+      "top": 24,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Lyux 灵犀",
+      "words": 2,
+      "chars": 7,
+      "lines": 2,
+      "size": 34,
+      "vw": 8.7,
+      "font": "-apple-system",
+      "weight": 580,
+      "tracking": -0.05,
+      "leading": 1.3,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.17,
+      "top": 407,
+      "tag": "div",
+      "kind": "heading"
+     },
+     {
+      "text": "Lyux 灵犀",
+      "words": 2,
+      "chars": 7,
+      "lines": 2,
+      "size": 34,
+      "vw": 8.7,
+      "font": "-apple-system",
+      "weight": 580,
+      "tracking": -0.05,
+      "leading": 1.3,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.17,
+      "top": 812,
+      "tag": "div",
+      "kind": "heading"
+     },
+     {
+      "text": "Lyux 灵犀",
+      "words": 2,
+      "chars": 7,
+      "lines": 2,
+      "size": 34,
+      "vw": 8.7,
+      "font": "-apple-system",
+      "weight": 580,
+      "tracking": -0.05,
+      "leading": 1.3,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.17,
+      "top": 1217,
+      "tag": "div",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 4,
+     "maxLines": 2,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": 2,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "-apple-system",
+       "share": 1,
+       "mono": false
+      }
+     ],
+     "familyCount": 1,
+     "sizes": [
+      13,
+      14,
+      15,
+      17,
+      21,
+      27,
+      34
+     ],
+     "sizeCount": 7,
+     "notLoaded": [],
+     "body": null,
+     "measureChars": null,
+     "max": {
+      "size": 34,
+      "vw": 8.7,
+      "font": "-apple-system",
+      "text": "Lyux"
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0,
+     "centerShare": 0.07,
+     "smallText": 0
+    },
+    "eyebrows": [
+     {
+      "text": "下载动态标志",
+      "above": "Lyux 灵犀",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 13,
+      "top": 312
+     },
+     {
+      "text": "下载动态标志",
+      "above": "Lyux 灵犀",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 13,
+      "top": 717
+     },
+     {
+      "text": "下载动态标志",
+      "above": "Lyux 灵犀",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 13,
+      "top": 1122
+     }
+    ],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#f1f4ef",
+     "bodyBgHsl": {
+      "h": 96,
+      "s": 0.19,
+      "l": 0.95
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#ffffff",
+       "top": 289,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#52665d",
+       "share": 0.64
+      },
+      {
+       "color": "#254a50",
+       "share": 0.35
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.01
+      }
+     ],
+     "button": {
+      "bg": "#2d6266",
+      "hsl": {
+       "h": 184,
+       "s": 0.39,
+       "l": 0.29
+      },
+      "fg": "#ffffff"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 4,
+     "inHero": 4,
+     "radius": 6,
+     "height": 44,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "思考",
+      "完整演示",
+      "暂停动画",
+      "深色背景"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 0,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 3,
+     "hairlineSamples": [
+      "div.usage-row 310px",
+      "div.usage-row 310px",
+      "div.usage-row 310px"
+     ],
+     "outlinedBoxes": 0,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 3,
+     "boxRadius": 12,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": false,
+     "height": 93,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": []
+   },
+   "layout": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "pageH": 1596,
+    "margins": {
+     "left": 18,
+     "right": 21
+    },
+    "sections": [
+     {
+      "sel": "article.candidate",
+      "tag": "article",
+      "top": 289,
+      "height": 387,
+      "words": 9,
+      "media": 1,
+      "middle": 18,
+      "heading": {
+       "text": "Lyux",
+       "size": 34,
+       "tag": "div"
+      },
+      "left": 40,
+      "right": 40,
+      "textLeft": 40,
+      "textRight": 40,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "article.candidate",
+      "tag": "article",
+      "top": 694,
+      "height": 387,
+      "words": 9,
+      "media": 1,
+      "middle": 18,
+      "heading": {
+       "text": "Lyux",
+       "size": 34,
+       "tag": "div"
+      },
+      "left": 40,
+      "right": 40,
+      "textLeft": 40,
+      "textRight": 40,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "article.candidate.is-offscreen",
+      "tag": "article",
+      "top": 1099,
+      "height": 387,
+      "words": 9,
+      "media": 1,
+      "middle": 5,
+      "heading": {
+       "text": "Lyux",
+       "size": 34,
+       "tag": "div"
+      },
+      "left": 40,
+      "right": 40,
+      "textLeft": 40,
+      "textRight": 40,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Lyux，自然有回应。",
+      "size": 27,
+      "top": 24,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 40,
+      "n": 3
+     },
+     {
+      "x": 18,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 4,
+    "bodySize": 16,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "dark": false,
+    "ground": "#f1f4ef",
+    "sidebar": null,
+    "topbar": null,
+    "canvas": {
+     "left": 18,
+     "right": 21
+    },
+    "hero": {
+     "text": "Lyux，自然有回应。",
+     "words": 1,
+     "chars": 11,
+     "lines": 1,
+     "size": 27,
+     "vw": 6.9,
+     "font": "-apple-system",
+     "weight": 580,
+     "tracking": -0.05,
+     "leading": 1.3,
+     "top": 24,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 3,
+     "firstScreen": 2,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 3,
+     "radii": [
+      [
+       12,
+       3
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 0,
+     "hues": 0,
+     "samples": []
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 6,
+     "tabularShare": 1,
+     "kpiMax": 13
+    },
+    "rows": null,
+    "chartHues": 2,
+    "placeholders": [],
+    "type": {
+     "under13": 0,
+     "tiny": 0,
+     "tinySamples": [],
+     "sizes": [
+      13,
+      14,
+      15,
+      16,
+      17,
+      21,
+      27,
+      34
+     ]
+    },
+    "title": {
+     "text": "Lyux，自然有回应。",
+     "size": 27,
+     "top": 24
+    },
+    "colourShare": 0.003
+   },
+   "consoleErrors": []
+  }
+ ],
+ "findings": [
+  {
+   "level": "WARN",
+   "id": "panel-void",
+   "width": 1440,
+   "message": "3 card(s) hold a blank band inside: 42px in \"回声\", 42px in \"小灵\", 42px in \"月芽\".",
+   "fix": "A card stretches to its neighbour only when it has content to fill. Keep a legend or a note directly under its chart (only an action or a total may sit at a stretched card's foot), let a short card keep its own height (align-items: start), and let a filtered block shrink to its rows."
+  }
+ ],
+ "images": [
+  {
+   "viewport": "desktop",
+   "width": 1440,
+   "fold": "/Users/tangtang/Desktop/AIProject/sap-chat/功能计划书/Lyux品牌设计/自然动效版/qa/desktop-fold.jpg",
+   "pages": [
+    "/Users/tangtang/Desktop/AIProject/sap-chat/功能计划书/Lyux品牌设计/自然动效版/qa/desktop-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "tablet",
+   "width": 768,
+   "fold": "/Users/tangtang/Desktop/AIProject/sap-chat/功能计划书/Lyux品牌设计/自然动效版/qa/tablet-fold.jpg",
+   "pages": [
+    "/Users/tangtang/Desktop/AIProject/sap-chat/功能计划书/Lyux品牌设计/自然动效版/qa/tablet-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "mobile",
+   "width": 390,
+   "fold": "/Users/tangtang/Desktop/AIProject/sap-chat/功能计划书/Lyux品牌设计/自然动效版/qa/mobile-fold.jpg",
+   "pages": [
+    "/Users/tangtang/Desktop/AIProject/sap-chat/功能计划书/Lyux品牌设计/自然动效版/qa/mobile-page-01.jpg"
+   ],
+   "film": []
+  }
+ ]
+}

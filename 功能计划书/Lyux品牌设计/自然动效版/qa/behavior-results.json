@@ -1,0 +1,57 @@
+[
+  {
+    "state": "idle",
+    "animatedConcepts": [
+      "echo",
+      "spirit",
+      "crescent"
+    ]
+  },
+  {
+    "state": "thinking",
+    "animatedConcepts": [
+      "echo",
+      "spirit",
+      "crescent"
+    ]
+  },
+  {
+    "state": "running",
+    "animatedConcepts": [
+      "echo",
+      "spirit",
+      "crescent"
+    ]
+  },
+  {
+    "pause": "all animation clocks stopped"
+  },
+  {
+    "demo": "idle → thinking → running"
+  },
+  {
+    "layout": [
+      {
+        "viewport": 1440,
+        "content": 1440
+      },
+      {
+        "viewport": 768,
+        "content": 768
+      },
+      {
+        "viewport": 390,
+        "content": 390
+      }
+    ]
+  },
+  {
+    "reducedMotion": "no animations"
+  },
+  {
+    "exports": "12 self-contained SVG files; states and XML valid"
+  },
+  {
+    "offline": "standalone HTML works directly from file; no script errors"
+  }
+]

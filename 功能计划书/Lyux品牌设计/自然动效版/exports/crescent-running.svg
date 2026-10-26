@@ -1,0 +1,21 @@
+<svg width="120" height="120" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="lx-logo ly-crescent" data-state="running" role="img" aria-label="Lyux 月芽标志">
+      <style>
+      .ly-crescent .crescent-cup{transform-origin:59px 83px;fill:var(--mark-primary,#4F969A)}
+      .ly-crescent .crescent-bud{transform-origin:59px 46px;fill:var(--mark-accent,#A5CCBE)}
+      .ly-crescent[data-state="idle"] .crescent-cup{animation:crescent-breathe 6.4s ease-in-out infinite}
+      .ly-crescent[data-state="idle"] .crescent-bud{animation:crescent-float 6.4s ease-in-out infinite}
+      .ly-crescent[data-state="thinking"] .crescent-cup{animation:crescent-hold 5.4s ease-in-out infinite}
+      .ly-crescent[data-state="thinking"] .crescent-bud{animation:crescent-consider 5.4s ease-in-out infinite}
+      .ly-crescent[data-state="running"] .crescent-cup{animation:crescent-answer 3.1s ease-in-out infinite}
+      .ly-crescent[data-state="running"] .crescent-bud{animation:crescent-unfold 3.1s ease-in-out infinite}
+      @keyframes crescent-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.015,1.025)}}
+      @keyframes crescent-float{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-1.4px) rotate(-2deg)}}
+      @keyframes crescent-hold{0%,12%,90%,100%{transform:rotate(0)}35%,60%{transform:rotate(-2deg)}}
+      @keyframes crescent-consider{0%,12%,90%,100%{transform:translate(0,0) rotate(0)}35%,57%{transform:translate(-2px,-2px) rotate(-9deg)}75%{transform:translate(.7px,-.5px) rotate(2deg)}}
+      @keyframes crescent-answer{0%,100%{transform:scale(1) rotate(0)}35%{transform:scale(1.012,.985) rotate(1.5deg)}70%{transform:scale(.995,1.015) rotate(-1deg)}}
+      @keyframes crescent-unfold{0%,100%{transform:translate(0,0) rotate(0) scale(1)}33%{transform:translate(2px,-3px) rotate(5deg) scale(1.03)}66%{transform:translate(-1px,-1px) rotate(-3deg) scale(1)}}
+      @media(prefers-reduced-motion:reduce){.ly-crescent *{animation:none!important;transform:none!important}}
+      </style>
+      <path class="crescent-cup" d="M24 34C18 33 15 39 16 48C17 74 33 96 57 100C80 104 101 87 105 62C107 49 104 33 98 28C93 24 87 28 88 36C90 51 84 68 71 75C57 82 40 73 35 58C33 49 33 37 24 34Z"/>
+      <path class="crescent-bud" d="M57 49C43 44 42 27 50 18C54 13 65 18 69 27C74 37 69 46 57 49Z"/>
+    </svg>

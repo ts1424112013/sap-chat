@@ -1,0 +1,31 @@
+<svg width="120" height="120" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="lx-logo lx-rhino" data-state="idle" role="img" aria-label="LingXi 小犀标志">
+      <style>
+      .lx-rhino .rhino-body{transform-origin:60px 72px}
+      .lx-rhino .rhino-ear{transform-origin:39px 42px}
+      .lx-rhino .rhino-gaze{transform-origin:61px 55px}
+      .lx-rhino .rhino-eye{transform-origin:61px 55px}
+      .lx-rhino[data-state="idle"] .rhino-body{animation:rhino-breathe 5.8s ease-in-out infinite}
+      .lx-rhino[data-state="idle"] .rhino-eye{animation:rhino-blink 7.7s ease-in-out infinite}
+      .lx-rhino[data-state="thinking"] .rhino-body{animation:rhino-listen 5.2s ease-in-out infinite}
+      .lx-rhino[data-state="thinking"] .rhino-ear{animation:rhino-ear 5.2s ease-in-out infinite}
+      .lx-rhino[data-state="thinking"] .rhino-gaze{animation:rhino-gaze 5.2s ease-in-out infinite}
+      .lx-rhino[data-state="thinking"] .rhino-eye{animation:rhino-blink 6.7s ease-in-out infinite}
+      .lx-rhino[data-state="running"] .rhino-body{animation:rhino-nod 2.6s ease-in-out infinite}
+      .lx-rhino[data-state="running"] .rhino-ear{animation:rhino-ear 2.6s .12s ease-in-out infinite}
+      .lx-rhino[data-state="running"] .rhino-eye{animation:rhino-blink 6.4s ease-in-out infinite}
+      @keyframes rhino-breathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-.8px) scale(1.012,1.018)}}
+      @keyframes rhino-blink{0%,42%,47%,100%{transform:scaleY(1)}44%,45%{transform:scaleY(.13)}}
+      @keyframes rhino-listen{0%,16%,88%,100%{transform:rotate(0)}35%,64%{transform:rotate(-4deg) translateY(-1px)}}
+      @keyframes rhino-ear{0%,18%,82%,100%{transform:rotate(0)}36%,55%{transform:rotate(-8deg)}65%{transform:rotate(2deg)}}
+      @keyframes rhino-gaze{0%,17%,85%,100%{transform:translate(0,0)}35%,65%{transform:translate(1.2px,-1.4px)}}
+      @keyframes rhino-nod{0%,15%,82%,100%{transform:rotate(0) translateY(0)}35%{transform:rotate(3deg) translateY(1.4px)}60%{transform:rotate(-1deg) translateY(-.5px)}}
+      @media(prefers-reduced-motion:reduce){.lx-rhino *{animation:none!important;transform:none!important}}
+      </style>
+      <g class="rhino-body">
+        <g class="rhino-ear"><path d="M34 43C21 38 19 25 23 19C33 19 43 28 44 39Z" fill="var(--mark-ink,#244C43)"/><path d="M32 36C27 32 26 27 27 25C34 27 38 32 39 37Z" fill="var(--mark-accent,#A7C8AE)"/></g>
+        <path d="M31 37C41 27 52 29 63 36C70 41 77 43 84 46C89 48 91 52 94 57C103 59 104 65 100 73C93 89 75 96 54 91C32 87 20 74 21 57C21 48 25 42 31 37Z" fill="var(--mark-primary,#559D8B)"/>
+        <path d="M78 47C84 40 89 31 90 24C91 20 93 22 95 26C100 36 100 46 96 55C90 54 83 50 78 47Z" fill="var(--mark-accent,#A7C8AE)"/>
+        <g class="rhino-gaze"><ellipse class="rhino-eye" cx="61" cy="55" rx="3.3" ry="4.2" fill="var(--mark-ink,#244C43)"/></g>
+        <path d="M85 73Q91 75 95 71" fill="none" stroke="var(--mark-ink,#244C43)" stroke-width="2.2" stroke-linecap="round"/>
+      </g>
+    </svg>

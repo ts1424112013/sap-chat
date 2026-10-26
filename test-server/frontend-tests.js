@@ -63,6 +63,7 @@ const registry = {
   'sap/ui/model/Sorter': function () {},
   // 20261024：DataGrid 只测纯函数，Dialog / HTML 给空壳
   'sap/m/Dialog': function () {},
+  'sap/m/Button': function () {},
   'sap/ui/core/HTML': function () {}
 };
 function load(name) {
@@ -94,28 +95,52 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   const TraceService = load('zai/chat/service/TraceService');
   const ChartRenderer = load('zai/chat/utils/ChartRenderer');
   const ChatService = load('zai/chat/service/ChatService');
-  const MomoState = load('zai/chat/utils/MomoState');
+  const LingXiState = load('zai/chat/utils/LingXiState');
 
-  console.log('\n━━ Momo · 任务表情');
-  check('等待、打字和请求未完成时保持思考表情',
-    MomoState.message(true, false, false) === 'thinking' &&
-    MomoState.message(false, true, false) === 'thinking' &&
-    MomoState.message(false, false, true) === 'thinking');
+  console.log('\n━━ 首页时段问候');
+  const HeroGreeting = load('zai/chat/utils/HeroGreeting');
+  const atHour = (h, m = 0) => new Date(2026, 0, 1, h, m);
+  check('早晨显示早上好；午间、下午和晚上各用对应问候',
+    [[5, 'welcomeMorning'], [10, 'welcomeMorning'], [11, 'welcomeNoon'], [12, 'welcomeNoon'],
+     [13, 'welcomeAfternoon'], [17, 'welcomeAfternoon'], [18, 'welcomeEvening'], [22, 'welcomeEvening']]
+      .every(([h, k]) => HeroGreeting.greetingKey(atHour(h)) === k));
+  check('深夜和凌晨不会显示早上好',
+    [23, 0, 4].every(h => HeroGreeting.greetingKey(atHour(h)) === 'welcomeLate'));
+  const greeting1 = HeroGreeting.pick('', atHour(9), () => 0);
+  const greeting2 = HeroGreeting.pick(greeting1.key, atHour(9), () => 0);
+  check('相邻两次进入首页不重复，标题与副标题按同一组抽取',
+    greeting1.key !== greeting2.key && greeting2.titleKey === 'heroWarm' + greeting2.key + 'Title' &&
+    greeting2.subKey === 'heroWarm' + greeting2.key + 'Sub');
+  check('深夜抽取舒缓文案',
+    HeroGreeting.pick('', atHour(0), () => 0.99).key.startsWith('Night'));
+
+  console.log('\n━━ LingXi · 任务表情');
+  check('等待后端和请求未完成时使用思考动效',
+    LingXiState.message(true, false, false) === 'thinking' &&
+    LingXiState.message(false, false, true) === 'thinking' &&
+    LingXiState.message(true, true, false) === 'thinking' &&
+    LingXiState.message(false, true, true) === 'thinking');
+  check('开始输出正文后使用加强版运行动效',
+    LingXiState.message(false, true, false) === 'running');
   check('普通对话回复结束恢复原始图标',
-    MomoState.message(false, false, false) === 'idle');
-  check('报表后台仍执行时，成功的提交回复也继续思考',
-    MomoState.message(false, false, false, 'active') === 'thinking');
+    LingXiState.message(false, false, false) === 'idle');
+  check('后台报表仍执行时，提交回复继续使用运行动效',
+    LingXiState.message(false, false, false, 'active') === 'running' &&
+    LingXiState.message(true, false, true, 'active') === 'running');
   check('报表就绪、失败、停止或失去跟踪后都恢复原始图标',
-    ['ready', 'failed', 'stopped', 'stalled'].every(s => MomoState.message(false, false, false, s) === 'idle'));
+    ['ready', 'failed', 'stopped', 'stalled'].every(s => LingXiState.message(false, false, false, s) === 'idle'));
   check('手动停止优先于仍未清理的等待、打字和后台状态',
-    MomoState.message(true, true, true, 'active', true) === 'idle');
+    LingXiState.message(true, true, true, 'active', true) === 'idle');
   check('无后台执行的 Agent 回复和历史消息保持原始图标',
-    MomoState.message(false, false, false, '') === 'idle' &&
-    MomoState.message(false, false, false) === 'idle');
-  check('侧栏跟随回复或后台报表运行，空闲时停跳',
-    MomoState.activity(true, '') === 'thinking' &&
-    MomoState.activity(false, '报表执行中') === 'thinking' &&
-    MomoState.activity(false, '') === 'idle');
+    LingXiState.message(false, false, false, '') === 'idle' &&
+    LingXiState.message(false, false, false) === 'idle');
+  check('侧栏区分等待、输出与独立后台报表，空闲时静止',
+    LingXiState.activity(true, false, false) === 'thinking' &&
+    LingXiState.activity(true, false, true) === 'running' &&
+    LingXiState.activity(false, true, false) === 'running' &&
+    LingXiState.activity(false, false, false) === 'idle');
+  check('忙碌结束后的旧 streaming 标记不会重新激活侧栏',
+    LingXiState.activity(false, false, true) === 'idle');
 
   console.log('\n━━ Formatter');
   check('escapeHtml 转义五个字符', Formatter.escapeHtml(`<a href="x">'&`) === '&lt;a href=&quot;x&quot;&gt;&#39;&amp;');
@@ -237,8 +262,9 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   const longQ = '请审查这段代码：\n' + 'DATA lv_x TYPE string. " 中文注释\n'.repeat(120);
   let fm = fakeModel(true);
   ChatService._getModel = () => fm;
-  await ChatService.send({ sessionId: 'S1', question: '短问题', modelId: 'AUTO' });
+  await ChatService.send({ sessionId: 'S1', question: '短问题', modelId: 'M1' });
   check('短问题：不走暂存，原文作为 Question', fm.log.creates.length === 0 && fm.log.calls[0].params.Question === '短问题');
+  check('普通对话请求原样携带指定的配置模型编号', fm.log.calls[0].params.ModelId === 'M1');
   check('判定按 URL 编码后的长度（长代码超过 LONG_Q_LIMIT）', encodeURIComponent(longQ).length > ChatService.LONG_Q_LIMIT);
   fm = fakeModel(true);
   await ChatService.send({ sessionId: 'S1', question: longQ, modelId: 'AUTO' });
@@ -246,9 +272,10 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   check('长问题：AnalyzeCode 的 Question 换成 @@ZAI_TEXT:<TextId>', fm.log.calls.length === 1 && fm.log.calls[0].fi === '/AnalyzeCode' && fm.log.calls[0].params.Question === '@@ZAI_TEXT:T1', JSON.stringify(fm.log.calls[0]));
   fm = fakeModel(true, { taskMissing: true });
   ChatService._taskApiAvailable = null;
-  await ChatService.sendTask({ sessionId: 'S1', question: longQ, modelId: 'AUTO' });
+  await ChatService.sendTask({ sessionId: 'S1', question: longQ, modelId: 'M2' });
   check('Agent：AnalyzeTask 也走暂存', fm.log.calls[0].fi === '/AnalyzeTask' && fm.log.calls[0].params.Question === '@@ZAI_TEXT:T1');
   check('Agent：回退 AnalyzeAgent 时复用同一引用、不再存第二次', fm.log.creates.length === 1 && fm.log.calls[1].fi === '/AnalyzeAgent' && fm.log.calls[1].params.Question === '@@ZAI_TEXT:T1', JSON.stringify(fm.log));
+  check('Agent 请求及兼容回退都沿用指定的配置模型编号', fm.log.calls.every((c) => c.params.ModelId === 'M2'));
   ChatService._taskApiAvailable = null;
   fm = fakeModel(false);
   err = null;
@@ -312,6 +339,55 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   const tools = Formatter.dataToolsHtml(0, '', '查看全部 300 行');
   check('工具条：给了「查看全部」时它在最前且是主按钮，生成图表退为普通按钮', /^<div class="dataTools" data-ds="0"><button type="button" class="dtBtn dtPrimary" data-act="all">查看全部 300 行<\/button><button type="button" class="dtBtn" data-act="chart">/.test(tools));
   check('工具条：没给时和原来一样（生成图表是主按钮，没有 all）', Formatter.dataToolsHtml(0).indexOf('data-act="all"') < 0 && Formatter.dataToolsHtml(0).indexOf('dtBtn dtPrimary" data-act="chart"') >= 0);
+
+  // 模型选择必须落到明确配置，旧 AUTO / 停用配置 / 场景限制不能漏到请求中。
+  console.log('\n━━ 配置模型选择');
+  const SceneModels = load('zai/chat/controller/mixin/SceneModels');
+  const modelData = {
+    '/models': [
+      { ModelId: 'AUTO', ModelName: '旧路由', IsActive: 'X' },
+      { ModelId: 'OFF', ModelName: '已停用', IsActive: '' },
+      { ModelId: 'M1', ModelName: '本地模型', IsActive: 'X' },
+      { ModelId: 'M2', ModelName: '云端模型', IsActive: 'X' }
+    ],
+    '/workspaceMode': 'CHAT', '/currentSession': { id: 'S1' }
+  };
+  const chatModel = { getProperty: (p) => modelData[p], setProperty: (p, v) => { modelData[p] = v; } };
+  const modelController = Object.assign(Object.create(SceneModels), {
+    getView: () => ({ getModel: () => chatModel }), _modelUserKey: () => 'MODEL_TEST',
+    _rb: () => ({ getText: (k) => k })
+  });
+  modelController._applySessionModel();
+  check('首次使用选择第一条启用配置；路由和停用项不在菜单里',
+    modelData['/currentModel'] === 'M1' && modelData['/modelsView'].map((m) => m.ModelId).join() === 'M1,M2');
+  modelController.onModelPick({ getSource: () => ({ getBindingContext: () => ({ getProperty: () => 'M2' }) }) });
+  modelData['/currentSession'] = { id: 'S2' };
+  modelController._applySessionModel();
+  check('新对话沿用上次手动选择', modelData['/currentModel'] === 'M2');
+  modelController._rememberSessionModel('S2', 'M1');
+  modelController._applySessionModel();
+  check('旧对话自己的模型优先，胶囊显示实际模型名',
+    modelData['/currentModel'] === 'M1' && modelData['/currentModelName'] === '本地模型');
+  modelController._rememberSessionModel('S2', 'AUTO');
+  modelController._applySessionModel();
+  check('旧对话记住的 AUTO 自动换成有效配置', modelData['/currentModel'] === 'M2');
+  modelData['/models'][3].IsActive = '';
+  modelController._applySessionModel();
+  check('上次模型停用后回到启用配置', modelData['/currentModel'] === 'M1');
+  modelData['/models'][3].IsActive = 'X';
+  modelData['/workspaceMode'] = 'AGENT';
+  modelData['/currentSession'] = { id: 'S2', mode: 'AGENT', agentType: 'CODE' };
+  modelController._mAgentModelRules = { ALL: ['M1'], CODE: ['M2'] };
+  modelController._syncModelList();
+  check('Agent 场景只使用配置中允许的模型',
+    modelData['/currentModel'] === 'M2' && modelData['/modelsView'].map((m) => m.ModelId).join() === 'M2');
+  modelController._mAgentModelRules.CODE = ['MISSING'];
+  modelController._syncModelList();
+  check('场景没有可用配置时清空模型，显示空状态，不能回退 AUTO',
+    modelData['/currentModel'] === '' && modelData['/modelsView'].length === 0 && modelData['/currentModelName'] === 'modelPickEmpty');
+  modelData['/models'] = [];
+  modelController._applySessionModel();
+  check('模型配置为空时不沿用失效编号', modelData['/currentModel'] === '');
 
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);

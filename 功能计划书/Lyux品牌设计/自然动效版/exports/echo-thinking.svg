@@ -1,0 +1,20 @@
+<svg width="120" height="120" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="lx-logo ly-echo" data-state="thinking" role="img" aria-label="Lyux 回声标志">
+      <style>
+      .ly-echo .echo-left{transform-origin:43px 72px;fill:var(--mark-primary,#4F969A)}
+      .ly-echo .echo-right{transform-origin:79px 74px;fill:var(--mark-accent,#A5CCBE)}
+      .ly-echo[data-state="idle"] .echo-left{animation:echo-breathe 6.2s ease-in-out infinite}
+      .ly-echo[data-state="idle"] .echo-right{animation:echo-breathe 6.2s .7s ease-in-out infinite}
+      .ly-echo[data-state="thinking"] .echo-left{animation:echo-ask 5.8s ease-in-out infinite}
+      .ly-echo[data-state="thinking"] .echo-right{animation:echo-answer 5.8s ease-in-out infinite}
+      .ly-echo[data-state="running"] .echo-left{animation:echo-flow-left 3.2s ease-in-out infinite}
+      .ly-echo[data-state="running"] .echo-right{animation:echo-flow-right 3.2s ease-in-out infinite}
+      @keyframes echo-breathe{0%,100%{transform:translateY(0) scale(1)}48%{transform:translateY(-.8px) scale(1.015)}}
+      @keyframes echo-ask{0%,12%,85%,100%{transform:rotate(0) translateX(0)}30%,45%{transform:rotate(4deg) translateX(1.1px)}65%{transform:rotate(1deg)}}
+      @keyframes echo-answer{0%,34%,100%{transform:rotate(0) translateX(0)}53%,68%{transform:rotate(-4deg) translateX(-1.1px)}83%{transform:rotate(-1deg)}}
+      @keyframes echo-flow-left{0%,100%{transform:translateY(0) rotate(0)}25%{transform:translateY(-2px) rotate(3deg)}65%{transform:translateY(.6px) rotate(-1deg)}}
+      @keyframes echo-flow-right{0%,100%{transform:translateY(0) rotate(0)}25%{transform:translateY(.6px) rotate(1deg)}65%{transform:translateY(-2px) rotate(-3deg)}}
+      @media(prefers-reduced-motion:reduce){.ly-echo *{animation:none!important;transform:none!important}}
+      </style>
+      <path class="echo-left" d="M52 19C39 17 27 29 22 43C15 61 18 79 30 91C39 101 52 102 56 93C60 85 49 80 44 75C38 69 39 62 44 55C50 47 61 43 64 34C67 26 61 20 52 19Z"/>
+      <path class="echo-right" d="M78 37C70 34 63 39 61 46C59 53 65 58 71 63C77 68 79 74 76 82C73 89 73 97 80 100C89 103 100 91 102 78C105 62 95 43 78 37Z"/>
+    </svg>
