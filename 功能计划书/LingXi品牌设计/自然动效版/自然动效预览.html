@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LingXi 灵犀 · 自然动效提案</title>
+  <style>:root{color-scheme:light;--ground:#f1f4ef;--paper:#fff;--ink:#24453d;--muted:#52665d;--line:#d9e1d7;--wash:#e9efe7;--active:#2e5b4c;--mark-primary:#559d8b;--mark-accent:#a7c8ae;--mark-ink:#244c43;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--ground)}
+*{box-sizing:border-box}body{margin:0}button,a{-webkit-tap-highlight-color:transparent}button{font:inherit;cursor:pointer;color:inherit}button:disabled{cursor:default;opacity:.6}button:focus-visible,a:focus-visible{outline:3px solid #3a8c72;outline-offset:4px}button{transition:background-color .18s,color .18s}button:hover{background:var(--wash)}button:active{background:#d9e6da}main{max-width:1488px;margin:0 auto;padding:36px 44px 24px}.page-header{display:flex;align-items:center;justify-content:space-between;gap:32px;margin-bottom:26px}h1{font-size:32px;font-weight:580;line-height:1.3;letter-spacing:-.045em;margin:0 0 10px}.page-header p{font-size:16px;line-height:1.6;margin:0;color:var(--muted)}.brand{font-size:25px;letter-spacing:-.04em;font-weight:650;white-space:nowrap}.brand span{font-size:16px;font-weight:500;margin-left:8px;letter-spacing:0}.toolbar{display:flex;justify-content:space-between;gap:16px;align-items:center}.states{display:flex;background:#e1e8df;padding:4px;border-radius:8px}.states button{border:0;background:transparent;padding:11px 27px;border-radius:5px;font-size:15px;min-height:44px}.states button[aria-pressed=true]{background:var(--active);color:#fff}.view-actions{display:flex;gap:6px}.view-actions button{background:transparent;border:1px solid var(--line);border-radius:6px;padding:10px 15px;min-height:44px;font-size:14px}.view-actions button[aria-pressed=true]{border-color:var(--active);background:#e0eadf}.playback-status{font-size:13px;color:var(--muted);margin:12px 0 16px;line-height:1.5;min-height:20px}.concept-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.candidate{background:var(--paper);border-radius:12px;padding:22px 26px 18px;min-width:0}.candidate-header{display:flex;justify-content:space-between;gap:16px;align-items:baseline}.candidate h2{font-size:21px;font-weight:600;line-height:1.3;margin:0;letter-spacing:-.03em}.candidate-header a{font-size:13px;text-decoration:none;color:var(--muted);padding:5px 0}.candidate-header a:hover{color:var(--active);text-decoration:underline}.artboard{height:174px;display:flex;align-items:center;justify-content:center;gap:22px;margin:12px -10px 8px;border-radius:8px;transition:background-color .2s}.main-mark{width:164px;height:164px;flex-shrink:0}.lx-logo{display:block;width:100%;height:100%;overflow:visible}.wordmark{font-weight:620;font-size:32px;line-height:1.3;letter-spacing:-.055em}.wordmark small{display:block;font-weight:450;font-size:14px;letter-spacing:.14em;margin-top:6px}.tagline{font-size:15px;font-weight:550;margin:0 0 6px;line-height:1.6}.motion-note{font-size:14px;line-height:1.6;color:var(--muted);margin:0 0 16px;min-height:23px}.usage-row{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid #edf0eb;padding-top:12px}.small-brand{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:600;letter-spacing:-.02em}.small-mark{width:32px;height:32px}.size-tests{display:flex;align-items:center;gap:18px}.size-test{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)}.size-test .lx-logo{width:var(--sample-size);height:var(--sample-size)}.usage-row .lx-logo *{animation:none!important}.dark-artboards .artboard{background:#24453d;color:#eff5e9}.dark-artboards .main-mark{--mark-primary:#7eb7a4;--mark-accent:#d3e2bd;--mark-ink:#244c43}.is-paused .main-mark *,.is-hidden .main-mark *,.candidate.is-offscreen .main-mark *{animation-play-state:paused!important}footer{display:flex;justify-content:space-between;gap:20px;margin-top:21px;font-size:12px;line-height:1.6;color:var(--muted)}footer p{margin:0}.motion-note,.playback-status{font-variant-numeric:tabular-nums}
+@media(min-width:1500px){main{padding-top:44px}.artboard{height:200px}.main-mark{width:180px;height:180px}}
+@media(max-width:1000px){main{padding:28px}.page-header{align-items:flex-start}.brand{font-size:21px}.brand span{display:none}.candidate{padding:20px}.artboard{gap:12px;height:155px}.main-mark{width:140px;height:140px}.wordmark{font-size:28px}.toolbar{align-items:flex-start}.states button{padding:10px 20px}.view-actions button{padding:10px 12px}.size-tests{gap:10px}footer{display:block}footer p+p{margin-top:4px}}
+@media(max-width:620px){main{padding:24px 18px}.page-header{gap:12px;margin-bottom:20px}.page-header h1{font-size:27px;max-width:270px}.page-header p{font-size:14px;line-height:1.7;max-width:295px}.brand{display:none}.toolbar{flex-direction:column;gap:12px}.states{width:100%}.states button{flex:1;padding:9px 12px}.view-actions{width:100%;gap:8px}.view-actions button{flex:1;font-size:13px;padding:9px 7px}.concept-grid{grid-template-columns:1fr;gap:16px}.candidate{padding:21px 22px 18px}.artboard{height:174px;gap:14px;margin-top:8px}.main-mark{width:156px;height:156px}.wordmark{font-size:30px}.candidate h2{font-size:21px}.playback-status{margin-top:10px;margin-bottom:14px}.size-tests{gap:12px}footer{font-size:12px;margin-top:20px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+.size-test{font-size:13px;font-variant-numeric:tabular-nums}footer{font-size:13px}.artboard{transition:none}
+.dark-artboards .main-mark{--mark-structure:#9cc9b5}
+@media(min-width:1001px) and (max-width:1499px){main{padding-top:28px}.page-header{margin-bottom:18px}h1{font-size:28px;margin-bottom:8px}.page-header p{font-size:14px}.playback-status{margin:10px 0 14px}.concept-grid{gap:16px}.candidate{padding:18px 26px 16px}.artboard{height:138px;margin:8px -10px}.main-mark{width:150px;height:150px}.motion-note{margin-bottom:12px}.usage-row{padding-top:10px}footer{margin-top:16px}}
+</style>
+</head>
+<body>
+  <main>
+    <header class="page-header">
+      <div><h1>灵犀，动得自然一点。</h1><p>四个有生命感的方向。切换状态，看它怎样听、怎样想、怎样回应。</p></div>
+      <span class="brand">LingXi <span>灵犀</span></span>
+    </header>
+    <section class="toolbar" aria-label="动画预览控制">
+      <div class="states" role="group" aria-label="选择工作状态">
+        <button type="button" data-state-button="idle" aria-pressed="false">待机</button>
+        <button type="button" data-state-button="thinking" aria-pressed="true">思考</button>
+        <button type="button" data-state-button="running" aria-pressed="false">运行</button>
+      </div>
+      <div class="view-actions">
+        <button type="button" id="demo" aria-pressed="false">完整演示</button>
+        <button type="button" id="pause" aria-pressed="false">暂停动画</button>
+        <button type="button" id="tone" aria-pressed="false">深色背景</button>
+      </div>
+    </section>
+    <p id="playback-status" class="playback-status" aria-live="polite">正在预览思考状态</p>
+    <section class="concept-grid" id="concepts" aria-label="四款灵犀标志">
+      <noscript>请在支持 JavaScript 的浏览器中打开动画预览。也可以直接打开 exports 文件夹中的 SVG 标志。</noscript>
+    </section>
+    <footer><p>动作只落在图形上，名字保持安静。每款都包含待机、思考、运行三种状态。</p><p>支持暂停；系统开启“减少动态效果”时会自动静止。</p></footer>
+  </main>
+  <script>(function () {
+  window.LingXiConcepts = window.LingXiConcepts || [];
+  window.LingXiConcepts.push({
+    id: 'rhino', name: '小犀', tagline: '认真听，也会点头',
+    description: '把犀角留小一点，把脸颊画圆一点。像一个安静、可靠的小伙伴。',
+    motion: { idle: '缓缓呼吸，偶尔眨眼。', thinking: '侧耳听一听，目光轻轻上移。', running: '轻轻点头，耳朵跟着回应。' },
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="lx-logo lx-rhino" data-state="idle" role="img" aria-label="LingXi 小犀标志">
+      <style>
+      .lx-rhino .rhino-body{transform-origin:60px 72px}
+      .lx-rhino .rhino-ear{transform-origin:39px 42px}
+      .lx-rhino .rhino-gaze{transform-origin:61px 55px}
+      .lx-rhino .rhino-eye{transform-origin:61px 55px}
+      .lx-rhino[data-state="idle"] .rhino-body{animation:rhino-breathe 5.8s ease-in-out infinite}
+      .lx-rhino[data-state="idle"] .rhino-eye{animation:rhino-blink 7.7s ease-in-out infinite}
+      .lx-rhino[data-state="thinking"] .rhino-body{animation:rhino-listen 5.2s ease-in-out infinite}
+      .lx-rhino[data-state="thinking"] .rhino-ear{animation:rhino-ear 5.2s ease-in-out infinite}
+      .lx-rhino[data-state="thinking"] .rhino-gaze{animation:rhino-gaze 5.2s ease-in-out infinite}
+      .lx-rhino[data-state="thinking"] .rhino-eye{animation:rhino-blink 6.7s ease-in-out infinite}
+      .lx-rhino[data-state="running"] .rhino-body{animation:rhino-nod 2.6s ease-in-out infinite}
+      .lx-rhino[data-state="running"] .rhino-ear{animation:rhino-ear 2.6s .12s ease-in-out infinite}
+      .lx-rhino[data-state="running"] .rhino-eye{animation:rhino-blink 6.4s ease-in-out infinite}
+      @keyframes rhino-breathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-.8px) scale(1.012,1.018)}}
+      @keyframes rhino-blink{0%,42%,47%,100%{transform:scaleY(1)}44%,45%{transform:scaleY(.13)}}
+      @keyframes rhino-listen{0%,16%,88%,100%{transform:rotate(0)}35%,64%{transform:rotate(-4deg) translateY(-1px)}}
+      @keyframes rhino-ear{0%,18%,82%,100%{transform:rotate(0)}36%,55%{transform:rotate(-8deg)}65%{transform:rotate(2deg)}}
+      @keyframes rhino-gaze{0%,17%,85%,100%{transform:translate(0,0)}35%,65%{transform:translate(1.2px,-1.4px)}}
+      @keyframes rhino-nod{0%,15%,82%,100%{transform:rotate(0) translateY(0)}35%{transform:rotate(3deg) translateY(1.4px)}60%{transform:rotate(-1deg) translateY(-.5px)}}
+      @media(prefers-reduced-motion:reduce){.lx-rhino *{animation:none!important;transform:none!important}}
+      </style>
+      <g class="rhino-body">
+        <g class="rhino-ear"><path d="M34 43C21 38 19 25 23 19C33 19 43 28 44 39Z" fill="var(--mark-ink,#244C43)"/><path d="M32 36C27 32 26 27 27 25C34 27 38 32 39 37Z" fill="var(--mark-accent,#A7C8AE)"/></g>
+        <path d="M31 37C41 27 52 29 63 36C70 41 77 43 84 46C89 48 91 52 94 57C103 59 104 65 100 73C93 89 75 96 54 91C32 87 20 74 21 57C21 48 25 42 31 37Z" fill="var(--mark-primary,#559D8B)"/>
+        <path d="M78 47C84 40 89 31 90 24C91 20 93 22 95 26C100 36 100 46 96 55C90 54 83 50 78 47Z" fill="var(--mark-accent,#A7C8AE)"/>
+        <g class="rhino-gaze"><ellipse class="rhino-eye" cx="61" cy="55" rx="3.3" ry="4.2" fill="var(--mark-ink,#244C43)"/></g>
+        <path d="M85 73Q91 75 95 71" fill="none" stroke="var(--mark-ink,#244C43)" stroke-width="2.2" stroke-linecap="round"/>
+      </g>
+    </svg>`
+  });
+}());
+</script>
+  <script>(function () {
+  "use strict";
+
+  window.LingXiConcepts = window.LingXiConcepts || [];
+  window.LingXiConcepts.push({
+    id: "sprout",
+    name: "叶芽",
+    tagline: "听见，也在生长",
+    description: "两片向不同方向舒展的叶子，像在倾听，也像一个想法慢慢长出来。厚实、圆润的轮廓让小头像依然清楚。",
+    motion: {
+      idle: "很轻的呼吸，两片叶子偶尔随风偏一点。",
+      thinking: "叶片错开节奏微微侧倾，像在听懂你的意思。",
+      running: "两片叶子依次舒展，像思路一点点长出来。"
+    },
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="lx-logo lx-sprout" data-state="idle" role="img" aria-label="LingXi 灵犀，叶芽标志">
+  <style>
+    .lx-sprout .sprout-growth,
+    .lx-sprout .sprout-left,
+    .lx-sprout .sprout-right { transform-box: view-box; }
+    .lx-sprout .sprout-growth { transform-origin: 60px 95px; }
+    .lx-sprout .sprout-left { transform-origin: 58px 73px; }
+    .lx-sprout .sprout-right { transform-origin: 63px 68px; }
+    .lx-sprout .sprout-stem { fill: var(--mark-structure, var(--mark-ink, #244C43)); }
+    .lx-sprout .sprout-left path { fill: var(--mark-accent, #A7C8AE); }
+    .lx-sprout .sprout-right path { fill: var(--mark-primary, #559D8B); }
+    .lx-sprout[data-state="idle"] .sprout-growth { animation: sprout-breathe 6.4s ease-in-out infinite; }
+    .lx-sprout[data-state="idle"] .sprout-left { animation: sprout-idle-left 7.8s ease-in-out infinite; }
+    .lx-sprout[data-state="idle"] .sprout-right { animation: sprout-idle-right 7.8s ease-in-out infinite; }
+    .lx-sprout[data-state="thinking"] .sprout-growth { animation: sprout-consider 6s ease-in-out infinite; }
+    .lx-sprout[data-state="thinking"] .sprout-left { animation: sprout-listen-left 6s ease-in-out infinite; }
+    .lx-sprout[data-state="thinking"] .sprout-right { animation: sprout-listen-right 6s ease-in-out infinite; }
+    .lx-sprout[data-state="running"] .sprout-growth { animation: sprout-grow 2.8s ease-in-out infinite; }
+    .lx-sprout[data-state="running"] .sprout-left { animation: sprout-unfold-left 2.8s ease-in-out infinite; }
+    .lx-sprout[data-state="running"] .sprout-right { animation: sprout-unfold-right 2.8s ease-in-out infinite; }
+    @keyframes sprout-breathe {
+      0%, 100% { transform: scale(1, 1); }
+      50% { transform: scale(.992, 1.018); }
+    }
+    @keyframes sprout-idle-left {
+      0%, 30%, 100% { transform: rotate(0deg); }
+      58% { transform: rotate(-2deg); }
+      80% { transform: rotate(.6deg); }
+    }
+    @keyframes sprout-idle-right {
+      0%, 35%, 100% { transform: rotate(0deg); }
+      65% { transform: rotate(1.7deg); }
+      84% { transform: rotate(-.5deg); }
+    }
+    @keyframes sprout-consider {
+      0%, 100% { transform: rotate(0deg); }
+      27%, 38% { transform: rotate(-1.2deg); }
+      69%, 78% { transform: rotate(1.2deg); }
+    }
+    @keyframes sprout-listen-left {
+      0%, 12%, 54%, 100% { transform: rotate(0deg); }
+      27%, 38% { transform: rotate(-7deg); }
+      73% { transform: rotate(1.5deg); }
+    }
+    @keyframes sprout-listen-right {
+      0%, 37%, 100% { transform: rotate(0deg); }
+      20% { transform: rotate(-1.3deg); }
+      64%, 76% { transform: rotate(6.5deg); }
+    }
+    @keyframes sprout-grow {
+      0%, 100% { transform: scale(1, 1); }
+      48% { transform: scale(.99, 1.026); }
+    }
+    @keyframes sprout-unfold-left {
+      0%, 100% { transform: rotate(0deg); }
+      22% { transform: rotate(-5deg); }
+      63% { transform: rotate(1.3deg); }
+    }
+    @keyframes sprout-unfold-right {
+      0%, 100% { transform: rotate(0deg); }
+      18% { transform: rotate(-1deg); }
+      54% { transform: rotate(5.5deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .lx-sprout *, .lx-sprout[data-state] * { animation: none !important; transform: none !important; }
+    }
+  </style>
+  <g class="sprout-growth">
+    <path class="sprout-stem" d="M56.2 93.1C58.4 81.4 57.6 70.1 52.4 59.8C51.5 58 52.3 55.9 54.1 55.1C55.8 54.4 57.8 55.1 58.6 56.8C61.7 63.3 63.1 69.8 63.5 75.3C65.6 67.8 68.5 61.5 72.6 55.7C73.7 54.2 75.7 53.8 77.2 54.9C78.7 56 79.1 58 78 59.5C70.1 70.6 66.9 81.3 65 94.4C64.6 97 62.6 98.3 60.2 98C57.7 97.7 55.8 95.7 56.2 93.1Z"/>
+    <g class="sprout-left">
+      <path d="M57.8 73.2C37.9 75.6 21.3 61.5 20.3 40.1C20.2 37.1 21.3 35.5 24.3 35.4C45.8 34.6 60.4 49.5 57.8 73.2Z"/>
+    </g>
+    <g class="sprout-right">
+      <path d="M63 68.1C59.2 44.6 73.9 24.1 96 22.3C98.9 22 100.5 23.1 100.5 26.1C101.2 50.8 86.7 68.5 63 68.1Z"/>
+    </g>
+  </g>
+</svg>`
+  });
+})();
+</script>
+  <script>(function () {
+  "use strict";
+
+  window.LingXiConcepts = window.LingXiConcepts || [];
+  window.LingXiConcepts.push({
+    id: "fish",
+    name: "游鱼",
+    tagline: "顺着心意游动",
+    description: "一条圆润的小鱼，像思路在水中慢慢展开。尾鳍与身体轻轻呼应，留住自然、自在的感觉。",
+    motion: {
+      idle: "缓缓浮动，尾鳍偶尔舒展。",
+      thinking: "轻轻停住、摆尾，再向前探一点。",
+      running: "尾鳍有节奏地推进，身体小幅游动。"
+    },
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="lx-logo lx-fish" data-state="idle" role="img" aria-label="LingXi 游鱼标志">
+  <style>
+    .lx-fish { overflow: visible; }
+    .lx-fish .fish-swim { transform-origin: 60px 60px; }
+    .lx-fish .fish-tail { transform-origin: 39px 60px; }
+    .lx-fish .fish-fin { transform-origin: 65px 71px; }
+    .lx-fish .fish-eye { transform-origin: 84px 55px; }
+    .lx-fish[data-state="idle"] .fish-swim { animation: fish-float 6s ease-in-out infinite; }
+    .lx-fish[data-state="idle"] .fish-tail { animation: fish-rest-tail 6s ease-in-out infinite; }
+    .lx-fish[data-state="thinking"] .fish-swim { animation: fish-consider 4.8s ease-in-out infinite; }
+    .lx-fish[data-state="thinking"] .fish-tail { animation: fish-think-tail 3.2s ease-in-out infinite; }
+    .lx-fish[data-state="thinking"] .fish-eye { animation: fish-observe 4.8s ease-in-out infinite; }
+    .lx-fish[data-state="running"] .fish-swim { animation: fish-swimming 2.4s ease-in-out infinite; }
+    .lx-fish[data-state="running"] .fish-tail { animation: fish-propel 1.2s ease-in-out infinite; }
+    .lx-fish[data-state="running"] .fish-fin { animation: fish-paddle 1.2s ease-in-out infinite; }
+    @keyframes fish-float {
+      0%, 100% { transform: translateY(1.2px) rotate(-1deg); }
+      50% { transform: translateY(-1.2px) rotate(1deg); }
+    }
+    @keyframes fish-rest-tail {
+      0%, 40%, 100% { transform: rotate(0deg) scaleX(1); }
+      56% { transform: rotate(2deg) scaleX(.97); }
+      72% { transform: rotate(-2deg) scaleX(1); }
+    }
+    @keyframes fish-consider {
+      0%, 15%, 100% { transform: translate(0, 0) rotate(0deg); }
+      35%, 48% { transform: translate(1.5px, -1px) rotate(-2deg); }
+      70%, 82% { transform: translate(-1px, 1px) rotate(1deg); }
+    }
+    @keyframes fish-think-tail {
+      0%, 18%, 100% { transform: rotate(0deg) scaleX(1); }
+      36% { transform: rotate(4deg) scaleX(.94); }
+      52% { transform: rotate(-3deg) scaleX(1); }
+      68%, 82% { transform: rotate(0deg) scaleX(1); }
+    }
+    @keyframes fish-observe {
+      0%, 18%, 100% { transform: translate(0, 0); }
+      36%, 52% { transform: translate(1px, -.7px); }
+      72%, 86% { transform: translate(0, 0); }
+    }
+    @keyframes fish-swimming {
+      0%, 100% { transform: translate(-1.5px, .6px) rotate(1deg); }
+      50% { transform: translate(1.5px, -.6px) rotate(-1deg); }
+    }
+    @keyframes fish-propel {
+      0%, 100% { transform: rotate(-4deg) scaleX(1); }
+      50% { transform: rotate(4deg) scaleX(.91); }
+    }
+    @keyframes fish-paddle {
+      0%, 100% { transform: rotate(-2deg); }
+      50% { transform: rotate(3deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .lx-fish *, .lx-fish[data-state] * { animation: none !important; transform: none !important; }
+    }
+  </style>
+  <g class="fish-swim">
+    <path class="fish-tail" fill="var(--mark-accent, #A7C8AE)" d="M42 52C33 48 25 41 19 39C15 37 14 41 16 46L23 60L16 74C14 79 15 83 19 81C27 78 35 71 42 67C45 63 45 57 42 52Z"/>
+    <path fill="var(--mark-primary, #559D8B)" d="M34 60C41 44 55 33 69 33C85 33 98 44 104 56C105.3 58.5 105.3 61.5 104 64C98 76 85 87 69 87C55 87 41 76 34 60Z"/>
+    <path class="fish-fin" fill="var(--mark-accent, #A7C8AE)" d="M56 68C61 68 68 70 74 75C77 77 77 79 73 80C66 81 60 78 57 74C55 71 54 68 56 68Z"/>
+    <ellipse class="fish-eye" cx="84" cy="55" rx="2.8" ry="3.4" fill="var(--mark-ink, #244C43)"/>
+  </g>
+</svg>`
+  });
+})();
+</script>
+  <script>(function () {
+  'use strict';
+
+  window.LingXiConcepts = window.LingXiConcepts || [];
+  window.LingXiConcepts.push({
+    id: 'pair',
+    name: '相伴',
+    tagline: '一来一往，心意相通',
+    description: '两枚自然磨圆的小石子，一高一低、彼此相望。留在中间的空隙，像对话里恰到好处的停顿。',
+    motion: {
+      idle: '两枚小石子慢慢呼吸，偶尔眨眼。',
+      thinking: '先轻轻侧头，再等对方回应。',
+      running: '一前一后轻抬，像默契地接力。'
+    },
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="lx-logo lx-pair" data-state="idle" role="img" aria-label="LingXi 相伴标志">
+  <style>
+    .lx-pair { overflow: visible; }
+    .lx-pair .pair-left { transform-box: view-box; transform-origin: 39px 87px; }
+    .lx-pair .pair-right { transform-box: view-box; transform-origin: 82px 87px; }
+    .lx-pair .pair-eye-left { transform-box: view-box; transform-origin: 44px 52px; }
+    .lx-pair .pair-eye-right { transform-box: view-box; transform-origin: 75px 61px; }
+    .lx-pair .pair-primary { fill: var(--mark-primary, #559D8B); }
+    .lx-pair .pair-accent { fill: var(--mark-accent, #A7C8AE); }
+    .lx-pair .pair-eye { fill: var(--mark-ink, #244C43); }
+    .lx-pair[data-state="idle"] .pair-left { animation: pair-breathe-left 7.2s ease-in-out infinite; }
+    .lx-pair[data-state="idle"] .pair-right { animation: pair-breathe-right 7.2s ease-in-out infinite; }
+    .lx-pair[data-state="idle"] .pair-eye-left { animation: pair-blink 7.2s linear infinite; }
+    .lx-pair[data-state="idle"] .pair-eye-right { animation: pair-blink 7.2s .6s linear infinite; }
+    .lx-pair[data-state="thinking"] .pair-left { animation: pair-listen-left 5.4s ease-in-out infinite; }
+    .lx-pair[data-state="thinking"] .pair-right { animation: pair-listen-right 5.4s ease-in-out infinite; }
+    .lx-pair[data-state="thinking"] .pair-eye-left { animation: pair-think-blink 5.4s linear infinite; }
+    .lx-pair[data-state="thinking"] .pair-eye-right { animation: pair-think-blink 5.4s 1.8s linear infinite; }
+    .lx-pair[data-state="running"] .pair-left { animation: pair-pass-left 2.8s ease-in-out infinite; }
+    .lx-pair[data-state="running"] .pair-right { animation: pair-pass-right 2.8s ease-in-out infinite; }
+    .lx-pair[data-state="running"] .pair-eye-left { animation: pair-blink 8.4s linear infinite; }
+    .lx-pair[data-state="running"] .pair-eye-right { animation: pair-blink 8.4s .5s linear infinite; }
+    @keyframes pair-breathe-left {
+      0%, 12%, 86%, 100% { transform: translateY(0) scale(1); }
+      43% { transform: translateY(-.8px) scale(1.012, 1.018); }
+    }
+    @keyframes pair-breathe-right {
+      0%, 21%, 96%, 100% { transform: translateY(0) scale(1); }
+      55% { transform: translateY(-.7px) scale(1.012, 1.018); }
+    }
+    @keyframes pair-blink {
+      0%, 62%, 66%, 100% { transform: scaleY(1); }
+      63.5%, 64.5% { transform: scaleY(.12); }
+    }
+    @keyframes pair-listen-left {
+      0%, 12%, 76%, 100% { transform: rotate(0) translateY(0); }
+      28%, 43% { transform: rotate(4deg) translateY(-1px); }
+      59% { transform: rotate(1deg) translateY(0); }
+    }
+    @keyframes pair-listen-right {
+      0%, 34%, 93%, 100% { transform: rotate(0) translateY(0); }
+      51%, 65% { transform: rotate(-4.5deg) translateY(-1px); }
+      79% { transform: rotate(-1deg) translateY(0); }
+    }
+    @keyframes pair-think-blink {
+      0%, 55%, 59%, 100% { transform: scaleY(1); }
+      56.5%, 57.5% { transform: scaleY(.12); }
+    }
+    @keyframes pair-pass-left {
+      0%, 10%, 53%, 100% { transform: translateY(0) rotate(0); }
+      26%, 31% { transform: translateY(-3px) rotate(2.3deg); }
+      44% { transform: translateY(-.4px) rotate(.5deg); }
+    }
+    @keyframes pair-pass-right {
+      0%, 37%, 81%, 100% { transform: translateY(0) rotate(0); }
+      54%, 59% { transform: translateY(-3px) rotate(-2.3deg); }
+      72% { transform: translateY(-.4px) rotate(-.5deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .lx-pair *, .lx-pair *::before, .lx-pair *::after { animation: none !important; transition: none !important; }
+    }
+  </style>
+  <g class="pair-left">
+    <path class="pair-primary" d="M19.2 64.6C19.2 48.8 24.3 29.1 35.8 25.1C45.8 21.6 55.1 30.7 55.8 43.2C56.3 52.7 51.2 61.7 52.8 70.8C54.1 78.4 54.1 88.4 47.1 93.1C39.8 98 28.8 93.3 23.6 84.5C20.5 79.3 19.2 72.3 19.2 64.6Z"/>
+    <ellipse class="pair-eye pair-eye-left" cx="44" cy="52" rx="2.6" ry="3.5"/>
+  </g>
+  <g class="pair-right">
+    <path class="pair-accent" d="M64.4 64.2C67.1 53.1 74.8 41.3 84.8 41.8C95.1 42.4 102.8 56.3 102.1 69.1C101.4 82.5 95.2 93.7 85.3 95.2C76 96.7 64.2 92.6 61.8 82.9C60.5 77.7 62.6 71.5 64.4 64.2Z"/>
+    <ellipse class="pair-eye pair-eye-right" cx="75" cy="61" rx="2.6" ry="3.5"/>
+  </g>
+</svg>`
+  });
+}());
+</script>
+  <script>(function () {
+  'use strict';
+  const concepts = window.LingXiConcepts || [];
+  const stateNames = {idle:'待机',thinking:'思考',running:'运行'};
+  const root = document.getElementById('concepts');
+  const pause = document.getElementById('pause');
+  const demo = document.getElementById('demo');
+  const tone = document.getElementById('tone');
+  const status = document.getElementById('playback-status');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  let state = 'thinking';
+  let isPaused = false;
+  let demoActive = false;
+  let demoTimer = null;
+  let demoIndex = 0;
+  const timeline = [{state:'idle',duration:3500},{state:'thinking',duration:6500},{state:'running',duration:5000}];
+  const escape = text => String(text).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  function miniSvg(svg, size) {
+    return svg.replace('role="img"','aria-hidden="true"').replace('<svg ','<svg style="--sample-size:'+size+'px" ');
+  }
+  root.innerHTML = concepts.map(c => `<article class="candidate" data-concept="${escape(c.id)}" aria-labelledby="title-${escape(c.id)}">
+    <div class="candidate-header"><h2 id="title-${escape(c.id)}">${escape(c.name)}</h2><a href="exports/${escape(c.id)}-thinking.svg" data-download="${escape(c.id)}" download>下载动态标志</a></div>
+    <div class="artboard"><div class="main-mark">${c.svg}</div><div class="wordmark">LingXi<small>灵犀</small></div></div>
+    <p class="tagline">${escape(c.tagline)}</p><p class="motion-note">${escape(c.motion.thinking)}</p>
+    <div class="usage-row"><div class="small-brand"><span class="small-mark">${miniSvg(c.svg,32)}</span>LingXi</div><div class="size-tests"><span class="size-test">${miniSvg(c.svg,24)}<span>24</span></span><span class="size-test">${miniSvg(c.svg,16)}<span>16</span></span></div></div>
+  </article>`).join('');
+
+  function setState(next) {
+    state = stateNames[next] ? next : 'idle';
+    document.querySelectorAll('[data-state-button]').forEach(button => button.setAttribute('aria-pressed',String(button.dataset.stateButton === state)));
+    concepts.forEach(c => {
+      const card = document.querySelector('[data-concept="'+c.id+'"]');
+      card.querySelectorAll('.lx-logo').forEach(svg => svg.dataset.state = state);
+      card.querySelector('.main-mark .lx-logo').setAttribute('aria-label','LingXi '+c.name+'，'+stateNames[state]+'状态');
+      card.querySelector('.motion-note').textContent = c.motion[state];
+      card.querySelector('[data-download]').href = 'exports/'+c.id+'-'+state+'.svg';
+    });
+    updateStatus();
+  }
+  function updateStatus() {
+    status.textContent = (reduced.matches ? '系统已减少动态效果 · ' : isPaused ? '动画已暂停 · ' : demoActive ? '完整演示 · ' : '正在预览') + stateNames[state] + '状态';
+    pause.textContent = reduced.matches ? '系统已减少动画' : isPaused ? '继续动画' : '暂停动画';
+    pause.disabled = reduced.matches;
+    demo.disabled = reduced.matches;
+    pause.setAttribute('aria-pressed',String(isPaused || reduced.matches));
+    demo.setAttribute('aria-pressed',String(demoActive));
+    demo.textContent = demoActive ? '结束演示' : '完整演示';
+  }
+  function stopDemo() {
+    clearTimeout(demoTimer); demoTimer = null; demoActive = false;
+    updateStatus();
+  }
+  function scheduleDemo() {
+    clearTimeout(demoTimer);
+    if (!demoActive || isPaused || document.hidden || reduced.matches) return;
+    demoTimer = setTimeout(() => {
+      demoIndex = (demoIndex + 1) % timeline.length;
+      setState(timeline[demoIndex].state);
+      scheduleDemo();
+    }, timeline[demoIndex].duration);
+  }
+  document.querySelectorAll('[data-state-button]').forEach(button => button.addEventListener('click', () => {stopDemo();setState(button.dataset.stateButton);}));
+  document.querySelectorAll('[data-download]').forEach(link => link.addEventListener('click', event => {
+    event.preventDefault();
+    const concept = concepts.find(c => c.id === link.dataset.download);
+    const svg = concept.svg.replace('<svg ','<svg width="120" height="120" ').replace('data-state="idle"','data-state="'+state+'"');
+    const url = URL.createObjectURL(new Blob([svg],{type:'image/svg+xml;charset=utf-8'}));
+    const download = document.createElement('a');
+    download.href = url; download.download = 'LingXi-'+concept.id+'-'+state+'.svg';
+    document.body.appendChild(download); download.click(); download.remove();
+    setTimeout(() => URL.revokeObjectURL(url),1000);
+  }));
+  pause.addEventListener('click', () => {
+    isPaused = !isPaused;
+    document.body.classList.toggle('is-paused',isPaused);
+    updateStatus(); scheduleDemo();
+  });
+  demo.addEventListener('click', () => {
+    if (demoActive) return stopDemo();
+    isPaused = false; document.body.classList.remove('is-paused');
+    demoActive = true; demoIndex = 0; setState(timeline[0].state); scheduleDemo();
+  });
+  tone.addEventListener('click', () => {
+    const dark = document.body.classList.toggle('dark-artboards');
+    tone.setAttribute('aria-pressed',String(dark));
+    tone.textContent = dark ? '浅色背景' : '深色背景';
+  });
+  document.addEventListener('visibilitychange', () => {
+    document.body.classList.toggle('is-hidden',document.hidden);
+    scheduleDemo();
+  });
+  reduced.addEventListener('change', () => {if (reduced.matches) stopDemo();updateStatus();});
+  const observer = new IntersectionObserver(entries => entries.forEach(entry => entry.target.classList.toggle('is-offscreen',!entry.isIntersecting)),{rootMargin:'40px'});
+  document.querySelectorAll('.candidate').forEach(card => observer.observe(card));
+  document.body.classList.toggle('is-hidden',document.hidden);
+  setState(state);
+}());
+</script>
+</body>
+</html>

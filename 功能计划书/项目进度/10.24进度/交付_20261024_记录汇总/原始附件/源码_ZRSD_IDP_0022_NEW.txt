@@ -1,0 +1,1388 @@
+REPORT zrsd_idp_0022_new .
+************************************************************************
+* Purpose: iDPBG Project for Sales Document Report.              *
+* Logical:
+* SAP Module:    SD
+* Funcitonal Spec NO:(SAPSDA-022)
+* T-CODE:
+* Author: SILU
+* EXT:57732257
+* Add Date:  2014/11/13
+*----------------------------------------------------------------------*
+**Customer Object:
+* 1.Table: zidpsd005,zidpsd019
+* 2.Domain:
+*----------------------------------------------------------------------*
+* change History:
+*
+*   Date     Author      TP Prod.  TP date       R=uest NO.
+* --------- --------    ---------------------   -----------------------*
+*----------------------------------------------------------------------*
+TABLES: zidpsd005,zidpsd005a,zidpsd019,vbak,zidpsd015,tvkwz,vbuk,vbfa,
+        mkpf,mseg,ekbe,zidpsd017,likp,zidpsd004,zidpmmtlk,a305,vbap.
+TYPE-POOLS:slis.
+DATA:fc_alv    TYPE slis_fieldcat_alv OCCURS 10 WITH HEADER LINE,
+     wa_layout TYPE slis_layout_alv.
+DATA:g_repid LIKE sy-repid.
+*DATA  l_item LIKE vbap-posnr.          "create by lili 20180109
+
+DATA: BEGIN OF it_load OCCURS 100,
+        bstnk      LIKE vbak-bstnk,
+        wadat_ist  LIKE zidpsd015-wadat_ist,
+        a_so       LIKE vbak-vbeln,
+        a_dn       LIKE vbak-vbeln,
+        shmode(2)  TYPE c,
+        region(10) TYPE c,
+        pgi(1)     TYPE c,
+********add by lily begin 20190322***
+        zoga908    LIKE zidpsd015-zoga908,
+        zogaconf   LIKE zidpsd015-zogaconf,
+        zogapost   LIKE zidpsd015-zogapost,
+********add by lily begin 20190322***
+      END OF it_load.
+
+DATA: BEGIN OF it_out OCCURS 100,
+        bstnk     LIKE vbak-bstnk,
+        matnr     LIKE vbap-matnr,
+        a_so      LIKE zidpsd005-a_so,
+        a_dn      LIKE zidpsd005-a_dn,
+        a_posnr   LIKE zidpsd005-posnr,
+        a_pgi     LIKE zidpsd005-a_pgi,
+        a_iv      LIKE zidpsd005-a_iv,
+        b_so      LIKE zidpsd005-b_so,
+        b_dn      LIKE zidpsd005-b_dn,
+        b_pgi     LIKE zidpsd005-b_pgi,
+        b_iv      LIKE zidpsd005-b_iv,
+        b_po      LIKE zidpsd005-b_po,
+        b_gr      LIKE zidpsd005-b_gr,
+***add 匯損 by xiaohu 20250517 begin
+        c_po      LIKE zidpsd005-c_po,
+        c_gr      LIKE zidpsd005-c_gr,
+***add 匯損 by xiaohu 20250517 end
+        shmode(2) TYPE c,
+      END OF it_out.
+
+DATA: BEGIN OF it_out1 OCCURS 100,
+        bstnk      LIKE vbak-bstnk,
+        a_date     LIKE zidpsd015-wadat_ist,
+        a_so       LIKE zidpsd005-a_so,
+        posnr      LIKE lips-posnr,
+        a_pn       LIKE vbap-matnr,
+        a_up       LIKE vbap-netpr,
+        a_kp       LIKE vbap-kpein,
+        a_qty      LIKE vbap-kwmeng,
+        a_ut       LIKE vbap-vrkme,
+        a_tx       LIKE vbap-mwsbp,
+        a_tp       LIKE vbap-netwr,
+        a_cu       LIKE vbap-waerk,
+        a_dn       LIKE zidpsd005-a_dn,
+*       a_posnr LIKE zidpsd005-posnr,  "add by lili 20180109
+        a_erdat    LIKE likp-erdat,
+        a_erzet    LIKE likp-erzet,
+        a_lgort    LIKE lips-lgort,                         "20150615
+        a_pgi      LIKE zidpsd005-a_pgi,
+        a_budat    LIKE mkpf-budat,
+        a_cputm    LIKE mkpf-cputm,
+***add by lili 20180109  begin******************
+        flag3      LIKE zctbs_zzstatus-flag1,
+        rve2       LIKE zctbs_zzstatus-rve2,
+*      bsi03 LIKE zctbs_zzstatus-bsi03,
+        bsi011     LIKE zctbs_zzstatus-bsi011,
+*      bsi02 LIKE zctbs_zzstatus-bsi02,
+***add by lili 20180109  end******************
+***add by xiaohu 20190122 begin***************
+        zoga908    LIKE zidpsd015-zoga908,
+        zogaconf   LIKE zidpsd015-zogaconf,
+        zogapost   LIKE zidpsd015-zogapost,
+***add by xiaohu 20190122 end*****************
+        a_iv       LIKE zidpsd005-a_iv,
+        b_so       LIKE zidpsd005-b_so,
+        b_up       LIKE vbap-netpr,
+        b_kp       LIKE vbap-kpein,
+        b_qty      LIKE vbap-kwmeng,
+        b_ut       LIKE vbap-vrkme,
+        b_tx       LIKE vbap-mwsbp,
+        b_tp       LIKE vbap-netwr,
+        b_cu       LIKE vbap-waerk,
+        b_dn       LIKE zidpsd005-b_dn,
+        b_lgort    LIKE lips-lgort,                         "20150615
+        b_pgi      LIKE zidpsd005-b_pgi,
+        b_iv       LIKE zidpsd005-b_iv,
+        b_po       LIKE zidpsd005-b_po,
+        p_up       LIKE ekpo-netpr,
+        p_kp       LIKE ekpo-peinh,
+        p_qty      LIKE ekpo-menge,
+        p_ut       LIKE ekpo-meins,
+        p_tp       LIKE ekpo-netwr,
+        b_gr       LIKE zidpsd005-b_gr,
+***add 匯損 by xiaohu 20250517 begin
+        c_po       LIKE zidpsd005-c_po,
+        c_gr       LIKE zidpsd005-c_gr,
+***add 匯損 by xiaohu 20250517 end
+        kdmat      LIKE vbap-kdmat,
+        shmode(2)  TYPE c,
+        smode(2)   TYPE c,
+        region(10) TYPE c,
+        wrbtr      LIKE ekbe-wrbtr,
+        wrbtr1     LIKE ekbe-wrbtr,
+        waers      LIKE ekbe-waers,
+        menge      LIKE ekbe-menge,
+        frgke      LIKE ekko-frgke,
+        status     LIKE zidpmm019-status,
+        flag1(10)  TYPE c,
+        flag2(10)  TYPE c,
+        856date    LIKE zidpsd004-edidate,
+        856time    LIKE zidpsd004-editime,
+        scflag     LIKE zidpsd004-scflag,
+        fkdat      LIKE vbrk-fkdat,
+        erdat      LIKE vbrk-erdat,
+        erzet      LIKE vbrk-erzet,
+        model      LIKE zidpmmtlk-tlk03,                    "mali150609
+        846date    LIKE zidpsd004-edidate,
+        846time    LIKE zidpsd004-editime,
+        obx01      LIKE zidpsd015-obx01,
+      END OF it_out1.
+
+SELECTION-SCREEN: BEGIN OF BLOCK one WITH FRAME TITLE TEXT-001.
+  PARAMETERS: p_werks LIKE vbap-werks OBLIGATORY DEFAULT 'ABG1'.
+  SELECTION-SCREEN: BEGIN OF BLOCK two WITH FRAME TITLE TEXT-001.
+    PARAMETERS: p_box1 RADIOBUTTON GROUP box.
+    SELECT-OPTIONS: s_bstnk FOR vbak-bstnk NO INTERVALS.
+    SELECT-OPTIONS: s_shmode FOR zidpsd015-shmode NO INTERVALS.
+    PARAMETERS:  p_region(10) TYPE c.
+    PARAMETERS:  p_order(1) TYPE c.
+    PARAMETERS:  p_pgi(1) TYPE c.
+***ADD BY SILU 20230116 START
+    SELECT-OPTIONS: s_matnr FOR vbap-matnr NO INTERVALS.
+    SELECT-OPTIONS: s_kdmat FOR vbap-kdmat NO INTERVALS.
+    SELECT-OPTIONS: s_lgort FOR vbap-lgort NO INTERVALS.
+***add by silu 20230116 end
+    PARAMETERS: p_box2 RADIOBUTTON GROUP box.
+    SELECT-OPTIONS: s_grn FOR mkpf-mblnr NO INTERVALS.
+    SELECT-OPTIONS: s_vbeln FOR vbak-vbeln NO INTERVALS.
+  SELECTION-SCREEN: END OF BLOCK two.
+***add by silu 20221208 start
+  PARAMETERS: p_bgr(1) TYPE c,
+              p_biv(1) TYPE c.
+***add by silu 20221208 end
+  PARAMETERS:  p_date1 LIKE sy-datum OBLIGATORY DEFAULT sy-datum.
+  PARAMETERS:  p_date2 LIKE sy-datum OBLIGATORY DEFAULT sy-datum.
+SELECTION-SCREEN: END OF BLOCK one.
+
+START-OF-SELECTION.
+  PERFORM check_authorization.
+  PERFORM get_data.  " GET P/N
+  PERFORM out_put.   " Display result.
+
+*&---------------------------------------------------------------------*
+*&      Form  get_data
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM get_data.
+
+  IF p_box1 = 'X'.                                 "GET EDI ORDER
+    IF p_order = 'Y'.    " FTU Order Created
+      SELECT loadno AS bstnk
+              zoga47 AS a_so
+              zoga48 AS a_dn
+              shmode AS shmode
+              zidpsd015~wadat_ist AS wadat_ist
+              zoga908
+              zogaconf
+              zogapost
+              ztll76 AS region
+              wbstk AS pgi
+        INTO CORRESPONDING FIELDS OF TABLE it_load
+        FROM zidpsd015
+        LEFT JOIN zidpsd017 ON ztll01 = zidpsd015~loadno
+        LEFT JOIN likp ON  vbeln = zidpsd015~zoga48
+       WHERE zidpsd015~werks = p_werks
+         AND loadno IN s_bstnk
+         AND zidpsd015~wadat_ist GE p_date1
+         AND zidpsd015~wadat_ist LE p_date2
+         AND shmode IN s_shmode
+         AND zoga47 NE ' '
+         AND zflag <> 'M'.
+    ELSEIF p_order = 'N'.
+      SELECT loadno AS bstnk
+              zoga47 AS a_so
+              zoga48 AS a_dn
+              shmode AS shmode
+              zidpsd015~wadat_ist AS wadat_ist
+              zoga908
+              zogaconf
+              zogapost
+              ztll76 AS region
+              wbstk AS pgi
+        INTO CORRESPONDING FIELDS OF TABLE it_load
+        FROM zidpsd015
+        LEFT JOIN zidpsd017 ON ztll01 = zidpsd015~loadno
+        LEFT JOIN likp ON  vbeln = zidpsd015~zoga48
+       WHERE zidpsd015~werks = p_werks
+         AND loadno IN s_bstnk
+         AND zidpsd015~wadat_ist GE p_date1
+         AND zidpsd015~wadat_ist LE p_date2
+         AND shmode IN s_shmode
+         AND zoga47 = ' '
+         AND zflag <> 'M'.
+    ELSE.
+      SELECT loadno AS bstnk
+              zoga47 AS a_so
+              zoga48 AS a_dn
+              shmode AS shmode
+              zidpsd015~wadat_ist AS wadat_ist
+              zoga908
+              zogaconf
+              zogapost
+              ztll76 AS region
+              wbstk AS pgi
+        INTO CORRESPONDING FIELDS OF TABLE it_load
+        FROM zidpsd015
+        LEFT JOIN zidpsd017 ON ztll01 = zidpsd015~loadno
+        LEFT JOIN likp ON  vbeln = zidpsd015~zoga48
+       WHERE zidpsd015~werks = p_werks
+         AND loadno IN s_bstnk
+         AND zidpsd015~wadat_ist GE p_date1
+         AND zidpsd015~wadat_ist LE p_date2
+         AND shmode IN s_shmode
+         AND zflag <> 'M'.
+    ENDIF.
+
+*         AND zidpsd015~mllflg <> 'Y'.
+    LOOP AT it_load ASSIGNING FIELD-SYMBOL(<f1>).
+      IF <f1>-pgi = 'C'."modify by RAIN 20220427
+        <f1>-pgi = 'Y'.
+      ELSE.
+        <f1>-pgi = 'N'.
+      ENDIF.
+    ENDLOOP.
+*        if sy-subrc = 0.
+**          select single ztll76 into it_load-region from zidpsd017
+**           where ztll01 = it_load-bstnk.
+**          select single * from vbuk
+**            where vbeln = it_load-a_dn.
+**          if vbuk-wbstk = 'C'.
+*          select single * from likp
+*            where vbeln = it_load-a_dn.
+*          if likp-wbstk = 'C'."modify by RAIN 20220427
+*            it_load-pgi = 'Y'.
+*          else.
+*            it_load-pgi = 'N'.
+*          endif.
+*          append it_load.
+*        endif.
+*      endselect.
+
+*      SELECT
+*        loadno
+*        zoga47
+*        zoga48
+*        shmode
+*        wadat_ist
+*        zoga908
+*        zogaconf
+*        zogapost
+*        INTO (it_load-bstnk,it_load-a_so,it_load-a_dn,it_load-shmode,
+*it_load-wadat_ist,it_load-zoga908,it_load-zogaconf,it_load-zogapost)
+*        FROM zidpsd015
+*       WHERE werks = p_werks
+*         AND loadno IN s_bstnk
+*         AND wadat_ist GE p_date1
+*         AND wadat_ist LE p_date2
+*         AND shmode IN s_shmode
+*         AND zoga47 NE ' '
+*         AND zflag <> 'M'
+*         AND mllflg = 'Y'.
+*        IF sy-subrc = 0.
+*          SELECT SINGLE ztll76 INTO it_load-region FROM zidpsd017
+*           WHERE ztll01 = it_load-bstnk.
+**          select single * from vbuk
+**            where vbeln = it_load-a_dn.
+**          if vbuk-wbstk = 'C'.
+*          SELECT SINGLE * FROM likp
+*            WHERE vbeln = it_load-a_dn.
+*          IF likp-wbstk = 'C'."modify by RAIN 20220427
+*            it_load-pgi = 'Y'.
+*          ELSE.
+*            it_load-pgi = 'N'.
+*          ENDIF.
+*          APPEND it_load.
+*        ENDIF.
+*      ENDSELECT.
+*      SELECT mloadlistno zoga47 zoga48 shmode wadat_ist
+*       INTO (it_load-bstnk,it_load-a_so,it_load-a_dn,
+*             it_load-shmode,it_load-wadat_ist)
+*       FROM zidpsd015
+*      WHERE werks = p_werks
+*        AND mloadlistno IN s_bstnk
+*        AND wadat_ist GE p_date1
+*        AND wadat_ist LE p_date2
+*        AND shmode IN s_shmode
+*        AND zoga47 NE ' '
+*        AND zflag = 'E'
+*        AND mllflg = 'Y'.
+*        IF sy-subrc = 0.
+*          SELECT SINGLE ztll76 INTO it_load-region FROM zidpsd017
+*           WHERE mloadlistno = it_load-bstnk
+*              AND mllflg = 'Y'
+*              AND werks = p_werks.
+*          SELECT SINGLE * FROM vbuk
+*            WHERE vbeln = it_load-a_dn.
+*          IF vbuk-wbstk = 'C'.
+*            it_load-pgi = 'Y'.
+*          ELSE.
+*            it_load-pgi = 'N'.
+*          ENDIF.
+*          APPEND it_load.
+*        ENDIF.
+*      ENDSELECT.
+*    ELSEIF p_order = 'N'.
+*      SELECT loadno zoga47 zoga48 shmode wadat_ist zoga908 zogaconf
+*zogapost  INTO (it_load-bstnk,it_load-a_so,it_load-a_dn,it_load-shmode,
+*    it_load-wadat_ist,it_load-zoga908,it_load-zogaconf,it_load-zogapost)
+*        FROM zidpsd015
+*       WHERE werks = p_werks
+*         AND loadno IN s_bstnk
+*         AND wadat_ist GE p_date1
+*         AND wadat_ist LE p_date2
+*         AND shmode IN s_shmode
+*         AND zoga47 = ' '
+*         AND zflag <> 'M'
+*         AND mllflg <> 'Y'.
+*        IF sy-subrc = 0.
+*          SELECT SINGLE ztll76 INTO it_load-region FROM zidpsd017
+*           WHERE ztll01 = it_load-bstnk.
+**          select single * from vbuk
+**            where vbeln = it_load-a_dn.
+**          if vbuk-wbstk = 'C'.
+*          SELECT SINGLE * FROM likp
+*            WHERE vbeln = it_load-a_dn.
+*          IF likp-wbstk = 'C'. "modify by RAIN 20220427
+*            it_load-pgi = 'Y'.
+*          ELSE.
+*            it_load-pgi = 'N'.
+*          ENDIF.
+*          APPEND it_load.
+*        ENDIF.
+*      ENDSELECT.
+*      SELECT loadno zoga47 zoga48 shmode wadat_ist zoga908 zogaconf
+*zogapost INTO (it_load-bstnk,it_load-a_so,it_load-a_dn,it_load-shmode,
+*it_load-wadat_ist,it_load-zoga908,it_load-zogaconf,it_load-zogapost)
+*        FROM zidpsd015
+*       WHERE werks = p_werks
+*         AND loadno IN s_bstnk
+*         AND wadat_ist GE p_date1
+*         AND wadat_ist LE p_date2
+*         AND shmode IN s_shmode
+*         AND zoga47 = ' '
+*         AND zflag <> 'M'
+*         AND mllflg = 'Y'.
+*        IF sy-subrc = 0.
+*          SELECT SINGLE ztll76 INTO it_load-region FROM zidpsd017
+*           WHERE ztll01 = it_load-bstnk.
+**          select single * from vbuk
+**            where vbeln = it_load-a_dn.
+**          if vbuk-wbstk = 'C'.
+*          SELECT SINGLE * FROM likp
+*            WHERE vbeln = it_load-a_dn.
+*          IF likp-wbstk = 'C'."modify by RAIN 20220427
+*            it_load-pgi = 'Y'.
+*          ELSE.
+*            it_load-pgi = 'N'.
+*          ENDIF.
+*          APPEND it_load.
+*        ENDIF.
+*      ENDSELECT.
+**      SELECT mloadlistno zoga47 zoga48 shmode wadat_ist
+** INTO (it_load-bstnk,it_load-a_so,it_load-a_dn,
+**       it_load-shmode,it_load-wadat_ist)
+** FROM zidpsd015
+**WHERE werks = p_werks
+**  AND mloadlistno IN s_bstnk
+**  AND wadat_ist GE p_date1
+**  AND wadat_ist LE p_date2
+**  AND shmode IN s_shmode
+**  AND zoga47 = ' '
+**  AND zflag = 'E'
+**  AND mllflg = 'Y'.
+**        IF sy-subrc = 0.
+**          SELECT SINGLE ztll76 INTO it_load-region FROM zidpsd017
+**           WHERE mloadlistno = it_load-bstnk
+**              AND mllflg = 'Y'
+**              AND werks = p_werks.
+**          SELECT SINGLE * FROM vbuk
+**            WHERE vbeln = it_load-a_dn.
+**          IF vbuk-wbstk = 'C'.
+**            it_load-pgi = 'Y'.
+**          ELSE.
+**            it_load-pgi = 'N'.
+**          ENDIF.
+**          APPEND it_load.
+**        ENDIF.
+**      ENDSELECT.
+*
+*    ELSE.
+*      SELECT loadno zoga47 zoga48 shmode wadat_ist zoga908 zogaconf
+*zogapost INTO (it_load-bstnk,it_load-a_so,it_load-a_dn,it_load-shmode,
+*it_load-wadat_ist,it_load-zoga908,it_load-zogaconf,it_load-zogapost)
+*
+*        FROM zidpsd015
+*       WHERE werks = p_werks
+*         AND loadno IN s_bstnk
+*         AND wadat_ist GE p_date1
+*         AND wadat_ist LE p_date2
+*         AND shmode IN s_shmode
+*         AND zflag <> 'M'
+*         AND mllflg <> 'Y'.
+*        IF sy-subrc = 0.
+*          SELECT SINGLE ztll76 INTO it_load-region FROM zidpsd017
+*           WHERE ztll01 = it_load-bstnk.
+**          select single * from vbuk
+**            where vbeln = it_load-a_dn.
+**          if vbuk-wbstk = 'C'.
+*          SELECT SINGLE * FROM likp
+*            WHERE vbeln = it_load-a_dn.
+*          IF likp-wbstk = 'C'.  "modify by RAIN 20220427
+*            it_load-pgi = 'Y'.
+*          ELSE.
+*            it_load-pgi = 'N'.
+*          ENDIF.
+*          APPEND it_load.
+*        ENDIF.
+*      ENDSELECT.
+*
+*      SELECT loadno zoga47 zoga48 shmode wadat_ist zoga908 zogaconf
+*zogapost INTO (it_load-bstnk,it_load-a_so,it_load-a_dn,it_load-shmode,
+* it_load-wadat_ist,it_load-zoga908,it_load-zogaconf,it_load-zogapost)
+*
+*        FROM zidpsd015
+*       WHERE werks = p_werks
+*         AND loadno IN s_bstnk
+*         AND wadat_ist GE p_date1
+*         AND wadat_ist LE p_date2
+*         AND shmode IN s_shmode
+*         AND zflag <> 'M'
+*         AND mllflg = 'Y'.
+*        IF sy-subrc = 0.
+*          SELECT SINGLE ztll76 INTO it_load-region FROM zidpsd017
+*           WHERE ztll01 = it_load-bstnk.
+**          select single * from vbuk
+**            where vbeln = it_load-a_dn.
+**          if vbuk-wbstk = 'C'.
+*          SELECT SINGLE * FROM likp
+*            WHERE vbeln = it_load-a_dn.
+*          IF likp-wbstk = 'C'."modify by RAIN 20220427
+*            it_load-pgi = 'Y'.
+*          ELSE.
+*            it_load-pgi = 'N'.
+*          ENDIF.
+*          APPEND it_load.
+*        ENDIF.
+*      ENDSELECT.
+*
+**      SELECT mloadlistno zoga47 zoga48 shmode wadat_ist
+** INTO (it_load-bstnk,it_load-a_so,it_load-a_dn,
+**       it_load-shmode,it_load-wadat_ist)
+** FROM zidpsd015
+**WHERE werks = p_werks
+**  AND mloadlistno IN s_bstnk
+**  AND wadat_ist GE p_date1
+**  AND wadat_ist LE p_date2
+**  AND shmode IN s_shmode
+**  AND zflag = 'E'
+**  AND mllflg = 'Y'.
+**        IF sy-subrc = 0.
+**          SELECT SINGLE ztll76 INTO it_load-region FROM zidpsd017
+**           WHERE mloadlistno = it_load-bstnk
+**              AND mllflg = 'Y'
+**              AND werks = p_werks.
+**          SELECT SINGLE * FROM vbuk
+**            WHERE vbeln = it_load-a_dn.
+**          IF vbuk-wbstk = 'C'.
+**            it_load-pgi = 'Y'.
+**          ELSE.
+**            it_load-pgi = 'N'.
+**          ENDIF.
+**          APPEND it_load.
+**        ENDIF.
+**      ENDSELECT.
+*    ENDIF.
+
+    CLEAR it_load.
+    SORT it_load.
+    DELETE ADJACENT DUPLICATES FROM it_load.
+    IF p_pgi = 'Y'.
+      DELETE it_load WHERE pgi NE 'Y'.
+    ELSEIF p_pgi = 'N'.
+      DELETE it_load WHERE pgi NE 'N'.
+    ENDIF.
+    IF p_region = 'EMEA'.
+      DELETE it_load WHERE region NE 'EUROPE'.
+    ELSEIF p_region = 'ASIA'.
+      DELETE it_load WHERE region NE 'ASIA'.
+    ELSEIF p_region = 'AMR'.
+      DELETE it_load WHERE region NE 'USA'.
+    ENDIF.
+    IF NOT s_shmode[] IS INITIAL.
+      DELETE it_load WHERE shmode EQ ' '.
+    ENDIF.
+
+  ELSE.                                 " GET MANUAL ORDER
+    SELECT zgr AS bstnk
+       zso AS a_so
+       zdn AS a_dn
+      erdat AS wadat_ist
+    INTO CORRESPONDING FIELDS OF TABLE it_load
+    FROM zidpsd005a LEFT JOIN vbak ON vbeln = zidpsd005a~zso
+   WHERE zgr IN s_grn
+     AND zso IN s_vbeln
+     AND cdate GE p_date1
+     AND cdate LE p_date2
+     AND NOT EXISTS ( SELECT loadno FROM zidpsd015
+       WHERE loadno = zidpsd005a~zgr
+         AND werks = p_werks
+         AND zflag IN ( 'E','T' ) ).
+*      IF sy-subrc = 0.
+*        SELECT SINGLE erdat INTO it_load-wadat_ist FROM vbak
+*         WHERE vbeln = it_load-a_so.
+*        APPEND it_load.
+*      ENDIF.
+*    ENDSELECT.
+    SELECT a~bstnk a~vbeln AS a_so a~erdat AS wadat_ist
+      APPENDING CORRESPONDING FIELDS OF TABLE it_load
+      FROM vbak AS a INNER JOIN vbap AS b ON a~vbeln = b~vbeln
+     WHERE a~vbeln IN s_vbeln
+       AND a~bstnk IN s_grn
+       AND a~erdat GE p_date1
+       AND a~erdat LE p_date2
+       AND b~werks = p_werks
+       AND NOT EXISTS ( SELECT loadno FROM zidpsd015
+       WHERE loadno = a~bstnk
+         AND werks = p_werks
+         AND zflag IN ( 'E','T' ) ).
+*      IF sy-subrc = 0.
+*        APPEND it_load.
+*      ENDIF.
+*    ENDSELECT.
+*    LOOP AT it_load.
+*      SELECT SINGLE * FROM zidpsd015
+*       WHERE loadno = it_load-bstnk
+*         AND werks = p_werks
+*         AND zflag = 'E'.
+*      IF sy-subrc = 0.
+*        DELETE it_load WHERE bstnk = it_load-bstnk.
+*      ENDIF.
+*      SELECT SINGLE * FROM zidpsd015
+*       WHERE loadno = it_load-bstnk
+*         AND werks = p_werks
+*         AND zflag = 'T'.
+*      IF sy-subrc = 0.
+*        DELETE it_load WHERE bstnk = it_load-bstnk.
+*      ENDIF.
+*    ENDLOOP.
+  ENDIF.
+
+  DATA(lt_tmp) = it_load[].
+  WITH +data AS ( SELECT DISTINCT bstnk FROM @lt_tmp AS zdata )
+  SELECT loadno, a_so, a_dn, a_iv, b_so, b_dn, b_pgi, b_iv, b_po, b_gr, matnr
+      FROM zidpsd019 INNER JOIN +data AS z ON loadno = z~bstnk
+      INTO TABLE @DATA(lt_019).
+
+  WITH +data AS ( SELECT DISTINCT a_dn FROM @lt_019 AS zdata )
+  SELECT MAX( vbeln ) AS a_pgi,vbelv FROM vbfa
+         INNER JOIN +data AS z ON vbelv = z~a_dn AND vbtyp_n = 'R'
+         GROUP BY vbelv
+      INTO TABLE @DATA(lt_fa)  .
+
+  WITH +data AS ( SELECT DISTINCT bstnk FROM @lt_tmp AS zdata )
+  SELECT a~loadno, a~a_so, a~a_dn, a~a_pgi, a~a_iv, a~b_so, a~b_dn,
+           a~b_pgi, a~b_iv, a~b_po, a~b_gr, c_po, c_gr, b~matnr, a~posnr
+        FROM zidpsd005 AS a INNER JOIN lips AS b
+          ON a~a_dn = b~vbeln AND a~posnr = b~posnr
+          INNER JOIN +data AS z ON a~loadno = z~bstnk
+       AND a~werks = @p_werks
+     INTO TABLE @DATA(lt_005).
+
+  LOOP AT it_load.
+    LOOP AT lt_019 INTO DATA(ls_019) WHERE loadno = it_load-bstnk.
+      it_out-bstnk = ls_019-loadno.
+      it_out-a_so = ls_019-a_so .
+      it_out-a_dn = ls_019-a_dn .
+      it_out-a_iv = ls_019-a_iv .
+      it_out-b_so = ls_019-b_so .
+      it_out-b_dn = ls_019-b_dn .
+      it_out-b_pgi = ls_019-b_pgi .
+      it_out-b_iv = ls_019-b_iv .
+      it_out-b_po = ls_019-b_po .
+      it_out-b_gr = ls_019-b_gr .
+      it_out-matnr = ls_019-matnr .
+      READ TABLE lt_fa INTO DATA(ls_fa) WITH KEY  vbelv = it_out-a_dn.
+      IF sy-subrc EQ 0.
+        it_out-a_pgi = ls_fa-a_pgi.
+        it_out-shmode = it_load-shmode.
+        APPEND it_out.
+      ENDIF.
+    ENDLOOP.
+    CLEAR it_out.
+*    SELECT loadno a_so a_dn a_iv b_so b_dn b_pgi b_iv b_po b_gr matnr
+*      INTO (it_out-bstnk,it_out-a_so,it_out-a_dn,it_out-a_iv,
+*            it_out-b_so, it_out-b_dn,it_out-b_pgi,it_out-b_iv,
+*            it_out-b_po,it_out-b_gr,it_out-matnr)
+*      FROM zidpsd019
+*     WHERE loadno = it_load-bstnk.
+*      IF sy-subrc = 0.
+*        SELECT SINGLE MAX( vbeln ) INTO it_out-a_pgi FROM vbfa
+*         WHERE vbelv = it_out-a_dn
+*           AND vbtyp_n = 'R'.
+*        it_out-shmode = it_load-shmode.
+*        APPEND it_out.
+*      ENDIF.
+*    ENDSELECT.
+    LOOP AT lt_005 INTO DATA(ls_005) WHERE loadno = it_load-bstnk..
+      it_out-bstnk = ls_005-loadno.
+      it_out-a_so = ls_005-a_so .
+      it_out-a_dn = ls_005-a_dn .
+      it_out-a_pgi = ls_005-a_pgi.
+      it_out-a_iv = ls_005-a_iv .
+      it_out-b_so = ls_005-b_so .
+      it_out-b_dn = ls_005-b_dn .
+      it_out-b_pgi = ls_005-b_pgi .
+      it_out-b_iv = ls_005-b_iv .
+      it_out-b_po = ls_005-b_po .
+      it_out-b_gr = ls_005-b_gr .
+      it_out-c_po = ls_005-c_po.     "by xiaohu 20250517
+      it_out-c_gr = ls_005-c_gr.
+      it_out-matnr = ls_005-matnr .
+      it_out-a_posnr = ls_005-posnr.
+
+      it_out-shmode = it_load-shmode.
+      APPEND it_out.
+    ENDLOOP.
+*    SELECT a~loadno a~a_so a~a_dn a~a_pgi a~a_iv a~b_so a~b_dn
+*           a~b_pgi a~b_iv a~b_po a~b_gr b~matnr a~posnr
+*      INTO (it_out-bstnk,it_out-a_so,it_out-a_dn,it_out-a_pgi,
+*            it_out-a_iv,it_out-b_so,it_out-b_dn,it_out-b_pgi,
+*            it_out-b_iv,it_out-b_po,it_out-b_gr,it_out-matnr,
+*            it_out-a_posnr)
+*        FROM zidpsd005 AS a INNER JOIN lips AS b
+*          ON a~a_dn = b~vbeln AND a~posnr = b~posnr
+*     WHERE a~loadno = it_load-bstnk
+*       AND a~werks = p_werks.
+*      IF sy-subrc = 0.
+*        it_out-shmode = it_load-shmode.
+*        APPEND it_out.
+*      ENDIF.
+*    ENDSELECT.
+    CLEAR it_out.
+  ENDLOOP.
+
+  LOOP AT it_load.
+    READ TABLE it_out WITH KEY bstnk = it_load-bstnk.
+    IF sy-subrc NE 0.
+      CLEAR: it_out.
+      it_out-bstnk = it_load-bstnk.
+      it_out-a_so = it_load-a_so.
+      it_out-a_dn = it_load-a_dn.
+      it_out-shmode = it_load-shmode.
+      APPEND it_out.
+    ENDIF.
+  ENDLOOP.
+  SORT it_out.
+  DELETE ADJACENT DUPLICATES FROM it_out.
+
+  LOOP AT it_out.
+    IF it_out-a_dn NE ' '.
+      IF it_out-a_dn NE ' ' AND it_out-a_pgi = ' '.
+*        select single * from vbuk
+        SELECT SINGLE * FROM likp  "modify by RAIN 20220427
+         WHERE vbeln = it_out-a_dn
+           AND wbstk = 'C'.
+        IF sy-subrc = 0.
+          SELECT SINGLE MAX( vbeln ) INTO it_out-a_pgi FROM vbfa
+           WHERE vbelv = it_out-a_dn
+             AND vbtyp_n = 'R'.
+          MODIFY it_out.
+        ENDIF.
+      ENDIF.
+      IF it_out-a_iv = ' '.
+*        select single * from vbuk
+        SELECT SINGLE * FROM likp  "modify by RAIN 20220427
+         WHERE vbeln = it_out-a_dn
+           AND fkstk = 'C'.
+        IF sy-subrc = 0.
+          SELECT SINGLE MAX( vbeln ) INTO it_out-a_iv FROM vbfa
+           WHERE vbelv = it_out-a_dn
+             AND ( vbtyp_n = 'M' OR vbtyp_n = 'O' ).
+          MODIFY it_out.
+        ENDIF.
+      ENDIF.
+
+      CLEAR: it_out1.
+      IF it_out-matnr NE ' '.
+        IF it_out-shmode = 'D'.
+          SELECT SINGLE vbeln posnr matnr netpr kpein kwmeng vrkme netwr
+                      waerk mwsbp kdmat INTO (it_out1-a_so,it_out1-posnr,
+       it_out1-a_pn,it_out1-a_up,it_out1-a_kp,it_out1-a_qty,it_out1-a_ut,
+                   it_out1-a_tp,it_out1-a_cu,it_out1-a_tx,it_out1-kdmat)
+                                         FROM vbap
+                                        WHERE vbeln = it_out-a_so
+                                        AND matnr = it_out-matnr
+***ADD BY SILU 20230116 START
+                                        AND matnr IN s_matnr
+                                        AND kdmat IN s_kdmat
+                                        AND lgort IN s_lgort.
+***ADD BY SILU 20230116 END
+
+        ELSE.
+          SELECT SINGLE vbeln posnr matnr netpr kpein kwmeng vrkme netwr
+        waerk mwsbp kdmat  INTO (it_out1-a_so,it_out1-posnr,it_out1-a_pn,
+       it_out1-a_up,it_out1-a_kp,it_out1-a_qty,it_out1-a_ut,it_out1-a_tp,
+                      it_out1-a_cu,it_out1-a_tx,it_out1-kdmat)
+                                         FROM vbap
+                                        WHERE vbeln = it_out-a_so
+                                          AND matnr = it_out-matnr
+                                          AND posnr = it_out-a_posnr
+***ADD BY SILU 20230116 START
+                                          AND matnr IN s_matnr
+                                          AND kdmat IN s_kdmat
+                                          AND lgort IN s_lgort.
+***ADD BY SILU 20230116 END
+        ENDIF.
+        it_out1-bstnk = it_out-bstnk.
+        it_out1-a_so = it_out-a_so.
+        it_out1-a_dn = it_out-a_dn.
+*        it_out1-a_posnr = it_out-a_posnr.  "add by lili20180109
+        it_out1-a_pgi = it_out-a_pgi.
+        it_out1-a_iv = it_out-a_iv.
+        it_out1-b_so = it_out-b_so.
+        it_out1-b_dn = it_out-b_dn.
+        it_out1-b_pgi = it_out-b_pgi.
+        it_out1-b_iv = it_out-b_iv.
+        it_out1-b_po = it_out-b_po.
+        it_out1-b_gr = it_out-b_gr.
+        it_out1-c_po = it_out-c_po.
+        it_out1-c_gr = it_out-c_gr.
+        APPEND it_out1.
+      ELSE.
+        SELECT vbeln posnr matnr netpr kpein kwmeng vrkme netwr waerk
+               mwsbp kdmat
+          INTO (it_out1-a_so,it_out1-posnr,it_out1-a_pn,it_out1-a_up,
+it_out1-a_kp,it_out1-a_qty,it_out1-a_ut,it_out1-a_tp,it_out1-a_cu,
+                it_out1-a_tx,it_out1-kdmat)
+          FROM vbap
+         WHERE vbeln = it_out-a_so
+***ADD BY SILU 20230116 START
+           AND matnr IN s_matnr
+           AND kdmat IN s_kdmat
+           AND lgort IN s_lgort.
+***ADD BY SILU 20230116 END
+          it_out1-bstnk = it_out-bstnk.
+          it_out1-a_so = it_out-a_so.
+*          it_out1-a_posnr = it_out-a_posnr. "add by lili20180109
+          it_out1-a_dn = it_out-a_dn.
+          it_out1-a_pgi = it_out-a_pgi.
+          it_out1-a_iv = it_out-a_iv.
+          it_out1-b_so = it_out-b_so.
+          it_out1-b_dn = it_out-b_dn.
+          it_out1-b_pgi = it_out-b_pgi.
+          it_out1-b_iv = it_out-b_iv.
+          it_out1-b_po = it_out-b_po.
+          it_out1-b_gr = it_out-b_gr.
+          it_out1-c_po = it_out-c_po.
+          it_out1-c_gr = it_out-c_gr.
+          APPEND it_out1.
+        ENDSELECT.
+      ENDIF.
+    ELSE.
+      CLEAR: it_out1.
+      it_out1-bstnk = it_out-bstnk.
+      it_out1-a_so = it_out-a_so.
+      it_out1-a_dn = it_out-a_dn.
+*      it_out1-a_posnr = it_out-a_posnr. "add by lili20180109
+      it_out1-a_pgi = it_out-a_pgi.
+      it_out1-a_iv = it_out-a_iv.
+      it_out1-b_so = it_out-b_so.
+      it_out1-b_dn = it_out-b_dn.
+      it_out1-b_pgi = it_out-b_pgi.
+      it_out1-b_iv = it_out-b_iv.
+      it_out1-b_po = it_out-b_po.
+      it_out1-b_gr = it_out-b_gr.
+      it_out1-c_po = it_out-c_po.
+      it_out1-c_gr = it_out-c_gr.
+      it_out1-a_pn = it_out-matnr.
+      APPEND it_out1.
+    ENDIF.
+  ENDLOOP.
+
+  CLEAR it_out1.
+  SORT it_out1 BY bstnk a_so a_pn.
+  LOOP AT it_out1.
+    READ TABLE it_load WITH KEY bstnk = it_out1-bstnk.
+*    IF it_load-shmode = 'D'.
+*      it_out1-shmode = 'DS'.
+*    ELSEIF it_load-shmode = 'N' OR it_load-shmode = 'C'.
+*      it_out1-shmode = 'FD'.
+*    ENDIF.
+    it_out1-shmode = it_load-shmode.
+    it_out1-region = it_load-region.
+    it_out1-a_date = it_load-wadat_ist.
+*****add by lily begin 20190322**
+    it_out1-zoga908 = it_load-zoga908.
+    it_out1-zogaconf = it_load-zogaconf.
+    it_out1-zogapost = it_load-zogapost.
+*****add by lily end 20190322**
+    SELECT SINGLE erdat erzet INTO (it_out1-a_erdat,it_out1-a_erzet)
+         FROM likp
+        WHERE vbeln = it_out1-a_dn.
+    SELECT SINGLE lgort INTO it_out1-a_lgort                "20150615
+         FROM lips
+        WHERE vbeln = it_out1-a_dn AND matnr = it_out1-a_pn.
+    SELECT SINGLE budat cputm INTO (it_out1-a_budat,it_out1-a_cputm)
+         FROM mkpf
+        WHERE mblnr = it_out1-a_pgi.
+    SELECT SINGLE netpr kpein kwmeng vrkme netwr waerk mwsbp
+      INTO (it_out1-b_up,it_out1-b_kp,it_out1-b_qty,it_out1-b_ut,
+            it_out1-b_tp,it_out1-b_cu,it_out1-b_tx)
+      FROM vbap
+     WHERE vbeln = it_out1-b_so
+       AND matnr = it_out1-a_pn.
+
+    SELECT SINGLE  kwmeng
+      INTO (it_out1-b_qty)
+      FROM vbap
+     WHERE vbeln = it_out1-b_so
+       AND matnr = it_out1-a_pn
+      AND kwmeng =  it_out1-a_qty.
+
+    SELECT SINGLE lgort INTO it_out1-b_lgort                "20150615
+      FROM lips
+     WHERE vbeln = it_out1-b_dn AND matnr = it_out1-a_pn.
+    SELECT SINGLE netpr peinh menge meins netwr
+      INTO (it_out1-p_up,it_out1-p_kp,it_out1-p_qty,it_out1-p_ut,
+            it_out1-p_tp)
+      FROM ekpo
+     WHERE ebeln = it_out1-b_po
+       AND matnr = it_out1-a_pn.
+
+    SELECT SINGLE menge
+      INTO (it_out1-p_qty)
+      FROM ekpo
+     WHERE ebeln = it_out1-b_po
+       AND matnr = it_out1-a_pn
+      AND menge =  it_out1-a_qty.
+
+    SELECT SINGLE wrbtr waers menge
+      INTO (it_out1-wrbtr,it_out1-waers,it_out1-menge)
+      FROM ekbe
+     WHERE belnr = it_out1-bstnk
+       AND matnr = it_out1-a_pn
+       AND bewtp = 'E'.
+    IF sy-subrc = 0.
+      it_out1-wrbtr1 = it_out1-wrbtr / it_out1-menge.
+    ENDIF.
+    IF it_out1-shmode = 'DS'.
+      IF it_out1-b_so NE ' '.
+        it_out1-b_qty = it_out1-a_qty.
+      ENDIF.
+      IF it_out1-b_po NE ' '.
+        it_out1-p_qty = it_out1-a_qty.
+      ENDIF.
+    ENDIF.
+    SELECT SINGLE frgke INTO it_out1-frgke FROM ekko
+     WHERE ebeln = it_out1-b_po.
+    SELECT SINGLE status INTO it_out1-status FROM zidpmm019
+     WHERE docnumber = it_out1-b_gr.
+    IF sy-langu = 'E'.
+      IF it_out1-frgke = '4'.
+        it_out1-flag1 = 'Sign completion!'.
+      ELSEIF it_out1-frgke = 'C'.
+        it_out1-flag1 = 'Initial state!'.
+      ELSEIF it_out1-frgke = '3'.
+        it_out1-flag1 = 'Initiate sign!'.
+      ENDIF.
+      IF it_out1-status = 'N'.
+        it_out1-flag2 = 'Initial state!'.
+      ELSEIF it_out1-status = 'C'.
+        it_out1-flag2 = 'Cancel sign!'.
+      ELSEIF it_out1-status = 'X'.
+        it_out1-flag2 = 'refuse to sign!'.
+      ELSEIF it_out1-status = 'Y'.
+        it_out1-flag2 = 'Sign completion!'.
+      ELSEIF it_out1-status = 'S'.
+        it_out1-flag2 = 'Sign in!'.
+      ENDIF.
+
+    ELSE.
+      IF it_out1-frgke = '4'.
+        it_out1-flag1 = '簽核完成'.
+      ELSEIF it_out1-frgke = 'C'.
+        it_out1-flag1 = '初始狀態'.
+      ELSEIF it_out1-frgke = '3'.
+        it_out1-flag1 = '發起簽核'.
+      ENDIF.
+      IF it_out1-status = 'N'.
+        it_out1-flag2 = '初始狀態'.
+      ELSEIF it_out1-status = 'C'.
+        it_out1-flag2 = '取消簽核'.
+      ELSEIF it_out1-status = 'X'.
+        it_out1-flag2 = '拒絕簽核'.
+      ELSEIF it_out1-status = 'Y'.
+        it_out1-flag2 = '簽核完成'.
+      ELSEIF it_out1-status = 'S'.
+        it_out1-flag2 = '簽核中'.
+      ENDIF.
+    ENDIF.
+**************add model by mali150609-------------
+    SELECT SINGLE tlk03 FROM zidpmmtlk
+       INTO it_out1-model
+      WHERE tlk01 = it_out1-a_pn
+         AND werks = p_werks.
+**************end ----------------------------
+    SELECT SINGLE edidate editime INTO (it_out1-846date,
+ it_out1-846time)  FROM zidpsd004a
+                         WHERE loadlistno = it_out1-bstnk
+                           AND werks = p_werks.
+    SELECT SINGLE edidate editime scflag INTO (it_out1-856date,
+ it_out1-856time,it_out1-scflag)
+                          FROM zidpsd004
+                         WHERE loadlistno = it_out1-bstnk
+                           AND werks = p_werks.
+    IF it_out1-b_iv NE ' '.
+      SELECT SINGLE fkdat erdat erzet
+        INTO (it_out1-fkdat,it_out1-erdat,it_out1-erzet) FROM vbrk
+       WHERE vbeln = it_out1-b_iv.
+    ENDIF.
+
+*********add by lili 20180109  begin******************
+*    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+*         EXPORTING
+*              input  = it_out1-a_posnr
+*         IMPORTING
+*              output = l_item.
+*
+    SELECT SINGLE flag1 rve2  bsi011  INTO (it_out1-flag3,
+    it_out1-rve2,it_out1-bsi011)
+    FROM zctbs_zzstatus WHERE docno = it_out1-a_dn.
+
+*********add by lili 20180109 end********************
+    DATA: l_kpein LIKE konp-kpein.
+    DATA: l_kbetr LIKE konv-kbetr.
+    DATA: l_konwa LIKE konp-konwa.
+    CLEAR:l_kbetr,l_kpein,l_konwa.
+    SELECT SINGLE * FROM zidpsd015
+          WHERE loadno = it_out1-bstnk
+          AND werks = p_werks.
+    it_out1-smode =  zidpsd015-smode.
+    it_out1-obx01 =  zidpsd015-obx01.
+
+    IF it_out1-smode = 'W' AND it_out1-shmode = 'C'.
+      SELECT SINGLE * FROM a305 WHERE vkorg = 'ID01'
+                            AND vtweg = '00'
+                            AND kappl = 'V'
+                            AND kschl = 'ZPR0'
+                            AND kunnr = zidpsd015-kunag
+                            AND matnr = it_out1-a_pn
+                        AND datab <= zidpsd015-wadat_ist
+                        AND datbi >= zidpsd015-wadat_ist.
+      SELECT SINGLE kbetr kpein konwa INTO (l_kbetr,l_kpein,l_konwa)
+         FROM konp
+        WHERE knumh = a305-knumh.
+      it_out1-a_up = l_kbetr.
+      it_out1-a_kp = l_kpein.
+      it_out1-a_cu = l_konwa.
+    ENDIF.
+
+    MODIFY it_out1.
+  ENDLOOP.
+*  delete adjacent duplicates from it_out1.
+
+  LOOP AT it_out1 WHERE shmode = ''.       ""JIMMY
+    SELECT SINGLE shmode INTO it_out1-shmode  FROM zidpsd015
+                                WHERE loadno = it_out1-bstnk
+                                AND werks = p_werks.
+    IF it_out1-shmode = 'D'.
+      it_out1-shmode = 'DS'.
+    ELSEIF it_out1-shmode = 'N' OR it_out1-shmode = 'C'.
+      it_out1-shmode = 'FD'.
+    ENDIF.
+
+    MODIFY it_out1.  CLEAR it_out1.
+  ENDLOOP.
+***add by silu 20221208 start
+  IF p_bgr = 'Y'.
+    DELETE it_out1 WHERE b_gr EQ ''.
+  ELSEIF p_bgr = 'N'.
+    DELETE it_out1 WHERE b_gr NE ''.
+  ENDIF.
+  IF p_biv = 'Y'.
+    DELETE it_out1 WHERE b_iv EQ ''.
+  ELSEIF p_biv = 'N'.
+    DELETE it_out1 WHERE b_iv NE ''.
+  ENDIF.
+***add by silu 20221208 END
+***add by silu 20230116 start
+  IF NOT s_matnr[] IS INITIAL.
+    DELETE it_out1 WHERE a_pn = ''.
+  ENDIF.
+  IF NOT s_kdmat[] IS INITIAL.
+    DELETE it_out1 WHERE kdmat = ''.
+  ENDIF.
+  IF NOT s_lgort[] IS INITIAL.
+    DELETE it_out1 WHERE a_lgort = ''.
+  ENDIF.
+***add by silu 20230116 END
+
+ENDFORM.                    " get_data
+
+*&---------------------------------------------------------------------*
+*&      Form  out_put
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM out_put.
+  CLEAR: fc_alv.
+  REFRESH: fc_alv.
+  IF p_box1 = 'X'.                                 "GET EDI ORDER
+    IF sy-langu = 'E'.
+      PERFORM fill_alv_structure USING:
+      'IT_OUT1'   'BSTNK'     'LL'  ,
+      'IT_OUT1'   'OBX01'     '海關賬冊'  ,
+      'IT_OUT1'   'A_DATE'    'LL DATE'  ,
+      'IT_OUT1'   'SHMODE'    'ShipMode'  ,
+      'IT_OUT1'   'SMODE'     'ShipMode'  ,
+      'IT_OUT1'   'REGION'    'Region'  ,
+      'IT_OUT1'   'A_SO'      'FTU SO'  ,
+      'IT_OUT1'   'POSNR'     'Item no'  ,
+      'IT_OUT1'   'A_PN'      'Material'  ,
+      'IT_OUT1'   'KDMAT'     'CustMat'  ,
+      'IT_OUT1'   'A_UP'      'FTU UtPrice'  ,
+      'IT_OUT1'   'A_KP'      'Pric Unit'  ,
+      'IT_OUT1'   'A_QTY'     'QTY'  ,
+      'IT_OUT1'   'A_UT'      'Unit'  ,
+      'IT_OUT1'   'A_TX'      'FTU Tax'  ,
+      'IT_OUT1'   'A_TP'      'FTU Total'  ,
+      'IT_OUT1'   'A_CU'      'FTU Curr.'  ,
+      'IT_OUT1'   'A_DN'      'FTU DN'  ,
+      'IT_OUT1'   'A_LGORT'   'FTU DN SLOC'  ,
+      'IT_OUT1'   'A_ERDAT'   'DN DATE'  ,
+      'IT_OUT1'   'A_ERZET'   'DN TIME'  ,
+***add by lili 20180109  begin******************
+      'IT_OUT1'   'FLAG3'    '抓取flag',
+      'IT_OUT1'   'RVE2'     '預報關number',
+*      'IT_OUT1'   'BSI03'    '預報關item',
+      'IT_OUT1'   'BSI011'   '報關number',
+*      'IT_OUT1'   'BSI02'    '報關item',
+***add by lili 20180109 end********************
+***add by xiaohu 20190122 begin****************
+      'IT_OUT1'   'ZOGAPOST'  'Pre MISC Create flag',
+      'IT_OUT1'   'ZOGACONF'  'MISC  create flag',
+      'IT_OUT1'   'ZOGA908'   'MISC Order',
+      'IT_OUT1'   'SCFLAG'  'MISC Post flag',
+***add by xiaohu 20190122 end******************
+      'IT_OUT1'   'A_PGI'     'FTU PGI'  ,
+      'IT_OUT1'   'A_BUDAT'   'PGI DATE'  ,
+      'IT_OUT1'   'A_CPUTM'   'PGI TIME'  ,
+      'IT_OUT1'   '856DATE'   '856 DATE'  ,
+      'IT_OUT1'   '856TIME'   '856 TIME'  ,
+      'IT_OUT1'   'A_IV'      'FTU Billing'  ,
+      'IT_OUT1'   'B_SO'      'HH SO'  ,
+      'IT_OUT1'   'B_UP'      'HH UtPrice'  ,
+      'IT_OUT1'   'B_KP'      'Pric Unit'  ,
+      'IT_OUT1'   'B_QTY'     'QTY'  ,
+      'IT_OUT1'   'B_UT'      'Unit'  ,
+      'IT_OUT1'   'B_TX'      'HH Tax'  ,
+      'IT_OUT1'   'B_TP'      'HH Total'  ,
+      'IT_OUT1'   'B_CU'      'HH Curr.'  ,
+      'IT_OUT1'   'B_DN'      'HH DN'  ,
+      'IT_OUT1'   'B_LGORT'   'HH DN SLOC'  ,
+      'IT_OUT1'   'B_PGI'     'HH PGI'  ,
+      'IT_OUT1'   'B_IV'      'HH Billing'  ,
+      'IT_OUT1'   'FKDAT'     'Bill DATE'  ,
+      'IT_OUT1'   'ERDAT'     'Cr DATE'  ,
+      'IT_OUT1'   'ERZET'     'Cr TIME'  ,
+
+      'IT_OUT1'   'B_PO'      'HH PO/FXSG PO'  ,
+      'IT_OUT1'   'FLAG1'     'PO STATUS'  ,
+      'IT_OUT1'   'P_UP'      'PO UtPrice'  ,
+      'IT_OUT1'   'P_KP'      'Pric Unit'  ,
+      'IT_OUT1'   'P_QTY'     'PO QTY'  ,
+      'IT_OUT1'   'P_UT'      'Unit'  ,
+      'IT_OUT1'   'P_TP'      'Total'  ,
+      'IT_OUT1'   'B_GR'      'HH GR/FXSG GR'  ,
+      'IT_OUT1'   'FLAG2'     'GR STATUS'  ,
+      'IT_OUT1'   'C_PO'       'US PO',
+      'IT_OUT1'   'C_GR'       'US GR',
+      'IT_OUT1'   'MODEL'     'Model' ,                     "mali150609
+      'IT_OUT1'   '846DATE'   '846 DATE'  ,
+      'IT_OUT1'   '846TIME'   '846 TIME'  .
+    ELSE.
+      PERFORM fill_alv_structure USING:
+      'IT_OUT1'   'BSTNK'     '明細'  ,
+      'IT_OUT1'   'OBX01'     '海關賬冊'  ,
+      'IT_OUT1'   'A_DATE'    '開立日期'  ,
+      'IT_OUT1'   'SHMODE'    '出貨模式'  ,
+      'IT_OUT1'   'SMODE'     'ShipMode'  ,
+      'IT_OUT1'   'REGION'    '區域'  ,
+      'IT_OUT1'   'A_SO'      'FTU SO'  ,
+      'IT_OUT1'   'POSNR'     'Item no'  ,
+      'IT_OUT1'   'A_PN'      'HH料號'  ,
+      'IT_OUT1'   'KDMAT'     '客戶料號'  ,
+      'IT_OUT1'   'A_UP'      'FTU單價'  ,
+      'IT_OUT1'   'A_KP'      '計價單位'  ,
+      'IT_OUT1'   'A_QTY'     '數量'  ,
+      'IT_OUT1'   'A_UT'      '數量單位'  ,
+      'IT_OUT1'   'A_TX'      'FTU稅額'  ,
+      'IT_OUT1'   'A_TP'      'FTU總金額'  ,
+      'IT_OUT1'   'A_CU'      '幣別.'  ,
+      'IT_OUT1'   'A_DN'      'FTU DN'  ,
+      'IT_OUT1'   'A_LGORT'   'FTU DN 倉碼 '  ,
+      'IT_OUT1'   'A_ERDAT'   'DN開立日期'  ,
+      'IT_OUT1'   'A_ERZET'   'DN開立時間'  ,
+***add by lili 20180109  begin******************
+      'IT_OUT1'   'FLAG3'    '抓取flag',
+      'IT_OUT1'   'RVE2'     '預報關號碼',
+*      'IT_OUT1'   'BSI03'    '預報關項次',
+      'IT_OUT1'   'BSI011'   '報關號碼',
+*      'IT_OUT1'   'BSI02'    '報關項次',
+***add by lili 20180109 end********************
+***add by xiaohu 20190122 begin****************
+      'IT_OUT1'   'ZOGAPOST'  '預費領標誌位',
+      'IT_OUT1'   'ZOGACONF'  '費領單標誌位',
+      'IT_OUT1'   'ZOGA908'   '費領單',
+      'IT_OUT1'   'SCFLAG'  '費領單是否過賬',
+***add by xiaohu 20190122 end******************
+      'IT_OUT1'   'A_PGI'     'FTU PGI'  ,
+      'IT_OUT1'   'A_BUDAT'   'PGI日期'  ,
+      'IT_OUT1'   'A_CPUTM'   'PGI時間'  ,
+      'IT_OUT1'   '856DATE'   '856日期'  ,
+      'IT_OUT1'   '856TIME'   '856時間'  ,
+      'IT_OUT1'   'A_IV'      'FTU Billing'  ,
+      'IT_OUT1'   'B_SO'      'HH SO'  ,
+      'IT_OUT1'   'B_UP'      'HH單價'  ,
+      'IT_OUT1'   'B_KP'      '計價單位'  ,
+      'IT_OUT1'   'B_QTY'     '數量'  ,
+      'IT_OUT1'   'B_UT'      '數量單位'  ,
+      'IT_OUT1'   'B_TX'      'HH稅額'  ,
+      'IT_OUT1'   'B_TP'      'HH總金額'  ,
+      'IT_OUT1'   'B_CU'      '幣別'  ,
+      'IT_OUT1'   'B_DN'      'HH DN'  ,
+      'IT_OUT1'   'B_LGORT'   'HH DN 倉碼 ',
+      'IT_OUT1'   'B_PGI'     'HH PGI'  ,
+      'IT_OUT1'   'B_IV'      'HH發票'  ,
+      'IT_OUT1'   'FKDAT'     '發票日期'  ,
+      'IT_OUT1'   'ERDAT'     '開立日期'  ,
+      'IT_OUT1'   'ERZET'     '開立時間'  ,
+      'IT_OUT1'   'B_PO'      'HH PO/FXSG PO'  ,
+      'IT_OUT1'   'FLAG1'     'PO簽核狀態'  ,
+      'IT_OUT1'   'P_UP'      'PO單價'  ,
+      'IT_OUT1'   'P_KP'      '計價單位'  ,
+      'IT_OUT1'   'P_QTY'     'PO數量'  ,
+      'IT_OUT1'   'P_UT'      '數量單位'  ,
+      'IT_OUT1'   'P_TP'      '總金額'  ,
+      'IT_OUT1'   'B_GR'      'HH GR/FXSG GR'  ,
+      'IT_OUT1'   'FLAG2'     'GR簽核狀態'  ,
+      'IT_OUT1'   'C_PO'       'US PO',
+      'IT_OUT1'   'C_GR'       'US GR',
+      'IT_OUT1'   'MODEL'     '機種' ,                        "mali150609
+      'IT_OUT1'   '846DATE'   '846日期'  ,
+      'IT_OUT1'   '846TIME'   '846時間'  .
+    ENDIF.
+  ELSE.
+    IF sy-langu = 'E'.
+      PERFORM fill_alv_structure USING:
+      'IT_OUT1'   'BSTNK'     'GRN/CustPO'  ,
+      'IT_OUT1'   'A_DATE'    'Create Date'  ,
+      'IT_OUT1'   'WRBTR1'    'FTUGRN Price'  ,
+      'IT_OUT1'   'WAERS'     'FTUGRN Curr'  ,
+      'IT_OUT1'   'MENGE'     'FTUGRN Qty'  ,
+      'IT_OUT1'   'SHMODE'    'ShipMode'  ,
+      'IT_OUT1'   'SMODE'     'ShipMode'  ,
+      'IT_OUT1'   'A_SO'      'FTU SO'  ,
+      'IT_OUT1'   'POSNR'     'Item no'  ,
+      'IT_OUT1'   'A_PN'      'Material'  ,
+      'IT_OUT1'   'KDMAT'     'CustMat'  ,
+      'IT_OUT1'   'A_UP'      'FTU UtPrice'  ,
+      'IT_OUT1'   'A_KP'      'Pric Unit'  ,
+      'IT_OUT1'   'A_QTY'     'QTY'  ,
+      'IT_OUT1'   'A_UT'      'Unit'  ,
+      'IT_OUT1'   'A_TX'      'FTU Tax'  ,
+      'IT_OUT1'   'A_TP'      'FTU Total'  ,
+      'IT_OUT1'   'A_CU'      'FTU Curr.'  ,
+      'IT_OUT1'   'A_DN'      'FTU DN'  ,
+      'IT_OUT1'   'A_LGORT'   'FTU DN SLOC'  ,
+      'IT_OUT1'   'A_ERDAT'   'DN DATE'  ,
+      'IT_OUT1'   'A_ERZET'   'DN TIME'  ,
+***add by lili 20180109  begin******************
+      'IT_OUT1'   'FLAG3'    '抓取flag',
+      'IT_OUT1'   'RVE2'     '預報關number',
+*      'IT_OUT1'   'BSI03'    '預報關item',
+      'IT_OUT1'   'BSI011'   '報關number',
+*      'IT_OUT1'   'BSI02'    '報關item',
+***add by lili 20180109 end********************
+****add by xiaohu 20190122 begin****************
+*      'IT_OUT1'   'ZOGA908'   'L/C No',
+*      'IT_OUT1'   'ZOGACONF'  'Comfirmed flag',
+*      'IT_OUT1'   'ZOGAPOST'  'PGI Flag',
+****add by xiaohu 20190122 end******************
+      'IT_OUT1'   'A_PGI'     'FTU PGI'  ,
+      'IT_OUT1'   'A_BUDAT'   'PGI DATE'  ,
+      'IT_OUT1'   'A_CPUTM'   'PGI TIME'  ,
+      'IT_OUT1'   'A_IV'      'FTU Billing'  ,
+      'IT_OUT1'   'B_SO'      'HH SO'  ,
+      'IT_OUT1'   'B_UP'      'HH UtPrice'  ,
+      'IT_OUT1'   'B_KP'      'Pric Unit'  ,
+      'IT_OUT1'   'B_QTY'     'QTY'  ,
+      'IT_OUT1'   'B_UT'      'Unit'  ,
+      'IT_OUT1'   'B_TX'      'HH Tax'  ,
+      'IT_OUT1'   'B_TP'      'HH Total'  ,
+      'IT_OUT1'   'B_CU'      'HH Curr.'  ,
+      'IT_OUT1'   'B_DN'      'HH DN'  ,
+      'IT_OUT1'   'B_LGORT'   'HH DN SLOC'  ,
+      'IT_OUT1'   'B_PGI'     'HH PGI'  ,
+      'IT_OUT1'   'B_IV'      'HH Billing'  ,
+      'IT_OUT1'   'B_PO'      'HH PO'  ,
+      'IT_OUT1'   'FLAG1'     'PO STATUS'  ,                "20150615
+      'IT_OUT1'   'P_UP'      'PO UtPrice'  ,
+      'IT_OUT1'   'P_KP'      'Pric Unit'  ,
+      'IT_OUT1'   'P_QTY'     'PO QTY'  ,
+      'IT_OUT1'   'P_UT'      'Unit'  ,
+      'IT_OUT1'   'P_TP'      'Total'  ,
+      'IT_OUT1'   'B_GR'      'HH GR'  ,
+      'IT_OUT1'   'FLAG2'     'GR STATUS'  ,                "20150615
+      'IT_OUT1'   'MODEL'      'Model' .                    "mali150609
+    ELSE.
+      PERFORM fill_alv_structure USING:
+      'IT_OUT1'   'BSTNK'     'GRN/客戶PO'  ,
+      'IT_OUT1'   'A_DATE'    '開立日期'  ,
+      'IT_OUT1'   'WRBTR1'    'FTUGRN單價'  ,
+      'IT_OUT1'   'WAERS'     'FTUGRN幣別'  ,
+      'IT_OUT1'   'MENGE'     'FTUGRN數量'  ,
+      'IT_OUT1'   'SHMODE'    '出貨模式'  ,
+      'IT_OUT1'   'SMODE'     'ShipMode'  ,
+      'IT_OUT1'   'A_SO'      'FTU SO'  ,
+      'IT_OUT1'   'POSNR'     'Item no'  ,
+      'IT_OUT1'   'A_PN'      'HH料號'  ,
+      'IT_OUT1'   'KDMAT'     '客戶料號'  ,
+      'IT_OUT1'   'A_UP'      'FTU單價'  ,
+      'IT_OUT1'   'A_KP'      '計價單位'  ,
+      'IT_OUT1'   'A_QTY'     '數量'  ,
+      'IT_OUT1'   'A_UT'      '數量單位'  ,
+      'IT_OUT1'   'A_TX'      'FTU稅額'  ,
+      'IT_OUT1'   'A_TP'      'FTU總金額'  ,
+      'IT_OUT1'   'A_CU'      '幣別.'  ,
+      'IT_OUT1'   'A_DN'      'FTU DN'  ,
+      'IT_OUT1'   'A_LGORT'   'FTU DN 倉碼 ',
+      'IT_OUT1'   'A_ERDAT'   'DN開立日期'  ,
+      'IT_OUT1'   'A_ERZET'   'DN開立時間'  ,
+***add by lili 20180109  begin******************
+      'IT_OUT1'   'FLAG3'    '抓取flag',
+      'IT_OUT1'   'RVE2'     '預報關號碼',
+*      'IT_OUT1'   'BSI03'    '預報關項次',
+      'IT_OUT1'   'BSI011'   '報關號碼',
+*      'IT_OUT1'   'BSI02'    '報關項次',
+***add by lili 20180109 end********************
+****add by xiaohu 20190122 begin****************
+*      'IT_OUT1'   'ZOGA908'   '費領單',
+*      'IT_OUT1'   'ZOGACONF'  '費領單標誌位',
+*      'IT_OUT1'   'ZOGAPOST'  '預費領標誌位',
+****add by xiaohu 20190122 end******************
+      'IT_OUT1'   'A_PGI'     'FTU PGI'  ,
+      'IT_OUT1'   'A_BUDAT'   'PGI日期'  ,
+      'IT_OUT1'   'A_CPUTM'   'PGI時間'  ,
+      'IT_OUT1'   'A_IV'      'FTU Billing'  ,
+      'IT_OUT1'   'B_SO'      'HH SO'  ,
+      'IT_OUT1'   'B_UP'      'HH單價'  ,
+      'IT_OUT1'   'B_KP'      '計價單位'  ,
+      'IT_OUT1'   'B_QTY'     '數量'  ,
+      'IT_OUT1'   'B_UT'      '數量單位'  ,
+      'IT_OUT1'   'B_TX'      'HH稅額'  ,
+      'IT_OUT1'   'B_TP'      'HH總金額'  ,
+      'IT_OUT1'   'B_CU'      '幣別'  ,
+      'IT_OUT1'   'B_DN'      'HH DN'  ,
+      'IT_OUT1'   'B_LGORT'   'HH DN 倉碼 ',
+      'IT_OUT1'   'B_PGI'     'HH PGI'  ,
+      'IT_OUT1'   'B_IV'      'HH Billing'  ,
+      'IT_OUT1'   'B_PO'      'HH PO'  ,
+      'IT_OUT1'   'FLAG1'     'PO簽核狀態'  ,                   "20150615
+      'IT_OUT1'   'P_UP'      'PO單價'  ,
+      'IT_OUT1'   'P_KP'      '計價單位'  ,
+      'IT_OUT1'   'P_QTY'     'PO數量'  ,
+      'IT_OUT1'   'P_UT'      '數量單位'  ,
+      'IT_OUT1'   'P_TP'      '總金額'  ,
+      'IT_OUT1'   'B_GR'      'HH GR'  ,
+      'IT_OUT1'   'FLAG2'     'GR簽核狀態'  ,                   "20150615
+      'IT_OUT1'   'MODEL'      '機種'  .                      "mali150609
+    ENDIF.
+  ENDIF.
+
+  wa_layout-colwidth_optimize = 'X'.
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = g_repid
+      is_layout          = wa_layout
+      it_fieldcat        = fc_alv[]
+    TABLES
+      t_outtab           = it_out1.
+
+  IF sy-subrc <> 0.
+  ENDIF.
+
+
+ENDFORM.                    " write_alv
+*&---------------------------------------------------------------------*
+*&      Form  fill_alv_structure
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_WA_LAYOUT_COLWIDTH_OPTIMIZE  text
+*      -->P_=  text
+*      -->P_0095   text
+*----------------------------------------------------------------------*
+FORM fill_alv_structure USING    p_tablename p_fieldname  p_text .
+
+  MOVE:
+          p_fieldname     TO fc_alv-fieldname ,
+          p_text          TO fc_alv-reptext_ddic.
+
+  APPEND fc_alv.
+  CLEAR fc_alv.
+
+ENDFORM.                    " fill_alv_structure
+
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_AUTHORIZATION
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM check_authorization.
+  RANGES:p_plant FOR ekpo-werks.
+  p_plant-sign = 'I'.
+  p_plant-option = 'EQ'.
+  p_plant-low = p_werks.
+  APPEND p_plant.
+
+  CALL FUNCTION 'ZRFC_MM_IDP_0104'
+    TABLES
+      input  = p_plant[]
+      output = p_plant[].
+
+  IF p_plant[] IS INITIAL.
+    IF sy-langu = 'E'.
+      MESSAGE i004(zmm) WITH 'You have no authority to use this plant'.
+    ELSE.
+      MESSAGE i004(zmm) WITH '您沒有這個工廠的權限!'.
+    ENDIF.
+    STOP.
+  ENDIF.
+
+ENDFORM.                    " CHECK_AUTHORIZATION

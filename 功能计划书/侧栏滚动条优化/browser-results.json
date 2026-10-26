@@ -1,0 +1,61 @@
+{
+  "dark": {
+    "overflow": true,
+    "scrollTop": 0,
+    "gutter": 6,
+    "barBackground": "rgba(0, 0, 0, 0)",
+    "trackBackground": "rgba(0, 0, 0, 0)",
+    "thumbBackground": "rgb(60, 69, 82)",
+    "scrollbarColor": "auto",
+    "scheme": "dark",
+    "scrollbarWidth": "auto",
+    "rect": {
+      "x": 12,
+      "y": 246.703125,
+      "width": 263,
+      "height": 595.34375
+    },
+    "rows": 36
+  },
+  "hover": {
+    "overflow": true,
+    "scrollTop": 0,
+    "gutter": 6,
+    "barBackground": "rgba(0, 0, 0, 0)",
+    "trackBackground": "rgba(0, 0, 0, 0)",
+    "thumbBackground": "rgb(99, 114, 135)",
+    "scrollbarColor": "auto",
+    "scheme": "dark",
+    "scrollbarWidth": "auto",
+    "rect": {
+      "x": 12,
+      "y": 246.703125,
+      "width": 263,
+      "height": 595.34375
+    },
+    "rows": 36
+  },
+  "light": {
+    "overflow": true,
+    "scrollTop": 0,
+    "gutter": 6,
+    "barBackground": "rgba(0, 0, 0, 0)",
+    "trackBackground": "rgba(0, 0, 0, 0)",
+    "thumbBackground": "rgb(185, 194, 207)",
+    "scrollbarColor": "auto",
+    "scheme": "light",
+    "scrollbarWidth": "auto",
+    "rect": {
+      "x": 12,
+      "y": 246.703125,
+      "width": 263,
+      "height": 595.34375
+    },
+    "rows": 36
+  },
+  "wheel": 420,
+  "drag": 721,
+  "searchCount": 24,
+  "selection": "SCROLL_QA_1",
+  "consoleErrors": []
+}

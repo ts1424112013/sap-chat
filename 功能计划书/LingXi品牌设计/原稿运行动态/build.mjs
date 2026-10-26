@@ -1,0 +1,13 @@
+import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
+import {dirname,join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import vm from 'node:vm';
+const dir=dirname(fileURLToPath(import.meta.url));
+const context={window:{}};vm.createContext(context);vm.runInContext(readFileSync(join(dir,'mark.js'),'utf8'),context);
+mkdirSync(join(dir,'exports'),{recursive:true});
+for(const state of ['idle','thinking','running'])writeFileSync(join(dir,'exports','LingXi-叶翼彩色-'+state+'.svg'),context.window.LingXiWing.svg(state));
+let html=readFileSync(join(dir,'index.html'),'utf8');
+html=html.replace('<link rel="stylesheet" href="preview.css">','<style>'+readFileSync(join(dir,'preview.css'),'utf8')+'</style>');
+html=html.replace(/<script src="([^"]+)"><\/script>/g,(_,src)=>'<script>'+readFileSync(join(dir,src),'utf8')+'</script>');
+writeFileSync(join(dir,'叶翼彩色动态预览.html'),html);
+console.log('Built interactive preview and 3 portable SVG files.');

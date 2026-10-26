@@ -106,7 +106,7 @@ sap.ui.define([], function () {
                                         (action === "AuthList" && !svc.isAdmin());
                                 if (needOn && !svc._mockAuthEnabled()) { fail("权限自助申请尚未启用，请联系 IT"); }
                                 var user = svc.getAppUser();
-                                if (!user) { fail("当前 SAP 账号未开通 Momo，请联系管理员"); }
+                                if (!user) { fail("当前 SAP 账号未开通 LingXi，请联系管理员"); }
                                 if (admin && !svc.isAdmin()) { fail("该操作仅管理员可执行"); }
                                 var s = svc._mockAuthState();
                                 var me = String(user.userId || "").toUpperCase();

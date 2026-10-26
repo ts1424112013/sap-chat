@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LingXi 灵犀 · 自然动效提案</title>
+  <link rel="stylesheet" href="preview.css">
+</head>
+<body>
+  <main>
+    <header class="page-header">
+      <div><h1>灵犀，动得自然一点。</h1><p>四个有生命感的方向。切换状态，看它怎样听、怎样想、怎样回应。</p></div>
+      <span class="brand">LingXi <span>灵犀</span></span>
+    </header>
+    <section class="toolbar" aria-label="动画预览控制">
+      <div class="states" role="group" aria-label="选择工作状态">
+        <button type="button" data-state-button="idle" aria-pressed="false">待机</button>
+        <button type="button" data-state-button="thinking" aria-pressed="true">思考</button>
+        <button type="button" data-state-button="running" aria-pressed="false">运行</button>
+      </div>
+      <div class="view-actions">
+        <button type="button" id="demo" aria-pressed="false">完整演示</button>
+        <button type="button" id="pause" aria-pressed="false">暂停动画</button>
+        <button type="button" id="tone" aria-pressed="false">深色背景</button>
+      </div>
+    </section>
+    <p id="playback-status" class="playback-status" aria-live="polite">正在预览思考状态</p>
+    <section class="concept-grid" id="concepts" aria-label="四款灵犀标志">
+      <noscript>请在支持 JavaScript 的浏览器中打开动画预览。也可以直接打开 exports 文件夹中的 SVG 标志。</noscript>
+    </section>
+    <footer><p>动作只落在图形上，名字保持安静。每款都包含待机、思考、运行三种状态。</p><p>支持暂停；系统开启“减少动态效果”时会自动静止。</p></footer>
+  </main>
+  <script src="concepts/rhino.js"></script>
+  <script src="concepts/sprout.js"></script>
+  <script src="concepts/fish.js"></script>
+  <script src="concepts/pair.js"></script>
+  <script src="preview.js"></script>
+</body>
+</html>

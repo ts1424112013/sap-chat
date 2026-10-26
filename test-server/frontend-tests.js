@@ -95,7 +95,7 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   const TraceService = load('zai/chat/service/TraceService');
   const ChartRenderer = load('zai/chat/utils/ChartRenderer');
   const ChatService = load('zai/chat/service/ChatService');
-  const MomoState = load('zai/chat/utils/MomoState');
+  const LingXiState = load('zai/chat/utils/LingXiState');
 
   console.log('\n━━ 首页时段问候');
   const HeroGreeting = load('zai/chat/utils/HeroGreeting');
@@ -114,26 +114,33 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   check('深夜抽取舒缓文案',
     HeroGreeting.pick('', atHour(0), () => 0.99).key.startsWith('Night'));
 
-  console.log('\n━━ Momo · 任务表情');
-  check('等待、打字和请求未完成时保持思考表情',
-    MomoState.message(true, false, false) === 'thinking' &&
-    MomoState.message(false, true, false) === 'thinking' &&
-    MomoState.message(false, false, true) === 'thinking');
+  console.log('\n━━ LingXi · 任务表情');
+  check('等待后端和请求未完成时使用思考动效',
+    LingXiState.message(true, false, false) === 'thinking' &&
+    LingXiState.message(false, false, true) === 'thinking' &&
+    LingXiState.message(true, true, false) === 'thinking' &&
+    LingXiState.message(false, true, true) === 'thinking');
+  check('开始输出正文后使用加强版运行动效',
+    LingXiState.message(false, true, false) === 'running');
   check('普通对话回复结束恢复原始图标',
-    MomoState.message(false, false, false) === 'idle');
-  check('报表后台仍执行时，成功的提交回复也继续思考',
-    MomoState.message(false, false, false, 'active') === 'thinking');
+    LingXiState.message(false, false, false) === 'idle');
+  check('后台报表仍执行时，提交回复继续使用运行动效',
+    LingXiState.message(false, false, false, 'active') === 'running' &&
+    LingXiState.message(true, false, true, 'active') === 'running');
   check('报表就绪、失败、停止或失去跟踪后都恢复原始图标',
-    ['ready', 'failed', 'stopped', 'stalled'].every(s => MomoState.message(false, false, false, s) === 'idle'));
+    ['ready', 'failed', 'stopped', 'stalled'].every(s => LingXiState.message(false, false, false, s) === 'idle'));
   check('手动停止优先于仍未清理的等待、打字和后台状态',
-    MomoState.message(true, true, true, 'active', true) === 'idle');
+    LingXiState.message(true, true, true, 'active', true) === 'idle');
   check('无后台执行的 Agent 回复和历史消息保持原始图标',
-    MomoState.message(false, false, false, '') === 'idle' &&
-    MomoState.message(false, false, false) === 'idle');
-  check('侧栏跟随回复或后台报表运行，空闲时停跳',
-    MomoState.activity(true, '') === 'thinking' &&
-    MomoState.activity(false, '报表执行中') === 'thinking' &&
-    MomoState.activity(false, '') === 'idle');
+    LingXiState.message(false, false, false, '') === 'idle' &&
+    LingXiState.message(false, false, false) === 'idle');
+  check('侧栏区分等待、输出与独立后台报表，空闲时静止',
+    LingXiState.activity(true, false, false) === 'thinking' &&
+    LingXiState.activity(true, false, true) === 'running' &&
+    LingXiState.activity(false, true, false) === 'running' &&
+    LingXiState.activity(false, false, false) === 'idle');
+  check('忙碌结束后的旧 streaming 标记不会重新激活侧栏',
+    LingXiState.activity(false, false, true) === 'idle');
 
   console.log('\n━━ Formatter');
   check('escapeHtml 转义五个字符', Formatter.escapeHtml(`<a href="x">'&`) === '&lt;a href=&quot;x&quot;&gt;&#39;&amp;');

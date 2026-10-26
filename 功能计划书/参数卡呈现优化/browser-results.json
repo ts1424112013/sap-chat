@@ -1,0 +1,40 @@
+{
+  "typing": {
+    "streaming": true,
+    "rawLength": 18,
+    "cards": 0
+  },
+  "after": {
+    "first": {
+      "streaming": false,
+      "waiting": false,
+      "raw": "我找到了 shipment 报表。\n\n这次会按所选维度汇总出货数据，并使用你确认的日期范围。你可以同时选择多个维度，例如 ship mode 和 region。\n\nsite 和 bu 是可选条件，留空时不额外限制。确认参数后才会读取报表；如果范围还没想好，也可以先不取，稍后继续。",
+      "scrollTop": 0
+    },
+    "raw": "我找到了 shipment 报表。\n\n这次会按所选维度汇总出货数据，并使用你确认的日期范围。你可以同时选择多个维度，例如 ship mode 和 region。\n\nsite 和 bu 是可选条件，留空时不额外限制。确认参数后才会读取报表；如果范围还没想好，也可以先不取，稍后继续。",
+    "cardVisible": true,
+    "focusId": "__component0---app--msgInput-inner",
+    "expectedFocus": "__component0---app--msgInput-inner",
+    "draft": "下一步想按 region 看",
+    "autoFocus": false,
+    "scrollTop": 0,
+    "bodyBeforeCard": true
+  },
+  "submit": {
+    "request": {
+      "sessionId": "PARAMS_PRESENTATION",
+      "taskId": "PARAMS_TASK",
+      "reportId": "SHIPMENT",
+      "paramsJson": "{\"DIM\":\"SHMODE\",\"DATE\":\"20261001,20261031\",\"SITE\":\"HHZZ\",\"BU\":\"\"}",
+      "clientRequestId": "0f30ce3bf4f998b831494b1f71f4d21a"
+    },
+    "state": "open",
+    "values": {
+      "DIM": "SHMODE",
+      "DATE": "20261001,20261031",
+      "SITE": "HHZZ",
+      "BU": ""
+    }
+  },
+  "consoleErrors": []
+}

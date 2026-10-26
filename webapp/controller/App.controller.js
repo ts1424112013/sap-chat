@@ -23,8 +23,8 @@ sap.ui.define([
         "zai/chat/utils/ChartFx",
         "zai/chat/utils/AskCard",
         "zai/chat/utils/DataGrid",
-        "zai/chat/control/MomoMark",
-        "zai/chat/utils/MomoState",
+        "zai/chat/control/LingXiMark",
+        "zai/chat/utils/LingXiState",
         "zai/chat/utils/OfflineNotice",
         "zai/chat/utils/WelcomeToast",
         "zai/chat/utils/HeroGreeting",
@@ -40,7 +40,7 @@ sap.ui.define([
         "zai/chat/controller/mixin/SessionMessages",
         "zai/chat/controller/mixin/SkillPanel",
         "zai/chat/controller/mixin/ResultRestore"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, MomoMark, MomoState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore) {
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore) {
         "use strict";
 
         /**
@@ -75,8 +75,6 @@ sap.ui.define([
          * =====================================================================
          */
         return Controller.extend("zai.chat.controller.App", Object.assign({
-
-                momoActivityState: MomoState.activity,
 
                 /** localStorage 存储（保存连接配置与当前会话） */
                 _oStorage: new Storage(Storage.Type.local, "zaiChat"),
@@ -136,6 +134,7 @@ sap.ui.define([
                                 taskBadgeTip: "",               // 徽标悬浮提示（任务短编号）
                                 // ---- V16：运行状态可视化 ----
                                 activityText: "",               // 顶栏运行指示（生成中 / Agent 运行中 / 报表执行中）
+                                logoState: "idle",              // 灵犀：等待思考 / 正文输出或后台运行 / 空闲
                                 jumpVisible: false              // "回到底部"浮钮
                         });
                         this.getView().setModel(oChatModel, "chat");
@@ -576,7 +575,7 @@ sap.ui.define([
                         oSettings.setProperty("/userName", oUser ? (oUser.userName || oUser.userId) : "");
                         oSettings.setProperty("/userInitials", oUser ? String(oUser.userId || "").substring(0, 2).toUpperCase() : "");
                         if (oUser) {
-                                // 20261025：顶部欢迎卡片（按时段问候 + Momo 动效），替换原 MessageToast
+                                // 20261025：顶部欢迎卡片（按时段问候 + LingXi 动效），替换原 MessageToast
                                 WelcomeToast.show({
                                         title: oRB.getText("welcomeTitle", [oRB.getText(WelcomeToast.greetingKey()), oUser.userName || oUser.userId]),
                                         sub: oRB.getText("welcomeSub")
@@ -660,7 +659,7 @@ sap.ui.define([
 
                         var oVBox = new sap.m.VBox().addStyleClass("appLoginBody")
                                 .addItem(new sap.m.HBox({ justifyContent: "Center" }).addStyleClass("appLoginChip")
-                                        .addItem(new MomoMark({ size: "56px" })))
+                                        .addItem(new LingXiMark({ size: "56px" })))
                                 .addItem(new sap.m.Title({
                                         level: "H2", text: oRB.getText("appLoginTitle"),
                                         textAlign: "Center", width: "100%"
@@ -1182,7 +1181,11 @@ sap.ui.define([
                                 that._setSendBtnBusy(false);
                                 that._syncActivity();
                                 that._refreshMessages();
-                                that._scrollToBottom();
+                                // 参数卡接在已完成的说明后面，保留阅读位置，避免大表单把正文顶走。
+                                var oFinishedEntry = (oChatModel.getProperty("/messages") || [])[iAssistantIdx];
+                                if (!oFinishedEntry || !oFinishedEntry.ask || oFinishedEntry.ask.kind !== "params") {
+                                        that._scrollToBottom();
+                                }
                                 // 历史重渲染后兜底再做一次代码高亮
                                 setTimeout(function () {
                                         that._highlightCodeBlocks();
@@ -1301,13 +1304,19 @@ sap.ui.define([
                         var oChat = this.getView().getModel("chat");
                         var oRB = this._rb();
                         var s = "";
-                        if (oChat.getProperty("/busy")) {
+                        var bBusy = !!oChat.getProperty("/busy");
+                        var bReportRunning = Object.keys(this._mRuns || {}).some(function (k) { return !!this._mRuns[k].timer; }, this);
+                        var bStreaming = (oChat.getProperty("/messages") || []).some(function (m) {
+                                return m.role === "assistant" && m.streaming && !m.waiting && !m.requestPending && !m.avatarStopped;
+                        });
+                        if (bBusy) {
                                 s = oRB.getText((oChat.getProperty("/currentSession") || {}).mode === "AGENT"
                                         ? "activityAgent" : "activityChat");
-                        } else if (Object.keys(this._mRuns || {}).some(function (k) { return this._mRuns[k].timer; }, this)) {
+                        } else if (bReportRunning) {
                                 s = oRB.getText("activityReport");
                         }
                         oChat.setProperty("/activityText", s);
+                        oChat.setProperty("/logoState", LingXiState.activity(bBusy, bReportRunning, bStreaming));
                 },
 
                 _stopThinkingTicker: function () {
@@ -1975,6 +1984,7 @@ sap.ui.define([
                         var oChatModel = this.getView().getModel("chat");
                         sToken = sToken || this._newSessionId(); // 兼容旧调用
                         this._sStreamToken = sToken;
+                        this._syncActivity();
 
                         return new Promise(function (fnResolve) {
                                 var iPos = 0;
@@ -2322,9 +2332,7 @@ sap.ui.define([
                                 var oAskHost = new VBox({ visible: false }).addStyleClass("askHost");
                                 this._mAskHosts = this._mAskHosts || {};
                                 this._mAskHosts[oEntry.uid] = oAskHost;
-                                if (oEntry.ask) {
-                                        AskCard.render(oAskHost, oEntry.ask, this._onAskAction.bind(this, oEntry.uid));
-                                }
+                                this._renderEntryAsk(oAskHost, oEntry);
                                 oCol.addItem(oAskHost);
 
                                 // V16：报表运行步骤条（提交 → 执行中 → 结果就绪）
@@ -2348,8 +2356,8 @@ sap.ui.define([
                                 oRow = new HBox({ justifyContent: "End" });
                                 oRow.addItem(oCol);
                         } else {
-                                // Momo · 水沫：与侧栏、首页共用双泡头像
-                                var oLogo = new MomoMark({
+                                // 与侧栏、登录页和首页共用彩色叶翼，按消息状态切换动效。
+                                var oLogo = new LingXiMark({
                                         size: "32px",
                                         state: {
                                                 parts: [
@@ -2357,7 +2365,7 @@ sap.ui.define([
                                                         { path: "chat>requestPending" }, { path: "chat>runPhase" },
                                                         { path: "chat>avatarStopped" }
                                                 ],
-                                                formatter: MomoState.message
+                                                formatter: LingXiState.message
                                         }
                                 }).addStyleClass("chatAvatar avatarAI");
                                 oRow = new HBox({ alignItems: "Start" });
@@ -3846,12 +3854,12 @@ sap.ui.define([
                 onNewSession: function () {
                         this._startNewSession();
                         // 20261025：不再弹「已开始新会话」—— 画面本身就切到了空会话首页；
-                        // 改为首页内容依次浮现、Momo 跳一下打招呼（_playHeroEnter）
+                        // 首页内容依次浮现，灵犀叶翼展开一次打招呼（_playHeroEnter）。
                         this._playHeroEnter();
                 },
 
                 /**
-                 * 20261025：新会话首页入场 —— 标题、副标题、输入卡、建议标签依次浮现，Momo 弹入跳一下（复用欢迎卡片的 momoMark--greet）。
+                 * 新会话首页入场：标题与输入区依次浮现，灵犀叶翼展开一次（lingxiMark--greet）。
                  * 从对话态切回首页时首页是重新渲染出来的，可能晚一拍甚至渲染两次，所以除了马上试一次，
                  * 首页渲染完成（onAfterRendering）时只要离点击不到 0.6 秒也补上
                  */
@@ -3885,15 +3893,15 @@ sap.ui.define([
                         oDom.classList.add("heroEnter");
                         var oMark = oDom.querySelector(".heroMark");
                         if (oMark) {
-                                oMark.classList.remove("momoMark--greet");
+                                oMark.classList.remove("lingxiMark--greet");
                                 void oMark.offsetWidth;
-                                oMark.classList.add("momoMark--greet");
+                                oMark.classList.add("lingxiMark--greet");
                         }
                         clearTimeout(this._iHeroEnterTimer);
                         this._iHeroEnterTimer = setTimeout(function () {
                                 oDom.classList.remove("heroEnter");
                                 if (oMark) {
-                                        oMark.classList.remove("momoMark--greet");
+                                        oMark.classList.remove("lingxiMark--greet");
                                 }
                         }, 3300);
                 },
@@ -4066,7 +4074,7 @@ sap.ui.define([
                                         module: oTask.module,
                                         sessionId: sSessionId,
                                         sel: 0,
-                                        autoFocus: true
+                                        autoFocus: false
                                 };
                         }
                         return {
@@ -4087,7 +4095,7 @@ sap.ui.define([
                                 module: oTask.module,
                                 sessionId: sSessionId,
                                 sel: 0,
-                                autoFocus: true
+                                autoFocus: false
                         };
                 },
 
@@ -4137,6 +4145,20 @@ sap.ui.define([
                         return null;
                 },
 
+                /** 消息重建和异步补齐参数共用展示门槛：正文结束后，确认卡才出现。 */
+                _renderEntryAsk: function (oHost, oEntry) {
+                        if (!oEntry || oEntry.streaming || oEntry.waiting || oEntry.requestPending || oEntry.avatarStopped) {
+                                oHost.setVisible(false);
+                                return false;
+                        }
+                        if (oEntry.ask && oEntry.ask.kind === "params") {
+                                // 先让用户读完说明，参数输入由用户点击或键盘进入，不自动抢焦点。
+                                oEntry.ask.autoFocus = false;
+                        }
+                        AskCard.render(oHost, oEntry.ask, this._onAskAction.bind(this, oEntry.uid));
+                        return !!oEntry.ask;
+                },
+
                 /** V16：重绘某条消息的内联确认卡（状态以条目 ask 为准） */
                 _renderAsk: function (sUid) {
                         var oHit = this._entryByUid(sUid);
@@ -4144,8 +4166,10 @@ sap.ui.define([
                         if (!oHit || !oHost || oHost.isDestroyed()) {
                                 return;
                         }
-                        AskCard.render(oHost, oHit.entry.ask, this._onAskAction.bind(this, sUid));
-                        if (this._isNearBottom()) {
+                        if (!this._renderEntryAsk(oHost, oHit.entry)) {
+                                return;
+                        }
+                        if (oHit.entry.ask.kind !== "params" && this._isNearBottom()) {
                                 this._scrollToBottom();
                         }
                 },

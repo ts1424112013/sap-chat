@@ -1,0 +1,63 @@
+<svg width="120" height="120" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="lx-logo lx-fish" data-state="running" role="img" aria-label="LingXi 游鱼标志">
+  <style>
+    .lx-fish { overflow: visible; }
+    .lx-fish .fish-swim { transform-origin: 60px 60px; }
+    .lx-fish .fish-tail { transform-origin: 39px 60px; }
+    .lx-fish .fish-fin { transform-origin: 65px 71px; }
+    .lx-fish .fish-eye { transform-origin: 84px 55px; }
+    .lx-fish[data-state="idle"] .fish-swim { animation: fish-float 6s ease-in-out infinite; }
+    .lx-fish[data-state="idle"] .fish-tail { animation: fish-rest-tail 6s ease-in-out infinite; }
+    .lx-fish[data-state="thinking"] .fish-swim { animation: fish-consider 4.8s ease-in-out infinite; }
+    .lx-fish[data-state="thinking"] .fish-tail { animation: fish-think-tail 3.2s ease-in-out infinite; }
+    .lx-fish[data-state="thinking"] .fish-eye { animation: fish-observe 4.8s ease-in-out infinite; }
+    .lx-fish[data-state="running"] .fish-swim { animation: fish-swimming 2.4s ease-in-out infinite; }
+    .lx-fish[data-state="running"] .fish-tail { animation: fish-propel 1.2s ease-in-out infinite; }
+    .lx-fish[data-state="running"] .fish-fin { animation: fish-paddle 1.2s ease-in-out infinite; }
+    @keyframes fish-float {
+      0%, 100% { transform: translateY(1.2px) rotate(-1deg); }
+      50% { transform: translateY(-1.2px) rotate(1deg); }
+    }
+    @keyframes fish-rest-tail {
+      0%, 40%, 100% { transform: rotate(0deg) scaleX(1); }
+      56% { transform: rotate(2deg) scaleX(.97); }
+      72% { transform: rotate(-2deg) scaleX(1); }
+    }
+    @keyframes fish-consider {
+      0%, 15%, 100% { transform: translate(0, 0) rotate(0deg); }
+      35%, 48% { transform: translate(1.5px, -1px) rotate(-2deg); }
+      70%, 82% { transform: translate(-1px, 1px) rotate(1deg); }
+    }
+    @keyframes fish-think-tail {
+      0%, 18%, 100% { transform: rotate(0deg) scaleX(1); }
+      36% { transform: rotate(4deg) scaleX(.94); }
+      52% { transform: rotate(-3deg) scaleX(1); }
+      68%, 82% { transform: rotate(0deg) scaleX(1); }
+    }
+    @keyframes fish-observe {
+      0%, 18%, 100% { transform: translate(0, 0); }
+      36%, 52% { transform: translate(1px, -.7px); }
+      72%, 86% { transform: translate(0, 0); }
+    }
+    @keyframes fish-swimming {
+      0%, 100% { transform: translate(-1.5px, .6px) rotate(1deg); }
+      50% { transform: translate(1.5px, -.6px) rotate(-1deg); }
+    }
+    @keyframes fish-propel {
+      0%, 100% { transform: rotate(-4deg) scaleX(1); }
+      50% { transform: rotate(4deg) scaleX(.91); }
+    }
+    @keyframes fish-paddle {
+      0%, 100% { transform: rotate(-2deg); }
+      50% { transform: rotate(3deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .lx-fish *, .lx-fish[data-state] * { animation: none !important; transform: none !important; }
+    }
+  </style>
+  <g class="fish-swim">
+    <path class="fish-tail" fill="var(--mark-accent, #A7C8AE)" d="M42 52C33 48 25 41 19 39C15 37 14 41 16 46L23 60L16 74C14 79 15 83 19 81C27 78 35 71 42 67C45 63 45 57 42 52Z"/>
+    <path fill="var(--mark-primary, #559D8B)" d="M34 60C41 44 55 33 69 33C85 33 98 44 104 56C105.3 58.5 105.3 61.5 104 64C98 76 85 87 69 87C55 87 41 76 34 60Z"/>
+    <path class="fish-fin" fill="var(--mark-accent, #A7C8AE)" d="M56 68C61 68 68 70 74 75C77 77 77 79 73 80C66 81 60 78 57 74C55 71 54 68 56 68Z"/>
+    <ellipse class="fish-eye" cx="84" cy="55" rx="2.8" ry="3.4" fill="var(--mark-ink, #244C43)"/>
+  </g>
+</svg>

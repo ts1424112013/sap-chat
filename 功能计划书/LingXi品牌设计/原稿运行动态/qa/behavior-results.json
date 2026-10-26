@@ -1,0 +1,25 @@
+{
+  "uniqueGradients": 18,
+  "running": "stem, upper and lower parts all move",
+  "pause": "all animation clocks stopped and resumed",
+  "stopping": "returns to the original pose; no loop left running",
+  "thinking": "separate slower motion",
+  "demo": "one run finishes and settles automatically",
+  "layouts": [
+    {
+      "viewport": 1440,
+      "content": 1440
+    },
+    {
+      "viewport": 768,
+      "content": 768
+    },
+    {
+      "viewport": 390,
+      "content": 390
+    }
+  ],
+  "download": "actual SVG file saved",
+  "reducedMotion": "all motion stopped, including settling transitions",
+  "offline": "self-contained preview and SVG exports work offline"
+}

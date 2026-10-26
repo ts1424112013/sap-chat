@@ -1,0 +1,77 @@
+<svg width="120" height="120" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="lx-logo lx-sprout" data-state="thinking" role="img" aria-label="LingXi 灵犀，叶芽标志">
+  <style>
+    .lx-sprout .sprout-growth,
+    .lx-sprout .sprout-left,
+    .lx-sprout .sprout-right { transform-box: view-box; }
+    .lx-sprout .sprout-growth { transform-origin: 60px 95px; }
+    .lx-sprout .sprout-left { transform-origin: 58px 73px; }
+    .lx-sprout .sprout-right { transform-origin: 63px 68px; }
+    .lx-sprout .sprout-stem { fill: var(--mark-structure, var(--mark-ink, #244C43)); }
+    .lx-sprout .sprout-left path { fill: var(--mark-accent, #A7C8AE); }
+    .lx-sprout .sprout-right path { fill: var(--mark-primary, #559D8B); }
+    .lx-sprout[data-state="idle"] .sprout-growth { animation: sprout-breathe 6.4s ease-in-out infinite; }
+    .lx-sprout[data-state="idle"] .sprout-left { animation: sprout-idle-left 7.8s ease-in-out infinite; }
+    .lx-sprout[data-state="idle"] .sprout-right { animation: sprout-idle-right 7.8s ease-in-out infinite; }
+    .lx-sprout[data-state="thinking"] .sprout-growth { animation: sprout-consider 6s ease-in-out infinite; }
+    .lx-sprout[data-state="thinking"] .sprout-left { animation: sprout-listen-left 6s ease-in-out infinite; }
+    .lx-sprout[data-state="thinking"] .sprout-right { animation: sprout-listen-right 6s ease-in-out infinite; }
+    .lx-sprout[data-state="running"] .sprout-growth { animation: sprout-grow 2.8s ease-in-out infinite; }
+    .lx-sprout[data-state="running"] .sprout-left { animation: sprout-unfold-left 2.8s ease-in-out infinite; }
+    .lx-sprout[data-state="running"] .sprout-right { animation: sprout-unfold-right 2.8s ease-in-out infinite; }
+    @keyframes sprout-breathe {
+      0%, 100% { transform: scale(1, 1); }
+      50% { transform: scale(.992, 1.018); }
+    }
+    @keyframes sprout-idle-left {
+      0%, 30%, 100% { transform: rotate(0deg); }
+      58% { transform: rotate(-2deg); }
+      80% { transform: rotate(.6deg); }
+    }
+    @keyframes sprout-idle-right {
+      0%, 35%, 100% { transform: rotate(0deg); }
+      65% { transform: rotate(1.7deg); }
+      84% { transform: rotate(-.5deg); }
+    }
+    @keyframes sprout-consider {
+      0%, 100% { transform: rotate(0deg); }
+      27%, 38% { transform: rotate(-1.2deg); }
+      69%, 78% { transform: rotate(1.2deg); }
+    }
+    @keyframes sprout-listen-left {
+      0%, 12%, 54%, 100% { transform: rotate(0deg); }
+      27%, 38% { transform: rotate(-7deg); }
+      73% { transform: rotate(1.5deg); }
+    }
+    @keyframes sprout-listen-right {
+      0%, 37%, 100% { transform: rotate(0deg); }
+      20% { transform: rotate(-1.3deg); }
+      64%, 76% { transform: rotate(6.5deg); }
+    }
+    @keyframes sprout-grow {
+      0%, 100% { transform: scale(1, 1); }
+      48% { transform: scale(.99, 1.026); }
+    }
+    @keyframes sprout-unfold-left {
+      0%, 100% { transform: rotate(0deg); }
+      22% { transform: rotate(-5deg); }
+      63% { transform: rotate(1.3deg); }
+    }
+    @keyframes sprout-unfold-right {
+      0%, 100% { transform: rotate(0deg); }
+      18% { transform: rotate(-1deg); }
+      54% { transform: rotate(5.5deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .lx-sprout *, .lx-sprout[data-state] * { animation: none !important; transform: none !important; }
+    }
+  </style>
+  <g class="sprout-growth">
+    <path class="sprout-stem" d="M56.2 93.1C58.4 81.4 57.6 70.1 52.4 59.8C51.5 58 52.3 55.9 54.1 55.1C55.8 54.4 57.8 55.1 58.6 56.8C61.7 63.3 63.1 69.8 63.5 75.3C65.6 67.8 68.5 61.5 72.6 55.7C73.7 54.2 75.7 53.8 77.2 54.9C78.7 56 79.1 58 78 59.5C70.1 70.6 66.9 81.3 65 94.4C64.6 97 62.6 98.3 60.2 98C57.7 97.7 55.8 95.7 56.2 93.1Z"/>
+    <g class="sprout-left">
+      <path d="M57.8 73.2C37.9 75.6 21.3 61.5 20.3 40.1C20.2 37.1 21.3 35.5 24.3 35.4C45.8 34.6 60.4 49.5 57.8 73.2Z"/>
+    </g>
+    <g class="sprout-right">
+      <path d="M63 68.1C59.2 44.6 73.9 24.1 96 22.3C98.9 22 100.5 23.1 100.5 26.1C101.2 50.8 86.7 68.5 63 68.1Z"/>
+    </g>
+  </g>
+</svg>

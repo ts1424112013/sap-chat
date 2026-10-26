@@ -1,0 +1,907 @@
+REPORT zrsd_idp_0012 MESSAGE-ID sabapdocu.
+************************************************************************
+* Purpose: iDPBG Project for Issued/Open DN report
+* Logical:
+* SAP Module:    SD
+* Funcitonal Spec NO:(SAPSDA-008)
+* T-CODE: ZDPSD012
+* Author: Hikki
+* EXT:57936605
+* Add Date:  20260802
+*----------------------------------------------------------------------*
+* change History:
+*  2026/08/07  OPTIMIZED FOR S/4HANA WITH CTE (Fixed KONV & FOR ALL)
+*----------------------------------------------------------------------*
+TABLES: likp, lips, kna1, vbap, vbkd, vbak, ekpo, zidpsd017, zidpmmtlk, makt,
+        vbuk, t001k, zidpsd004, zidppp213, vbrp, zidpmmwhh, zidpsd046.
+TYPE-POOLS: slis.
+DATA: fc_alv    TYPE slis_fieldcat_alv OCCURS 10 WITH HEADER LINE,
+      wa_layout TYPE slis_layout_alv.
+DATA: g_repid LIKE sy-repid.
+
+DATA BEGIN OF t_dn OCCURS 0.
+DATA: vbeln      LIKE lips-vbeln,
+      kdgrp      LIKE vbkd-kdgrp,
+      posnr      LIKE lips-posnr,
+      erdat      LIKE likp-erdat,
+      matnr      LIKE lips-matnr,
+      maktx      LIKE makt-maktx,
+      kdmat      LIKE lips-kdmat,
+      lfimg      LIKE lips-lfimg,
+      meins      LIKE lips-meins,
+      wadat_ist  LIKE likp-wadat_ist,
+      werks      LIKE lips-werks,
+      lgort      LIKE lips-lgort,
+      land1      LIKE kna1-land1,
+      kunnr      LIKE likp-kunnr,
+      bolnr      LIKE likp-bolnr,
+      vgbel      LIKE lips-vgbel,
+      vgpos      LIKE lips-vgpos,
+      kbetr      LIKE konp-kbetr,
+      konwa      LIKE konp-konwa,
+      kpein      LIKE konp-kpein,
+      kmein      LIKE konp-kmein,
+      bstkd      LIKE vbkd-bstkd,
+      contype(5) TYPE c,
+      edi856flag TYPE c,
+      bname      LIKE vbak-bname,
+      pgi        LIKE vbfa-vbeln,
+      lifex      LIKE likp-lifex,
+      flag1      LIKE zctbs_zzstatus-flag1,
+      rve2       LIKE zctbs_zzstatus-rve2,
+      bsi03      LIKE zctbs_zzstatus-bsi03,
+      bsi011     LIKE zctbs_zzstatus-bsi011,
+      bsi02      LIKE zctbs_zzstatus-bsi02,
+      ihrez      LIKE vbkd-ihrez,
+      erzet      LIKE vbfa-erzet,
+      posnn      LIKE vbfa-posnn,
+      packmode   LIKE zidpsd017-ztll902,
+      sapid      LIKE sy-uname,
+      employid   LIKE ztlogin0002-emplyee_id,
+      vtext      LIKE tvlkt-vtext,
+      vsart      LIKE vbkd-vsart,
+      model      LIKE zidpmmtlk-tlk03,
+      tlk45      LIKE zidpmmtlk-tlk45,
+      floor      LIKE zidpmm016-category6,
+      ernam      LIKE likp-ernam,
+      aenam      LIKE likp-aenam,
+      billing    LIKE vbrk-vbeln,
+      wbs        LIKE vbap-ps_psp_pnr,
+      decno      LIKE zbsi-decno,
+      bsh28      LIKE zbsh-bsh28,
+      pmisc_flag LIKE zidpsd082-pmisc_flag,
+      misc_flag  LIKE zidpsd082-misc_flag,
+      docnumber  LIKE zidpsd082-docnumber,
+      tlk05      LIKE zidpmmtlk-tlk05,
+      mflag      TYPE c,
+      bstzd      LIKE vbak-bstzd,
+      wbstk      LIKE likp-wbstk.
+DATA END OF t_dn.
+
+SELECTION-SCREEN BEGIN OF BLOCK b0 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS: s_vbeln FOR likp-vbeln,
+                  s_lfart FOR likp-lfart,
+                  s_bstkd FOR vbkd-bstkd,
+                  s_matnr FOR lips-matnr,
+                  s_model FOR zidpmmtlk-tlk03,
+                  s_erdat FOR likp-erdat OBLIGATORY,
+                  s_wadat FOR likp-wadat_ist,
+                  s_kunnr FOR likp-kunnr,
+                  p_plant FOR ekpo-werks OBLIGATORY,
+                  s_lgort FOR lips-lgort NO INTERVALS,
+                  s_xabln FOR likp-xabln,
+                  s_wbs   FOR vbap-ps_psp_pnr,
+                  s_tlk05 FOR zidpmmtlk-tlk05.
+  SELECTION-SCREEN SKIP 1.
+SELECTION-SCREEN END OF BLOCK b0.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  PARAMETERS:p1 RADIOBUTTON GROUP gp1 DEFAULT 'X'.
+  PARAMETERS:p2 RADIOBUTTON GROUP gp1.
+  PARAMETERS:p3 RADIOBUTTON GROUP gp1.
+SELECTION-SCREEN END OF BLOCK b1.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-001.
+  PARAMETERS:q1 RADIOBUTTON GROUP gp2.
+  PARAMETERS:q2 RADIOBUTTON GROUP gp2.
+  PARAMETERS:q3 RADIOBUTTON GROUP gp2 DEFAULT 'X'.
+SELECTION-SCREEN END OF BLOCK b2.
+
+INITIALIZATION.
+  g_repid = sy-repid.
+
+START-OF-SELECTION.
+  PERFORM check_authorization.
+  PERFORM get_data.
+  PERFORM write_alv.
+
+*&---------------------------------------------------------------------*
+*&      Form  get_data
+*&---------------------------------------------------------------------*
+FORM get_data.
+  TYPES: BEGIN OF ty_loadno,
+           loadno TYPE zidpsd046-loadno,
+         END OF ty_loadno.
+
+  DATA: lt_kna1   TYPE STANDARD TABLE OF kna1,
+        lt_loadno TYPE STANDARD TABLE OF ty_loadno,
+        lt_scflag TYPE STANDARD TABLE OF ty_loadno,
+        ls_loadno TYPE ty_loadno,
+        lv_loadno TYPE zidpsd046-loadno.
+
+  REFRESH t_dn.
+
+  WITH
+          +vbfa AS (
+            SELECT vbelv,
+                   MAX( vbeln ) AS vbeln,
+                   MAX( erzet ) AS erzet,
+                   MAX( posnn ) AS posnn
+            FROM vbfa
+            WHERE vbtyp_n = 'R'
+            GROUP BY vbelv
+          ),
+          +vbrp_max AS (
+            SELECT vbrp~vgbel, vbrp~posnr,  vbrp~vbeln
+            FROM vbrp
+            INNER JOIN vbrk ON vbrk~vbeln = vbrp~vbeln
+            WHERE vbrk~fksto = ''
+              AND vbrk~fkart NOT IN ( 'S1', 'S2', 'S3', 'ZS1', 'ZS2' )
+              AND vbrp~draft = ''
+              AND vbrk~draft = ''
+          ),
+          +zbsi_max AS (
+            SELECT bsi12, MAX( bsi01 ) AS bsi01, MAX( decno ) AS decno
+            FROM zbsi
+            WHERE decno <> ''
+            GROUP BY bsi12
+          ),
+          +zbsh_join AS (
+            SELECT bsh01, MAX( bsh28 ) AS bsh28
+            FROM zbsh
+            GROUP BY bsh01
+          ),
+          +bkpf_max AS (
+            SELECT xblnr, MAX( belnr ) AS belnr, MAX( gjahr ) AS gjahr, MAX( bukrs ) AS bukrs
+            FROM bkpf
+            WHERE xblnr <> ''
+            GROUP BY xblnr
+          ),
+          +z017_max AS (
+            " 將 zidpsd017 去重，確保每組 werks 和 ztll01 只有一筆包裝模式
+            SELECT werks, ztll01, MAX( ztll902 ) AS ztll902
+            FROM zidpsd017
+            GROUP BY werks, ztll01
+          ),
+          +zctbs_max AS (
+            " 將 zctbs_zzstatus 依 docno + item 去重，每組只保留一筆
+            SELECT docno, item,
+                   MAX( flag1 )   AS flag1,
+                   MAX( rve2 )    AS rve2,
+                   MAX( bsi03 )   AS bsi03,
+                   MAX( bsi011 )  AS bsi011,
+                   MAX( bsi02 )   AS bsi02
+            FROM zctbs_zzstatus
+            GROUP BY docno, item
+          )
+
+        SELECT
+          likp~vbeln,
+          likp~erdat,
+          likp~wadat_ist,
+          likp~kunnr,
+          likp~bolnr,
+          likp~lifex,
+          likp~ernam,
+          likp~aenam,
+          likp~wbstk,
+          lips~posnr,
+          lips~matnr,
+          lips~kdmat,
+          lips~lfimg,
+          lips~meins,
+          lips~werks,
+          lips~lgort,
+          lips~vgbel,
+          lips~vgpos,
+          vbkd~kdgrp,
+          vbkd~bstkd,
+          vbkd~vsart,
+          vbkd~ihrez,
+          vbak~bname,
+          vbak~bstzd,
+          makt~maktx,
+          zmt~tlk03 AS model,
+          zmt~tlk45,
+          zmt~tlk05,
+          z017~ztll902 AS packmode,
+          CASE WHEN z004~loadlistno IS NOT NULL THEN 'Y' ELSE 'N' END AS edi856flag,
+          +vbfa~vbeln AS pgi,
+          +vbfa~erzet AS erzet,
+          +vbfa~posnn AS posnn,
+          bkpf~usnam AS sapid,
+          bkpf~xref1_hd AS employid,
+          vbap~ps_psp_pnr AS wbs,
+          zctbs~flag1,
+          zctbs~rve2,
+          zctbs~bsi03,
+          zctbs~bsi011,
+          zctbs~bsi02,
+          +zbsi_max~decno AS decno,
+          +zbsh_join~bsh28 AS bsh28,
+          z016~category6 AS floor,
+          z082~pmisc_flag,
+          z082~misc_flag,
+          z082~docnumber,
+          tvlkt~vtext,
+          +vbrp_max~vbeln AS billing
+          FROM likp
+          INNER JOIN lips ON lips~vbeln = likp~vbeln
+          LEFT JOIN vbkd ON vbkd~vbeln = lips~vgbel AND vbkd~posnr = '000000'
+          LEFT JOIN vbak ON vbak~vbeln = lips~vgbel
+          LEFT JOIN makt ON makt~matnr = lips~matnr AND makt~spras = @sy-langu
+          LEFT JOIN zidpmmtlk AS zmt ON zmt~tlk01 = lips~matnr AND zmt~werks = lips~werks
+          LEFT JOIN +z017_max AS z017 ON z017~werks = lips~werks AND z017~ztll01 = vbkd~bstkd
+          LEFT JOIN zidpsd004 AS z004 ON z004~werks = lips~werks AND z004~loadlistno = vbkd~bstkd AND z004~ftudn = likp~vbeln
+          LEFT JOIN +vbfa ON +vbfa~vbelv = likp~vbeln
+          LEFT JOIN t001k ON t001k~bwkey = lips~werks
+          LEFT JOIN +bkpf_max ON +bkpf_max~xblnr = likp~vbeln
+          LEFT JOIN bkpf ON bkpf~belnr = +bkpf_max~belnr
+                        AND bkpf~gjahr = +bkpf_max~gjahr
+                        AND bkpf~bukrs = +bkpf_max~bukrs
+          LEFT JOIN vbap ON vbap~vbeln = lips~vgbel AND vbap~posnr = lips~vgpos
+          LEFT JOIN +zctbs_max AS zctbs ON zctbs~docno = likp~vbeln AND zctbs~item = ltrim( lips~posnr, '0' )
+          LEFT JOIN +zbsi_max ON +zbsi_max~bsi12 = likp~vbeln
+          LEFT JOIN +zbsh_join ON +zbsh_join~bsh01 = +zbsi_max~bsi01
+          LEFT JOIN zidpmm016 AS z016 ON z016~werks = lips~werks AND z016~lgort = lips~lgort
+          LEFT JOIN zidpsd082 AS z082 ON z082~werks = lips~werks AND z082~vbeln = likp~vbeln
+          LEFT JOIN +vbrp_max ON +vbrp_max~vgbel = likp~vbeln AND +vbrp_max~posnr = lips~posnr
+          LEFT JOIN tvlkt ON tvlkt~spras = @sy-langu AND tvlkt~lfart = likp~lfart
+          WHERE likp~vbeln IN @s_vbeln
+            AND likp~lfart IN @s_lfart
+            AND likp~erdat IN @s_erdat
+            AND likp~wadat_ist IN @s_wadat
+            AND likp~kunnr IN @s_kunnr
+            AND lips~werks IN @p_plant
+            AND lips~lgort IN @s_lgort
+            AND likp~xabln IN @s_xabln
+            AND ( zmt~tlk03 IN @s_model )
+            AND ( vbkd~bstkd IN @s_bstkd )
+            AND ( zmt~tlk05 IN @s_tlk05 )
+            AND ( lips~matnr IN @s_matnr )
+            AND ( vbap~ps_psp_pnr IN @s_wbs ) INTO CORRESPONDING FIELDS OF TABLE @t_dn.
+
+  LOOP AT t_dn.
+    SELECT SINGLE * FROM vbak WHERE vbeln = t_dn-vgbel.
+*      SELECT SINGLE * FROM vbap WHERE vbeln = t_dn-vgbel
+*      AND matnr = zloadi-matnr.
+    SELECT SINGLE kbetr waers kpein kmein
+    INTO (t_dn-kbetr,t_dn-konwa,t_dn-kpein,t_dn-kmein)
+    FROM v_konv_cds
+      "将KONV换成V_KONV_CDS  modify by ghm 20220428
+    WHERE knumv  = vbak-knumv
+    AND kposn  = t_dn-vgpos
+    AND kschl = 'ZPR0'
+      AND kinak NE 'M'"Add by lily 20230522.
+      AND kinak NE 'Y'."Add by lily 202301220.
+    MODIFY t_dn.
+  ENDLOOP.
+
+
+  IF sy-subrc <> 0.
+    REFRESH t_dn.
+    RETURN.
+  ENDIF.
+
+  " --- Apply radio button filters ---
+  IF p1 = 'X'.
+    DELETE t_dn WHERE wbstk <>  'C'.
+  ELSEIF p2 = 'X'.
+    DELETE t_dn WHERE wbstk = 'C'.
+  ENDIF.
+
+  IF q1 = 'X'.
+    DELETE t_dn WHERE packmode <> 'S'.
+  ELSEIF q2 = 'X'.
+    DELETE t_dn WHERE packmode <> 'M'.
+  ENDIF.
+
+  " --- CONTYPE calculation ---
+  LOOP AT t_dn ASSIGNING FIELD-SYMBOL(<fs_dn>).
+    IF <fs_dn>-bstzd = 'DPKS' AND <fs_dn>-bstkd IS NOT INITIAL.
+      <fs_dn>-contype = <fs_dn>-bstkd+4(3).
+    ELSE.
+      CLEAR <fs_dn>-contype.
+    ENDIF.
+  ENDLOOP.
+
+  " --- Land1 batch fetch ---
+  IF t_dn[] IS NOT INITIAL.
+    SELECT kunnr, land1 FROM kna1
+      FOR ALL ENTRIES IN @t_dn
+      WHERE kunnr = @t_dn-kunnr
+      INTO CORRESPONDING FIELDS OF TABLE @lt_kna1.
+    SORT lt_kna1 BY kunnr.
+    LOOP AT t_dn ASSIGNING <fs_dn>.
+      READ TABLE lt_kna1 ASSIGNING FIELD-SYMBOL(<fs_kna>) WITH KEY kunnr = <fs_dn>-kunnr BINARY SEARCH.
+      IF sy-subrc = 0.
+        <fs_dn>-land1 = <fs_kna>-land1.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+  " --- MFLAG from zidpsd046 (修正：使用 table_line) ---
+  IF t_dn[] IS NOT INITIAL.
+
+    REFRESH: lt_loadno, lt_scflag.
+
+    LOOP AT t_dn ASSIGNING <fs_dn>.
+      CLEAR ls_loadno.
+      ls_loadno-loadno = <fs_dn>-vbeln.
+      APPEND ls_loadno TO lt_loadno.
+    ENDLOOP.
+
+    SORT lt_loadno BY loadno.
+    DELETE ADJACENT DUPLICATES FROM lt_loadno COMPARING loadno.
+
+    IF lt_loadno[] IS NOT INITIAL.
+
+      SELECT loadno
+        FROM zidpsd046
+        FOR ALL ENTRIES IN @lt_loadno
+        WHERE loadno = @lt_loadno-loadno
+          AND scflag = 'Y'
+        INTO CORRESPONDING FIELDS OF TABLE @lt_scflag.
+
+      SORT lt_scflag BY loadno.
+
+      LOOP AT t_dn ASSIGNING <fs_dn>.
+        IF <fs_dn>-docnumber IS NOT INITIAL.
+
+          CLEAR lv_loadno.
+          lv_loadno = <fs_dn>-vbeln.
+
+          READ TABLE lt_scflag TRANSPORTING NO FIELDS
+            WITH KEY loadno = lv_loadno
+            BINARY SEARCH.
+
+          IF sy-subrc = 0.
+            <fs_dn>-mflag = 'Y'.
+          ELSE.
+            <fs_dn>-mflag = 'N'.
+          ENDIF.
+
+        ENDIF.
+      ENDLOOP.
+
+    ENDIF.
+
+  ENDIF.
+
+  " --- Floor adjustment for IN plants ---
+  LOOP AT t_dn ASSIGNING <fs_dn>.
+    IF <fs_dn>-werks+0(2) = 'IN'.
+      <fs_dn>-floor = <fs_dn>-floor+0(3).
+    ENDIF.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  write_alv
+*&---------------------------------------------------------------------*
+FORM write_alv.
+  DATA flag(1) TYPE c.
+  CLEAR: fc_alv, flag.
+  REFRESH: fc_alv.
+
+  LOOP AT s_lfart.
+    IF ( s_lfart-low = 'ZGNA' OR s_lfart-low = 'ZZNA'
+      OR s_lfart-low = 'ZZAB ' OR s_lfart-low = 'ZYNA' OR s_lfart-low = 'ZZNB' OR s_lfart-low = 'ZZND' ).
+      flag = 'A'.
+      EXIT.
+    ENDIF.
+  ENDLOOP.
+
+  " --- Field catalog (complete as per original logic) ---
+  IF p1 = 'X'.
+    IF sy-langu = 'E'.
+      IF flag = 'A'.
+        PERFORM fill_alv_structure USING:
+        'T_DN'   'VBELN'    'Delivery No.'  ,
+        'T_DN'   'KDGRP'    'Sales Class'  ,
+        'T_DN'   'POSNR'   'Item'  ,
+        'T_DN'   'ERDAT'   'Create date'  ,
+        'T_DN'   'MATNR'   'Material number'  ,
+        'T_DN'   'MAKTX'   'Material description'  ,
+        'T_DN'   'KDMAT'   'Customer Material number'  ,
+        'T_DN'   'LFIMG'   'Delivered quantity'  ,
+        'T_DN'   'MEINS'   'Base unit'  ,
+        'T_DN'   'WADAT_IST'  'Delivered date'  ,
+        'T_DN'   'ERZET'   'Delivered time'  ,
+        'T_DN'   'PGI'     'PGI doc'  ,
+        'T_DN'   'SAPID'   'Posting user'  ,
+        'T_DN'   'EMPLOYID' 'Posting secondary ID'  ,
+        'T_DN'   'FLAG1'    'Flag1'  ,
+        'T_DN'   'RVE2'     'Pre-customs no.'  ,
+        'T_DN'   'BSI03'    'Pre-customs item'  ,
+        'T_DN'   'BSI011'   'Customs no.'  ,
+        'T_DN'   'BSI02'    'Customs item'  ,
+        'T_DN'   'DECNO'    'Formal declaration no.'  ,
+        'T_DN'   'BSH28'    'Declaration date'  ,
+        'T_DN'   'ERNAM'    'Created by'  ,
+        'T_DN'   'AENAM'    'Changed by'  ,
+        'T_DN'   'LIFEX'    'Intra GR'  ,
+        'T_DN'   'WERKS'    'Plant'  ,
+        'T_DN'   'LGORT'    'Storage location'  ,
+        'T_DN'   'LAND1'    'Country key' ,
+        'T_DN'   'KUNNR'    'Ship-to-party' ,
+        'T_DN'   'BOLNR'    'Bill of lading' ,
+        'T_DN'   'VGBEL'    'Sales order No.'  ,
+        'T_DN'   'VGPOS'    'SO Item'  ,
+        'T_DN'   'IHREZ'    'Your reference'  ,
+        'T_DN'   'KBETR'    'Price'  ,
+        'T_DN'   'KONWA'    'Unit'  ,
+        'T_DN'   'KPEIN'    'Price unit'  ,
+        'T_DN'   'KMEIN'    'PC'  ,
+        'T_DN'   'BSTKD'    'Loading list No.' ,
+        'T_DN'   'CONTYPE'  'Control type'  ,
+        'T_DN'   'BNAME'    'Reference' ,
+        'T_DN'   'PACKMODE' 'Packing Mode' ,
+        'T_DN'   'VTEXT'    'Delivery Type'  ,
+        'T_DN'   'VSART'    'Ship Type'  ,
+        'T_DN'   'MODEL'    'Model'  ,
+        'T_DN'   'TLK45'    'M-Material'  ,
+        'T_DN'   'WBS'      'WBS'  ,
+        'T_DN'   'FLOOR'    'Floor'  ,
+        'T_DN'   'TLK05'    'Part Name'.
+      ELSE.
+        PERFORM fill_alv_structure USING:
+        'T_DN'   'VBELN'    'Delivery No.'  ,
+        'T_DN'   'KDGRP'    'Sales Class'  ,
+        'T_DN'   'POSNR'   'Item'  ,
+        'T_DN'   'ERDAT'   'Create date'  ,
+        'T_DN'   'MATNR'   'Material number'  ,
+        'T_DN'   'MAKTX'   'Material description'  ,
+        'T_DN'   'KDMAT'   'Customer Material number'  ,
+        'T_DN'   'LFIMG'   'Delivered quantity'  ,
+        'T_DN'   'MEINS'   'Base unit'  ,
+        'T_DN'   'WADAT_IST'  'Delivered date'  ,
+        'T_DN'   'PGI'     'PGI doc'  ,
+        'T_DN'   'POSNN'   'PGI Item'  ,
+        'T_DN'   'SAPID'   'Posting user'  ,
+        'T_DN'   'EMPLOYID' 'Posting secondary ID'  ,
+        'T_DN'   'FLAG1'    'Flag1'  ,
+        'T_DN'   'RVE2'     'Pre-customs no.'  ,
+        'T_DN'   'BSI03'    'Pre-customs item'  ,
+        'T_DN'   'BSI011'   'Customs no.'  ,
+        'T_DN'   'BSI02'    'Customs item'  ,
+        'T_DN'   'DECNO'    'Formal declaration no.'  ,
+        'T_DN'   'BSH28'    'Declaration date'  ,
+        'T_DN'   'ERNAM'    'Created by'  ,
+        'T_DN'   'AENAM'    'Changed by'  ,
+        'T_DN'   'WERKS'    'Plant'  ,
+        'T_DN'   'LGORT'    'Storage location'  ,
+        'T_DN'   'LAND1'    'Country key' ,
+        'T_DN'   'KUNNR'    'Ship-to-party' ,
+        'T_DN'   'BOLNR'    'Bill of lading' ,
+        'T_DN'   'VGBEL'    'Sales order No.'  ,
+        'T_DN'   'VGPOS'    'SO Item'  ,
+        'T_DN'   'IHREZ'    'Your reference'  ,
+        'T_DN'   'KBETR'    'Price'  ,
+        'T_DN'   'KONWA'    'Unit'  ,
+        'T_DN'   'KPEIN'    'Price unit'  ,
+        'T_DN'   'KMEIN'    'PC'  ,
+        'T_DN'   'BSTKD'    'Loading list No.' ,
+        'T_DN'   'CONTYPE'  'Control type'  ,
+        'T_DN'   'PACKMODE' 'Packing Mode' ,
+        'T_DN'   'VTEXT'    'Delivery Type'  ,
+        'T_DN'   'VSART'    'Ship Type'  ,
+        'T_DN'   'MODEL'    'Model'  ,
+        'T_DN'   'TLK45'    'M-Material'  ,
+        'T_DN'   'WBS'      'WBS'  ,
+        'T_DN'   'FLOOR'    'Floor'  ,
+        'T_DN'   'BILLING'  'Billing' ,
+        'T_DN'   'PMISC_FLAG' 'Pre-misc flag' ,
+        'T_DN'   'MISC_FLAG' 'Misc flag' ,
+        'T_DN'   'DOCNUMBER' 'Misc doc' ,
+        'T_DN'   'MFLAG'    'Misc posted' ,
+        'T_DN'   'TLK05'    'Part Name'.
+      ENDIF.
+    ELSEIF sy-langu = 'M'.
+      IF flag = 'A'.
+        PERFORM fill_alv_structure USING:
+        'T_DN'   'VBELN'    '出貨單號'  ,
+        'T_DN'   'KDGRP'    '銷售分類'  ,
+        'T_DN'   'POSNR'   '項次'  ,
+        'T_DN'   'ERDAT'   '創建日期'  ,
+        'T_DN'   'MATNR'   '料號'  ,
+        'T_DN'   'MAKTX'   '物料描述'  ,
+        'T_DN'   'KDMAT'   '客戶料號'  ,
+        'T_DN'   'LFIMG'   '數量'  ,
+        'T_DN'   'MEINS'   '單位'  ,
+        'T_DN'   'WADAT_IST'  '出貨日期'  ,
+        'T_DN'   'ERZET'   '出貨時間'  ,
+        'T_DN'   'PGI'     '過帳單號'  ,
+        'T_DN'   'SAPID'   '過帳人'  ,
+        'T_DN'   'EMPLOYID' '過帳人二級帳號'  ,
+        'T_DN'   'FLAG1'    '抓取flag'  ,
+        'T_DN'   'RVE2'     '預報關單號'  ,
+        'T_DN'   'BSI03'    '預報關項次'  ,
+        'T_DN'   'BSI011'   '報關單號'  ,
+        'T_DN'   'BSI02'    '報關項次'  ,
+        'T_DN'   'DECNO'    '正式報關單號'  ,
+        'T_DN'   'BSH28'    '申報日期'  ,
+        'T_DN'   'ERNAM'    '創建人'  ,
+        'T_DN'   'AENAM'    '修改人'  ,
+        'T_DN'   'LIFEX'    '內交入單號'  ,
+        'T_DN'   'WERKS'    '工廠'  ,
+        'T_DN'   'LGORT'    '倉碼'  ,
+        'T_DN'   'LAND1'    '國家' ,
+        'T_DN'   'KUNNR'    '送達方'  ,
+        'T_DN'   'BOLNR'    '提單' ,
+        'T_DN'   'VGBEL'    '銷售訂單'  ,
+        'T_DN'   'VGPOS'    '銷售訂單項次' ,
+        'T_DN'   'IHREZ'    '你的參考'  ,
+        'T_DN'   'KBETR'    '價格'  ,
+        'T_DN'   'KONWA'    '單位'  ,
+        'T_DN'   'KPEIN'    '價格單位'  ,
+        'T_DN'   'KMEIN'    '批次'  ,
+        'T_DN'   'BSTKD'    'Loading list No.' ,
+        'T_DN'   'CONTYPE'  '管控類型'  ,
+        'T_DN'   'BNAME'    '備註' ,
+        'T_DN'   'PACKMODE' '包裝方式' ,
+        'T_DN'   'VTEXT'    '出貨類型'  ,
+        'T_DN'   'VSART'    '出貨型態'  ,
+        'T_DN'   'MODEL'    '機種'  ,
+        'T_DN'   'TLK45'    '母料號'  ,
+        'T_DN'   'WBS'      'WBS'  ,
+        'T_DN'   'FLOOR'    '樓層'  ,
+        'T_DN'   'TLK05'    'Part Name'.
+      ELSE.
+        PERFORM fill_alv_structure USING:
+        'T_DN'   'VBELN'    '出貨單號'  ,
+        'T_DN'   'KDGRP'    '銷售分類'  ,
+        'T_DN'   'POSNR'   '項次'  ,
+        'T_DN'   'ERDAT'   '創建日期'  ,
+        'T_DN'   'MATNR'   '料號'  ,
+        'T_DN'   'MAKTX'   '物料描述'  ,
+        'T_DN'   'KDMAT'   '客戶料號'  ,
+        'T_DN'   'LFIMG'   '數量'  ,
+        'T_DN'   'MEINS'   '單位'  ,
+        'T_DN'   'WADAT_IST'  '出貨日期'  ,
+        'T_DN'   'PGI'     'PGI 單號'  ,
+        'T_DN'   'POSNN'   'PGI 項次' ,
+        'T_DN'   'SAPID'   '過帳人'  ,
+        'T_DN'   'EMPLOYID' '過帳人二級帳號'  ,
+        'T_DN'   'FLAG1'    '抓取flag'  ,
+        'T_DN'   'RVE2'     '預報關單號'  ,
+        'T_DN'   'BSI03'    '預報關項次'  ,
+        'T_DN'   'BSI011'   '報關單號'  ,
+        'T_DN'   'BSI02'    '報關項次'  ,
+        'T_DN'   'DECNO'    '正式報關單號'  ,
+        'T_DN'   'BSH28'    '申報日期'  ,
+        'T_DN'   'ERNAM'    '創建人'  ,
+        'T_DN'   'AENAM'    '修改人'  ,
+        'T_DN'   'WERKS'    '工廠'  ,
+        'T_DN'   'LGORT'    '倉碼'  ,
+        'T_DN'   'LAND1'    '國家' ,
+        'T_DN'   'KUNNR'    '送達方'  ,
+        'T_DN'   'BOLNR'    '提單' ,
+        'T_DN'   'VGBEL'    '銷售訂單'  ,
+        'T_DN'   'VGPOS'    '銷售訂單項次'  ,
+        'T_DN'   'IHREZ'    '你的參考'  ,
+        'T_DN'   'KBETR'    '價格'  ,
+        'T_DN'   'KONWA'    '單位'  ,
+        'T_DN'   'KPEIN'    '價格單位'  ,
+        'T_DN'   'KMEIN'    '批次'  ,
+        'T_DN'   'BSTKD'    'Loading list No.' ,
+        'T_DN'   'CONTYPE'  '管控類型'  ,
+        'T_DN'   'PACKMODE' '包裝方式' ,
+        'T_DN'   'VTEXT'    '出貨類型'  ,
+        'T_DN'   'VSART'    '出貨型態'  ,
+        'T_DN'   'MODEL'    '機種'  ,
+        'T_DN'   'TLK45'    '母料號'  ,
+        'T_DN'   'WBS'      'WBS'  ,
+        'T_DN'   'FLOOR'    '樓層'  ,
+        'T_DN'   'BILLING'  '發票' ,
+        'T_DN'   'PMISC_FLAG' '模組包材預費領標誌位' ,
+        'T_DN'   'MISC_FLAG' '模組包材費領標誌位' ,
+        'T_DN'   'DOCNUMBER' '模組包材費領單' ,
+        'T_DN'   'MFLAG'    '模組包材費領過賬標識' ,
+        'T_DN'   'TLK05'    'Part Name'.
+      ENDIF.
+    ENDIF.
+  ELSE.
+    IF sy-langu = 'E'.
+      IF flag = 'A'.
+        PERFORM fill_alv_structure USING:
+        'T_DN'   'VBELN'    'Delivery No.'  ,
+        'T_DN'   'KDGRP'    'Sales Class'  ,                "mali150416
+        'T_DN'   'POSNR'   'Item'  ,
+        'T_DN'   'ERDAT'   'Create date'  ,
+        'T_DN'   'MATNR'   'Material number'  ,
+        'T_DN'   'MAKTX'   'Material description'  ,
+        'T_DN'   'KDMAT'   'Customer Material number'  ,
+        'T_DN'   'LFIMG'   'Delivered quantity'  ,
+        'T_DN'   'MEINS'   'Base unit'  ,
+        'T_DN'   'WADAT_IST'  'Delivered date'  ,
+        'T_DN'   'ERZET'   'Delivered time'  ,
+        'T_DN'   'PGI'     'PGI doc'  ,
+        'T_DN'   'SAPID'   'Post User',
+        'T_DN'   'EMPLOYID' 'Post User ID',
+***add by lili 20180109  begin******************
+        'T_DN'   'FLAG1'    'Fetch Flag',
+        'T_DN'   'RVE2'     'Pre-declaration No.',
+        'T_DN'   'BSI03'    'Pre-declaration Item',
+        'T_DN'   'BSI011'   'Declaration No.',
+        'T_DN'   'BSI02'    'Declaration Item',
+***add by lili 20180109 end********************
+        'T_DN'   'DECNO'      'Formal Customs Declaration No.',
+        'T_DN'   'BSH28'      'Declaration Date',
+        'T_DN' 'ERNAM' 'Created By',
+        'T_DN' 'AENAM' 'Changed By',
+        'T_DN'   'LIFEX'   'Intra GR'  ,
+        'T_DN'   'WERKS'   'Plant'  ,
+        'T_DN'   'LGORT'   'Storage location'  ,
+        'T_DN'   'LAND1'   'Country key' ,
+        'T_DN'   'KUNNR'  'Ship-to-party' ,
+        'T_DN'   'BOLNR'  'Bill of lading' ,
+        'T_DN'   'VGBEL'    'Sales order No.'  ,
+        'T_DN'   'VGPOS'   'SO Item'  ,
+***add by xiaohu 20190221 begin*****************
+        'T_DN'   'IHREZ'   'Your reference',
+***add by xiaohu 20190221 end*******************
+***add by lili 20171208  begin******************
+        'T_DN'   'KBETR'    'Price',
+        'T_DN'   'KONWA'     'Unit',
+        'T_DN'   'KPEIN'    'Price unit',
+        'T_DN'   'KMEIN'    'PC',
+***add by lili 20171208  end******************
+        'T_DN'   'BSTKD'   'Loading list No.'  ,
+        'T_DN'   'CONTYPE'   'control type'  ,
+        'T_DN'   'EDI856FLAG'   'Send EDI856?(Y/N)' ,
+        'T_DN'   'BNAME'   'Reference' ,
+        'T_DN'   'PACKMODE' 'Packing Mode' ,
+*        'T_DN'   'LFART'    'Delivery Type',
+        'T_DN'   'VTEXT'    'Delivery Type',   "xuemei20150428
+        'T_DN'   'VSART'    'Ship Type',      "mali20150518
+        'T_DN'   'MODEL'    'Model',                        "mali150609
+        'T_DN'   'TLK45'    'M-Material',
+        'T_DN'   'WBS'      'WBS',  "LONGFEI 20160404
+        'T_DN'   'FLOOR'     'Floor',"lily 20220314
+        'T_DN' 'BILLING'    'Billing',"lily 20230817
+        'T_DN'   'TLK05'     'Part Name'."add by zgq 20260424
+
+
+      ELSE.
+        PERFORM fill_alv_structure USING:
+        'T_DN'   'VBELN'    'Delivery No.'  ,
+        'T_DN'   'KDGRP'    'Sales Class'  ,                "mali150416
+        'T_DN'   'POSNR'   'Item'  ,
+        'T_DN'   'ERDAT'   'Create date'  ,
+        'T_DN'   'MATNR'   'Material number'  ,
+        'T_DN'   'MAKTX'   'Material description'  ,
+        'T_DN'   'KDMAT'   'Customer Material number'  ,
+        'T_DN'   'LFIMG'   'Delivered quantity'  ,
+        'T_DN'   'MEINS'   'Base unit'  ,
+        'T_DN'   'WADAT_IST'  'Delivered date'  ,
+        'T_DN'   'PGI'     'PGI doc'  ,
+        'T_DN'   'POSNN'   'PGI Item' ,
+        'T_DN'   'SAPID'   'Post User',
+        'T_DN'   'EMPLOYID' 'Post User ID',
+***add by lili 20180109  begin******************
+        'T_DN'   'FLAG1'    'Fetch Flag',
+        'T_DN'   'RVE2'     'Pre-declaration No.',
+        'T_DN'   'BSI03'    'Pre-declaration Item',
+        'T_DN'   'BSI011'   'Declaration No.',
+        'T_DN'   'BSI02'    'Declaration Item',
+***add by lili 20180109 end********************
+        'T_DN'   'DECNO'      'Formal Customs Declaration No.',
+        'T_DN'   'BSH28'      'Declaration Date',
+        'T_DN' 'ERNAM' 'Created By',
+        'T_DN' 'AENAM' 'Changed By',
+        'T_DN'   'WERKS'   'Plant'  ,
+        'T_DN'   'LGORT'   'Storage location'  ,
+        'T_DN'   'LAND1'   'Country key' ,
+        'T_DN'   'KUNNR'  'Ship-to-party' ,
+        'T_DN'   'BOLNR'  'Bill of lading' ,
+        'T_DN'   'VGBEL'    'Sales order No.'  ,
+        'T_DN'   'VGPOS'   'SO Item'  ,
+***add by xiaohu 20190221 begin*****************
+        'T_DN'   'IHREZ'   'Your reference',
+***add by xiaohu 20190221 end*******************
+***add by lili 20171208  begin******************
+        'T_DN'   'KBETR'    'Price',
+        'T_DN'   'KONWA'     'Unit',
+        'T_DN'   'KPEIN'    'Price unit',
+        'T_DN'   'KMEIN'    'PC',
+***add by lili 20171208  end******************
+        'T_DN'   'BSTKD'   'Loading list No.'  ,
+        'T_DN'   'CONTYPE'   'control type'  ,
+        'T_DN'   'EDI856FLAG'   'Send EDI856?(Y/N)' ,
+        'T_DN'   'PACKMODE' 'Packing Mode' ,
+*        'T_DN'   'LFART'    'Delivery Type',
+        'T_DN'   'VTEXT'    'Delivery Type',   "xuemei20150428
+        'T_DN'   'VSART'    'Ship Type',       "mali20150518
+        'T_DN'   'MODEL'    'Model',                        "mali150609
+        'T_DN'   'TLK45'    'M-Material',
+        'T_DN'   'WBS'      'WBS',  "LONGFEI 20160404
+        'T_DN'   'FLOOR'     'Floor',"lily 20220314
+        'T_DN' 'BILLING'    'Billing',"lily 20230817
+        'T_DN' 'PMISC_FLAG' 'Module Packing Material Advance Fee Request Flag',
+        'T_DN' 'MISC_FLAG' 'Module Packing Material Fee Request Flag',
+        'T_DN' 'DOCNUMBER' 'Module Packing Material Fee Request Doc',
+        'T_DN' 'MFLAG' 'Module Packing Material Fee Posting Status',
+        'T_DN'   'TLK05'     'Part Name'."add by zgq 20260424
+      ENDIF.
+    ELSEIF sy-langu = 'M'.
+      IF flag = 'A'.
+        PERFORM fill_alv_structure USING:
+        'T_DN'   'VBELN'    '出貨單號'  ,
+        'T_DN'   'KDGRP'    '銷售分類'  ,                       "mali150416
+        'T_DN'   'POSNR'   '項次'  ,
+        'T_DN'   'ERDAT'   '創建日期'  ,
+        'T_DN'   'MATNR'   '料號'  ,
+        'T_DN'   'MAKTX'   '物料描述'  ,
+        'T_DN'   'KDMAT'   '客戶料號'  ,
+        'T_DN'   'LFIMG'   '數量'  ,
+        'T_DN'   'MEINS'   '單位'  ,
+        'T_DN'   'WADAT_IST'  '出貨日期'  ,
+        'T_DN'   'PGI'     'PGI doc'  ,
+        'T_DN'   'SAPID'   '過帳人',
+        'T_DN'   'EMPLOYID' '過帳人二級帳號',
+***add by lili 20180109  begin******************
+        'T_DN'   'FLAG1'    '抓取flag',
+        'T_DN'   'RVE2'     '預報關單號',
+        'T_DN'   'BSI03'    '預報關項次',
+        'T_DN'   'BSI011'   '報關單號',
+        'T_DN'   'BSI02'    '報關項次',
+***add by lili 20180109 end********************
+      'T_DN'   'DECNO'      '正式報關單號',
+        'T_DN'   'BSH28'      '申報日期/報關日期',
+        'T_DN'   'ERZET'   '出貨時間'  ,
+*        'T_DN'   'PGI'     '過帳單號'  ,
+        'T_DN'   'LIFEX'   '內交入單號'  ,
+        'T_DN'   'WERKS'   '工廠'  ,
+        'T_DN'   'LGORT'   '倉碼'  ,
+        'T_DN'   'LAND1'   '國家' ,
+        'T_DN'   'KUNNR'  '送達方'  ,
+        'T_DN'   'BOLNR'  '提單' ,
+        'T_DN'   'VGBEL'   '銷售訂單'  ,
+        'T_DN'   'VGPOS'   '銷售訂單項次'  ,
+         'T_DN' 'ERNAM' '創建人',
+         'T_DN' 'AENAM' '修改人',
+***add by xiaohu 20190221 begin*****************
+        'T_DN'   'IHREZ'   '你的參考',
+***add by xiaohu 20190221 end*******************
+***add by lili 20171208  begin******************
+        'T_DN'   'KBETR'    '價格',
+        'T_DN'   'KONWA'     '單位',
+        'T_DN'   'KPEIN'    '價格單位',
+        'T_DN'   'KMEIN'    '批次',
+***add by lili 20171208  end******************
+        'T_DN'   'BSTKD'   'Loading list No.'  ,
+        'T_DN'   'CONTYPE'   '管控類型'  ,
+        'T_DN'   'EDI856FLAG'   '是否已發送EDI856?(Y/N)' ,
+        'T_DN'   'BNAME'   '備註' ,
+        'T_DN'   'PACKMODE' '包裝方式' ,
+*        'T_DN'   'LFART'    'Delivery Type',
+        'T_DN'   'VTEXT'    '出貨類型',   "xuemei20150428
+        'T_DN'   'VSART'    '出貨型態',       "mali20150518
+        'T_DN'   'MODEL'    '機種',                           "mali150609
+        'T_DN'   'TLK45'    '母料號',
+        'T_DN'   'WBS'      'WBS', "LONGFEI 20160404
+         'T_DN'   'FLOOR'     '樓層',"lily 20220314
+        'T_DN' 'BILLING'    '發票',"lily 20230817
+         'T_DN' 'PMISC_FLAG' '模組包材預費領標誌位',
+         'T_DN' 'MISC_FLAG' '模組包材費領標誌位',
+          'T_DN' 'DOCNUMBER' '模組包材費領單',
+           'T_DN'   'TLK05'     'Part Name'."add by zgq 20260424
+
+
+      ELSE.
+        PERFORM fill_alv_structure USING:
+        'T_DN'   'VBELN'    '出貨單號'  ,
+        'T_DN'   'KDGRP'    '銷售分類'  ,                       "mali150416
+        'T_DN'   'POSNR'   '項次'  ,
+        'T_DN'   'ERDAT'   '創建日期'  ,
+        'T_DN'   'MATNR'   '料號'  ,
+        'T_DN'   'MAKTX'   '物料描述'  ,
+        'T_DN'   'KDMAT'   '客戶料號'  ,
+        'T_DN'   'LFIMG'   '數量'  ,
+        'T_DN'   'MEINS'   '單位'  ,
+        'T_DN'   'WADAT_IST'  '出貨日期'  ,
+        'T_DN'   'PGI'     'PGI 單號'  ,
+        'T_DN'   'POSNN'   'PGI 項次' ,
+        'T_DN'   'SAPID'   '過帳人',
+        'T_DN'   'EMPLOYID' '過帳人二級帳號',
+***add by lili 20180109  begin******************
+        'T_DN'   'FLAG1'    '抓取flag',
+        'T_DN'   'RVE2'     '預報關單號',
+        'T_DN'   'BSI03'    '預報關項次',
+        'T_DN'   'BSI011'   '報關單號',
+        'T_DN'   'BSI02'    '報關項次',
+***add by lili 20180109 end********************
+        'T_DN'   'DECNO'      '正式報關單號',
+        'T_DN'   'BSH28'      '申報日期/報關日期',
+         'T_DN' 'ERNAM' '創建人',
+         'T_DN' 'AENAM' '修改人',
+        'T_DN'   'WERKS'   '工廠'  ,
+        'T_DN'   'LGORT'   '倉碼'  ,
+        'T_DN'   'LAND1'   '國家' ,
+        'T_DN'   'KUNNR'  '送達方'  ,
+        'T_DN'   'BOLNR'  '提單' ,
+        'T_DN'   'VGBEL'   '銷售訂單'  ,
+        'T_DN'   'VGPOS'   '銷售訂單項次'  ,
+***add by xiaohu 20190221 begin*****************
+        'T_DN'   'IHREZ'   '你的參考',
+***add by xiaohu 20190221 end*******************
+***add by lili 20171208  begin******************
+        'T_DN'   'KBETR'    '價格',
+        'T_DN'   'KONWA'     '單位',
+        'T_DN'   'KPEIN'    '價格單位',
+        'T_DN'   'KMEIN'    '批次',
+***add by lili 20171208  end******************
+        'T_DN'   'BSTKD'   'Loading list No.'  ,
+        'T_DN'   'CONTYPE'   '管控類型'  ,
+        'T_DN'   'EDI856FLAG'   '是否已發送EDI856?(Y/N)' ,
+        'T_DN'   'PACKMODE' '包裝方式' ,
+*        'T_DN'   'LFART'    'Delivery Type',
+        'T_DN'   'VTEXT'    '出貨類型' ,   "xuemei20150428
+        'T_DN'   'VSART'    '出貨型態' ,       "mali20150518
+        'T_DN'   'MODEL'    '機種' ,                          "mali150609
+        'T_DN'   'TLK45'    '母料號',
+        'T_DN'   'WBS'      'WBS',  "LONGFEI 20160404
+        'T_DN'   'FLOOR'     '樓層',"lily 20220314
+        'T_DN' 'BILLING'    '發票',"lily 20230817
+         'T_DN' 'PMISC_FLAG' '模組包材預費領標誌位',
+         'T_DN' 'MISC_FLAG' '模組包材費領標誌位',
+          'T_DN' 'DOCNUMBER' '模組包材費領單',
+            'T_DN' 'MFLAG' '模組包材費領過賬標識',
+            'T_DN'   'TLK05'     'Part Name'."add by zgq 20260424
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+  wa_layout-colwidth_optimize = 'X'.
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = g_repid
+      is_layout          = wa_layout
+      it_fieldcat        = fc_alv[]
+      i_default          = 'X'
+      i_save             = 'A'
+    TABLES
+      t_outtab           = t_dn.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  fill_alv_structure
+*&---------------------------------------------------------------------*
+FORM fill_alv_structure USING p_tablename p_fieldname p_text.
+  MOVE:
+    p_fieldname     TO fc_alv-fieldname ,
+    p_text          TO fc_alv-reptext_ddic.
+  APPEND fc_alv.
+  CLEAR fc_alv.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  check_authorization
+*&---------------------------------------------------------------------*
+FORM check_authorization.
+  CALL FUNCTION 'ZRFC_MM_IDP_0104'
+    TABLES
+      input  = p_plant[]
+      output = p_plant[].
+  IF p_plant[] IS INITIAL.
+    IF sy-langu = 'E'.
+      MESSAGE i004(zmm) WITH 'You have no authority to use this plant'.
+    ELSE.
+      MESSAGE i004(zmm) WITH '沒有該工廠權限'.
+    ENDIF.
+    STOP.
+  ENDIF.
+ENDFORM.

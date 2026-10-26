@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Lyux 灵犀 · 自然动效提案</title>
+  <style>:root{color-scheme:light;--ground:#f1f4ef;--paper:#fff;--ink:#254a50;--muted:#52665d;--line:#d9e1d7;--wash:#e9efe7;--active:#2d6266;--mark-primary:#4f969a;--mark-accent:#a5ccbe;--mark-ink:#254a50;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--ground)}
+*{box-sizing:border-box}body{margin:0}button,a{-webkit-tap-highlight-color:transparent}button{font:inherit;cursor:pointer;color:inherit}button:disabled{cursor:default;opacity:.6}button:focus-visible,a:focus-visible{outline:3px solid #3a8c72;outline-offset:4px}button{transition:background-color .18s,color .18s}button:hover{background:var(--wash)}button:active{background:#d9e6da}main{max-width:1488px;margin:0 auto;padding:36px 44px 24px}.page-header{display:flex;align-items:center;justify-content:space-between;gap:32px;margin-bottom:26px}h1{font-size:32px;font-weight:580;line-height:1.3;letter-spacing:-.045em;margin:0 0 10px}.page-header p{font-size:16px;line-height:1.6;margin:0;color:var(--muted)}.brand{font-size:25px;letter-spacing:-.04em;font-weight:650;white-space:nowrap}.brand span{font-size:16px;font-weight:500;margin-left:8px;letter-spacing:0}.toolbar{display:flex;justify-content:space-between;gap:16px;align-items:center}.states{display:flex;background:#e1e8df;padding:4px;border-radius:8px}.states button{border:0;background:transparent;padding:11px 27px;border-radius:5px;font-size:15px;min-height:44px}.states button[aria-pressed=true]{background:var(--active);color:#fff}.view-actions{display:flex;gap:6px}.view-actions button{background:transparent;border:1px solid var(--line);border-radius:6px;padding:10px 15px;min-height:44px;font-size:14px}.view-actions button[aria-pressed=true]{border-color:var(--active);background:#e0eadf}.playback-status{font-size:13px;color:var(--muted);margin:12px 0 16px;line-height:1.5;min-height:20px}.concept-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.candidate{background:var(--paper);border-radius:12px;padding:22px 26px 18px;min-width:0}.candidate-header{display:flex;justify-content:space-between;gap:16px;align-items:baseline}.candidate h2{font-size:21px;font-weight:600;line-height:1.3;margin:0;letter-spacing:-.03em}.candidate-header a{font-size:13px;text-decoration:none;color:var(--muted);padding:5px 0}.candidate-header a:hover{color:var(--active);text-decoration:underline}.artboard{height:174px;display:flex;align-items:center;justify-content:center;gap:22px;margin:12px -10px 8px;border-radius:8px;transition:background-color .2s}.main-mark{width:164px;height:164px;flex-shrink:0}.lx-logo{display:block;width:100%;height:100%;overflow:visible}.wordmark{font-weight:620;font-size:32px;line-height:1.3;letter-spacing:-.055em}.wordmark small{display:block;font-weight:450;font-size:14px;letter-spacing:.14em;margin-top:6px}.tagline{font-size:15px;font-weight:550;margin:0 0 6px;line-height:1.6}.motion-note{font-size:14px;line-height:1.6;color:var(--muted);margin:0 0 16px;min-height:23px}.usage-row{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid #edf0eb;padding-top:12px}.small-brand{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:600;letter-spacing:-.02em}.small-mark{width:32px;height:32px}.size-tests{display:flex;align-items:center;gap:18px}.size-test{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)}.size-test .lx-logo{width:var(--sample-size);height:var(--sample-size)}.usage-row .lx-logo *{animation:none!important}.dark-artboards .artboard{background:#254a50;color:#eff5e9}.dark-artboards .main-mark{--mark-primary:#7eb7a4;--mark-accent:#d3e2bd;--mark-ink:#254a50}.is-paused .main-mark *,.is-hidden .main-mark *,.candidate.is-offscreen .main-mark *{animation-play-state:paused!important}footer{display:flex;justify-content:space-between;gap:20px;margin-top:21px;font-size:12px;line-height:1.6;color:var(--muted)}footer p{margin:0}.motion-note,.playback-status{font-variant-numeric:tabular-nums}
+@media(min-width:1500px){main{padding-top:44px}.artboard{height:200px}.main-mark{width:180px;height:180px}}
+@media(max-width:1000px){main{padding:28px}.page-header{align-items:flex-start}.brand{font-size:21px}.brand span{display:none}.candidate{padding:20px}.artboard{gap:12px;height:155px}.main-mark{width:140px;height:140px}.wordmark{font-size:28px}.toolbar{align-items:flex-start}.states button{padding:10px 20px}.view-actions button{padding:10px 12px}.size-tests{gap:10px}footer{display:block}footer p+p{margin-top:4px}}
+@media(max-width:620px){main{padding:24px 18px}.page-header{gap:12px;margin-bottom:20px}.page-header h1{font-size:27px;max-width:270px}.page-header p{font-size:14px;line-height:1.7;max-width:295px}.brand{display:none}.toolbar{flex-direction:column;gap:12px}.states{width:100%}.states button{flex:1;padding:9px 12px}.view-actions{width:100%;gap:8px}.view-actions button{flex:1;font-size:13px;padding:9px 7px}.concept-grid{grid-template-columns:1fr;gap:16px}.candidate{padding:21px 22px 18px}.artboard{height:174px;gap:14px;margin-top:8px}.main-mark{width:156px;height:156px}.wordmark{font-size:30px}.candidate h2{font-size:21px}.playback-status{margin-top:10px;margin-bottom:14px}.size-tests{gap:12px}footer{font-size:12px;margin-top:20px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+.size-test{font-size:13px;font-variant-numeric:tabular-nums}footer{font-size:13px}.artboard{transition:none}
+.dark-artboards .main-mark{--mark-structure:#9cc9b5}
+.concept-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.candidate{padding:22px 24px 18px}.artboard{height:330px;flex-direction:column;gap:8px;margin:10px -8px 14px}.main-mark{width:218px;height:218px}.wordmark{font-size:39px;text-align:center;font-weight:580;letter-spacing:-.05em}.wordmark small{font-size:14px;margin-top:4px}.motion-note{min-height:45px}.tagline{font-size:15px}.brand{font-size:28px}
+@media(max-width:1100px){.concept-grid{grid-template-columns:1fr;gap:18px}.artboard{height:190px;flex-direction:row;gap:26px}.main-mark{width:180px;height:180px}.wordmark{font-size:38px;text-align:left}.motion-note{min-height:23px}.candidate{padding:22px 26px 18px}}
+@media(max-width:620px){.candidate{padding:21px 22px 18px}.artboard{height:180px;gap:18px}.main-mark{width:166px;height:166px}.wordmark{font-size:34px}.page-header h1{max-width:none;font-size:27px}.page-header p{max-width:315px}.tagline{font-size:15px}.motion-note{min-height:23px}.brand{display:none}}
+</style>
+</head>
+<body>
+  <main>
+    <header class="page-header">
+      <div><h1>Lyux，自然有回应。</h1><p>三个柔和、灵动的方向。切换状态，看看哪个更像你心里的 Lyux。</p></div>
+      <span class="brand">Lyux <span>灵犀</span></span>
+    </header>
+    <section class="toolbar" aria-label="动画预览控制">
+      <div class="states" role="group" aria-label="选择工作状态">
+        <button type="button" data-state-button="idle" aria-pressed="false">待机</button>
+        <button type="button" data-state-button="thinking" aria-pressed="true">思考</button>
+        <button type="button" data-state-button="running" aria-pressed="false">运行</button>
+      </div>
+      <div class="view-actions">
+        <button type="button" id="demo" aria-pressed="false">完整演示</button>
+        <button type="button" id="pause" aria-pressed="false">暂停动画</button>
+        <button type="button" id="tone" aria-pressed="false">深色背景</button>
+      </div>
+    </section>
+    <p id="playback-status" class="playback-status" aria-live="polite">正在预览思考状态</p>
+    <section class="concept-grid" id="concepts" aria-label="三款 Lyux 标志">
+      <noscript>请在支持 JavaScript 的浏览器中打开动画预览。也可以直接打开 exports 文件夹中的 SVG 标志。</noscript>
+    </section>
+    <footer><p>动作只落在图形上，名字保持安静。每款都包含待机、思考、运行三种状态。</p><p>支持暂停；系统开启“减少动态效果”时会自动静止。</p></footer>
+  </main>
+  <script>(function () {
+  window.LyuxConcepts = window.LyuxConcepts || [];
+  window.LyuxConcepts.push({
+    id:'echo',name:'回声',tagline:'两笔曲线，听懂彼此',
+    description:'两枚自然弯曲的形状，像一问一答。保留 Lyux 最初两笔呼应的意象，让轮廓更柔和。',
+    motion:{idle:'两笔缓缓呼吸，保留安静的间隙。',thinking:'一笔靠近，另一笔轻轻回应。',running:'两笔交替舒展，节奏有来有往。'},
+    svg:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="lx-logo ly-echo" data-state="idle" role="img" aria-label="Lyux 回声标志">
+      <style>
+      .ly-echo .echo-left{transform-origin:43px 72px;fill:var(--mark-primary,#4F969A)}
+      .ly-echo .echo-right{transform-origin:79px 74px;fill:var(--mark-accent,#A5CCBE)}
+      .ly-echo[data-state="idle"] .echo-left{animation:echo-breathe 6.2s ease-in-out infinite}
+      .ly-echo[data-state="idle"] .echo-right{animation:echo-breathe 6.2s .7s ease-in-out infinite}
+      .ly-echo[data-state="thinking"] .echo-left{animation:echo-ask 5.8s ease-in-out infinite}
+      .ly-echo[data-state="thinking"] .echo-right{animation:echo-answer 5.8s ease-in-out infinite}
+      .ly-echo[data-state="running"] .echo-left{animation:echo-flow-left 3.2s ease-in-out infinite}
+      .ly-echo[data-state="running"] .echo-right{animation:echo-flow-right 3.2s ease-in-out infinite}
+      @keyframes echo-breathe{0%,100%{transform:translateY(0) scale(1)}48%{transform:translateY(-.8px) scale(1.015)}}
+      @keyframes echo-ask{0%,12%,85%,100%{transform:rotate(0) translateX(0)}30%,45%{transform:rotate(4deg) translateX(1.1px)}65%{transform:rotate(1deg)}}
+      @keyframes echo-answer{0%,34%,100%{transform:rotate(0) translateX(0)}53%,68%{transform:rotate(-4deg) translateX(-1.1px)}83%{transform:rotate(-1deg)}}
+      @keyframes echo-flow-left{0%,100%{transform:translateY(0) rotate(0)}25%{transform:translateY(-2px) rotate(3deg)}65%{transform:translateY(.6px) rotate(-1deg)}}
+      @keyframes echo-flow-right{0%,100%{transform:translateY(0) rotate(0)}25%{transform:translateY(.6px) rotate(1deg)}65%{transform:translateY(-2px) rotate(-3deg)}}
+      @media(prefers-reduced-motion:reduce){.ly-echo *{animation:none!important;transform:none!important}}
+      </style>
+      <path class="echo-left" d="M52 19C39 17 27 29 22 43C15 61 18 79 30 91C39 101 52 102 56 93C60 85 49 80 44 75C38 69 39 62 44 55C50 47 61 43 64 34C67 26 61 20 52 19Z"/>
+      <path class="echo-right" d="M78 37C70 34 63 39 61 46C59 53 65 58 71 63C77 68 79 74 76 82C73 89 73 97 80 100C89 103 100 91 102 78C105 62 95 43 78 37Z"/>
+    </svg>`
+  });
+}());
+</script>
+  <script>(function () {
+  window.LyuxConcepts = window.LyuxConcepts || [];
+  window.LyuxConcepts.push({
+    id:'spirit',name:'小灵',tagline:'有耳朵，也有小心思',
+    description:'把 y 的分叉化成两只软耳朵。圆润、略不对称的轮廓，适合作为聊天里的小伙伴。',
+    motion:{idle:'轻轻呼吸，偶尔眨一下眼。',thinking:'耳朵稍稍侧过去，眼睛跟着看。',running:'轻轻点头，耳朵一前一后回应。'},
+    svg:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="lx-logo ly-spirit" data-state="idle" role="img" aria-label="Lyux 小灵标志">
+      <style>
+      .ly-spirit .spirit-body{transform-origin:60px 83px}
+      .ly-spirit .spirit-ear-left{transform-origin:40px 47px}
+      .ly-spirit .spirit-ear-right{transform-origin:81px 47px}
+      .ly-spirit .spirit-eye-left{transform-origin:46px 64px}
+      .ly-spirit .spirit-eye-right{transform-origin:74px 63px}
+      .ly-spirit .spirit-gaze{transform-origin:60px 64px}
+      .ly-spirit[data-state="idle"] .spirit-body{animation:spirit-breathe 5.7s ease-in-out infinite}
+      .ly-spirit[data-state="idle"] .spirit-eye{animation:spirit-blink 7.3s ease-in-out infinite}
+      .ly-spirit[data-state="thinking"] .spirit-body{animation:spirit-listen 5.6s ease-in-out infinite}
+      .ly-spirit[data-state="thinking"] .spirit-ear-left{animation:spirit-ear-left 5.6s ease-in-out infinite}
+      .ly-spirit[data-state="thinking"] .spirit-ear-right{animation:spirit-ear-right 5.6s ease-in-out infinite}
+      .ly-spirit[data-state="thinking"] .spirit-gaze{animation:spirit-gaze 5.6s ease-in-out infinite}
+      .ly-spirit[data-state="thinking"] .spirit-eye{animation:spirit-blink 6.8s ease-in-out infinite}
+      .ly-spirit[data-state="running"] .spirit-body{animation:spirit-nod 2.8s ease-in-out infinite}
+      .ly-spirit[data-state="running"] .spirit-ear-left{animation:spirit-ear-left 2.8s ease-in-out infinite}
+      .ly-spirit[data-state="running"] .spirit-ear-right{animation:spirit-ear-right 2.8s ease-in-out infinite}
+      .ly-spirit[data-state="running"] .spirit-eye{animation:spirit-blink 6.4s ease-in-out infinite}
+      @keyframes spirit-breathe{0%,100%{transform:scale(1) translateY(0)}50%{transform:scale(1.012,1.018) translateY(-.7px)}}
+      @keyframes spirit-blink{0%,40%,45%,100%{transform:scaleY(1)}42%,43%{transform:scaleY(.12)}}
+      @keyframes spirit-listen{0%,15%,88%,100%{transform:rotate(0)}35%,63%{transform:rotate(-3deg) translateY(-.5px)}}
+      @keyframes spirit-ear-left{0%,15%,85%,100%{transform:rotate(0)}34%,50%{transform:rotate(-7deg)}67%{transform:rotate(1deg)}}
+      @keyframes spirit-ear-right{0%,26%,96%,100%{transform:rotate(0)}47%,64%{transform:rotate(6deg)}80%{transform:rotate(-1deg)}}
+      @keyframes spirit-gaze{0%,15%,88%,100%{transform:translate(0,0)}35%,62%{transform:translate(1.5px,-1.3px)}}
+      @keyframes spirit-nod{0%,12%,82%,100%{transform:translateY(0) rotate(0)}35%{transform:translateY(1.4px) rotate(2deg)}59%{transform:translateY(-.7px) rotate(-1deg)}}
+      @media(prefers-reduced-motion:reduce){.ly-spirit *{animation:none!important;transform:none!important}}
+      </style>
+      <g class="spirit-body">
+        <path class="spirit-ear-left" fill="var(--mark-accent,#A5CCBE)" d="M32 50C25 41 19 25 24 20C29 15 43 26 51 40L48 51Z"/>
+        <path class="spirit-ear-right" fill="var(--mark-primary,#4F969A)" d="M72 41C79 29 90 17 96 22C102 27 96 43 88 53Z"/>
+        <path fill="var(--mark-primary,#4F969A)" d="M27 51C32 38 45 33 60 34C77 32 91 39 96 52C103 69 96 85 82 94C68 104 47 101 33 89C20 78 20 64 27 51Z"/>
+        <g class="spirit-gaze" fill="var(--mark-ink,#254A50)"><ellipse class="spirit-eye spirit-eye-left" cx="46" cy="64" rx="3.6" ry="5.2"/><ellipse class="spirit-eye spirit-eye-right" cx="74" cy="63" rx="3.6" ry="5.2"/></g>
+        <path d="M56 79Q61 82 66 78" fill="none" stroke="var(--mark-ink,#254A50)" stroke-width="2.2" stroke-linecap="round"/>
+      </g>
+    </svg>`
+  });
+}());
+</script>
+  <script>(function () {
+  window.LyuxConcepts = window.LyuxConcepts || [];
+  window.LyuxConcepts.push({
+    id:'crescent',name:'月芽',tagline:'托住一个正在长大的想法',
+    description:'从 Lyux 的 u 取一段柔和弧线，托住一枚小芽。留白像弯月，整个标志安静而有生气。',
+    motion:{idle:'弧线缓缓呼吸，小芽微微起伏。',thinking:'小芽轻轻侧倾，再回到弧线中央。',running:'小芽有节奏地舒展，弧线轻轻回应。'},
+    svg:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="lx-logo ly-crescent" data-state="idle" role="img" aria-label="Lyux 月芽标志">
+      <style>
+      .ly-crescent .crescent-cup{transform-origin:59px 83px;fill:var(--mark-primary,#4F969A)}
+      .ly-crescent .crescent-bud{transform-origin:59px 46px;fill:var(--mark-accent,#A5CCBE)}
+      .ly-crescent[data-state="idle"] .crescent-cup{animation:crescent-breathe 6.4s ease-in-out infinite}
+      .ly-crescent[data-state="idle"] .crescent-bud{animation:crescent-float 6.4s ease-in-out infinite}
+      .ly-crescent[data-state="thinking"] .crescent-cup{animation:crescent-hold 5.4s ease-in-out infinite}
+      .ly-crescent[data-state="thinking"] .crescent-bud{animation:crescent-consider 5.4s ease-in-out infinite}
+      .ly-crescent[data-state="running"] .crescent-cup{animation:crescent-answer 3.1s ease-in-out infinite}
+      .ly-crescent[data-state="running"] .crescent-bud{animation:crescent-unfold 3.1s ease-in-out infinite}
+      @keyframes crescent-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.015,1.025)}}
+      @keyframes crescent-float{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-1.4px) rotate(-2deg)}}
+      @keyframes crescent-hold{0%,12%,90%,100%{transform:rotate(0)}35%,60%{transform:rotate(-2deg)}}
+      @keyframes crescent-consider{0%,12%,90%,100%{transform:translate(0,0) rotate(0)}35%,57%{transform:translate(-2px,-2px) rotate(-9deg)}75%{transform:translate(.7px,-.5px) rotate(2deg)}}
+      @keyframes crescent-answer{0%,100%{transform:scale(1) rotate(0)}35%{transform:scale(1.012,.985) rotate(1.5deg)}70%{transform:scale(.995,1.015) rotate(-1deg)}}
+      @keyframes crescent-unfold{0%,100%{transform:translate(0,0) rotate(0) scale(1)}33%{transform:translate(2px,-3px) rotate(5deg) scale(1.03)}66%{transform:translate(-1px,-1px) rotate(-3deg) scale(1)}}
+      @media(prefers-reduced-motion:reduce){.ly-crescent *{animation:none!important;transform:none!important}}
+      </style>
+      <path class="crescent-cup" d="M24 34C18 33 15 39 16 48C17 74 33 96 57 100C80 104 101 87 105 62C107 49 104 33 98 28C93 24 87 28 88 36C90 51 84 68 71 75C57 82 40 73 35 58C33 49 33 37 24 34Z"/>
+      <path class="crescent-bud" d="M57 49C43 44 42 27 50 18C54 13 65 18 69 27C74 37 69 46 57 49Z"/>
+    </svg>`
+  });
+}());
+</script>
+  <script>(function () {
+  'use strict';
+  const concepts = window.LyuxConcepts || [];
+  const stateNames = {idle:'待机',thinking:'思考',running:'运行'};
+  const root = document.getElementById('concepts');
+  const pause = document.getElementById('pause');
+  const demo = document.getElementById('demo');
+  const tone = document.getElementById('tone');
+  const status = document.getElementById('playback-status');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  let state = 'thinking';
+  let isPaused = false;
+  let demoActive = false;
+  let demoTimer = null;
+  let demoIndex = 0;
+  const timeline = [{state:'idle',duration:3500},{state:'thinking',duration:6500},{state:'running',duration:5000}];
+  const escape = text => String(text).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  function miniSvg(svg, size) {
+    return svg.replace('role="img"','aria-hidden="true"').replace('<svg ','<svg style="--sample-size:'+size+'px" ');
+  }
+  root.innerHTML = concepts.map(c => `<article class="candidate" data-concept="${escape(c.id)}" aria-labelledby="title-${escape(c.id)}">
+    <div class="candidate-header"><h2 id="title-${escape(c.id)}">${escape(c.name)}</h2><a href="exports/${escape(c.id)}-thinking.svg" data-download="${escape(c.id)}" download>下载动态标志</a></div>
+    <div class="artboard"><div class="main-mark">${c.svg}</div><div class="wordmark">Lyux<small>灵犀</small></div></div>
+    <p class="tagline">${escape(c.tagline)}</p><p class="motion-note">${escape(c.motion.thinking)}</p>
+    <div class="usage-row"><div class="small-brand"><span class="small-mark">${miniSvg(c.svg,32)}</span>Lyux</div><div class="size-tests"><span class="size-test">${miniSvg(c.svg,24)}<span>24</span></span><span class="size-test">${miniSvg(c.svg,16)}<span>16</span></span></div></div>
+  </article>`).join('');
+
+  function setState(next) {
+    state = stateNames[next] ? next : 'idle';
+    document.querySelectorAll('[data-state-button]').forEach(button => button.setAttribute('aria-pressed',String(button.dataset.stateButton === state)));
+    concepts.forEach(c => {
+      const card = document.querySelector('[data-concept="'+c.id+'"]');
+      card.querySelectorAll('.lx-logo').forEach(svg => svg.dataset.state = state);
+      card.querySelector('.main-mark .lx-logo').setAttribute('aria-label','Lyux '+c.name+'，'+stateNames[state]+'状态');
+      card.querySelector('.motion-note').textContent = c.motion[state];
+      card.querySelector('[data-download]').href = 'exports/'+c.id+'-'+state+'.svg';
+    });
+    updateStatus();
+  }
+  function updateStatus() {
+    status.textContent = (reduced.matches ? '系统已减少动态效果 · ' : isPaused ? '动画已暂停 · ' : demoActive ? '完整演示 · ' : '正在预览') + stateNames[state] + '状态';
+    pause.textContent = reduced.matches ? '系统已减少动画' : isPaused ? '继续动画' : '暂停动画';
+    pause.disabled = reduced.matches;
+    demo.disabled = reduced.matches;
+    pause.setAttribute('aria-pressed',String(isPaused || reduced.matches));
+    demo.setAttribute('aria-pressed',String(demoActive));
+    demo.textContent = demoActive ? '结束演示' : '完整演示';
+  }
+  function stopDemo() {
+    clearTimeout(demoTimer); demoTimer = null; demoActive = false;
+    updateStatus();
+  }
+  function scheduleDemo() {
+    clearTimeout(demoTimer);
+    if (!demoActive || isPaused || document.hidden || reduced.matches) return;
+    demoTimer = setTimeout(() => {
+      demoIndex = (demoIndex + 1) % timeline.length;
+      setState(timeline[demoIndex].state);
+      scheduleDemo();
+    }, timeline[demoIndex].duration);
+  }
+  document.querySelectorAll('[data-state-button]').forEach(button => button.addEventListener('click', () => {stopDemo();setState(button.dataset.stateButton);}));
+  document.querySelectorAll('[data-download]').forEach(link => link.addEventListener('click', event => {
+    event.preventDefault();
+    const concept = concepts.find(c => c.id === link.dataset.download);
+    const svg = concept.svg.replace('<svg ','<svg width="120" height="120" ').replace('data-state="idle"','data-state="'+state+'"');
+    const url = URL.createObjectURL(new Blob([svg],{type:'image/svg+xml;charset=utf-8'}));
+    const download = document.createElement('a');
+    download.href = url; download.download = 'Lyux-'+concept.id+'-'+state+'.svg';
+    document.body.appendChild(download); download.click(); download.remove();
+    setTimeout(() => URL.revokeObjectURL(url),1000);
+  }));
+  pause.addEventListener('click', () => {
+    isPaused = !isPaused;
+    document.body.classList.toggle('is-paused',isPaused);
+    updateStatus(); scheduleDemo();
+  });
+  demo.addEventListener('click', () => {
+    if (demoActive) return stopDemo();
+    isPaused = false; document.body.classList.remove('is-paused');
+    demoActive = true; demoIndex = 0; setState(timeline[0].state); scheduleDemo();
+  });
+  tone.addEventListener('click', () => {
+    const dark = document.body.classList.toggle('dark-artboards');
+    tone.setAttribute('aria-pressed',String(dark));
+    tone.textContent = dark ? '浅色背景' : '深色背景';
+  });
+  document.addEventListener('visibilitychange', () => {
+    document.body.classList.toggle('is-hidden',document.hidden);
+    scheduleDemo();
+  });
+  reduced.addEventListener('change', () => {if (reduced.matches) stopDemo();updateStatus();});
+  const observer = new IntersectionObserver(entries => entries.forEach(entry => entry.target.classList.toggle('is-offscreen',!entry.isIntersecting)),{rootMargin:'40px'});
+  document.querySelectorAll('.candidate').forEach(card => observer.observe(card));
+  document.body.classList.toggle('is-hidden',document.hidden);
+  setState(state);
+}());
+</script>
+</body>
+</html>

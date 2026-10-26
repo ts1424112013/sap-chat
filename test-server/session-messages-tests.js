@@ -36,7 +36,7 @@ function Storage() {}
 Storage.Type = { local: 'local' };
 const service = {};
 const registry = {
-  'zai/chat/control/MomoMark': Control,
+  'zai/chat/control/LingXiMark': Control,
   'sap/ui/core/mvc/Controller': { extend: (_, methods) => methods },
   'sap/ui/util/Storage': Storage,
   'sap/m/MessageToast': { show() {} },
@@ -118,6 +118,70 @@ async function test(name, fn) { await fn(); passed++; console.log('  ✅ ' + nam
     assert.notEqual(c._oHeroGreeting.key, second.key);
   });
 
+  await test('Fiori / 报表参数先到时，消息重建仍等正文结束才显示，也不抢焦点或滚动', () => {
+    for (const fiori of [true, false]) {
+      const c = controller(); activate(c, 'A');
+      c.models.i18n = { getResourceBundle: c._rb };
+      const e = add(c, '正在说明取数范围');
+      e.copyable = false;
+      e.streaming = true;
+      e.ask = c._paramAsk({ taskId: 'T', reportId: 'R', module: fiori ? 'FIORI' : 'REPORT' },
+        fiori ? { kind: 'FIORI', report_id: 'R', values: { P: '1000' } } : {}, [{ param_id: 'P', label: '工厂' }], 'A');
+      e.ask.autoFocus = true; // 旧会话或其他入口留下的自动聚焦也必须被统一关掉。
+      c.msgItemFactory('timing', { getObject: () => e });
+      const host = c._mAskHosts[e.uid];
+      assert.equal(host.o.visible, false);
+      assert.equal(host.items.length, 0);
+      e.streaming = false;
+      for (const flag of ['waiting', 'requestPending']) {
+        e[flag] = true;
+        App._renderAsk.call(c, e.uid);
+        assert.equal(host.o.visible, false);
+        e[flag] = false;
+      }
+      let scrolls = 0;
+      c._isNearBottom = () => true; c._scrollToBottom = () => { scrolls++; };
+      App._renderAsk.call(c, e.uid);
+      assert.equal(host.o.visible, true);
+      assert.ok(host.items.length > 0);
+      assert.equal(e.ask.autoFocus, false);
+      assert.equal(scrolls, 0);
+      if (fiori) { assert.equal(e.ask.values.P, '1000'); }
+    }
+  });
+  await test('参数定义异步补齐不会抢在正文前出现，完成后默认值仍然保留', async () => {
+    const c = controller(); activate(c, 'A');
+    const e = add(c, '说明还没写完'); e.streaming = true;
+    e.ask = c._paramAsk({ taskId: 'T', reportId: 'R', module: 'REPORT' }, {}, [{ param_id: 'RB', data_type: 'ENUM' }], 'A');
+    const host = new Control({ visible: false }); c._mAskHosts = { [e.uid]: host }; c._renderAsk = App._renderAsk;
+    const catalog = deferred(); service.getReportCatalog = () => catalog.promise;
+    c._enrichReportAsk(e);
+    catalog.resolve({ defs: [{ REPORT_ID: 'R', PARAMS: [{ PARAM_ID: 'RB', SEL_KIND: 'R', DEFAULT_VALUE: 'A', ENUM_JSON: '[{"key":"A"},{"key":"B"}]' }] }] });
+    await flush();
+    assert.equal(e.ask.values.RB, 'A');
+    assert.equal(host.o.visible, false);
+    assert.equal(host.items.length, 0);
+    e.streaming = false; c._renderAsk(e.uid);
+    assert.equal(host.o.visible, true);
+    assert.ok(allControls(host).some(o => o.d.key === 'A' && o.o.pressed));
+  });
+  await test('停止生成后，迟到的参数补齐不会弹卡；历史参数卡无需额外等待', async () => {
+    const c = controller(); activate(c, 'A');
+    const e = add(c, '已停止'); e.streaming = true;
+    e.ask = c._paramAsk({ taskId: 'T', reportId: 'R', module: 'REPORT' }, {}, [{ param_id: 'P' }], 'A');
+    const host = new Control({ visible: false }); c._mAskHosts = { [e.uid]: host }; c._renderAsk = App._renderAsk;
+    const catalog = deferred(); service.getReportCatalog = () => catalog.promise;
+    c._enrichReportAsk(e); e.streaming = false; e.avatarStopped = true;
+    catalog.resolve({ defs: [{ REPORT_ID: 'R', PARAMS: [{ PARAM_ID: 'P', DEFAULT_VALUE: '1000' }] }] });
+    await flush();
+    assert.equal(host.o.visible, false);
+    const restored = add(c, '先确认下面的条件');
+    restored.ask = { kind: 'params', state: 'open', params: [{ param_id: 'P' }], values: { P: '2000' }, options: [] };
+    const restoredHost = new Control();
+    assert.equal(c._renderEntryAsk(restoredHost, restored), true);
+    assert.equal(restoredHost.o.visible, true);
+    assert.equal(restored.ask.values.P, '2000');
+  });
   await test('参数未提交、未失焦时重建卡片，文本/多值/范围/日期/枚举/自由输入都保留', () => {
     const ask = { kind: 'params', state: 'open', options: [], values: {}, params: [
       { param_id: 'TXT' }, { param_id: 'MULTI', multi_value: true },

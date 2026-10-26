@@ -5,7 +5,7 @@
         xmlns="sap.m"
         xmlns:f="sap.ui.layout.form"
         xmlns:u="sap.ui.unified"
-        xmlns:momo="zai.chat.control"
+        xmlns:lingxi="zai.chat.control"
         xmlns:core="sap.ui.core">
 
         <App id="app">
@@ -16,9 +16,9 @@
 
                                                 <!-- ==================== 左侧边栏：品牌 / 工作模式 / 新建 / 历史 ==================== -->
                                                 <VBox id="sideBar" class="sideBar" width="17rem">
-                                                        <!-- Momo：双泡图标 + 英文字标 -->
+                                                        <!-- 灵犀 LingXi：彩色叶翼 + 英文字标 -->
                                                         <HBox class="brandRow" alignItems="Center">
-                                                                <momo:MomoMark size="32px" state="{parts: [{path: 'chat>/busy'}, {path: 'chat>/activityText'}], formatter: '.momoActivityState'}" class="brandLogoImage"/>
+                                                                <lingxi:LingXiMark size="32px" state="{chat>/logoState}" class="brandLogoImage"/>
                                                                 <Title level="H3" text="{i18n>brandName}" class="brandName"/>
                                                         </HBox>
 
@@ -133,7 +133,7 @@
                                                                 <layoutData>
                                                                         <FlexItemData growFactor="1"/>
                                                                 </layoutData>
-                                                                <momo:MomoMark size="56px" class="heroMark"/>
+                                                                <lingxi:LingXiMark size="56px" class="heroMark"/>
                                                                 <Title level="H2" text="{chat>/heroTitle}" wrapping="true" class="heroTitle"/>
                                                                 <Text text="{chat>/heroSub}" textAlign="Center" class="heroSub"/>
                                                                 <!-- 20261011：Agent 场景选择（新会话首条消息前可选，之后固定；控制器 _renderScenePicker 渲染） -->

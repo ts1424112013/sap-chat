@@ -1,0 +1,31 @@
+{
+  "results": [
+    "Built application login, demo login, home branding and native SVG render correctly.",
+    "Real send handler: waiting uses thinking on both sidebar and current message.",
+    "Reply output uses the 2.4-second running loop; repeating the same state preserves SVG and animation clocks.",
+    "Stopping generation settles all parts and leaves the stopped reply idle.",
+    "A normally completed request returns every completed message to idle.",
+    "A failed request clears thinking/running instead of leaving a busy logo.",
+    "Structured background-run state works independently of chat busy and settles when ready.",
+    "All message, sidebar and welcome instances use unique, valid gradient references.",
+    "Mobile layout fits; reduced-motion preference stops loops and any in-flight settling.",
+    "Rapid state changes and destruction cause no script errors; built icons load with the approved color palette."
+  ],
+  "assets": [
+    {
+      "path": "images/lingxi-mark.svg",
+      "status": 200,
+      "svg": true
+    },
+    {
+      "path": "images/lingxi-favicon.svg",
+      "status": 200,
+      "svg": true
+    }
+  ],
+  "layout": {
+    "viewport": 390,
+    "content": 390
+  },
+  "consoleErrors": []
+}

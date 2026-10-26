@@ -30,8 +30,8 @@
         "sap.ui": {
                 "technology": "UI5",
                 "icons": {
-                        "icon": "images/momo-mark.svg",
-                        "favIcon": "images/momo-favicon.svg",
+                        "icon": "images/lingxi-mark.svg",
+                        "favIcon": "images/lingxi-favicon.svg",
                         "phone": "",
                         "phone@2": "",
                         "tablet": "",
@@ -80,7 +80,7 @@
                                         "uri": "css/style-skills.css"
                                 },
                                 {
-                                        "uri": "css/style-momo.css"
+                                        "uri": "css/style-lingxi.css"
                                 }
                         ]
                 },
