@@ -1,4 +1,4 @@
-sap.ui.define([], function () {
+sap.ui.define(["zai/chat/utils/AuthValueRule"], function (ValueRule) {
         "use strict";
 
         /**
@@ -14,6 +14,8 @@ sap.ui.define([], function () {
          *   · 开关关闭只拒绝写权限表的操作（申请 / 代加 / 审批 / 撤销）和普通用户查记录，配置照常
          *   · 20261023（V1.2）：事务码规则可带自己的整份字段映射（rmaps，对应 ZAI_AUTH_RMAP）；
          *     命中规则、规则指定了表、且有自己的映射才用，其余沿用权限表映射；审批按当前配置重新选
+         *   · 20261027（V1.4 / V1.5）：生成型映射 RANDOM 随机值、SEQ 递增序号、RULE 按规则组合
+         *     （规则写法与生成见 utils/AuthValueRule，与后端 parse_rule / gen_value 同口径）
          * 演示数据：事务码 ZDPMM051 / ZDPMM052 / ZDPMM702(规则 BLOCK) / ZDEMO001 / ZDEMO002 / ZDEMO003 / ZNOTABLE(无权限表)，
          * 工厂 1000 / 2000 / 3000，账号 DEMOUSER / USERA / USERB 可用、LOCKED 已锁定；
          * 可登记的表 ZIDPPP009(已登记) / ZAUTH_TEST(字段名不同) / YAUTH_SINGLE(没有事务码列) /
@@ -30,7 +32,7 @@ sap.ui.define([], function () {
         // 20261024：演示用 USER_ADDR（账号 → [姓名, 部门]）；USERB 没有部门、其他账号查不到，演示降级显示
         var ADDR = { DEMOUSER: ["演示用户", "信息技术部"], USERA: ["张三", "生产管理部 · 计划课"], USERB: ["Li Si", ""] };
         var LOCKED = ["LOCKED"];
-        var MAP_OK = ["TCODE", "USER", "WERKS", "CONST", "RANDOM", "DATE", "TIME", "BY", "INITIAL"];
+        var MAP_OK = ["TCODE", "USER", "WERKS", "CONST", "RANDOM", "SEQ", "RULE", "DATE", "TIME", "BY", "INITIAL"];
         var TYPE_OK = ["CHAR", "NUMC", "DATS", "TIMS"];
 
         function clone(v) { return JSON.parse(JSON.stringify(v)); }
@@ -225,13 +227,15 @@ sap.ui.define([], function () {
                                 if (m.t !== "INITIAL" && TYPE_OK.indexOf(f.datatype) < 0) { fail("字段 " + m.f + " 的类型 " + f.datatype + " 不支持写入映射, 只支持 CHAR / NUMC / DATS / TIMS"); }
                                 if ((m.t === "DATE" && f.leng < 8) || (m.t === "TIME" && f.leng < 6)) { fail("字段 " + m.f + " 太短, 放不下日期 / 时间"); }
                                 if (m.t === "RANDOM" && (!/^(CHAR|NUMC)$/.test(f.datatype) || f.leng < 1)) { fail("字段 " + m.f + " 的随机值只支持长度大于 0 的 CHAR / NUMC 字段"); }
+                                var gErr = ValueRule.check(f, m.t, m.c);
+                                if (gErr) { fail("字段 " + m.f + ": " + gErr); }
                                 if (m.t === "CONST") {
                                         if (!c) { fail("字段 " + m.f + " 选了固定值，但没填值"); }
                                         if (c.length > f.leng || c.length > 60) { fail("字段 " + m.f + " 的固定值过长"); }
                                         if (/^(NUMC|DATS|TIMS)$/.test(f.datatype) && /\D/.test(c)) { fail("字段 " + m.f + " 的固定值必须是数字"); }
                                 }
                                 if (f.keyflag === "X" && m.t === "INITIAL") { fail("主键字段 " + m.f + " 必须配置映射(留空不允许)"); }
-                                fmap[m.f] = { t: m.t, c: m.t === "CONST" ? c : "" };
+                                fmap[m.f] = { t: m.t, c: m.t === "CONST" || m.t === "SEQ" ? c : m.t === "RULE" ? ValueRule.normalize(m.c) : "" };
                         });
                         // 20261022（V1.1）：同类映射可以配到多个字段（写入同一个值），只要求至少有一个 USER
                         if (n.USER < 1) { fail("至少要有一个 USER(目标账号)映射"); }
@@ -241,8 +245,9 @@ sap.ui.define([], function () {
 
                 /* ---------- 组行 / 查重 / 授权 / 撤销（对应 build_row / row_exists / grant_row / revoke_row） ---------- */
 
-                _mockAuthBuildRow: function (tab, tcode, user, werks) {
-                        var row = {};
+                /** rows = 目标表现有行（递增序号要看现有最大值；批量时前一行已写入，后一行看得到） */
+                _mockAuthBuildRow: function (tab, tcode, user, werks, rows) {
+                        var row = {}, d = now14();
                         tab.fields.forEach(function (f) {
                                 var v;
                                 switch (f.mapType) {
@@ -256,12 +261,20 @@ sap.ui.define([], function () {
                                         v = "";
                                         for (var i = 0; i < f.leng; i++) { v += alphabet.charAt(Math.floor(Math.random() * alphabet.length)); }
                                         break;
-                                case "DATE": v = now14().substring(0, 8); break;
-                                case "TIME": v = now14().substring(8); break;
+                                case "SEQ":
+                                case "RULE":
+                                        var g = ValueRule.generate(f, f.mapType, f.constVal, { tcode: tcode, user: user, werks: werks, by: "DEMO",
+                                                date: d.substring(0, 8), time: d.substring(8) }, (rows || []).map(function (r) { return r[f.fieldname]; }));
+                                        if (g.error) { fail("字段 " + f.fieldname + ": " + g.error); }
+                                        v = g.value;
+                                        break;
+                                case "DATE": v = d.substring(0, 8); break;
+                                case "TIME": v = d.substring(8); break;
                                 case "BY": v = "DEMO"; break;
                                 default: return;
                                 }
                                 if (String(v).length > f.leng) { fail("字段 " + f.fieldname + " 的值超过长度 " + f.leng + ", 拒绝截断"); }
+                                if (/^(NUMC|DATS|TIMS)$/.test(f.datatype) && v && /\D/.test(v)) { fail("字段 " + f.fieldname + " 的值必须是数字"); }
                                 row[f.fieldname] = v;
                         });
                         return row;
@@ -283,7 +296,9 @@ sap.ui.define([], function () {
                                 return keys.every(function (f) { return r[f.fieldname] === row[f.fieldname]; });
                         });
                         if (dup) {
-                                if (keys.some(function (f) { return f.mapType === "RANDOM"; })) { return { error: "随机值与现有主键冲突，请重试或增加随机字段长度" }; }
+                                if (keys.some(function (f) { return ValueRule.volatile(f.mapType, f.constVal); })) {
+                                        return { error: "随机值 / 递增序号与现有主键冲突(可能有人同时写入)，请重试；随机值可加长位数" };
+                                }
                                 return { status: "EXISTS", keyJson: "" };
                         }
                         s.rows[tab.tabname].push(clone(row));
@@ -358,7 +373,7 @@ sap.ui.define([], function () {
                         r.tabname = tab.tabname;
                         var row = null, err = "", found = false;
                         try {
-                                row = svc._mockAuthBuildRow(tab, tcode, user, werks);
+                                row = svc._mockAuthBuildRow(tab, tcode, user, werks, s.rows[tab.tabname]);
                                 found = svc._mockAuthExists(s, tab, row);
                         } catch (e) { err = e.message; }
 
@@ -402,7 +417,7 @@ sap.ui.define([], function () {
                                 // V1.2：按当前配置重新选映射——当前命中的规则指向这张表且有自己的映射时用它
                                 var rule = svc._mockAuthFindRule(s, r.tcode);
                                 if (rule.tabname === tab.tabname) { svc._mockAuthApplyRuleMap(s, rule.tcodePat, tab); }
-                                var row = svc._mockAuthBuildRow(tab, r.tcode, r.targetUser, r.werks);
+                                var row = svc._mockAuthBuildRow(tab, r.tcode, r.targetUser, r.werks, s.rows[tab.tabname]);
                                 if (svc._mockAuthExists(s, tab, row)) {
                                         r.status = "EXISTS"; r.message = "审批时发现已有权限，未重复写入";
                                 } else {

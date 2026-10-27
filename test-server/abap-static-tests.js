@@ -11,6 +11,7 @@
  *      DPC 每个权限 FI 读的参数 = 前端恒发的参数清单（SAP 上 FI 参数全必填）
  *   4) 报表选择项（10.24 记录 #03a）：REPORT_SERVICE V1.0.13 整理 R / C / F、EXEC_SAP V1.1b 组装选择屏
  *   5) 报表自动登记（10.24 记录 #03b）：ZCL_AI_RPT_SCANNER / ZAI_RPT_REG 只在约定处写表；全库行长 ≤ 255
+ *   6) 10.27 记录：SCANNER V1.0a 修复补回；EXEC_SAP V1.1c 作业语言 RPT_JOB_LANGU + 作业中止原因落表
  * 只能查文本层面的约定，语法与运行时仍以 SAP 激活与现场验证为准。
  */
 const fs = require('fs');
@@ -149,6 +150,20 @@ check('USER_ADDR 只在 fill_user_info 里读', inMethods(/\buser_addr\b/i).join
 check('list_requests 末尾调 fill_user_info', /fill_user_info\(\s*CHANGING ct_requests = rs-requests\s*\)[\s\S]*?ENDMETHOD\./i.test(methods.list_requests || ''));
 check('fill_user_info 字段列表动态 + 捕获动态 SQL 异常（字段名不符只是查不到，不影响激活）', /SELECT \(lv_cols\) FROM user_addr/i.test(methods.fill_user_info || '') && /CATCH cx_sy_dynamic_osql_error/i.test(methods.fill_user_info || ''));
 check('fill_user_info 只读（没有 INSERT / UPDATE / MODIFY / DELETE）', !/\b(INSERT|UPDATE|MODIFY|DELETE)\b/i.test(methods.fill_user_info || ''));
+// V1.5 20261027（10.27 记录 #02）：递增序号 SEQ / 规则组合 RULE
+check('服务类版本头有 V1.5', /^\* V1\.5 20261027/m.test(authRaw));
+check('check_fmap 认 SEQ / RULE，并调 check_rule 校验参数', /'RANDOM' OR 'SEQ' OR 'RULE'/.test(methods.check_fmap || '') && /check_rule\( is_field = ls_f iv_type = ls_in-t iv_c = ls_in-c \)/.test(methods.check_fmap || ''));
+check('SEQ / RULE 的参数存进 CONST_VAL（其他类型清空）', /WHEN ls_in-t = 'CONST' OR ls_in-t = 'SEQ' THEN lv_const[\s\S]*?WHEN ls_in-t = 'RULE' THEN lv_rule/.test(methods.check_fmap || ''));
+check('build_row 的 SEQ / RULE 走 gen_value（逐行现算）', /WHEN 'SEQ' OR 'RULE'\.[\s\S]*?gen_value\(/.test(methods.build_row || ''));
+check('读目标表取序号只在 seq_max（动态 SELECT ( 只读，没有写）', inMethods(/SELECT\s+\(\s*iv_fieldname\s*\)\s+FROM\s+\(/i).join() === 'seq_max' && !/\b(INSERT|UPDATE|MODIFY|DELETE)\b/i.test(methods.seq_max || ''),
+  inMethods(/SELECT\s+\(\s*iv_fieldname\s*\)\s+FROM\s+\(/i).join());
+check('seq_max 名字过 safe_name、LIKE 值走 quote + ESCAPE #，异常捕获', /safe_name\( iv_tabname \)[\s\S]*?safe_name\( iv_fieldname \)/.test(methods.seq_max || '') &&
+  /LIKE \{ quote\( iv_like \) \} ESCAPE '#'/.test(methods.seq_max || '') && /CATCH cx_root/.test(methods.seq_max || ''));
+check('like_escape 先转 # 再转 _ %', /`#` IN rv WITH `##`[\s\S]*?`_` IN rv WITH `#_`[\s\S]*?`%` IN rv WITH `#%`/.test(methods.like_escape || ''));
+check('gen_value：序号不小于起始值、到位数上限报错、左补零', /lv_max \+ 1 > lv_next/.test(methods.gen_value || '') && /lv_next >= lv_limit/.test(methods.gen_value || '') && /lv_seq = `0` && lv_seq/.test(methods.gen_value || ''));
+check('parse_rule：一条规则最多一个 SEQn、占位白名单', /lv_seqs > 1/.test(methods.parse_rule || '') && /'\^\(SEQ\|RAND\|NUM\)/.test(methods.parse_rule || ''));
+check('grant_row：生成值作主键碰撞报错（随机 / 序号 / 含 SEQ RAND NUM TIME 的规则），其余仍是 EXISTS', /map_type = 'RANDOM' OR ls_f-map_type = 'SEQ'[\s\S]*?CS '\{SEQ'[\s\S]*?CS '\{TIME'[\s\S]*?ev_status = 'EXISTS'/.test(methods.grant_row || ''));
+check('string 模板里没有未转义的花括号文字（{ 必须是占位）', !/\|[^|\n]*[^\\]\{[A-Z]/.test(auth));
 
 // DPC 每个权限 FI 读的参数名 == 前端 _authCall 恒发的参数清单（SAP 上 FI 参数全必填，多一个少一个都会 404）
 const dpcParams = {};
@@ -220,7 +235,7 @@ check('写登记表（INSERT / UPDATE zai_rpt_*）只在 save', scIn(/\b(INSERT|
 check('save 先校验 ADMIN、事务码不被别的报表占用、出错 ROLLBACK', /v8_get_role\( \) <> 'ADMIN'/.test(scMethods.save || '') && /tcode = @lv_tc AND report_id <> @lv_rid/.test(scMethods.save || '') && /ROLLBACK WORK/.test(scMethods.save || ''));
 check('写入用新配置版本 R + 日期时间（旧版本参数行保留）', /lv_ver = \|R\{ sy-datum \}\{ sy-uzeit \}\|/.test(scMethods.save || ''));
 check('不用 SCAN ABAP-SOURCE / FIND PCRE（自己切语句，规则与 JS 参考一致）', !/SCAN\s+ABAP-SOURCE/i.test(sc) && !/FIND\s+(ALL\s+OCCURRENCES\s+OF\s+)?PCRE/i.test(sc));
-check('源码读取：READ REPORT + Z/Y include 展开（深度 ≤ 3、最多 30 个）；文字：READ TEXTPOOL 依次试四种语言', /READ REPORT iv_prog INTO lt_src STATE 'A'/.test(sc) && /iv_depth >= 3/.test(sc) && /gv_incl < 30/.test(sc) && /READ TEXTPOOL iv_prog INTO lt_tp LANGUAGE lv_l/.test(sc));
+check('源码读取：READ REPORT + Z/Y include 展开（深度 ≤ 3、最多 30 个）；文字：READ TEXTPOOL 依次试四种语言', /READ REPORT lv_pname INTO lt_src STATE 'A'/.test(sc) && /iv_depth >= 3/.test(sc) && /gv_incl < 30/.test(sc) && /READ TEXTPOOL lv_pname INTO lt_tp LANGUAGE lv_l/.test(sc));
 check('键值结构不叫 key（x[ key = … ] 会被当成二级键语法）', /BEGIN OF ty_kv,\s*k\s+TYPE string,\s*v\s+TYPE string,/i.test(sc) && !/\[\s*key\s*=/i.test(sc));
 check('类实现里方法之间没有注释（SE24 源码视图约定）', (() => {
   const lines = scRaw.slice(scRaw.indexOf('CLASS zcl_ai_rpt_scanner IMPLEMENTATION')).split(/\r?\n/);
@@ -249,6 +264,27 @@ listAbap(ABAP).forEach((file) => {
 });
 check('所有 ABAP 源码每行 ≤ 255 字符', longs.length === 0, longs.slice(0, 5).join(', '));
 check('READ TABLE … INDEX 后面不写算术式（先算进变量）', idxExpr.length === 0, idxExpr.slice(0, 5).join(', '));
+
+// ---------------------------------------------------------------- 6) 10.27 记录
+console.log('\n[6] 10.27：SCANNER V1.0a 补回 / EXEC_SAP V1.1c 作业语言与中止原因');
+check('SCANNER 头注释有 V1.0a 20261026 修复标记（00c：防止再贴回修复前版本）', /^\* V1\.0a\s+20261026: 修 3 处编译错/m.test(scRaw));
+check('SCANNER class_constructor 声明在 PUBLIC SECTION（不在 PRIVATE）', /PUBLIC SECTION\.[\s\S]*?CLASS-METHODS class_constructor\.[\s\S]*?PRIVATE SECTION\./.test(sc) &&
+  !/PRIVATE SECTION\.[\s\S]*?CLASS-METHODS class_constructor\.[\s\S]*?ENDCLASS\./.test(sc.slice(0, sc.indexOf('CLASS zcl_ai_rpt_scanner IMPLEMENTATION'))));
+check('SCANNER READ REPORT / READ TEXTPOOL 都用 PROGNAME 变量，不直接传 string 形参', !/READ (REPORT|TEXTPOOL) iv_prog\b/i.test(sc) &&
+  /lv_pname TYPE progname[\s\S]*?lv_pname = iv_prog\.[\s\S]*?READ REPORT lv_pname/.test(scMethods.read_source || '') &&
+  /lv_pname TYPE progname[\s\S]*?lv_pname = iv_prog\.[\s\S]*?READ TEXTPOOL lv_pname/.test(scMethods.read_texts || ''));
+const exMethods = {};
+(ex.match(/^\s*METHOD\s+\w+\.[\s\S]*?^\s*ENDMETHOD\./gim) || []).forEach((m) => { exMethods[m.match(/METHOD\s+(\w+)\./i)[1].toLowerCase()] = m; });
+check('EXEC_SAP 版本头有 V1.1c', /^\* V1\.1c\s+20261027/m.test(exRaw));
+check('两处 SUBMIT … VIA JOB 都带 LANGUAGE lv_langu，语言来自 job_langu( )', (exMethods.submit || '').split(/LANGUAGE lv_langu/).length - 1 === 2 &&
+  /lv_langu = job_langu\( \)\./.test(exMethods.submit || '') && !/VIA JOB lv_jobname NUMBER lv_jobcnt\s*\n/.test(exMethods.submit || ''));
+check('job_langu：读 RPT_JOB_LANGU，1 位按语言键、2 位按 T002-LAISO，查不到退回 sy-langu', /read_cfg_str\( 'RPT_JOB_LANGU' \)/.test(exMethods.job_langu || '') &&
+  /WHERE spras = @lv_key/.test(exMethods.job_langu || '') && /WHERE laiso = @lv_iso/.test(exMethods.job_langu || '') && /rv = sy-langu\./.test(exMethods.job_langu || ''));
+check('abort_reason：读作业日志、TBTC5 列按名取、跳过 00/518、0K/530 附语言提示', /CALL FUNCTION 'BP_JOBLOG_READ'/.test(exMethods.abort_reason || '') &&
+  /ASSIGN COMPONENT 'MSGTYPE' OF STRUCTURE/.test(exMethods.abort_reason || '') && !/ls_log-(text|msgid|msgno|msgtype)/i.test(exMethods.abort_reason || '') &&
+  /lv_id = '00' AND lv_no = '518'/.test(exMethods.abort_reason || '') && /lv_id = '0K' AND lv_no = '530'/.test(exMethods.abort_reason || ''));
+check('poll 作业取消：原因写 ERROR_MESSAGE（JOB_ABORT），已有原因不覆盖', /WHEN 'A'\.[\s\S]*?abort_reason\([\s\S]*?error_code\s+= 'JOB_ABORT',[\s\S]*?AND error_code\s+= ' '\./.test(exMethods.poll || ''));
+check('EXEC_SAP 新方法都声明在 PRIVATE SECTION', /PRIVATE SECTION\.[\s\S]*?CLASS-METHODS job_langu[\s\S]*?CLASS-METHODS abort_reason[\s\S]*?ENDCLASS\./.test(ex));
 
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);

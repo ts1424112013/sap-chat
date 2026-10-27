@@ -5,10 +5,10 @@ const path = require('path');
 const vm = require('vm');
 const Skills = require('../webapp/utils/SkillCatalog');
 const {runAgent} = require('./agent-loop');
-function loadUI() {
+function loadUI(overrides) {
   const mem = new Map();
-  const registry = {'sap/base/Log': {}, 'sap/ui/model/odata/v2/ODataModel': function () {},
-    'sap/ui/model/Filter': function () {}, 'sap/ui/model/FilterOperator': {}, 'sap/ui/model/Sorter': function () {}};
+  const registry = Object.assign({'sap/base/Log': {}, 'sap/ui/model/odata/v2/ODataModel': function () {},
+    'sap/ui/model/Filter': function () {}, 'sap/ui/model/FilterOperator': {}, 'sap/ui/model/Sorter': function () {}}, overrides || {});
   class Model {
     constructor(data) {this.data=data;}
     getProperty(p) {return p.split('/').filter(Boolean).reduce((o,k)=>o == null ? undefined : o[k],this.data);}
@@ -158,4 +158,44 @@ test('切换会话和同会话强制刷新时，迟到的技能目录不能覆�
   pending[3]({supported:true,enabled:true,skills:[Skills.builtin[2]],selectedId:'CODE_ENHANCEMENTS'});await Promise.resolve();
   pending[2]({supported:true,enabled:true,skills:[Skills.builtin[0]],selectedId:'CODE_PERFORMANCE'});await Promise.resolve();
   assert.equal(models.skill.getProperty('/selected/id'),'CODE_ENHANCEMENTS');
+});
+test('技能总开关（演示）：关时聊天拿不到技能、管理照常；只有管理员能开关（10.27 #03）', async () => {
+  const s=loadUI(); s._sAppUser={userId:'A',role:'USER'};
+  assert.equal(await s.getSkillEnabled(), true);                      // 演示没设过 = 开
+  await assert.rejects(()=>s.setSkillEnabled(false), /管理员/);
+  s._sAppUser.role='ADMIN';
+  assert.equal(await s.setSkillEnabled(false), false);
+  assert.equal(await s.getSkillEnabled(), false);                     // 关能存住（不是删键回到默认开）
+  let r=await s.getSkills({scene:'CODE',sessionId:'S'});
+  assert.equal(r.enabled,false); assert.equal(r.skills.length,0);
+  r=await s.getSkills({includeInactive:true}); assert.equal(r.skills.length,8);
+  s._mockSendAgent=async()=>({trace:[],answer:'演示',status:'OK'});
+  await assert.rejects(()=>s.sendTask({scene:'CODE',sessionId:'S',taskId:'T',skillId:'CODE_EXPLAIN'}), /尚未启用/);
+  await s.setSkillEnabled(true);
+  r=await s.getSkills({scene:'CODE',sessionId:'S'}); assert.equal(r.enabled,true); assert.equal(r.skills.length,4);
+});
+test('技能胶囊选不了时仍可点：管理员直达技能管理，普通用户看到原因，能选时照常打开（10.27 #03）', async () => {
+  const toasts=[];
+  const s=loadUI({'zai/chat/utils/Toast':{show:t=>toasts.push(t)}}), Model=s._testLoad('sap/ui/model/json/JSONModel');
+  const models={chat:new Model({currentSession:{id:'A'},currentTask:null,busy:false})};
+  const view={getModel:name=>models[name],setModel:(m,name)=>{models[name]=m;}};
+  let opened=0, managed=0, synced=0;
+  const panel=Object.assign({},s._testLoad('zai/chat/controller/mixin/SkillPanel'),{
+    getView:()=>view,byId:()=>null,_curScene:()=> 'CODE',_wsMode:()=> 'AGENT',_renderHeroBubbles:()=>{},
+    _openSkills:()=>{opened++;},onOpenSkillManager:()=>{managed++;}});
+  const ev={getSource:()=>({getId:()=> 'x--skillBtnDock'})};
+  const m=panel._skillModel();
+  m.setProperty('/supported',true); m.setProperty('/enabled',false); m.setProperty('/loading',false);
+  s._sAppUser={userId:'A',role:'ADMIN'}; panel._paintSkill();
+  assert.match(m.getProperty('/tooltip'), /技能管理/);
+  panel.onOpenSkills(ev); assert.equal(managed,1); assert.equal(opened,0);
+  s._sAppUser.role='USER'; panel._paintSkill();
+  panel.onOpenSkills(ev); assert.equal(managed,1); assert.match(toasts.pop(), /联系管理员/);
+  const sync=panel._syncSkills; panel._syncSkills=()=>{synced++;};
+  m.setProperty('/error','离线'); panel._paintSkill(); panel.onOpenSkills(ev); assert.equal(synced,1);
+  panel._syncSkills=sync; m.setProperty('/error','');
+  m.setProperty('/enabled',true); panel._paintSkill(); assert.equal(m.getProperty('/canPick'),true);
+  panel.onOpenSkills(ev); assert.equal(opened,1);
+  models.chat.setProperty('/busy',true); m.setProperty('/enabled',false); panel._paintSkill();
+  panel.onOpenSkills(ev); assert.equal(managed,1); assert.equal(opened,1);
 });

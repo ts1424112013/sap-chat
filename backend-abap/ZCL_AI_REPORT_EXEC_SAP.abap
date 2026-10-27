@@ -63,11 +63,22 @@
 *         ② C 复选框: 快照里有就一定下发('X' / 空格), 用户取消勾选才能盖掉 DEFAULT 'X'
 *         ③ F 固定值: 不看用户参数, 按 ALLOWED_OPS 登记值下发(空 = 空格), 如 0003C
 *           输出方式组强制 P_ALV; ZRMM_IDP_0702 的 P2 / P_FILE 仍按原硬编码下发(不动)
+* V1.1c   20261027(10.27 记录 #01, ZDPSD021 作业报 0K/530 "找不到欄位目錄"):
+*         ① 作业语言: 网页走网关, 会话语言是简体 1, 作业原样继承; 不少老报表只在
+*           sy-langu = 'E' / 'M' 时拼 ALV 字段目录, 其他语言字段目录为空 → REUSE_ALV
+*           抛 A 类 0K/530 中止。新增配置 ZAI_CHAT_CFG 键 RPT_JOB_LANGU(1 位语言键如
+*           M, 或 2 位 ISO 如 ZF / EN), 有值时 SUBMIT VIA JOB … LANGUAGE 按它跑; 空 = 不变
+*         ② 作业被取消(A): 读作业日志(BP_JOBLOG_READ)取第一条 A/E/X 消息(跳过 00/518
+*           "已取消工作"), 写进 ZAI_RPT_RUN.ERROR_MESSAGE(ERROR_CODE = 'JOB_ABORT'),
+*           前端步骤条直接显示原因; 0K/530 另附作业语言提示。原先只回"请查看作业日志"
+*           且这句也没落表, 前端只看到"失败"
 * ★ 重贴后核对标记: JOB_CLOSE 处 strtimmed = 'X'; 两处 JOB_CLOSE 都有
 *   job_was_released = lv_released; 全文无 SUBMIT (iv_program);
 *   read_result 输出以 {"columns": 开头; submit 内有 lv_runner / ZAI_RPT_RUNNER;
 *   PUBLIC SECTION 有 run_captured; submit 内是 read_cfg_str( 'RPT_CAPTURE_LEGACY' );
 *   V1.1b: build_seltab 的 SELECT 含 allowed_ops, 有 zcl_ai_report_service=>parse_options(
+*   V1.1c: 两处 SUBMIT … VIA JOB 都带 LANGUAGE lv_langu; 有 METHOD job_langu /
+*   METHOD abort_reason; poll 的 WHEN 'A' 里有 error_code = 'JOB_ABORT'
 *=======================================================================
 CLASS zcl_ai_report_exec_sap DEFINITION
   PUBLIC
@@ -117,6 +128,16 @@ CLASS zcl_ai_report_exec_sap DEFINITION
     CLASS-METHODS drop_job
       IMPORTING iv_jobname TYPE tbtcjob-jobname
                 iv_jobcnt  TYPE tbtcjob-jobcount.
+
+    " V1.1c: 作业语言(ZAI_CHAT_CFG.RPT_JOB_LANGU; 空 / 无效 = 当前会话语言)
+    CLASS-METHODS job_langu
+      RETURNING VALUE(rv) TYPE sy-langu.
+
+    " V1.1c: 被取消作业的中止原因(作业日志第一条 A/E/X 消息); 读不到 = 空
+    CLASS-METHODS abort_reason
+      IMPORTING iv_jobname TYPE tbtcjob-jobname
+                iv_jobcnt  TYPE tbtcjob-jobcount
+      RETURNING VALUE(rv)  TYPE string.
 ENDCLASS.
 
 
@@ -141,7 +162,9 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
           lv_runner  TYPE progname VALUE 'ZAI_RPT_RUNNER',
           lv_rexists TYPE trdir-name,
           lt_rsel    TYPE rsparams_tt,
-          ls_rsel    TYPE rsparams.
+          ls_rsel    TYPE rsparams,
+          lv_langu   TYPE sy-langu,
+          lv_lnote   TYPE string.
     CLEAR: ev_status, ev_message.
 
     " V1.0a: SUBMIT 动态程序名必须是字符型定长(PROGNAME), 不能用 string
@@ -205,8 +228,13 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
 
     " 程序名 = 登记事实源(非用户输入); 参数 = 登记白名单(seltab, 无字符串拼接)
     " V1.1: 新口径作业步骤是运行器, 只带运行号; 业务报表名/参数由运行器读运行记录
+    " V1.1c: 作业语言按 RPT_JOB_LANGU(老报表常按 sy-langu 拼字段目录)
+    lv_langu = job_langu( ).
+    IF lv_langu <> sy-langu.
+      lv_lnote = |, 作业语言 { lv_langu }|.
+    ENDIF.
     IF lv_legacy = abap_true.
-      SUBMIT (lv_prog) VIA JOB lv_jobname NUMBER lv_jobcnt
+      SUBMIT (lv_prog) VIA JOB lv_jobname NUMBER lv_jobcnt LANGUAGE lv_langu
         WITH SELECTION-TABLE lt_seltab
         AND RETURN.
     ELSE.
@@ -217,7 +245,7 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
       ls_rsel-option  = 'EQ'.
       ls_rsel-low     = iv_report_run_id.
       APPEND ls_rsel TO lt_rsel.
-      SUBMIT (lv_runner) VIA JOB lv_jobname NUMBER lv_jobcnt
+      SUBMIT (lv_runner) VIA JOB lv_jobname NUMBER lv_jobcnt LANGUAGE lv_langu
         WITH SELECTION-TABLE lt_rsel
         AND RETURN.
     ENDIF.
@@ -298,11 +326,11 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
     ev_status  = zcl_ai_report_service=>gc_run_submitted.
     IF lv_delayed = abap_true.
       ev_message = |已提交真实作业 { lv_jobname }/{ lv_jobcnt }(当前无空闲后台进程, | &&
-                   |已排入释放队列, 由调度器自动启动)|.
+                   |已排入释放队列, 由调度器自动启动{ lv_lnote })|.
     ELSEIF lv_legacy = abap_true.
-      ev_message = |已提交真实作业 { lv_jobname }/{ lv_jobcnt }(立即启动, 程序端自动落结果表)|.
+      ev_message = |已提交真实作业 { lv_jobname }/{ lv_jobcnt }(立即启动, 程序端自动落结果表{ lv_lnote })|.
     ELSE.
-      ev_message = |已提交真实作业 { lv_jobname }/{ lv_jobcnt }(立即启动, 作业内自动采集 ALV 结果)|.
+      ev_message = |已提交真实作业 { lv_jobname }/{ lv_jobcnt }(立即启动, 作业内自动采集 ALV 结果{ lv_lnote })|.
     ENDIF.
   ENDMETHOD.
 
@@ -314,7 +342,9 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
     DATA: lv_jobname TYPE zai_rpt_run-sap_job_name,
           lv_jobcnt  TYPE zai_rpt_run-sap_job_number,
           lv_sts     TYPE tbtco-status,
-          lv_ecode   TYPE zai_rpt_run-error_code.
+          lv_ecode   TYPE zai_rpt_run-error_code,
+          lv_reason  TYPE string,
+          lv_emsg    TYPE zai_rpt_run-error_message.
     CLEAR: ev_status, ev_message.
 
     SELECT SINGLE sap_job_name, sap_job_number
@@ -364,6 +394,17 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
       WHEN 'A'.
         ev_status  = zcl_ai_report_service=>gc_run_failed.
         ev_message = '后台作业被取消(SM37 状态 A), 请查看作业日志'.
+        " V1.1c: 中止原因落运行记录(前端步骤条读 ERROR_MESSAGE); 已有原因不覆盖
+        lv_reason = abort_reason( iv_jobname = CONV tbtcjob-jobname( lv_jobname )
+                                  iv_jobcnt  = CONV tbtcjob-jobcount( lv_jobcnt ) ).
+        IF lv_reason IS NOT INITIAL.
+          ev_message = |后台作业被取消: { lv_reason }|.
+          lv_emsg    = ev_message.
+          UPDATE zai_rpt_run SET error_code    = 'JOB_ABORT',
+                                 error_message = @lv_emsg
+            WHERE report_run_id = @iv_report_run_id
+              AND error_code    = ' '.
+        ENDIF.
       WHEN OTHERS.
         ev_status  = zcl_ai_report_service=>gc_run_unknown.
         ev_message = |作业状态 { lv_sts } 未识别, 需继续查询|.
@@ -870,6 +911,104 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
       " 删除失败不影响本次结论(仍判提交失败), SM37 可人工清理
       RETURN.
     ENDIF.
+  ENDMETHOD.
+
+
+  METHOD job_langu.
+    " 1 位 = SAP 语言键(区分大小写, 原样用); 2 位 = ISO(T002-LAISO, 如 ZF / ZH / EN)
+    DATA: lv_cfg   TYPE string,
+          lv_len   TYPE i,
+          lv_key   TYPE t002-spras,
+          lv_iso   TYPE t002-laiso,
+          lv_found TYPE t002-spras.
+    rv = sy-langu.
+    lv_cfg = condense( zcl_ai_task_service=>read_cfg_str( 'RPT_JOB_LANGU' ) ).
+    lv_len = strlen( lv_cfg ).
+    CASE lv_len.
+      WHEN 1.
+        lv_key = lv_cfg.
+        SELECT SINGLE spras FROM t002 WHERE spras = @lv_key INTO @lv_found.
+      WHEN 2.
+        lv_iso = to_upper( lv_cfg ).
+        SELECT SINGLE spras FROM t002 WHERE laiso = @lv_iso INTO @lv_found.
+      WHEN OTHERS.
+        RETURN.
+    ENDCASE.
+    IF sy-subrc = 0 AND lv_found IS NOT INITIAL.
+      rv = lv_found.
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD abort_reason.
+    " TBTC5 的列按名取(ASSIGN COMPONENT), 版本间列名有差异也不影响激活
+    DATA: lt_log  TYPE STANDARD TABLE OF tbtc5 WITH DEFAULT KEY,
+          ls_log  TYPE tbtc5,
+          lv_type TYPE string,
+          lv_id   TYPE string,
+          lv_no   TYPE string,
+          lv_txt  TYPE string.
+    FIELD-SYMBOLS <lv_f> TYPE any.
+    CLEAR rv.
+    CALL FUNCTION 'BP_JOBLOG_READ'
+      EXPORTING
+        jobcount              = iv_jobcnt
+        jobname               = iv_jobname
+      TABLES
+        joblogtbl             = lt_log
+      EXCEPTIONS
+        cant_read_joblog      = 1
+        jobcount_missing      = 2
+        joblog_does_not_exist = 3
+        joblog_is_empty       = 4
+        joblog_name_missing   = 5
+        jobname_missing       = 6
+        job_does_not_exist    = 7
+        OTHERS                = 8.
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+    LOOP AT lt_log INTO ls_log.
+      CLEAR: lv_type, lv_id, lv_no, lv_txt.
+      ASSIGN COMPONENT 'MSGTYPE' OF STRUCTURE ls_log TO <lv_f>.
+      IF sy-subrc = 0.
+        lv_type = <lv_f>.
+      ENDIF.
+      IF lv_type <> 'A' AND lv_type <> 'E' AND lv_type <> 'X'.
+        CONTINUE.
+      ENDIF.
+      ASSIGN COMPONENT 'MSGID' OF STRUCTURE ls_log TO <lv_f>.
+      IF sy-subrc = 0.
+        lv_id = <lv_f>.
+        lv_id = condense( lv_id ).
+      ENDIF.
+      ASSIGN COMPONENT 'MSGNO' OF STRUCTURE ls_log TO <lv_f>.
+      IF sy-subrc = 0.
+        lv_no = <lv_f>.
+        lv_no = condense( lv_no ).
+      ENDIF.
+      " 00/518 = "已取消工作"(作业框架自己的收尾消息, 不是原因)
+      IF lv_id = '00' AND lv_no = '518'.
+        CONTINUE.
+      ENDIF.
+      ASSIGN COMPONENT 'TEXT' OF STRUCTURE ls_log TO <lv_f>.
+      IF sy-subrc = 0.
+        lv_txt = <lv_f>.
+        lv_txt = condense( lv_txt ).
+      ENDIF.
+      IF lv_txt IS INITIAL.
+        CONTINUE.
+      ENDIF.
+      rv = lv_txt.
+      IF lv_id IS NOT INITIAL.
+        rv = |{ rv }({ lv_id }/{ lv_no })|.
+      ENDIF.
+      IF lv_id = '0K' AND lv_no = '530'.
+        rv = |{ rv }。报表 ALV 字段目录为空, 常见于程序只按 E / M 等登录语言拼字段目录; | &&
+             |本次作业语言 { job_langu( ) }, 可在 ZAI_CHAT_CFG 设 RPT_JOB_LANGU(如 M)后重跑|.
+      ENDIF.
+      RETURN.
+    ENDLOOP.
   ENDMETHOD.
 
 ENDCLASS.

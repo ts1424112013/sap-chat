@@ -43,6 +43,16 @@
 * V1.4 20261027: 字段映射新增 RANDOM, 按字段长度逐字符生成(CHAR 大写字母/数字,
 *   NUMC 纯数字); 权限表与规则共用校验, DATS/TIMS 不支持; 随机值不参与业务查重,
 *   撤销沿用授权时的原始主键; 随机主键碰撞报错, 不误报已有权限。
+* V1.5 20261027(10.27 记录 #02): 生成型填值再加两种, 与 RANDOM 并列, 不改表(类型存
+*   MAP_TYPE CHAR 10, 参数存 CONST_VAL CHAR 60):
+*   · SEQ 递增序号: CONST_VAL = 起始值(只填数字, 位数即补零位数, 如 0001); 空 = 从 1
+*     开始、位数 = 字段长度(最多 10 位)。值 = 该列现有同格式值的最大值 + 1(只读查目标表,
+*     METHOD seq_max), 批量代加逐行写入, 后一行能看到前一行
+*   · RULE 按规则组合: CONST_VAL = 规则串, 文字原样 + 占位 {SEQn} n 位递增(同前缀内)、
+*     {RANDn} n 位随机字母数字、{NUMn} n 位随机数字、{DATE} {TIME} {USER} {TCODE}
+*     {WERKS} {BY}; 一条规则最多一个 {SEQn}; NUMC 字段只能用数字文字与 SEQ/NUM/DATE/TIME
+*   · 保存时校验写法与最短长度(check_rule), 写入时超长 / NUMC 非数字照旧拒绝;
+*     生成值(随机 / 序号 / 含随机或序号的规则)作主键碰撞 → 报错重试, 不误报"已有权限"
 * ★ 重贴后核对标记: "INSERT (" 只在 METHOD grant_row, "DELETE FROM (" 只在 METHOD
 *   revoke_row; "SELECT SINGLE * FROM (" 只在 row_exists(查重)与 tcode_known(自动发现, 只读);
 *   有 METHOD quote(不依赖 cl_abap_dyn_prg); decide 内有 'PENDING' 状态校验;
@@ -51,6 +61,8 @@
 *   V1.2: 有 METHOD check_fmap 与 METHOD apply_rule_map; zai_auth_rmap 出现在 save_rule
 *   (删 / 写)、apply_rule_map(读)、get_config(读) 三个方法里;
 *   V1.3: user_addr 只出现在 METHOD fill_user_info, list_requests 末尾调它
+*   V1.5: "SELECT (" 读目标表只在 METHOD seq_max(只读); 有 METHOD parse_rule /
+*   METHOD check_rule / METHOD gen_value; check_fmap 的 CASE 里有 'SEQ' OR 'RULE'
 *=======================================================================
 CLASS zcl_ai_auth_service DEFINITION
   PUBLIC
@@ -110,7 +122,7 @@ CLASS zcl_ai_auth_service DEFINITION
              datatype  TYPE string,
              leng      TYPE i,
              convexit  TYPE string,
-             map_type  TYPE string,      " TCODE / USER / WERKS / CONST / RANDOM / DATE / TIME / BY / INITIAL
+             map_type  TYPE string,      " TCODE / USER / WERKS / CONST / RANDOM / SEQ / RULE / DATE / TIME / BY / INITIAL
              const_val TYPE string,
            END OF ty_field.
     TYPES tt_field TYPE STANDARD TABLE OF ty_field WITH DEFAULT KEY.
@@ -230,6 +242,15 @@ CLASS zcl_ai_auth_service DEFINITION
     CLASS-DATA go_random_num  TYPE REF TO cl_abap_random_int.
 
     TYPES tt_string TYPE STANDARD TABLE OF string WITH DEFAULT KEY.
+
+    " V1.5: 规则串拆出来的一段(tok 空 = 原样文字 lit; 否则占位名, n = 位数)
+    TYPES: BEGIN OF ty_rpart,
+             tok TYPE string,
+             n   TYPE i,
+             lit TYPE string,
+           END OF ty_rpart.
+    TYPES tt_rpart TYPE STANDARD TABLE OF ty_rpart WITH DEFAULT KEY.
+    TYPES ty_seqnum TYPE p LENGTH 16 DECIMALS 0.
 
     TYPES: BEGIN OF ty_fmap_in,          " save_table 的 FmapJson 一行
              f TYPE string,
@@ -371,12 +392,43 @@ CLASS zcl_ai_auth_service DEFINITION
                 iv_length      TYPE i
       EXPORTING ev_value       TYPE string
                 ev_error       TYPE string.
+    " V1.5: 递增序号 / 规则组合(SEQ / RULE)
+    CLASS-METHODS parse_rule
+      IMPORTING iv_tpl         TYPE string
+      EXPORTING et_part        TYPE tt_rpart
+                ev_error       TYPE string.
+    CLASS-METHODS check_rule
+      IMPORTING is_field       TYPE ty_field
+                iv_type        TYPE string
+                iv_c           TYPE string
+      RETURNING VALUE(rv)      TYPE string.
+    CLASS-METHODS gen_value
+      IMPORTING is_table       TYPE ty_table
+                is_field       TYPE ty_field
+                iv_tcode       TYPE string
+                iv_user        TYPE string
+                iv_werks       TYPE string
+      EXPORTING ev_value       TYPE string
+                ev_error       TYPE string.
+    CLASS-METHODS like_escape
+      IMPORTING iv             TYPE string
+      RETURNING VALUE(rv)      TYPE string.
 
-    " ---- 唯一读写目标权限表的三个方法 ----
+    " ---- 读写目标权限表的方法(查重 / 取序号只读, 写只在 grant_row, 删只在 revoke_row) ----
     CLASS-METHODS row_exists
       IMPORTING is_table       TYPE ty_table
                 ir_row         TYPE REF TO data
       EXPORTING ev_found       TYPE abap_bool
+                ev_error       TYPE string.
+    " V1.5: 递增序号取当前最大(只读): 列值 LIKE iv_like 的行里, 第 iv_off 位起 iv_len 位全是数字的最大值
+    CLASS-METHODS seq_max
+      IMPORTING iv_tabname     TYPE string
+                iv_fieldname   TYPE string
+                iv_like        TYPE string
+                iv_off         TYPE i
+                iv_len         TYPE i
+      EXPORTING ev_max         TYPE ty_seqnum
+                ev_found       TYPE abap_bool
                 ev_error       TYPE string.
     CLASS-METHODS grant_row
       IMPORTING is_table       TYPE ty_table
@@ -1441,6 +1493,9 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
           lv_users  TYPE i,
           lv_tcodes TYPE i,
           lv_const  TYPE string,
+          lv_rule   TYPE string,
+          lt_part   TYPE tt_rpart,
+          lv_perr   TYPE string,
           lv_digits TYPE string VALUE '0123456789'.
 
     CLEAR: et_map, ev_error.
@@ -1483,7 +1538,7 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
           lv_tcodes = lv_tcodes + 1.
         WHEN 'USER'.
           lv_users = lv_users + 1.
-        WHEN 'WERKS' OR 'CONST' OR 'RANDOM' OR 'DATE' OR 'TIME' OR 'BY' OR 'INITIAL'.
+        WHEN 'WERKS' OR 'CONST' OR 'RANDOM' OR 'SEQ' OR 'RULE' OR 'DATE' OR 'TIME' OR 'BY' OR 'INITIAL'.
           " 合法
         WHEN OTHERS.
           ev_error = |字段 { ls_in-f } 的映射类型不合法: { ls_in-t }|.
@@ -1504,7 +1559,31 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
         ev_error = |字段 { ls_in-f } 的随机值只支持长度大于 0 的 CHAR / NUMC 字段|.
         EXIT.
       ENDIF.
+      " V1.5: 递增序号 / 规则组合的参数在保存时就校验(写法、位数、最短长度、NUMC 只能出数字)
+      IF ls_in-t = 'SEQ' OR ls_in-t = 'RULE'.
+        ev_error = check_rule( is_field = ls_f iv_type = ls_in-t iv_c = ls_in-c ).
+        IF ev_error IS NOT INITIAL.
+          ev_error = |字段 { ls_in-f }: { ev_error }|.
+          EXIT.
+        ENDIF.
+      ENDIF.
       lv_const = condense( ls_in-c ).
+      lv_rule  = ls_in-c.
+      SHIFT lv_rule LEFT DELETING LEADING space.
+      " 规则存成规范写法(占位大写、去掉花括号里的空格), 碰撞判断与界面显示都按它
+      IF ls_in-t = 'RULE'.
+        parse_rule( EXPORTING iv_tpl = lv_rule IMPORTING et_part = lt_part ev_error = lv_perr ).
+        CLEAR lv_rule.
+        LOOP AT lt_part INTO DATA(ls_part).
+          IF ls_part-tok IS INITIAL.
+            lv_rule = lv_rule && ls_part-lit.
+          ELSEIF ls_part-n > 0.
+            lv_rule = lv_rule && `{` && ls_part-tok && |{ ls_part-n }| && `}`.
+          ELSE.
+            lv_rule = lv_rule && `{` && ls_part-tok && `}`.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
       IF ls_in-t = 'CONST'.
         IF lv_const IS INITIAL.
           ev_error = |字段 { ls_in-f } 选了固定值, 但没填值|.
@@ -1527,7 +1606,9 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
       ENDIF.
       APPEND VALUE #( fieldname = ls_in-f
                       map_type  = ls_in-t
-                      const_val = COND #( WHEN ls_in-t = 'CONST' THEN lv_const ELSE `` ) ) TO et_map.
+                      const_val = COND #( WHEN ls_in-t = 'CONST' OR ls_in-t = 'SEQ' THEN lv_const
+                                          WHEN ls_in-t = 'RULE' THEN lv_rule
+                                          ELSE `` ) ) TO et_map.
     ENDLOOP.
 
     " V1.1: 同类映射可以配到多个字段(写入同一个值); 只要求至少有一个 USER
@@ -1614,6 +1695,288 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD parse_rule.
+
+    DATA: lv_len  TYPE i,
+          lv_i    TYPE i,
+          lv_ch   TYPE string,
+          lv_lit  TYPE string,
+          lv_tok  TYPE string,
+          lv_in   TYPE abap_bool,
+          lv_name TYPE string,
+          lv_num  TYPE string,
+          lv_n    TYPE i,
+          lv_seqs TYPE i.
+
+    CLEAR: et_part, ev_error.
+    lv_len = strlen( iv_tpl ).
+    WHILE lv_i < lv_len.
+      lv_ch = substring( val = iv_tpl off = lv_i len = 1 ).
+      lv_i = lv_i + 1.
+      IF lv_in = abap_false.
+        IF lv_ch = '{'.
+          IF lv_lit IS NOT INITIAL.
+            APPEND VALUE #( lit = lv_lit ) TO et_part.
+            CLEAR lv_lit.
+          ENDIF.
+          lv_in = abap_true.
+          CLEAR lv_tok.
+        ELSEIF lv_ch = '}'.
+          ev_error = '规则里的花括号没有配对'.
+          RETURN.
+        ELSE.
+          lv_lit = lv_lit && lv_ch.
+        ENDIF.
+        CONTINUE.
+      ENDIF.
+      IF lv_ch = '{'.
+        ev_error = '规则里的花括号没有配对'.
+        RETURN.
+      ENDIF.
+      IF lv_ch <> '}'.
+        lv_tok = lv_tok && lv_ch.
+        CONTINUE.
+      ENDIF.
+      lv_in = abap_false.
+      lv_tok = to_upper( condense( lv_tok ) ).
+      CLEAR: lv_name, lv_num, lv_n.
+      FIND REGEX '^(SEQ|RAND|NUM)([0-9]{1,2})$' IN lv_tok SUBMATCHES lv_name lv_num.
+      IF sy-subrc = 0.
+        lv_n = lv_num.
+        IF lv_n < 1 OR lv_n > 32 OR ( lv_name = 'SEQ' AND lv_n > 20 ).
+          ev_error = |{ lv_tok } 的位数不对(序号 1-20 位, 随机 1-32 位)|.
+          RETURN.
+        ENDIF.
+        IF lv_name = 'SEQ'.
+          lv_seqs = lv_seqs + 1.
+        ENDIF.
+      ELSEIF lv_tok = 'DATE' OR lv_tok = 'TIME' OR lv_tok = 'USER' OR lv_tok = 'TCODE'
+          OR lv_tok = 'WERKS' OR lv_tok = 'BY'.
+        lv_name = lv_tok.
+      ELSE.
+        ev_error = |规则里有不认识的占位 { lv_tok }(可用 SEQn RANDn NUMn DATE TIME USER TCODE WERKS BY)|.
+        RETURN.
+      ENDIF.
+      APPEND VALUE #( tok = lv_name n = lv_n ) TO et_part.
+    ENDWHILE.
+    IF lv_in = abap_true.
+      ev_error = '规则里的花括号没有配对'.
+      RETURN.
+    ENDIF.
+    IF lv_lit IS NOT INITIAL.
+      APPEND VALUE #( lit = lv_lit ) TO et_part.
+    ENDIF.
+    IF lv_seqs > 1.
+      ev_error = '一条规则里只能有一个递增序号 SEQn'.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD check_rule.
+
+    DATA: lt_part   TYPE tt_rpart,
+          lv_c      TYPE string,
+          lv_err    TYPE string,
+          lv_min    TYPE i,
+          lv_digits TYPE string VALUE '0123456789'.
+
+    CLEAR rv.
+    IF ( is_field-datatype <> 'CHAR' AND is_field-datatype <> 'NUMC' ) OR is_field-leng < 1.
+      rv = '递增序号 / 规则组合只支持 CHAR / NUMC 字段'.
+      RETURN.
+    ENDIF.
+    IF iv_type = 'SEQ'.
+      " 起始值可空(从 1 开始, 位数 = 字段长度, 最多 10 位); 填了就只能是数字, 位数 = 补零位数
+      lv_c = condense( iv_c ).
+      IF lv_c IS INITIAL.
+        RETURN.
+      ENDIF.
+      IF lv_c CN lv_digits.
+        rv = '递增序号的起始值只能填数字(如 0001)'.
+      ELSEIF strlen( lv_c ) > 20 OR strlen( lv_c ) > is_field-leng.
+        rv = |起始值位数超过字段长度 { is_field-leng }(最多 20 位)|.
+      ENDIF.
+      RETURN.
+    ENDIF.
+
+    lv_c = iv_c.
+    SHIFT lv_c LEFT DELETING LEADING space.
+    IF lv_c IS INITIAL.
+      rv = '选了按规则组合, 但没填规则'.
+      RETURN.
+    ENDIF.
+    IF strlen( lv_c ) > 60.
+      rv = '规则不能超过 60 个字符'.
+      RETURN.
+    ENDIF.
+    parse_rule( EXPORTING iv_tpl = lv_c IMPORTING et_part = lt_part ev_error = lv_err ).
+    IF lv_err IS NOT INITIAL.
+      rv = lv_err.
+      RETURN.
+    ENDIF.
+    LOOP AT lt_part INTO DATA(ls_p).
+      IF ls_p-tok IS INITIAL.
+        lv_min = lv_min + strlen( ls_p-lit ).
+        IF is_field-datatype = 'NUMC' AND ls_p-lit CN lv_digits.
+          rv = 'NUMC 字段的规则里, 文字部分只能是数字'.
+          RETURN.
+        ENDIF.
+        CONTINUE.
+      ENDIF.
+      CASE ls_p-tok.
+        WHEN 'SEQ' OR 'RAND' OR 'NUM'.
+          lv_min = lv_min + ls_p-n.
+        WHEN 'DATE'.
+          lv_min = lv_min + 8.
+        WHEN 'TIME'.
+          lv_min = lv_min + 6.
+        WHEN OTHERS.
+          lv_min = lv_min + 1.            " 账号 / 事务码 / 工厂 / 操作人: 实际长度写入时再查
+      ENDCASE.
+      IF is_field-datatype = 'NUMC' AND ls_p-tok <> 'SEQ' AND ls_p-tok <> 'NUM'
+         AND ls_p-tok <> 'DATE' AND ls_p-tok <> 'TIME'.
+        rv = |NUMC 字段的规则只能用 SEQn / NUMn / DATE / TIME, 不能用 { ls_p-tok }|.
+        RETURN.
+      ENDIF.
+    ENDLOOP.
+    IF lv_min > is_field-leng.
+      rv = |规则生成的值至少 { lv_min } 位, 超过字段长度 { is_field-leng }|.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD gen_value.
+
+    DATA: lt_part  TYPE tt_rpart,
+          lv_c     TYPE string,
+          lv_piece TYPE string,
+          lv_like  TYPE string,
+          lv_pre   TYPE string,
+          lv_post  TYPE string,
+          lv_lpre  TYPE string,
+          lv_lpost TYPE string,
+          lv_seen  TYPE abap_bool,
+          lv_width TYPE i,
+          lv_start TYPE ty_seqnum,
+          lv_max   TYPE ty_seqnum,
+          lv_next  TYPE ty_seqnum,
+          lv_limit TYPE ty_seqnum,
+          lv_found TYPE abap_bool,
+          lv_seq   TYPE string.
+
+    CLEAR: ev_value, ev_error.
+    lv_start = 1.
+    IF is_field-map_type = 'SEQ'.
+      lv_c = condense( is_field-const_val ).
+      IF lv_c IS INITIAL.
+        lv_width = nmin( val1 = is_field-leng val2 = 10 ).
+      ELSE.
+        lv_width = strlen( lv_c ).
+        lv_start = lv_c.
+      ENDIF.
+      APPEND VALUE #( tok = 'SEQ' n = lv_width ) TO lt_part.
+    ELSE.
+      parse_rule( EXPORTING iv_tpl = is_field-const_val IMPORTING et_part = lt_part ev_error = ev_error ).
+      IF ev_error IS NOT INITIAL.
+        RETURN.
+      ENDIF.
+    ENDIF.
+
+    LOOP AT lt_part INTO DATA(ls_p).
+      CLEAR: lv_piece, lv_like.
+      CASE ls_p-tok.
+        WHEN 'SEQ'.
+          lv_seen  = abap_true.
+          lv_width = ls_p-n.
+          CONTINUE.
+        WHEN 'RAND'.
+          random_value( EXPORTING iv_datatype = 'CHAR' iv_length = ls_p-n
+                        IMPORTING ev_value = lv_piece ev_error = ev_error ).
+        WHEN 'NUM'.
+          random_value( EXPORTING iv_datatype = 'NUMC' iv_length = ls_p-n
+                        IMPORTING ev_value = lv_piece ev_error = ev_error ).
+        WHEN 'DATE'.
+          lv_piece = sy-datum.
+        WHEN 'TIME'.
+          lv_piece = sy-uzeit.
+        WHEN 'USER'.
+          lv_piece = iv_user.
+        WHEN 'TCODE'.
+          lv_piece = iv_tcode.
+        WHEN 'WERKS'.
+          lv_piece = iv_werks.
+        WHEN 'BY'.
+          lv_piece = sy-uname.
+        WHEN OTHERS.
+          lv_piece = ls_p-lit.
+      ENDCASE.
+      IF ev_error IS NOT INITIAL.
+        RETURN.
+      ENDIF.
+      " 找"同格式"的已有值: 每次会变的段(随机 / 时间)按位数用 _ 通配, 其余原样(转义)
+      IF ls_p-tok = 'RAND' OR ls_p-tok = 'NUM' OR ls_p-tok = 'TIME'.
+        lv_like = repeat( val = `_` occ = strlen( lv_piece ) ).
+      ELSE.
+        lv_like = like_escape( lv_piece ).
+      ENDIF.
+      IF lv_seen = abap_false.
+        lv_pre  = lv_pre && lv_piece.
+        lv_lpre = lv_lpre && lv_like.
+      ELSE.
+        lv_post  = lv_post && lv_piece.
+        lv_lpost = lv_lpost && lv_like.
+      ENDIF.
+    ENDLOOP.
+
+    IF lv_seen = abap_false.
+      ev_value = lv_pre.
+      RETURN.
+    ENDIF.
+
+    " 序号 = 同前缀 / 同后缀格式的现有值里, 序号那几位的最大值 + 1(不小于起始值)
+    seq_max( EXPORTING iv_tabname   = is_table-tabname
+                       iv_fieldname = is_field-fieldname
+                       iv_like      = lv_lpre && repeat( val = `_` occ = lv_width ) && lv_lpost
+                       iv_off       = strlen( lv_pre )
+                       iv_len       = lv_width
+             IMPORTING ev_max       = lv_max
+                       ev_found     = lv_found
+                       ev_error     = ev_error ).
+    IF ev_error IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+    lv_next = lv_start.
+    IF lv_found = abap_true AND lv_max + 1 > lv_next.
+      lv_next = lv_max + 1.
+    ENDIF.
+    lv_limit = 1.
+    DO lv_width TIMES.
+      lv_limit = lv_limit * 10.
+    ENDDO.
+    IF lv_next >= lv_limit.
+      ev_error = |递增序号已用到 { lv_width } 位上限, 请加长位数|.
+      RETURN.
+    ENDIF.
+    lv_seq = |{ lv_next }|.
+    WHILE strlen( lv_seq ) < lv_width.
+      lv_seq = `0` && lv_seq.
+    ENDWHILE.
+    ev_value = lv_pre && lv_seq && lv_post.
+
+  ENDMETHOD.
+
+
+  METHOD like_escape.
+    " LIKE 用 # 作转义符: # _ % 前面各加一个 #(先转 #, 否则会重复转义)
+    rv = iv.
+    REPLACE ALL OCCURRENCES OF `#` IN rv WITH `##`.
+    REPLACE ALL OCCURRENCES OF `_` IN rv WITH `#_`.
+    REPLACE ALL OCCURRENCES OF `%` IN rv WITH `#%`.
+  ENDMETHOD.
+
+
   METHOD build_row.
 
     FIELD-SYMBOLS: <row> TYPE any, <val> TYPE any, <conv> TYPE any.
@@ -1644,6 +2007,15 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
         WHEN 'RANDOM'.
           random_value( EXPORTING iv_datatype = ls_f-datatype iv_length = ls_f-leng
                         IMPORTING ev_value = lv_value ev_error = ev_error ).
+          IF ev_error IS NOT INITIAL.
+            ev_error = |字段 { ls_f-fieldname }: { ev_error }|.
+            RETURN.
+          ENDIF.
+        WHEN 'SEQ' OR 'RULE'.
+          " V1.5: 递增序号要读目标表当前最大值, 必须在本行写入前现算(批量时逐行算)
+          gen_value( EXPORTING is_table = is_table is_field = ls_f
+                               iv_tcode = iv_tcode iv_user = iv_user iv_werks = iv_werks
+                     IMPORTING ev_value = lv_value ev_error = ev_error ).
           IF ev_error IS NOT INITIAL.
             ev_error = |字段 { ls_f-fieldname }: { ev_error }|.
             RETURN.
@@ -1740,7 +2112,7 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
 
 
   "=====================================================================
-  " 唯一写目标权限表的两个方法(grant_row / revoke_row)与查重(row_exists);
+  " 唯一写目标权限表的两个方法(grant_row / revoke_row)与查重(row_exists)、取序号(seq_max, 只读);
   " 另外只有 tcode_known 只读查目标表(自动发现)
   "=====================================================================
 
@@ -1762,6 +2134,52 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
     ASSIGN lr_found->* TO <found>.
     SELECT SINGLE * FROM (is_table-tabname) INTO @<found> WHERE (lv_where).
     ev_found = xsdbool( sy-subrc = 0 ).
+
+  ENDMETHOD.
+
+
+  METHOD seq_max.
+
+    DATA: lr_vals  TYPE REF TO data,
+          lv_type  TYPE string,
+          lv_where TYPE string,
+          lv_v     TYPE string,
+          lv_slice TYPE string,
+          lv_num   TYPE ty_seqnum.
+    FIELD-SYMBOLS: <lt_vals> TYPE STANDARD TABLE,
+                   <lv_val>  TYPE any.
+
+    CLEAR: ev_max, ev_found, ev_error.
+    IF safe_name( iv_tabname ) = abap_false OR safe_name( iv_fieldname ) = abap_false.
+      ev_error = '表名或字段名不合法'.
+      RETURN.
+    ENDIF.
+    " 只读: 取该列符合格式的现有值(同一 LUW 里本批刚写入的行也读得到)
+    lv_type  = |{ iv_tabname }-{ iv_fieldname }|.
+    lv_where = |{ iv_fieldname } LIKE { quote( iv_like ) } ESCAPE '#'|.
+    TRY.
+        CREATE DATA lr_vals TYPE STANDARD TABLE OF (lv_type) WITH DEFAULT KEY.
+        ASSIGN lr_vals->* TO <lt_vals>.
+        SELECT (iv_fieldname) FROM (iv_tabname) WHERE (lv_where) INTO TABLE @<lt_vals>.
+      CATCH cx_root INTO DATA(lx).
+        ev_error = |读取 { iv_tabname }-{ iv_fieldname } 的现有序号失败: { lx->get_text( ) }|.
+        RETURN.
+    ENDTRY.
+    LOOP AT <lt_vals> ASSIGNING <lv_val>.
+      lv_v = <lv_val>.
+      IF strlen( lv_v ) < iv_off + iv_len.
+        CONTINUE.
+      ENDIF.
+      lv_slice = substring( val = lv_v off = iv_off len = iv_len ).
+      IF lv_slice CN '0123456789'.
+        CONTINUE.
+      ENDIF.
+      lv_num = lv_slice.
+      IF ev_found = abap_false OR lv_num > ev_max.
+        ev_max   = lv_num.
+        ev_found = abap_true.
+      ENDIF.
+    ENDLOOP.
 
   ENDMETHOD.
 
@@ -1794,9 +2212,17 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
                                                compress    = abap_false
                                                pretty_name = /ui2/cl_json=>pretty_mode-camel_case ).
       WHEN 4.
-        IF line_exists( is_table-fields[ map_type = 'RANDOM' keyflag = 'X' ] ).
-          ev_error = '随机值与现有主键冲突，请重试或增加随机字段长度'.
-        ELSE.
+        " V1.5: 主键里有"每次都会变"的生成值(随机 / 序号 / 含随机或序号的规则)时, 碰撞是
+        " 生成冲突(并发或随机撞上), 不是"已有权限"; 纯文字 / 账号拼出来的规则碰撞仍算已有
+        LOOP AT is_table-fields INTO ls_f WHERE keyflag = 'X'.
+          IF ls_f-map_type = 'RANDOM' OR ls_f-map_type = 'SEQ'
+             OR ( ls_f-map_type = 'RULE' AND ( ls_f-const_val CS '{SEQ' OR ls_f-const_val CS '{RAND'
+                                               OR ls_f-const_val CS '{NUM' OR ls_f-const_val CS '{TIME' ) ).
+            ev_error = '随机值 / 递增序号与现有主键冲突(可能有人同时写入)，请重试；随机值可加长位数'.
+            EXIT.
+          ENDIF.
+        ENDLOOP.
+        IF ev_error IS INITIAL.
           ev_status = 'EXISTS'.           " 主键已存在(并发或字段映射没覆盖到)
         ENDIF.
       WHEN OTHERS.

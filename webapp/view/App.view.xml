@@ -178,10 +178,10 @@
                                                                                 </HBox>
                                                                                 <!-- 20261020：模型选择（会话级，每个对话各自记住；对话 / Agent 两模式都显示） -->
                                                                                 <!-- 20261024：技能胶囊（设计稿 01/03/07）：未选「技能 ▾」；选中后与 × 合成一个蓝色胶囊；
-                                                                                     不可用时虚线变灰。外观由 SkillPanel._paintSkill 给本 HBox 切 skillOn / skillWarn / skillOff / skillOpen -->
+                                                                                     不可用时虚线变灰（仍可点，点了说明原因 / 管理员直达技能管理，10.27 #03）。外观由 SkillPanel._paintSkill 给本 HBox 切 skillOn / skillWarn / skillOff / skillOpen -->
                                                                                 <HBox id="skillSlotHero" alignItems="Center" class="skillSlot" visible="{skill>/visible}">
                                                                                         <Button id="skillBtnHero" text="{skill>/label}" type="Transparent" ariaHasPopup="Dialog"
-                                                                                                tooltip="{skill>/tooltip}" enabled="{= ${skill>/canPick} &amp;&amp; !${chat>/busy} }" press=".onOpenSkills" class="skillPill"/>
+                                                                                                tooltip="{skill>/tooltip}" enabled="{= !${chat>/busy} }" press=".onOpenSkills" class="skillPill"/>
                                                                                         <Button icon="sap-icon://decline" type="Transparent" tooltip="不用这个技能" press=".onClearSkill"
                                                                                                 visible="{= !!${skill>/selected} }" enabled="{= !${chat>/busy} }" class="skillClear"/>
                                                                                         <Button icon="sap-icon://refresh" type="Transparent" tooltip="重新读取技能" press=".onRefreshSkills"
@@ -291,7 +291,7 @@
                                                                                 <!-- 20261024：技能胶囊（同首页；对话中不放提示行，占位文字写明“仍按某技能的做法”，设计稿 05） -->
                                                                                 <HBox id="skillSlotDock" alignItems="Center" class="skillSlot" visible="{skill>/visible}">
                                                                                         <Button id="skillBtnDock" text="{skill>/label}" type="Transparent" ariaHasPopup="Dialog"
-                                                                                                tooltip="{skill>/tooltip}" enabled="{= ${skill>/canPick} &amp;&amp; !${chat>/busy} }" press=".onOpenSkills" class="skillPill"/>
+                                                                                                tooltip="{skill>/tooltip}" enabled="{= !${chat>/busy} }" press=".onOpenSkills" class="skillPill"/>
                                                                                         <Button icon="sap-icon://decline" type="Transparent" tooltip="不用这个技能" press=".onClearSkill"
                                                                                                 visible="{= !!${skill>/selected} }" enabled="{= !${chat>/busy} }" class="skillClear"/>
                                                                                         <Button icon="sap-icon://refresh" type="Transparent" tooltip="重新读取技能" press=".onRefreshSkills"

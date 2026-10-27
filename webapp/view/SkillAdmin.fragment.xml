@@ -17,9 +17,17 @@
                             <Title level="H3" text="技能管理" class="apvTitle"/>
                             <Text text="维护 Agent 的做法、适用场景和工具范围；保存后版本自动加一" class="apvSub"/>
                         </VBox>
+                        <!-- 10.27 记录 #03：技能总开关（ZAI_CHAT_CFG.SKILL_ENABLED）。原先只能改表，关着时聊天里的技能胶囊置灰、管理页却照常列出 -->
+                        <HBox alignItems="Center" class="admEnable">
+                            <Text text="聊天里可选技能" class="admEnableText"/>
+                            <Switch state="{skillAdmin>/enabled}" enabled="{= ${skillAdmin>/enabled} !== null &amp;&amp; !${skillAdmin>/switching} }"
+                                    change=".onSkillEnabledChange" tooltip="对应 ZAI_CHAT_CFG 的 SKILL_ENABLED"/>
+                        </HBox>
                         <Button icon="sap-icon://refresh" tooltip="刷新目录" type="Transparent" press=".onRefreshSkillAdmin" class="apvHeadBtn"/>
                         <Button icon="sap-icon://decline" tooltip="关闭" type="Transparent" press=".onCloseSkillManager" class="apvHeadBtn"/>
                     </HBox>
+                    <MessageStrip text="技能入口还没开启：用户在聊天里点「技能」选不了。确认技能内容后，打开右上角「聊天里可选技能」。"
+                                  type="Warning" showIcon="true" visible="{= ${skillAdmin>/enabled} === false }" class="apvStrip skAdmOffStrip"/>
                 </VBox>
 
                 <HBox renderType="Bare" class="skAdmBody">

@@ -443,7 +443,7 @@ const countOf = (s, sub) => s.split(sub).length - 1;
     check('最短字段与随机字符上界正确：CHAR 可到 Z，NUMC 可到 9', edge.C === 'Z' && edge.N === '9');
   } finally { Math.random = savedMathRandom; }
   const collision = svc._mockAuthGrant(randomState, savedRandom, randomRows[0]);
-  check('随机主键碰撞明确报错，不误报已有权限', /随机值与现有主键冲突/.test(collision.error) && !collision.status && randomRows.length === 2);
+  check('随机主键碰撞明确报错，不误报已有权限', /与现有主键冲突/.test(collision.error) && !collision.status && randomRows.length === 2);
   as('ADMIN', 'ADMIN');
   await svc.authRuleSave({ TcodePat: 'ZDEMO002', Tabname: 'ZAUTH_RANDOM', RuleMode: 'APPROVE', Active: 'X', FmapJson: fm(randomMap) });
   const ownRandom = (await svc.authConfig()).rules.find((x) => x.tcodePat === 'ZDEMO002');
@@ -462,6 +462,70 @@ const countOf = (s, sub) => s.split(sub).length - 1;
     !randomState.rows.ZAUTH_RANDOM.some((x) => x.ID === approvedRandom.ID));
   r = await svc.authBatchAdd({ Users: 'USERB', Tcode: 'ZDEMO001', WerksList: '3000', Reason: '随机字段批量代加' });
   check('批量代加也使用随机映射', statuses(r) === 'DONE' && randomState.rows.ZAUTH_RANDOM.some((x) => x.UNAME === 'USERB' && /^[0-9A-Z]{32}$/.test(x.ID)));
+
+  console.log('\n━━ 递增序号 / 规则组合（10.27 #02，utils/AuthValueRule 与 ZCL_AI_AUTH_SERVICE V1.5 同口径）');
+  const VR = load('zai/chat/utils/AuthValueRule');
+  const C14 = { datatype: 'CHAR', leng: 14 }, N6 = { datatype: 'NUMC', leng: 6 };
+  check('规则写法：占位大小写 / 空格都认，规范成大写无空格', VR.normalize('AU{ date }{seq3}-x') === 'AU{DATE}{SEQ3}-x');
+  check('规则校验：花括号不配对 / 不认识的占位 / 两个序号 / 位数越界都拒绝',
+    /花括号/.test(VR.check(C14, 'RULE', 'AU{DATE')) && /不认识的占位 FOO/.test(VR.check(C14, 'RULE', '{FOO}')) &&
+    /只能有一个/.test(VR.check(C14, 'RULE', '{SEQ2}{SEQ2}')) && /位数不对/.test(VR.check(C14, 'RULE', '{SEQ21}')) && /位数不对/.test(VR.check(C14, 'RULE', '{RAND0}')));
+  check('规则校验：最短长度超过字段长度拒绝（AU + 日期 8 + 序号 9 = 19 > 14）', /至少 19 位, 超过字段长度 14/.test(VR.check(C14, 'RULE', 'AU{DATE}{SEQ9}')));
+  check('NUMC 字段：只能用数字文字与 SEQ / NUM / DATE / TIME', /不能用 USER/.test(VR.check(N6, 'RULE', '{USER}')) && /只能是数字/.test(VR.check(N6, 'RULE', 'A{SEQ2}')) && VR.check(N6, 'RULE', '9{SEQ5}') === '');
+  check('递增序号起始值：只能数字、位数不超过字段', /只能填数字/.test(VR.check(N6, 'SEQ', '0A')) && /超过字段长度/.test(VR.check(N6, 'SEQ', '0000001')) && VR.check(N6, 'SEQ', '') === '');
+  check('DATS / TIMS 字段不能用递增序号 / 规则', /只支持 CHAR \/ NUMC/.test(VR.check({ datatype: 'DATS', leng: 8 }, 'SEQ', '')));
+  const gctx = { tcode: 'ZDEMO001', user: 'USERA', werks: '1000', by: 'ADMIN', date: '20261027', time: '101500', random: () => 0 };
+  check('序号：表里没有同格式值 → 起始值；有 → 最大 + 1（不小于起始值）', VR.generate(N6, 'SEQ', '', gctx, []).value === '000001' &&
+    VR.generate(N6, 'SEQ', '0100', gctx, ['0005']).value === '0100' && VR.generate(N6, 'SEQ', '0100', gctx, ['0100', '0102', 'ABCD']).value === '0103');
+  check('规则里的序号只在同前缀（同一天）内接着编，随机段不影响', VR.generate(C14, 'RULE', 'AU{DATE}{SEQ3}', gctx, ['AU20261026009', 'AU20261027004', 'AU20261027X01']).value === 'AU20261027005' &&
+    VR.generate({ datatype: 'CHAR', leng: 20 }, 'RULE', '{RAND2}{SEQ3}', gctx, ['ZZ007', 'A1003']).value === '00008');
+  check('序号到位数上限报错，不回绕', /上限/.test(VR.generate({ datatype: 'CHAR', leng: 1 }, 'SEQ', '1', gctx, ['9']).error || ''));
+  check('配置页预览：给出首条示例；参数有误不出示例', /^AU\d{8}001$/.test(VR.preview(C14, 'RULE', 'AU{DATE}{SEQ3}')) && VR.preview(C14, 'RULE', '{FOO}') === '');
+  check('碰撞类别：随机 / 序号 / 含 SEQ RAND NUM TIME 的规则算"会变"，纯文字账号拼的规则不算', VR.volatile('SEQ', '') && VR.volatile('RULE', 'X{TIME}') && !VR.volatile('RULE', '{USER}-{TCODE}') && !VR.volatile('CONST', '1'));
+
+  as('ADMIN', 'ADMIN');
+  let genState = svc._mockAuthState();
+  genState.catalog.ZAUTH_GEN = [
+    { fieldname: 'ID', keyflag: 'X', datatype: 'CHAR', leng: 14 },
+    { fieldname: 'NO', keyflag: 'X', datatype: 'NUMC', leng: 6 },
+    { fieldname: 'TCODE', keyflag: 'X', datatype: 'CHAR', leng: 20 },
+    { fieldname: 'UNAME', keyflag: 'X', datatype: 'CHAR', leng: 12 },
+    { fieldname: 'WERKS', keyflag: 'X', datatype: 'CHAR', leng: 4 },
+    { fieldname: 'CNT', keyflag: '', datatype: 'CHAR', leng: 8 },
+    { fieldname: 'NOTE', keyflag: '', datatype: 'CHAR', leng: 40 }
+  ].map((f) => Object.assign({ convexit: '', mapType: 'INITIAL', constVal: '' }, f));
+  genState.rows.ZAUTH_GEN = [];
+  const genMap = [['ID', 'RULE', 'AU{ date }{seq3}'], ['NO', 'SEQ'], ['TCODE', 'TCODE'], ['UNAME', 'USER'], ['WERKS', 'WERKS'],
+    ['CNT', 'SEQ', '0100'], ['NOTE', 'RULE', '{USER}-{TCODE}-{RAND4}']];
+  await rejects('保存时就拦超长规则（字段 ID）', svc.authTableSave({ Tabname: 'ZAUTH_GEN', Active: 'X', Discover: 'X',
+    FmapJson: fm(genMap.map((x) => x[0] === 'ID' ? ['ID', 'RULE', 'AU{DATE}{SEQ9}'] : x)) }), /字段 ID: 规则生成的值至少 19 位/);
+  await rejects('保存时就拦 NUMC 用账号占位（字段 NO）', svc.authTableSave({ Tabname: 'ZAUTH_GEN', Active: 'X', Discover: 'X',
+    FmapJson: fm(genMap.map((x) => x[0] === 'NO' ? ['NO', 'RULE', '{USER}'] : x)) }), /字段 NO: NUMC 字段的规则只能用/);
+  genState = svc._mockAuthState();
+  r = await svc.authTableSave({ Tabname: 'ZAUTH_GEN', Active: 'X', Discover: 'X', FmapJson: fm(genMap) });
+  const savedGen = (await svc.authConfig()).tables.find((t) => t.tabname === 'ZAUTH_GEN');
+  const gf = (n) => savedGen.fields.find((f) => f.fieldname === n);
+  check('保存并回读：SEQ 起始值、规则（规范写法）都留在 constVal', /已保存/.test(r.message) && gf('ID').mapType === 'RULE' && gf('ID').constVal === 'AU{DATE}{SEQ3}' &&
+    gf('NO').mapType === 'SEQ' && gf('NO').constVal === '' && gf('CNT').constVal === '0100');
+  await svc.authRuleSave({ TcodePat: 'ZDEMO001', Tabname: 'ZAUTH_GEN', RuleMode: 'AUTO', Active: 'X' });
+  as('USERA');
+  r = await submit({ Tcode: 'ZDEMO001', WerksList: '1000,2000' });
+  const genRows = genState.rows.ZAUTH_GEN, today = genRows.length ? genRows[0].ID.slice(2, 10) : '';
+  check('一次申请两个工厂：逐行递增（后一行看得到前一行）', statuses(r) === 'DONE,DONE' && genRows.length === 2 &&
+    genRows[0].ID === 'AU' + today + '001' && genRows[1].ID === 'AU' + today + '002' && genRows[0].NO === '000001' && genRows[1].NO === '000002' &&
+    genRows[0].CNT === '0100' && genRows[1].CNT === '0101', JSON.stringify(genRows));
+  check('规则拼账号 / 事务码 / 随机段', /^USERA-ZDEMO001-[0-9A-Z]{4}$/.test(genRows[0].NOTE) && /^\d{8}$/.test(today));
+  as('ADMIN', 'ADMIN');
+  r = await svc.authBatchAdd({ Users: 'USERB,DEMOUSER', Tcode: 'ZDEMO001', WerksList: '3000', Reason: '序号批量代加' });
+  check('批量代加两人：接着上次的最大值编号', statuses(r) === 'DONE,DONE' && genRows.length === 4 &&
+    genRows[2].NO === '000003' && genRows[3].NO === '000004' && genRows[3].ID === 'AU' + today + '004' && genRows[3].CNT === '0103', JSON.stringify(genRows.slice(2)));
+  r = await svc.authBatchAdd({ Users: 'USERB', Tcode: 'ZDEMO001', WerksList: '3000', Reason: '重复' });
+  check('生成型字段不参与业务查重：同账号同事务码同工厂仍是 EXISTS', statuses(r) === 'EXISTS' && genRows.length === 4);
+  const seqHit = svc._mockAuthGrant(genState, savedGen, Object.assign({}, genRows[0]));
+  check('序号主键碰撞（并发）明确报错，不误报已有权限', /与现有主键冲突/.test(seqHit.error || '') && !seqHit.status);
+  const litTab = { tabname: 'ZAUTH_GEN', fields: [{ fieldname: 'ID', keyflag: 'X', mapType: 'RULE', constVal: '{USER}-X' }] };
+  genState.rows.ZAUTH_GEN.push({ ID: 'USERZ-X' });
+  check('纯账号 / 文字拼出来的规则主键碰撞仍算"已有"', svc._mockAuthGrant(genState, litTab, { ID: 'USERZ-X' }).status === 'EXISTS');
 
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);

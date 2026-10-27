@@ -8,15 +8,36 @@ sap.ui.define(["zai/chat/utils/SkillCatalog"], function (Skills) {
         _skillOwner: function () { return String((this.getAppUser() || {}).userId || "anonymous").toUpperCase(); },
         _skillContextKey: function (p) { return "zaiChat.skill." + this._skillOwner() + "." + p.sessionId + "." + (p.taskId || ""); },
         _skillRows: function () { return read("zaiChat.skillCatalog.v1", Skills.builtin).map(Skills.normalize); },
+        /** 演示模式的技能总开关：没设过 = 开（演示方便）；关 = 存 "OFF"（存空串会被当成没设过） */
+        _mockSkillEnabled: function () {
+            var v = null;
+            try { v = window.localStorage.getItem("zaiChat.cfg.SKILL_ENABLED"); } catch (e) { v = null; }
+            return v === null || v === "X";
+        },
+        /** 技能总开关（ZAI_CHAT_CFG.SKILL_ENABLED）：关时聊天里不能选技能，管理照常 */
+        getSkillEnabled: function () {
+            if (this._sConfig.mode === "mock") { return Promise.resolve(this._mockSkillEnabled()); }
+            return this.getConfigValue("SKILL_ENABLED").then(function (v) { return v === "X"; });
+        },
+        setSkillEnabled: function (bOn) {
+            if (!this.isAdmin()) { return Promise.reject(new Error("只有管理员可以开关技能入口")); }
+            if (this._sConfig.mode === "mock") {
+                try { window.localStorage.setItem("zaiChat.cfg.SKILL_ENABLED", bOn ? "X" : "OFF"); } catch (e) { /* private browsing */ }
+                return Promise.resolve(bOn);
+            }
+            return this.saveConfigValue("SKILL_ENABLED", bOn ? "X" : "").then(function () { return bOn; });
+        },
         getSkills: function (p) {
             p = p || {};
             var that = this;
             if (this._sConfig.mode === "mock") {
                 if (p.includeInactive && !this.isAdmin()) { return Promise.reject(new Error("只有管理员可以维护技能")); }
-                var rows = this._skillRows().filter(function (s) {
+                // 与后端同口径：开关关着时聊天入口拿不到技能，管理（includeInactive）照常列出
+                var on = this._mockSkillEnabled();
+                var rows = !on && !p.includeInactive ? [] : this._skillRows().filter(function (s) {
                     return p.includeInactive || Skills.available(s, p.scene, that.isAdmin());
                 });
-                return Promise.resolve({ supported: true, enabled: true, skills: rows,
+                return Promise.resolve({ supported: true, enabled: on, skills: rows,
                     selectedId: read(this._skillContextKey(p), "") });
             }
             var model = this._getModel();
@@ -70,6 +91,7 @@ sap.ui.define(["zai/chat/utils/SkillCatalog"], function (Skills) {
             var known = this._mockStore().sessions.filter(function (s) { return s.SessionId === p.sessionId; })[0];
             var scene = String(known && known.AgentType || p.scene || "").toUpperCase();
             if (id && id !== "NONE") {
+                if (!this._mockSkillEnabled()) { return Promise.reject(new Error("技能能力尚未启用，请取消技能后重试")); }
                 skill = this._skillRows().filter(function (s) { return s.id === id; })[0];
                 if (!skill || !Skills.available(skill, scene, this.isAdmin())) {
                     return Promise.reject(new Error("技能已停用、不可见或不适用于当前场景，请重新选择"));

@@ -15,7 +15,7 @@
                 <HBox renderType="Bare" class="admFldRow">
                         <customData>
                                 <core:CustomData key="diff" writeToDom="true"
-                                        value="{= ${auth>baseType} !== undefined &amp;&amp; (${auth>mapType} !== ${auth>baseType} || (${auth>mapType} === 'CONST' &amp;&amp; ${auth>constVal} !== ${auth>baseConst})) ? 'yes' : 'no' }"/>
+                                        value="{= ${auth>baseType} !== undefined &amp;&amp; (${auth>mapType} !== ${auth>baseType} || ((${auth>mapType} === 'CONST' || ${auth>mapType} === 'SEQ' || ${auth>mapType} === 'RULE') &amp;&amp; ${auth>constVal} !== ${auth>baseConst})) ? 'yes' : 'no' }"/>
                         </customData>
                         <VBox renderType="Bare" class="admFldNameBox">
                                 <Text text="{auth>fieldname}" class="admFldName"/>
@@ -24,11 +24,25 @@
                         <Text text="{= ${auth>keyflag} === 'X' ? '●' : '' }" class="admFldKey"/>
                         <Text text="{= ${auth>datatype} + ' · ' + ${auth>leng} }" class="admFldType"/>
                         <Select selectedKey="{auth>mapType}" items="{path: 'auth>/mapTypes', templateShareable: false}" class="admSel"
-                                tooltip="{= ${auth>mapType} === 'RANDOM' ? ${i18n>authMapRandomHint} : '' }">
+                                tooltip="{= ${auth>mapType} === 'RANDOM' ? ${i18n>authMapRandomHint} : ${auth>mapType} === 'SEQ' ? ${i18n>authMapSeqHint} : ${auth>mapType} === 'RULE' ? ${auth>/genText/ruleHint} : '' }">
                                 <core:Item key="{auth>key}" text="{auth>text}"/>
                         </Select>
-                        <Input value="{auth>constVal}" maxLength="60" enabled="{= ${auth>mapType} === 'CONST' }" class="aplInput admFldConst"
-                                placeholder="{= ${auth>mapType} === 'RANDOM' ? ${i18n>authMapRandomAuto} : '' }"/>
+                        <Input value="{auth>constVal}" valueLiveUpdate="true" maxLength="60"
+                                enabled="{= ${auth>mapType} === 'CONST' || ${auth>mapType} === 'SEQ' || ${auth>mapType} === 'RULE' }" class="aplInput admFldConst"
+                                tooltip="{= ${auth>mapType} === 'SEQ' ? ${i18n>authMapSeqHint} : ${auth>mapType} === 'RULE' ? ${auth>/genText/ruleHint} : '' }"
+                                placeholder="{= ${auth>mapType} === 'RANDOM' ? ${i18n>authMapRandomAuto} : ${auth>mapType} === 'SEQ' ? ${i18n>authMapSeqPh} : ${auth>mapType} === 'RULE' ? ${auth>/genText/rulePh} : '' }"/>
+                        <!-- 10.27 #02：递增序号 / 规则组合 —— 就地示例或错误（与后端同口径，utils/AuthValueRule）+ 规则占位一点即插 -->
+                        <Text text="{parts: ['auth>mapType', 'auth>constVal', 'auth>datatype', 'auth>leng'], formatter: '.authGenHint'}"
+                                visible="{= ${auth>mapType} === 'SEQ' || ${auth>mapType} === 'RULE' }" class="admFldGen">
+                                <customData>
+                                        <core:CustomData key="kind" writeToDom="true"
+                                                value="{parts: ['auth>mapType', 'auth>constVal', 'auth>datatype', 'auth>leng'], formatter: '.authGenKind'}"/>
+                                </customData>
+                        </Text>
+                        <HBox renderType="Bare" class="admFldTokens" visible="{= ${auth>mapType} === 'RULE' }"
+                                items="{path: 'auth>/ruleTokens', templateShareable: false}">
+                                <Button text="{auth>label}" tooltip="{auth>tip}" type="Transparent" press=".onAuthRuleToken" class="admTok"/>
+                        </HBox>
                 </HBox>
         </VBox>
 

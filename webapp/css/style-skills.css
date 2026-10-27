@@ -84,6 +84,9 @@
 /* 不能选（自动场景 / 未启用 / 读取中）：虚线变灰 */
 .skillOff .skillPill .sapMBtnInner { border-style: dashed !important; border-color: var(--line-strong) !important; }
 .skillOff .skillPill .sapMBtnInner::after { display: none; }
+/* 20261027：不能选时胶囊不再禁用（点了说明原因），外观保持原来的灰；悬停稍微提亮，表示能点 */
+.skillOff .skillPill:not(.sapMBtnDisabled) .sapMBtnInner { opacity: .6; transition: opacity .15s; }
+.skillOff .skillPill:not(.sapMBtnDisabled):hover .sapMBtnInner { opacity: .85; background: transparent !important; border-color: var(--line-strong) !important; color: inherit !important; }
 
 /* ---------------- 首页：输入框下方提示行 + 做法正文 ---------------- */
 .skillHintWrap { width: min(100%, var(--content-max)); box-sizing: border-box; margin: .6rem auto 0; padding: 0 .4rem; }

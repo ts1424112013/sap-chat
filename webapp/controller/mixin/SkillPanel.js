@@ -96,7 +96,8 @@ sap.ui.define([
             var sStatus = sErr ? "技能目录读取失败：" + sErr
                 : bLoading ? "正在读取技能…"
                 : m.getProperty("/supported") === false ? "后端尚未部署技能入口"
-                : !bEnabled ? "技能能力尚未启用"
+                : !bEnabled ? (Service.isAdmin() ? "技能入口还没开启：点这里到「技能管理」右上角打开"
+                    : "技能入口还没开启，请联系管理员")
                 : !bScene ? "自动场景不能用技能，先选具体场景"
                 : s && s.invalid ? "该技能已停用或不可见，请取消或重新选择" : "";
             var sHint = "", sKind = "";
@@ -174,7 +175,17 @@ sap.ui.define([
 
         /* ---------------- 选择弹层 ---------------- */
         onRefreshSkills: function () { this._syncSkills(true); },
-        onOpenSkills: function (e) { this._openSkills(e.getSource(), false); },
+        onOpenSkills: function (e) {
+            var m = this._skillModel();
+            if (m.getProperty("/canPick")) { this._openSkills(e.getSource(), false); return; }
+            // 选不了时胶囊仍可点：说清原因（原先按钮整个禁用，原因只在悬停提示里，10.27 记录 #03）
+            if (this.getView().getModel("chat").getProperty("/busy")) { return; }
+            if (m.getProperty("/error")) { this._syncSkills(true); return; }
+            if (!m.getProperty("/loading") && m.getProperty("/supported") !== false && !m.getProperty("/enabled") && Service.isAdmin()) {
+                this.onOpenSkillManager(); return;
+            }
+            MessageToast.show(m.getProperty("/status") || "当前不能选技能");
+        },
         _openSkills: function (anchor, slash) {
             var m = this._skillModel(), that = this;
             if (!m.getProperty("/canPick") || this.getView().getModel("chat").getProperty("/busy")) { return; }
@@ -360,10 +371,28 @@ sap.ui.define([
                 this._skillAdminDialog = sap.ui.xmlfragment(this.getView().getId(), "zai.chat.view.SkillAdmin", this);
                 this.getView().addDependent(this._skillAdminDialog);
             }
-            this.getView().setModel(new JSONModel({ items: [], view: [], filter: "ALL", q: "", counts: {},
+            // enabled：null = 还没读到（开关先不显示状态，提示条也不出）
+            var m = new JSONModel({ items: [], view: [], filter: "ALL", q: "", counts: {},
                 edit: null, sceneOn: {}, toolOptions: [], toolNote: "", bodyLen: 0, title: "", footNote: "",
-                saving: false, error: "" }), "skillAdmin");
+                saving: false, error: "", enabled: null, switching: false });
+            this.getView().setModel(m, "skillAdmin");
             this._skillAdminDialog.open(); this.onRefreshSkillAdmin();
+            Service.getSkillEnabled().then(function (b) { m.setProperty("/enabled", b); })
+                .catch(function () { m.setProperty("/enabled", null); });
+        },
+        /** 技能管理右上角开关 = ZAI_CHAT_CFG.SKILL_ENABLED；关时聊天里不能选技能，这里照常维护 */
+        onSkillEnabledChange: function (e) {
+            var that = this, m = this.getView().getModel("skillAdmin"), bOn = !!e.getParameter("state");
+            if (m.getProperty("/switching")) { return; }
+            m.setProperty("/switching", true); m.setProperty("/error", "");
+            Service.setSkillEnabled(bOn).then(function () {
+                m.setProperty("/enabled", bOn);
+                that._syncSkills(true);
+                MessageToast.show(bOn ? "技能入口已开启，聊天里可以选技能了" : "技能入口已关闭");
+            }).catch(function (err) {
+                m.setProperty("/enabled", !bOn);
+                m.setProperty("/error", "开关保存失败：" + (err && err.message || err));
+            }).then(function () { m.setProperty("/switching", false); });
         },
         onRefreshSkillAdmin: function () {
             var that = this, m = this.getView().getModel("skillAdmin");

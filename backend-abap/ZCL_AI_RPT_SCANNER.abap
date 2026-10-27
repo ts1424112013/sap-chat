@@ -16,7 +16,12 @@
 *         TSTC / TSTCT / TRDIR / TRDIRT(只读)
 * 安装:   SE24 -> 新建类 ZCL_AI_RPT_SCANNER -> 源代码视图整类粘贴 (ABAP 7.50)
 * V1.0    20261024: 首版
-* ★ 核对标记: 有 METHOD scan / METHOD save; INSERT zai_rpt_param 与 zai_rpt_def 只在
+* V1.0a   20261026: 修 3 处编译错 —— ① class_constructor 必须声明在 PUBLIC SECTION;
+*         ② READ REPORT / READ TEXTPOOL 的程序名必须是定长字符(PROGNAME), 不能直接传
+*         string 形参, 先转 lv_pname 再读; ③ 同上, 引用传递的 string 形参类型不兼容
+*         (10-27 记录 00c: 仓库与 7z 快照曾回退成修复前版本, 此处补回; 重贴前核对本行)
+* ★ 核对标记: 头注释有 V1.0a 20261026; class_constructor 在 PUBLIC SECTION;
+*   READ REPORT / READ TEXTPOOL 后面是 lv_pname; 有 METHOD scan / METHOD save; INSERT zai_rpt_param 与 zai_rpt_def 只在
 *   METHOD save; 全文没有 SCAN ABAP-SOURCE / FIND PCRE; 方法之间没有注释
 *=======================================================================
 CLASS zcl_ai_rpt_scanner DEFINITION
@@ -98,6 +103,8 @@ CLASS zcl_ai_rpt_scanner DEFINITION
                 iv_label  TYPE string
                 iv_ref    TYPE string
       RETURNING VALUE(rv) TYPE abap_bool.
+
+    CLASS-METHODS class_constructor.
 
   PRIVATE SECTION.
 
@@ -183,7 +190,6 @@ CLASS zcl_ai_rpt_scanner DEFINITION
                 gv_incl  TYPE i,
                 gv_lang  TYPE sy-langu.
 
-    CLASS-METHODS class_constructor.
     CLASS-METHODS read_source
       IMPORTING iv_prog  TYPE string
                 iv_depth TYPE i
@@ -806,12 +812,14 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
           lv_line TYPE string,
           lv_up   TYPE string,
           lv_inc  TYPE string,
-          lv_next TYPE i.
+          lv_next TYPE i,
+          lv_pname TYPE progname.
 
     CLEAR rt.
-    READ REPORT iv_prog INTO lt_src STATE 'A'.
+    lv_pname = iv_prog.
+    READ REPORT lv_pname INTO lt_src STATE 'A'.
     IF sy-subrc <> 0.
-      READ REPORT iv_prog INTO lt_src.
+      READ REPORT lv_pname INTO lt_src.
     ENDIF.
     IF sy-subrc <> 0.
       IF iv_depth > 0.
@@ -1302,16 +1310,18 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
           lv_l    TYPE sy-langu,
           lv_len  TYPE i,
           lv_t    TYPE string,
-          lv_c1   TYPE c LENGTH 1.
+          lv_c1   TYPE c LENGTH 1,
+          lv_pname TYPE progname.
 
     CLEAR: gt_tps, gt_tpd, gt_tpi.
+    lv_pname = iv_prog.
     APPEND gv_lang TO lt_lang.
     APPEND 'M' TO lt_lang.
     APPEND '1' TO lt_lang.
     APPEND 'E' TO lt_lang.
     LOOP AT lt_lang INTO lv_l.
       CLEAR lt_tp.
-      READ TEXTPOOL iv_prog INTO lt_tp LANGUAGE lv_l.
+      READ TEXTPOOL lv_pname INTO lt_tp LANGUAGE lv_l.
       IF sy-subrc <> 0 OR NOT line_exists( lt_tp[ id = 'S' ] ).
         CONTINUE.
       ENDIF.

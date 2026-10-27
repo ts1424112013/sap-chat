@@ -880,6 +880,17 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .aplInput.admFldConst .sapMInputBaseContentWrapper { min-height: 2rem; border-radius: 8px !important; }
 .aplInput.admFldConst .sapMInputBaseInner { font-size: .8rem !important; }
 .admFldEmpty { padding: .2rem 0 .9rem; }
+/* 20261027（10.27 #02）：递增序号 / 规则组合 —— 映射下拉与输入框正下方一行示例（错误标红）+ 规则占位小按钮 */
+.admFldGen { grid-column: 4 / -1; margin-top: -.25rem; font-size: .72rem !important; line-height: 1.35 !important; color: var(--sub) !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important; overflow-wrap: anywhere; }
+.admFldGen[data-kind="err"] { color: var(--danger, #c0392b) !important; font-family: inherit !important; }
+.admFldTokens { grid-column: 4 / -1; display: flex; flex-wrap: wrap; gap: .3rem; margin-top: -.15rem; }
+.admTok.sapMBtn { height: 1.5rem; min-width: 0; padding: 0 !important; }
+.admTok .sapMBtnInner { height: 1.5rem !important; min-width: 0 !important; padding: 0 .5rem !important; border: 1px solid var(--line) !important;
+  border-radius: 6px !important; background: var(--bg) !important; }
+.admTok .sapMBtnContent, .admTok .sapMBtnContent bdi { font-size: .72rem !important; line-height: 1.4rem !important; color: var(--text-2) !important; }
+.admTok:hover .sapMBtnInner { border-color: var(--accent) !important; background: var(--accent-soft) !important; }
+.admTok:hover .sapMBtnContent bdi { color: var(--accent) !important; }
 /* 20261023：事务码规则带字段映射 —— 目标表下拉、沿用摘要、单独映射与权限表不同的行标蓝 */
 .admSel.admSelTall.sapMSlt { height: 2.5rem; border-radius: 10px !important; }
 .admSel.admSelTall .sapMSltLabel { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important; font-size: .86rem; }

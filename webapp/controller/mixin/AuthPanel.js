@@ -2,9 +2,28 @@ sap.ui.define([
         "sap/ui/model/json/JSONModel",
         "zai/chat/utils/Toast",
         "sap/m/MessageBox",
-        "zai/chat/service/ChatService"
-], function (JSONModel, MessageToast, MessageBox, ChatService) {
+        "zai/chat/service/ChatService",
+        "zai/chat/utils/AuthValueRule"
+], function (JSONModel, MessageToast, MessageBox, ChatService, ValueRule) {
         "use strict";
+
+        // 10.27 #02：规则组合的占位（字段映射行下方一点即插）；带花括号的文字放模型里，不放 i18n / XML（会被当成占位 / 绑定）
+        var RULE_TOKENS = [
+                { tok: "{SEQ4}", label: "序号", tip: "{SEQ4}：4 位递增序号（同前缀内接着编，改数字可调位数）" },
+                { tok: "{RAND6}", label: "随机", tip: "{RAND6}：6 位随机大写字母 + 数字" },
+                { tok: "{NUM6}", label: "随机数字", tip: "{NUM6}：6 位随机数字" },
+                { tok: "{DATE}", label: "日期", tip: "{DATE}：写入当天，YYYYMMDD" },
+                { tok: "{TIME}", label: "时间", tip: "{TIME}：写入时刻，HHMMSS" },
+                { tok: "{USER}", label: "账号", tip: "{USER}：目标账号" },
+                { tok: "{TCODE}", label: "事务码", tip: "{TCODE}：事务码" },
+                { tok: "{WERKS}", label: "工厂", tip: "{WERKS}：工厂" },
+                { tok: "{BY}", label: "操作人", tip: "{BY}：执行写入的账号" }
+        ];
+        var GEN_TEXT = {
+                rulePh: "如 AU{DATE}{SEQ4}",
+                ruleHint: "按规则组合：文字原样保留，花括号里是占位 —— {SEQn} n 位递增序号、{RANDn} n 位随机字母数字、{NUMn} n 位随机数字、" +
+                        "{DATE} 日期、{TIME} 时间、{USER} 账号、{TCODE} 事务码、{WERKS} 工厂、{BY} 操作人；一条规则最多一个序号"
+        };
 
         /**
          * =====================================================================
@@ -71,9 +90,11 @@ sap.ui.define([
                                 editTable: { tabname: "", descr: "", discover: true, active: true, fields: [], loaded: "", ownRulesText: "" },
                                 editRule: Object.assign(emptyRule(), { baseMap: [], baseHint: "", ownHint: "" }),
                                 ruleTables: [],
-                                mapTypes: ["TCODE", "USER", "WERKS", "CONST", "RANDOM", "DATE", "TIME", "BY", "INITIAL"].map(function (k) {
+                                mapTypes: ["TCODE", "USER", "WERKS", "CONST", "RANDOM", "SEQ", "RULE", "DATE", "TIME", "BY", "INITIAL"].map(function (k) {
                                         return { key: k, text: oRB.getText("authMap" + k) };
-                                })
+                                }),
+                                ruleTokens: RULE_TOKENS,
+                                genText: GEN_TEXT
                         });
                         oModel.setSizeLimit(2000);
                         this.getView().setModel(oModel, "auth");
@@ -489,6 +510,32 @@ sap.ui.define([
                         });
                 },
 
+                /* ---------- 10.27 #02：递增序号 / 规则组合 —— 就地示例与一点即插 ---------- */
+
+                /** 字段映射行下方的说明：参数有误 = 错误原话；正确 = 「首条示例」 */
+                authGenHint: function (sType, sC, sDt, iLeng) {
+                        if (sType !== "SEQ" && sType !== "RULE") { return ""; }
+                        var f = { datatype: sDt, leng: Number(iLeng) }, sErr = ValueRule.check(f, sType, sC);
+                        if (sErr) { return sErr; }
+                        var sEx = ValueRule.preview(f, sType, sC);
+                        if (sType === "SEQ") {
+                                return "首条 " + sEx + "，之后在该列现有最大值上加 1";
+                        }
+                        return "示例 " + sEx + (/\{\s*SEQ\d/i.test(sC || "") ? "（序号在同一前缀内接着编）" : "");
+                },
+                authGenKind: function (sType, sC, sDt, iLeng) {
+                        return ValueRule.check({ datatype: sDt, leng: Number(iLeng) }, sType, sC) ? "err" : "ok";
+                },
+                /** 点规则占位：追加到这一行的规则末尾（不超过 60 字符） */
+                onAuthRuleToken: function (oEvent) {
+                        var oBtn = oEvent.getSource(), sTok = oBtn.getBindingContext("auth").getProperty("tok");
+                        var oRow = oBtn.getParent().getBindingContext("auth");
+                        if (!oRow) { return; }
+                        var sCur = oRow.getProperty("constVal") || "";
+                        if ((sCur + sTok).length > 60) { MessageToast.show("规则不能超过 60 个字符"); return; }
+                        oRow.getModel().setProperty(oRow.getPath() + "/constVal", sCur + sTok);
+                },
+
                 onAuthSaveTable: function () {
                         var that = this, oModel = this._authModel(), t = oModel.getProperty("/editTable");
                         var sTab = (t.tabname || "").trim().toUpperCase();
@@ -531,7 +578,8 @@ sap.ui.define([
                         var oRB = this._rb(), r = Object.assign(emptyRule(), oRule || {});
                         var aBase = r.tabname ? this._authTableFields(r.tabname) : [];
                         var fText = function (f) {
-                                return oRB.getText("authMap" + f.mapType) + (f.mapType === "CONST" ? "「" + f.constVal + "」" : "");
+                                var bParam = f.mapType === "CONST" || f.mapType === "RULE" || (f.mapType === "SEQ" && f.constVal);
+                                return oRB.getText("authMap" + f.mapType) + (bParam ? "「" + f.constVal + "」" : "");
                         };
                         r.baseMap = aBase.filter(function (f) { return f.mapType !== "INITIAL"; }).map(function (f) {
                                 return { text: f.fieldname + " → " + fText(f) };
@@ -541,7 +589,7 @@ sap.ui.define([
                                 var b = aBase.filter(function (x) { return x.fieldname === f.fieldname; })[0] || { mapType: "INITIAL", constVal: "" };
                                 return Object.assign({}, f, {
                                         constVal: f.constVal || "",
-                                        baseType: b.mapType, baseConst: b.mapType === "CONST" ? b.constVal : "", baseText: fText(b)
+                                        baseType: b.mapType, baseConst: /^(CONST|SEQ|RULE)$/.test(b.mapType) ? b.constVal : "", baseText: fText(b)
                                 });
                         });
                         r.ownHint = oRB.getText("admRuleMapOwnHint", [r.tabname, r.fields.length]);
