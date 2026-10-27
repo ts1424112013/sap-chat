@@ -97,6 +97,31 @@ sap.ui.define([], function () {
                         { PARAM_ID: "S_VBELN", ABAP_NAME: "S_VBELN", DISPLAY_LABEL: "交貨單號", DATA_TYPE: "CHAR", TYPE_LENGTH: 10, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 120 },
                         { PARAM_ID: "S_FKART", ABAP_NAME: "S_FKART", DISPLAY_LABEL: "發票類型", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 130 },
                         { PARAM_ID: "S_INVNO", ABAP_NAME: "S_INVNO", DISPLAY_LABEL: "發票號碼", DATA_TYPE: "CHAR", TYPE_LENGTH: 10, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 140 }
+                  ] },
+                // 20261027（10.27 记录 #04）：仿 ZDPPP059 工單查核報表 —— 复选框分属三个选择屏块（GROUP_LABEL = 块标题），
+                // 参数卡按块分组显示；ZDPSD012 没有 GROUP_LABEL，复选框仍是一行「选项」
+                { REPORT_ID: "ZDPPP059", TCODE: "ZDPPP059", PROGNAME: "ZRPP_IDP_0059", NAME: "工單查核報表", DESCRIPTION: "按工廠、創建日期查工單發料 / 完工狀態（演示：複選框按原選擇屏分塊）", EXEC_ENABLED: "X",
+                  PARAMS: [
+                        { PARAM_ID: "S_WERKS", ABAP_NAME: "S_WERKS", DISPLAY_LABEL: "工廠", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, REQUIRED: true, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 10, GROUP_LABEL: "選取範圍" },
+                        { PARAM_ID: "S_ERDAT", ABAP_NAME: "S_ERDAT", DISPLAY_LABEL: "創建日期", DATA_TYPE: "DATE", TYPE_LENGTH: 8, REQUIRED: true, RANGE_ALLOWED: true, SEL_KIND: "S", SORT_NO: 20, GROUP_LABEL: "選取範圍" },
+                        { PARAM_ID: "S_AUFNR", ABAP_NAME: "S_AUFNR", DISPLAY_LABEL: "工單號碼", DATA_TYPE: "CHAR", TYPE_LENGTH: 12, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 30, GROUP_LABEL: "選取範圍" },
+                        { PARAM_ID: "S_MATNR", ABAP_NAME: "S_MATNR", DISPLAY_LABEL: "生產料號", DATA_TYPE: "CHAR", TYPE_LENGTH: 18, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 40, GROUP_LABEL: "選取範圍" },
+                        { PARAM_ID: "S_AUART", ABAP_NAME: "S_AUART", DISPLAY_LABEL: "訂單類型", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 50, GROUP_LABEL: "選取範圍" },
+                        { PARAM_ID: "S_GSTRP", ABAP_NAME: "S_GSTRP", DISPLAY_LABEL: "開始日期", DATA_TYPE: "DATE", TYPE_LENGTH: 8, RANGE_ALLOWED: true, SEL_KIND: "S", SORT_NO: 60, GROUP_LABEL: "選取範圍" },
+                        { PARAM_ID: "P_NOFULL", ABAP_NAME: "P_NOFULL", DISPLAY_LABEL: "只顯示未發齊的工單", DATA_TYPE: "BOOL", SEL_KIND: "C", SORT_NO: 70, GROUP_LABEL: "選取範圍" },
+                        { PARAM_ID: "P_ISSUE", ABAP_NAME: "P_ISSUE", DISPLAY_LABEL: "只顯示應發數量 > 0", DATA_TYPE: "BOOL", SEL_KIND: "C", SORT_NO: 80, GROUP_LABEL: "選取範圍" },
+                        { PARAM_ID: "P_BYSET", ABAP_NAME: "P_BYSET", DISPLAY_LABEL: "BY 套數查詢欠發", DATA_TYPE: "NUMC", TYPE_LENGTH: 3, SEL_KIND: "P", SORT_NO: 90, GROUP_LABEL: "選取範圍" },
+                        { PARAM_ID: "P_HEAD", ABAP_NAME: "P_HEAD", DISPLAY_LABEL: "只顯示工單單頭", DATA_TYPE: "BOOL", SEL_KIND: "C", ALLOWED_OPS: "X", DEFAULT_VALUE: "X", SORT_NO: 100, GROUP_LABEL: "選取範圍" },
+                        { PARAM_ID: "P_WIP", ABAP_NAME: "P_WIP", DISPLAY_LABEL: "發料在製 > 0", DATA_TYPE: "BOOL", SEL_KIND: "C", SORT_NO: 110, GROUP_LABEL: "選取範圍" },
+                        { PARAM_ID: "P_NOGR", ABAP_NAME: "P_NOGR", DISPLAY_LABEL: "只顯示未完工入庫工單", DATA_TYPE: "BOOL", SEL_KIND: "C", SORT_NO: 120, GROUP_LABEL: "選取範圍" },
+                        { PARAM_ID: "P_REGION", ABAP_NAME: "P_REGION", DISPLAY_LABEL: "檢查Regional屬性", DATA_TYPE: "BOOL", SEL_KIND: "C", SORT_NO: 130, GROUP_LABEL: "選取範圍" },
+                        { PARAM_ID: "P_TECO", ABAP_NAME: "P_TECO", DISPLAY_LABEL: "結案", DATA_TYPE: "BOOL", SEL_KIND: "C", ALLOWED_OPS: "X", DEFAULT_VALUE: "X", SORT_NO: 140, GROUP_LABEL: "請選擇無需查詢的工單狀態" },
+                        { PARAM_ID: "P_CNF", ABAP_NAME: "P_CNF", DISPLAY_LABEL: "確認", DATA_TYPE: "BOOL", SEL_KIND: "C", SORT_NO: 150, GROUP_LABEL: "請選擇無需查詢的工單狀態" },
+                        { PARAM_ID: "P_CRTD", ABAP_NAME: "P_CRTD", DISPLAY_LABEL: "新建", DATA_TYPE: "BOOL", SEL_KIND: "C", ALLOWED_OPS: "X", DEFAULT_VALUE: "X", SORT_NO: 160, GROUP_LABEL: "請選擇無需查詢的工單狀態" },
+                        { PARAM_ID: "P_POST", ABAP_NAME: "P_POST", DISPLAY_LABEL: "過帳", DATA_TYPE: "BOOL", SEL_KIND: "C", SORT_NO: 170, GROUP_LABEL: "請選擇無需查詢的工單狀態" },
+                        { PARAM_ID: "P_CLSD", ABAP_NAME: "P_CLSD", DISPLAY_LABEL: "關閉", DATA_TYPE: "BOOL", SEL_KIND: "C", ALLOWED_OPS: "X", DEFAULT_VALUE: "X", SORT_NO: 180, GROUP_LABEL: "請選擇無需查詢的工單狀態" },
+                        { PARAM_ID: "P_DLT", ABAP_NAME: "P_DLT", DISPLAY_LABEL: "刪除", DATA_TYPE: "BOOL", SEL_KIND: "C", ALLOWED_OPS: "X", DEFAULT_VALUE: "X", SORT_NO: 190, GROUP_LABEL: "請選擇無需查詢的工單狀態" },
+                        { PARAM_ID: "P_BAK", ABAP_NAME: "P_BAK", DISPLAY_LABEL: "是否備份", DATA_TYPE: "BOOL", SEL_KIND: "C", SORT_NO: 200, GROUP_LABEL: "僅在JOB使用" }
                   ] }
         ];
 

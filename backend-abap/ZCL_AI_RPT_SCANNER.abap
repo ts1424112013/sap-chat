@@ -20,8 +20,12 @@
 *         ② READ REPORT / READ TEXTPOOL 的程序名必须是定长字符(PROGNAME), 不能直接传
 *         string 形参, 先转 lv_pname 再读; ③ 同上, 引用传递的 string 形参类型不兼容
 *         (10-27 记录 00c: 仓库与 7z 快照曾回退成修复前版本, 此处补回; 重贴前核对本行)
+* V1.0b   20261027(10.27 记录 #04): 每行带上所在选择屏块的标题(GROUP_LABEL, 取 BEGIN OF
+*         BLOCK … TITLE 的文字, 单选组取第一个按钮所在块), 参数卡按它给复选框分组、显示块标题;
+*         ZAI_RPT_PARAM 没有 GROUP_LABEL 列时照常写入(按名取列), 结果里提示"分组未保存"
 * ★ 核对标记: 头注释有 V1.0a 20261026; class_constructor 在 PUBLIC SECTION;
-*   READ REPORT / READ TEXTPOOL 后面是 lv_pname; 有 METHOD scan / METHOD save; INSERT zai_rpt_param 与 zai_rpt_def 只在
+*   READ REPORT / READ TEXTPOOL 后面是 lv_pname; V1.0b: ty_param 有 group_label, save 里
+*   ASSIGN COMPONENT 'GROUP_LABEL'; 有 METHOD scan / METHOD save; INSERT zai_rpt_param 与 zai_rpt_def 只在
 *   METHOD save; 全文没有 SCAN ABAP-SOURCE / FIND PCRE; 方法之间没有注释
 *=======================================================================
 CLASS zcl_ai_rpt_scanner DEFINITION
@@ -49,6 +53,7 @@ CLASS zcl_ai_rpt_scanner DEFINITION
              include       TYPE abap_bool,
              note          TYPE string,
              sort_no       TYPE i,
+             group_label   TYPE string,   " V1.0b: 所在选择屏块的标题(参数卡按它分组)
            END OF ty_param.
     TYPES tt_param TYPE STANDARD TABLE OF ty_param WITH DEFAULT KEY.
 
@@ -460,6 +465,7 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
           lv_seq   TYPE i,
           lv_ok    TYPE abap_bool,
           lv_ph    TYPE string,
+          lv_gblk  TYPE string,
           lv_no    TYPE i.
     FIELD-SYMBOLS: <ls_r>   TYPE ty_param,
                    <ls_opt> TYPE ty_opt.
@@ -488,6 +494,7 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
       ls_r-display_label = lv_lbl.
       ls_r-label_src     = lv_src.
       ls_r-include       = abap_true.
+      ls_r-group_label   = text_of_var( ls_d-block ).
       IF ls_d-checkbox = abap_true.
         ls_r-sel_kind    = 'C'.
         ls_r-data_type   = 'BOOL'.
@@ -527,8 +534,11 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
 
     " 单选组 → R(普通) 或 F(输出方式组: ALV / 查询那一项固定 X, 其余固定空格)
     LOOP AT lt_grp INTO lv_grp.
-      CLEAR: lt_opt, lv_hasd, lv_danger, lv_safe.
+      CLEAR: lt_opt, lv_hasd, lv_danger, lv_safe, lv_gblk.
       LOOP AT gt_decl INTO ls_b WHERE grp = lv_grp AND nodisp = abap_false.
+        IF lt_opt IS INITIAL.
+          lv_gblk = ls_b-block.
+        ENDIF.
         label_of( EXPORTING is_decl = ls_b IMPORTING ev_text = lv_lbl ev_src = lv_src ).
         CLEAR ls_opt.
         ls_opt-name = ls_b-name.
@@ -598,6 +608,7 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
         ls_new-allowed_ops   = lv_ops.
         ls_new-include       = lv_ok.
         ls_new-note          = lv_note.
+        ls_new-group_label   = text_of_var( lv_gblk ).
         APPEND ls_new TO lt_new.
       ELSE.
         LOOP AT lt_opt INTO ls_opt.
@@ -622,6 +633,7 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
             ls_new-data_type     = 'CHAR'.
             ls_new-type_length   = 1.
             ls_new-include       = abap_true.
+            ls_new-group_label   = text_of_var( lv_gblk ).
             IF ls_opt-name = lv_safe.
               ls_new-allowed_ops = 'X'.
               ls_new-note        = '输出方式组：固定为这一项'.
@@ -688,7 +700,9 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
           lv_rid   TYPE zai_rpt_def-report_id,
           lv_tc    TYPE zai_rpt_def-tcode,
           lv_other TYPE zai_rpt_def-report_id,
-          lv_n     TYPE i.
+          lv_n     TYPE i,
+          lv_nogrp TYPE abap_bool.
+    FIELD-SYMBOLS <lv_grp> TYPE any.
 
     IF zcl_ai_chat_service=>v8_get_role( ) <> 'ADMIN'.
       rs-message = '只有 ZAI_CHAT_USER 里角色为 ADMIN 的账号能写报表登记'.
@@ -742,6 +756,13 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
       ls_db-sort_no         = ls_p-sort_no.
       ls_db-active          = 'X'.
       ls_db-sel_kind        = ls_p-sel_kind.
+      " V1.0b: 块标题列按名取(SE11 还没加 GROUP_LABEL 时照常写入, 只是不带分组)
+      ASSIGN COMPONENT 'GROUP_LABEL' OF STRUCTURE ls_db TO <lv_grp>.
+      IF sy-subrc = 0.
+        <lv_grp> = ls_p-group_label.
+      ELSEIF ls_p-group_label IS NOT INITIAL.
+        lv_nogrp = abap_true.
+      ENDIF.
       INSERT zai_rpt_param FROM ls_db.
       IF sy-subrc <> 0.
         ROLLBACK WORK.
@@ -800,6 +821,9 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
     rs-message = |已写入 { is_draft-report_id }: { lv_n } 个参数, 配置版本 { lv_ver }|.
     IF rs-old_version IS NOT INITIAL.
       rs-message = rs-message && |(原版本 { rs-old_version }, 回滚 = 把 ZAI_RPT_DEF.CONFIG_VERSION 改回原版本)|.
+    ENDIF.
+    IF lv_nogrp = abap_true.
+      rs-message = rs-message && |; ZAI_RPT_PARAM 还没有 GROUP_LABEL 列, 选择屏分组未保存(SE11 加列后重新登记)|.
     ENDIF.
 
   ENDMETHOD.

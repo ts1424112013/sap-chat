@@ -138,6 +138,11 @@
 *   ZCL_AI_RPT_SCANNER 从 DEFAULT sy-datum / INITIALIZATION 里 p = sy-datum - 1 识别出来。
 *   另: parse_options 里 substring 的偏移 / 长度先算进变量(不在参数位置写算术式)
 * ★ 重贴后核对标记: validate_params 里有 WHEN 'TODAY'
+* V1.0.15 20261027(10.27 记录 #04, ZDPPP059 参数卡勾选项挤在一起): 参数定义带上选择屏块标题
+*   group_label —— ZAI_RPT_PARAM 新增可选列 GROUP_LABEL(CHAR 60, SCANNER V1.0b 登记时写入);
+*   get_params 主 SELECT 不变, 块标题另用动态列名读(没加这列 / 读失败只是不分组, 不影响激活);
+*   ReportDefinitions 随 tt_param 自动带出 GROUP_LABEL, 前端参数卡按它给复选框分组
+* ★ 重贴后核对标记: get_params 里有 lv_gcols = `PARAM_ID, GROUP_LABEL` 与 CATCH cx_sy_dynamic_osql_error
 *=======================================================================
 CLASS zcl_ai_report_service DEFINITION
   PUBLIC
@@ -196,6 +201,7 @@ CLASS zcl_ai_report_service DEFINITION
              active         TYPE abap_bool,
              sel_kind       TYPE string,  " V1.0.13: P / S / R 单选组 / C 复选框(F 固定值不返回)
              enum_json      TYPE string,  " V1.0.13: R 的选项 [{"key","text"}](get_params 计算, 非表字段)
+             group_label    TYPE string,  " V1.0.15: 选择屏块标题(可选列 GROUP_LABEL, get_params 动态读)
            END OF ty_param.
     TYPES tt_param TYPE STANDARD TABLE OF ty_param WITH DEFAULT KEY.
 
@@ -567,6 +573,32 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
         AND active = 'X'
       ORDER BY sort_no, param_id
       INTO CORRESPONDING FIELDS OF TABLE @rt.
+
+    " V1.0.15(10.27 记录 #04): 选择屏块标题 —— GROUP_LABEL 是后加的可选列, 列名动态,
+    " SE11 没加这列 / 读失败只是不分组, 不影响激活和上面的字段
+    TYPES: BEGIN OF ty_glbl,
+             param_id    TYPE zai_rpt_param-param_id,
+             group_label TYPE c LENGTH 60,
+           END OF ty_glbl.
+    DATA: lt_glbl  TYPE STANDARD TABLE OF ty_glbl WITH DEFAULT KEY,
+          lv_gcols TYPE string VALUE `PARAM_ID, GROUP_LABEL`.
+    IF rt IS NOT INITIAL.
+      TRY.
+          SELECT (lv_gcols) FROM zai_rpt_param
+            WHERE report_id = @iv_report_id
+              AND config_version = @lv_ver
+              AND active = 'X'
+            INTO CORRESPONDING FIELDS OF TABLE @lt_glbl.
+        CATCH cx_sy_dynamic_osql_error cx_sy_open_sql_db.
+          CLEAR lt_glbl.
+      ENDTRY.
+      LOOP AT lt_glbl INTO DATA(ls_glbl) WHERE group_label IS NOT INITIAL.
+        READ TABLE rt ASSIGNING FIELD-SYMBOL(<ls_gp>) WITH KEY param_id = CONV string( ls_glbl-param_id ).
+        IF sy-subrc = 0.
+          <ls_gp>-group_label = condense( ls_glbl-group_label ).
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
 
     " V1.0.13: 控件类型整理 —— 调用方(参数卡 / 校验 / 报表目录)只看到现有语义:
     "   R 单选组 → ENUM(选项键进 validation_rule, 选项进 enum_json, 带 * 的默认项 → STATIC 默认)

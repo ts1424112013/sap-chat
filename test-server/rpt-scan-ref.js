@@ -270,6 +270,7 @@ function scan(src, opt) {
   const rows = [];
   const notes = [];
   const groups = {};
+  const blockLabel = (b) => (b ? textOfVar(b, scr, opt) : '');
   const label = (p) => labelOf(p.name, scr, opt) || ((opt.ddic && opt.ddic[p.ref] && opt.ddic[p.ref].label) ? { text: opt.ddic[p.ref].label, src: 'DDIC' } : { text: p.name, src: 'NAME' });
   scr.decl.forEach((p) => {
     if (p.noDisplay || SKIP_NAMES.indexOf(p.name) >= 0) { return; }
@@ -283,8 +284,9 @@ function scan(src, opt) {
       return;
     }
     const lb = label(p);
+    // 10.27 记录 #04（SCANNER V1.0b）：所在选择屏块的标题 → GROUP_LABEL，参数卡按它给复选框分组
     const row = { param_id: p.name, abap_name: p.name, label: lb.text, label_src: lb.src, required: false, multi_value: false, range_allowed: false,
-      default_type: '', default_value: '', allowed_ops: '', include: true, note: '' };
+      default_type: '', default_value: '', allowed_ops: '', include: true, note: '', group_label: blockLabel(p.block) };
     if (p.checkbox) {
       Object.assign(row, { sel_kind: 'C', data_type: 'BOOL', type_length: 1, allowed_ops: unq(p.def || '').toUpperCase() === 'X' ? 'X' : '' });
     } else {
@@ -315,6 +317,7 @@ function scan(src, opt) {
     if (!opts.some((o) => o.def)) { opts[0].def = true; }   // 程序没写 DEFAULT：SAP 默认选第一个
     const danger = opts.some((o) => isDanger(o.name, o.text, ''));
     const idx = rows.findIndex((r) => r.__group === gk);
+    const gLabel = blockLabel(g.first.block);   // 单选组取第一个按钮所在块
     let out = [];
     if (!danger) {
       const lbl = groupLabel(g, scr, opt);
@@ -326,13 +329,14 @@ function scan(src, opt) {
       }
       if (ops.length > 120) { note = '选项超过 120 字符，ALLOWED_OPS 放不下，请减少选项或改短文字后手工登记'; }
       out.push({ param_id: ('RB_' + gk).slice(0, 30), abap_name: gk, sel_kind: 'R', label: lbl.text, label_src: lbl.src, data_type: 'ENUM', type_length: 0,
-        required: false, multi_value: false, range_allowed: false, default_type: '', default_value: '', allowed_ops: ops, include: ops.length <= 120, note: note, options: opts });
+        required: false, multi_value: false, range_allowed: false, default_type: '', default_value: '', allowed_ops: ops, include: ops.length <= 120, note: note, options: opts,
+        group_label: gLabel });
     } else {
       const safe = opts.find((o) => SAFE_OUT.test(o.text) || SAFE_OUT.test(o.name));
       if (safe) {
         out = opts.map((o) => ({ param_id: ('OUT_' + o.name).slice(0, 30), abap_name: o.name, sel_kind: 'F', label: '（固定）' + o.text, label_src: o.src, data_type: 'CHAR', type_length: 1,
           required: false, multi_value: false, range_allowed: false, default_type: '', default_value: '', allowed_ops: o === safe ? 'X' : '', include: true,
-          note: o === safe ? '输出方式组：固定为这一项' : '输出方式组：固定为空' }));
+          note: o === safe ? '输出方式组：固定为这一项' : '输出方式组：固定为空', group_label: gLabel }));
       } else {
         notes.push('单选组 ' + gk + ' 像是输出方式组，但找不到可以固定的 ALV / 查询项，未登记（保持程序默认），请人工确认');
       }

@@ -146,5 +146,34 @@ console.log('\n━━ 与 ABAP 版 ZCL_AI_RPT_SCANNER 规则一致');
   check('跳过的内部参数、120 字符上限、截到 8 个字两边一致', /'P_AICAP' OR ls_d-name = 'P_RUNID'/.test(abap) && /strlen\( lv_ops \) > 120/.test(abap) && /len = 8 \)/.test(abap));
 }
 
+console.log('\n━━ 选择屏块标题 → GROUP_LABEL（10.27 记录 #04，仿 ZDPPP059 工單查核報表）');
+{
+  const src = [
+    'REPORT zrpp_idp_0059.',
+    'SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.',
+    'SELECT-OPTIONS: s_werks FOR t001w-werks, s_aufnr FOR aufk-aufnr.',
+    'PARAMETERS: p_nofull AS CHECKBOX, p_head AS CHECKBOX DEFAULT \'X\'.',
+    'SELECTION-SCREEN BEGIN OF BLOCK b1a WITH FRAME.',
+    'PARAMETERS: r_all RADIOBUTTON GROUP g1 DEFAULT \'X\', r_part RADIOBUTTON GROUP g1.',
+    'SELECTION-SCREEN END OF BLOCK b1a.',
+    'SELECTION-SCREEN END OF BLOCK b1.',
+    'SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-002.',
+    'PARAMETERS: p_teco AS CHECKBOX DEFAULT \'X\', p_cnf AS CHECKBOX, p_crtd AS CHECKBOX DEFAULT \'X\'.',
+    'SELECTION-SCREEN END OF BLOCK b2.',
+    'SELECTION-SCREEN BEGIN OF BLOCK b4 WITH FRAME TITLE t_job.',
+    'PARAMETERS p_bak AS CHECKBOX.',
+    'SELECTION-SCREEN END OF BLOCK b4.',
+    'PARAMETERS p_loose AS CHECKBOX.',
+    'INITIALIZATION.',
+    "  t_job = '僅在JOB使用'."
+  ].join('\n');
+  const d = ref.scan(src, { textpool: { I: { '001': '選取範圍', '002': '請選擇無需查詢的工單狀態' } } });
+  const g = (id) => row(d, id).group_label;
+  check('选择项与复选框带所在块标题（TITLE TEXT-xxx 取文本符号）', g('S_WERKS') === '選取範圍' && g('P_NOFULL') === '選取範圍' && g('P_TECO') === '請選擇無需查詢的工單狀態' && g('P_CRTD') === '請選擇無需查詢的工單狀態');
+  check('块标题是变量时取 INITIALIZATION 里的字面量赋值', g('P_BAK') === '僅在JOB使用');
+  check('嵌套的无标题块：标题为空（不继承外层）；块外的参数为空', g('RB_G1') === '' && g('P_LOOSE') === '', JSON.stringify([g('RB_G1'), g('P_LOOSE')]));
+  check('分组不影响原有排序与登记', d.params.map((r) => r.param_id).join(',') === 'S_WERKS,S_AUFNR,P_NOFULL,P_HEAD,RB_G1,P_TECO,P_CNF,P_CRTD,P_BAK,P_LOOSE' && d.params.every((r) => r.include));
+}
+
 console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
 process.exit(failed ? 1 : 0);

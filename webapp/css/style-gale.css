@@ -1179,6 +1179,10 @@ body, body.sapUiBody { background: var(--bg) !important; }
    单选组沿用 .askEnumBtn 胶囊；复选框是带小方框的开关胶囊（没勾 = 空框，勾上 = 蓝底白勾）；
    选填项多时折进「更多筛选条件（N）」 */
 .askBools { gap: .4rem; }
+/* 20261027（10.27 #04）：复选框按原选择屏的块分组 —— 标签对齐第一行胶囊（不再悬在多行中间），块与块之间一条细虚线 */
+.askBoolGroup { align-items: start !important; }
+.askBoolGroup > .sapMFlexItem:first-child { padding-top: .42rem; }
+.askBoolGroupNext { padding-top: .55rem; border-top: 1px dashed var(--line); }
 .askBoolBtn .sapMBtnIcon { display: inline-flex !important; align-items: center; justify-content: center; box-sizing: border-box;
         width: .9rem !important; height: .9rem !important; margin-right: .4rem !important; border: 1.5px solid var(--line-strong); border-radius: 4px;
         font-size: .58rem !important; line-height: 1 !important; color: transparent !important; background: var(--surface); transition: background .12s, border-color .12s; }

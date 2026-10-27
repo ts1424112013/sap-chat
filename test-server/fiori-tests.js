@@ -332,7 +332,7 @@ async function rejects(name, promise, re) {
   check('FIORI_ENABLED 关闭 → Agent 说明能力未开启', /能力未开启/.test(turn('选择报表：shipment報表').answer));
   fakeWindow.localStorage.removeItem('zaiChat.cfg.FIORI_ENABLED');
   r = await svc.getReportCatalog();
-  check('演示模式的报表执行目录：4 张（20261024 加了 ZDPSD012）、一张未开放（大写键）', r.defs.length === 4 && r.defs.filter((d) => d.EXEC_ENABLED !== 'X').length === 1);
+  check('演示模式的报表执行目录：5 张（20261024 加了 ZDPSD012、20261027 加了 ZDPPP059）、一张未开放（大写键）', r.defs.length === 5 && r.defs.filter((d) => d.EXEC_ENABLED !== 'X').length === 1);
   {
     // 20261024：演示 ZDPSD012 的参数定义与后端 get_params 整理后同口径；演示 Agent「执行 ZDPSD012」只给类型
     const d12 = r.defs.filter((d) => d.TCODE === 'ZDPSD012')[0];
@@ -407,6 +407,18 @@ async function rejects(name, promise, re) {
     { T_DAY1: '9' });
   check('合并：工厂预填 ABG1、基准日期预填昨天、用户已填的天数不覆盖、USER 默认不预填', mgd.values.P_WERKS === 'ABG1' && mgd.values.P_DATE === ymd(yest) && mgd.values.T_DAY1 === '9' && mgd.values.S_X === undefined);
   check('合并：预填的参数带 default_shown（折叠区判断「已填」时不算它）', mgd.params[0].default_shown === 'ABG1' && mgd.params[2].default_shown === undefined);
+  // 20261027（10.27 记录 #04）：复选框按原选择屏的块分组（GROUP_LABEL）
+  const d59 = r.defs.filter((d) => d.TCODE === 'ZDPPP059')[0];
+  const t59 = await svc._mockReportAgent({ question: '执行 ZDPPP059', sessionId: 'S59' });
+  const m59 = AskCard.mergeParamDefs(JSON.parse(t59.pendingParamsJson).params, d59.PARAMS, {});
+  const g59 = AskCard.groupBools(AskCard.layoutParams(m59.params).bools);
+  check('合并：块标题 GROUP_LABEL 带进参数（大写键也认）', m59.params.filter((p) => p.param_id === 'P_TECO')[0].group_label === '請選擇無需查詢的工單狀態');
+  check('演示 ZDPPP059：13 个复选框分成 3 组，组名 = 原屏块标题，顺序与原屏一致', g59.map((g) => g.label + ':' + g.params.length).join('|') === '選取範圍:6|請選擇無需查詢的工單狀態:6|僅在JOB使用:1',
+    g59.map((g) => g.label + ':' + g.params.length).join('|'));
+  check('演示 ZDPPP059：块里的默认勾选照旧预填（只顯示工單單頭 / 結案 / 新建 / 關閉 / 刪除）', ['P_HEAD', 'P_TECO', 'P_CRTD', 'P_CLSD', 'P_DLT'].every((k) => m59.values[k] === 'X') && !m59.values.P_CNF);
+  check('没有块标题（旧登记 / ZDPSD012）：仍是一组「选项」', AskCard.groupBools([{ param_id: 'A' }, { param_id: 'B' }]).map((g) => g.label).join() === '选项');
+  check('有的有块标题、有的没有：没标题的叫「其他选项」，按首次出现排序', AskCard.groupBools([{ param_id: 'A' }, { param_id: 'B', group_label: '狀態' }, { param_id: 'C' }])
+    .map((g) => g.label + g.params.length).join() === '其他选项2,狀態1');
   }
 
   const FP = load('zai/chat/controller/mixin/FioriPanel');

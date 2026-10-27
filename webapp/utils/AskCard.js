@@ -26,6 +26,8 @@ sap.ui.define([
          *  · 排版：单选组（单选 ENUM）在最上，必填项随后，开关集中一行，选填项超过 1 个且总数多时
          *    折进「更多筛选条件（N）」（有预填值时自动展开）；字段少时与原来一样全部平铺
          *  · mergeParamDefs：TCode 报表的待填参数（Agent 只给类型）按 ReportDefinitions 补选项 / 默认值 / 说明
+         * 20261027（10.27 记录 #04）：复选框按原选择屏的块分组 —— 参数定义带 group_label（块标题，
+         *   SCANNER V1.0b 登记、REPORT_SERVICE V1.0.15 透出）时，每块一行、块标题作行标签；都没有时仍是一行「选项」
          */
 
         /** ENUM 选项：enum_json 可以是 JSON 字符串或数组；坏数据返回 [] */
@@ -114,6 +116,10 @@ sap.ui.define([
                         var sHelp = pick(d, "help_text");
                         if (sHelp && !q.help_text) {
                                 q.help_text = String(sHelp);
+                        }
+                        var sGrp = pick(d, "group_label");
+                        if (sGrp && !q.group_label) {
+                                q.group_label = String(sGrp).trim();
                         }
                         if (sKind === "R") {
                                 q.data_type = "ENUM";
@@ -280,6 +286,28 @@ sap.ui.define([
         }
 
         /**
+          * 20261027：复选框按块分组（保持首次出现的顺序）。都没有块标题 → 一组「选项」；
+          * 有的有、有的没有 → 没标题的那组叫「其他选项」
+          * @returns {{label: string, params: object[]}[]}
+          */
+        function groupBools(aBools) {
+                var aGroups = [];
+                (aBools || []).forEach(function (p) {
+                        var sKey = String(p.group_label || "").trim();
+                        var g = aGroups.filter(function (x) { return x.key === sKey; })[0];
+                        if (!g) {
+                                g = { key: sKey, params: [] };
+                                aGroups.push(g);
+                        }
+                        g.params.push(p);
+                });
+                var bNamed = aGroups.some(function (g) { return !!g.key; });
+                return aGroups.map(function (g) {
+                        return { label: g.key || (bNamed ? "其他选项" : "选项"), params: g.params, named: !!g.key };
+                });
+        }
+
+        /**
           * 20261024：参数排版 —— 单选组（单选 ENUM）→ 必填 → 开关 → 选填；
           * 选填项：先补足到 3 个平铺，剩下 ≥ 2 个才折叠（只剩 1 个就直接平铺）
           * @returns {{enums: object[], shown: object[], bools: object[], more: object[]}} 参数定义分组（保持原相对顺序）
@@ -399,14 +427,20 @@ sap.ui.define([
                                 aRecs.push(r);
                                 oFields.addItem(r.cell);
                         });
-                        if (oLay.bools.length) {
-                                var aBoolRecs = oLay.bools.map(function (p) { return buildBool(p, oAsk.values); });
+                        // 20261027（10.27 #04）：复选框按原选择屏的块分组，每块一行、块标题作行标签
+                        var aBoolGroups = groupBools(oLay.bools);
+                        aBoolGroups.forEach(function (g, i) {
+                                var aBoolRecs = g.params.map(function (p) { return buildBool(p, oAsk.values); });
                                 aRecs = aRecs.concat(aBoolRecs);
-                                oFields.addItem(new VBox({
-                                        items: [new Label({ text: "选项", wrapping: true }).addStyleClass("askFieldLabel"),
+                                var oGrp = new VBox({
+                                        items: [new Label({ text: g.label, wrapping: true, tooltip: g.label }).addStyleClass("askFieldLabel"),
                                                 new HBox({ wrap: "Wrap", items: aBoolRecs.map(function (r) { return r.bool; }) }).addStyleClass("askEnum askBools")]
-                                }).addStyleClass("askField"));
-                        }
+                                }).addStyleClass("askField askBoolGroup");
+                                if (aBoolGroups.length > 1 && i > 0) {
+                                        oGrp.addStyleClass("askBoolGroupNext");
+                                }
+                                oFields.addItem(oGrp);
+                        });
                         if (oLay.more.length) {
                                 var oMoreBox = new VBox().addStyleClass("askMoreBox");
                                 var iFilled = 0;
@@ -621,5 +655,5 @@ sap.ui.define([
         }
 
         return { render: render, detectChoices: detectChoices, dateDisplay: dateDisplay, valueDisplay: valueDisplay, enumOptions: enumOptions,
-                mergeParamDefs: mergeParamDefs, layoutParams: layoutParams, defaultValueOf: defaultValueOf };
+                mergeParamDefs: mergeParamDefs, layoutParams: layoutParams, groupBools: groupBools, defaultValueOf: defaultValueOf };
 });

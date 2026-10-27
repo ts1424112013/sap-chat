@@ -11,8 +11,9 @@
 *&          写入 = 新配置版本(R + 日期时间), 旧版本参数行保留, 改回旧版本号即可回滚
 *& 调整: S_SKIP 不登记的参数名; S_FORCE 判为危险但确认要登记的参数名;
 *&       P_ALIAS 程序没有事务码时用的别名(只对单个程序); P_EXEC 新报表登记后立即开放执行
-*& 依赖: ZCL_AI_RPT_SCANNER V1.0; 写入只允许 ZAI_CHAT_USER 角色 ADMIN
+*& 依赖: ZCL_AI_RPT_SCANNER V1.0b; 写入只允许 ZAI_CHAT_USER 角色 ADMIN
 *& V1.0 20261024
+*& V1.0a 20261027(10.27 记录 #04): 扫描预览按选择屏块分段, 每块先打一行【块】标题(需 SCANNER V1.0b)
 *&---------------------------------------------------------------------*
 REPORT zai_rpt_reg LINE-SIZE 255.
 
@@ -308,7 +309,9 @@ CLASS lcl_reg IMPLEMENTATION.
           lv_nout TYPE i,
           lv_line TYPE string,
           lv_lbl  TYPE string,
-          lv_typ  TYPE string.
+          lv_typ  TYPE string,
+          lv_blk  TYPE string,
+          lv_bln  TYPE string.
 
     ULINE.
     WRITE: / '报表', is_draft-report_id, ' 事务码', is_draft-tcode, ' 程序', is_draft-progname.
@@ -331,6 +334,12 @@ CLASS lcl_reg IMPLEMENTATION.
     SKIP.
     WRITE: / '  种类 参数编号', 34 '选择屏名', 46 '标签(来源)', 100 '类型', 112 '必填/多值/范围', 132 '默认', 150 '选项 / 固定值 / 说明'.
     LOOP AT is_draft-params INTO ls_p.
+      " V1.0a: 选择屏块变了就先打一行块标题(参数卡按块给复选框分组)
+      IF ls_p-group_label <> lv_blk.
+        lv_blk = ls_p-group_label.
+        lv_bln = COND #( WHEN lv_blk IS INITIAL THEN `【不在块里】` ELSE |【块】{ lv_blk }| ).
+        WRITE: / lv_bln COLOR COL_GROUP.
+      ENDIF.
       lv_mark = COND #( WHEN ls_p-include = abap_true THEN '+' ELSE '-' ).
       lv_flag = |{ yn( ls_p-required ) }/{ yn( ls_p-multi_value ) }/{ yn( ls_p-range_allowed ) }|.
       CLEAR lv_def.

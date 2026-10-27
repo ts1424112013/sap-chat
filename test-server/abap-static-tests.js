@@ -285,6 +285,19 @@ check('abort_reason：读作业日志、TBTC5 列按名取、跳过 00/518、0K/
   /lv_id = '00' AND lv_no = '518'/.test(exMethods.abort_reason || '') && /lv_id = '0K' AND lv_no = '530'/.test(exMethods.abort_reason || ''));
 check('poll 作业取消：原因写 ERROR_MESSAGE（JOB_ABORT），已有原因不覆盖', /WHEN 'A'\.[\s\S]*?abort_reason\([\s\S]*?error_code\s+= 'JOB_ABORT',[\s\S]*?AND error_code\s+= ' '\./.test(exMethods.poll || ''));
 check('EXEC_SAP 新方法都声明在 PRIVATE SECTION', /PRIVATE SECTION\.[\s\S]*?CLASS-METHODS job_langu[\s\S]*?CLASS-METHODS abort_reason[\s\S]*?ENDCLASS\./.test(ex));
+// 10.27 记录 #04（下午）：参数卡复选框按原选择屏的块分组 —— GROUP_LABEL
+console.log('\n[7] 10.27 #04：选择屏块标题 GROUP_LABEL（SCANNER V1.0b / REPORT_SERVICE V1.0.15 / ZAI_RPT_REG V1.0a）');
+check('SCANNER V1.0b：ty_param 有 group_label，build_rows 用 text_of_var( 块 ) 填（普通行 + 单选组 / 固定组）', /^\* V1\.0b\s+20261027/m.test(scRaw) &&
+  /BEGIN OF ty_param,[\s\S]*?group_label\s+TYPE string,[\s\S]*?END OF ty_param/i.test(sc) &&
+  (scMethods.build_rows || '').split(/group_label\s+=\s+text_of_var\(/).length - 1 === 3);
+check('SCANNER save：GROUP_LABEL 按名取列（SE11 没加列也能激活、照常写入并提示）', /ASSIGN COMPONENT 'GROUP_LABEL' OF STRUCTURE ls_db/.test(scMethods.save || '') &&
+  !/ls_db-group_label/i.test(scMethods.save || '') && /lv_nogrp = abap_true/.test(scMethods.save || ''));
+const rsMethods2 = methodOf(rs, 'get_params');
+check('REPORT_SERVICE V1.0.15：ty_param 有 group_label；主 SELECT 清单不变、块标题另用动态列名读并捕获异常', /^\* V1\.0\.15 20261027/m.test(rsRaw) &&
+  /BEGIN OF ty_param,[\s\S]*?group_label\s+TYPE string,[\s\S]*?END OF ty_param/i.test(rs) &&
+  /validation_rule, help_text, sort_no, active, sel_kind\s+FROM zai_rpt_param/i.test(rsMethods2) && !/sel_kind,\s*group_label/i.test(rsMethods2) &&
+  /lv_gcols\s+TYPE string VALUE `PARAM_ID, GROUP_LABEL`/.test(rsMethods2) && /SELECT \(lv_gcols\) FROM zai_rpt_param/.test(rsMethods2) && /CATCH cx_sy_dynamic_osql_error/.test(rsMethods2));
+check('ZAI_RPT_REG V1.0a：预览按块分段打【块】标题（先赋给变量再 WRITE）', /^\*& V1\.0a 20261027/m.test(regRaw) && /ls_p-group_label <> lv_blk/.test(reg) && /WRITE: \/ lv_bln COLOR COL_GROUP\./.test(reg));
 
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);
