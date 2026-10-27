@@ -1599,3 +1599,71 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .heroEnter .heroCard { animation: heroRise .55s .22s var(--ease) both; }
 .heroEnter .scenePicker, .heroEnter .heroChips, .heroEnter .catalogHost { animation: heroRise .5s .3s var(--ease) both; }
 @keyframes heroRise { from { opacity: 0; transform: translateY(14px); } }
+
+/* ==================== 20261028：Agent 边跑边看（App.controller _liveHtml）====================
+   思考卡里的步骤时间线：左侧竖线上一步一个圆点（进行中转圈 / 完成打勾 / 被拒感叹号），
+   模型调工具前的一句话（lvNote）、工具行（工具名 · 在做什么 · 结果）、关键参数小标签、前几行预览、可展开的 SQL */
+/* 宽度要写成确定值：回复所在的列按内容撑开，百分比在这里不起作用（卡片会缩成文字宽、长标签被截断） */
+.agentThinkingLive:has(.lvSteps) { width: min(42rem, calc(var(--content-max) - 3rem)); box-sizing: border-box; }
+.lvSteps {
+        display: flex; flex-direction: column; gap: .55rem;
+        margin: .6rem 0 .15rem .4rem; padding-left: 1.05rem; border-left: 1.5px solid var(--line-strong);
+}
+.agentDoneCard .lvSteps { margin: .45rem 0 .3rem .55rem; }
+.lvStep { position: relative; min-width: 0; }
+.lvDot {
+        position: absolute; left: calc(-1.47rem - .75px); top: .14rem; width: .84rem; height: .84rem; box-sizing: border-box;
+        display: flex; align-items: center; justify-content: center; border-radius: 50%;
+        background: var(--surface); border: 1.5px solid var(--line-strong); color: var(--sub);
+        font-size: .56rem; font-weight: 800; line-height: 1;
+}
+.lvDot svg { width: .58rem; height: .58rem; }
+.lvStep.is-ok .lvDot { border-color: var(--ok); color: var(--ok); }
+.lvStep.is-run .lvDot { border-color: var(--accent); }
+.lvStep.is-bad .lvDot { border-color: var(--sk-warn); color: var(--sk-warn); }
+.lvStep.lvNote .lvDot { border-color: transparent; color: var(--accent); }
+.lvStep.lvNote .lvDot svg { width: .68rem; height: .68rem; }
+.lvSpin { width: .46rem; height: .46rem; box-sizing: border-box; border-radius: 50%; border: 1.5px solid var(--accent); border-right-color: transparent; animation: spin360 .8s linear infinite; }
+
+.lvSay { font-size: .84rem; line-height: 1.55; color: var(--text); }
+.lvLine { display: flex; align-items: baseline; gap: .45rem; min-width: 0; font-size: .78rem; line-height: 1.5; color: var(--text-2); }
+.lvTn { flex: none; font-weight: 600; color: var(--text); }
+.lvLab { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lvPhase .lvLab { color: var(--sub); }
+.lvRes { flex: none; margin-left: auto; padding-left: .6rem; font-size: .74rem; color: var(--sub); font-variant-numeric: tabular-nums; }
+.lvTool.is-ok .lvRes { color: var(--ok); }
+.lvStep.is-bad .lvRes { color: var(--sk-warn); }
+.lvStep.is-run .lvRes { color: var(--accent); }
+
+.lvArgs { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .3rem; }
+.lvChip { font-size: .7rem; line-height: 1.5; padding: 0 .45rem; border-radius: 6px; background: var(--hover); border: 1px solid var(--line); color: var(--text-2); }
+.lvChipK { color: var(--sub); margin-right: .3rem; }
+
+.lvPrev {
+        margin-top: .4rem; min-width: 13rem; max-width: 100%; border-collapse: separate; border-spacing: 0;
+        border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--bg); font-size: .72rem;
+}
+.lvPrev th { text-align: left; font-weight: 500; color: var(--sub); padding: .22rem .65rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.lvPrev td { padding: .2rem .65rem; color: var(--text-2); white-space: nowrap; }
+.lvPrev td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.lvPrev tbody tr + tr td { border-top: 1px solid var(--line); }
+
+.lvMore { margin-top: .3rem; }
+.lvMore summary { display: inline-flex; align-items: center; gap: .3rem; cursor: pointer; list-style: none; font-size: .72rem; color: var(--accent); user-select: none; }
+.lvMore summary::-webkit-details-marker { display: none; }
+.lvMore summary::before {
+        content: ""; width: .28rem; height: .28rem; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+        transform: rotate(-45deg); transition: transform .15s var(--ease);
+}
+.lvMore[open] summary::before { transform: rotate(45deg); }
+.lvSql {
+        margin: .35rem 0 0; padding: .5rem .65rem; border-radius: 8px; background: var(--bg); border: 1px solid var(--line);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .72rem; line-height: 1.5; color: var(--text-2);
+        white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+/* 新出现的步骤浮入；刚完成的那一步圆点弹一下 */
+.lvStep.is-new { animation: lvIn .32s var(--ease) both; }
+.lvStep.is-done .lvDot { animation: lvPop .38s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes lvIn { from { opacity: 0; transform: translateY(5px); } }
+@keyframes lvPop { 0% { transform: scale(.6); } 60% { transform: scale(1.25); } 100% { transform: none; } }

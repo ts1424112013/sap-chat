@@ -1198,6 +1198,8 @@ sap.ui.define([
                         // ClientRequestId）；后端无新接口时 ChatService 内部
                         // 自动回退旧 AnalyzeAgent，调用方无感
                         var oCurTask = oChatModel.getProperty("/currentTask") || {};
+                        // 20261028：本轮编号同时用来查运行进度（边跑边看，_startLive）
+                        var sCid = bAgent ? this._newSessionId() : "";
                         var pReq = ChatService.sendByMode({
                                 mode: oCfg.mode,
                                 agentType: oCfg.agentType,
@@ -1205,13 +1207,16 @@ sap.ui.define([
                                 question: oCfg.question,
                                 modelId: sModelId,
                                 taskId: bAgent ? (oCurTask.taskId || "") : "",
-                                clientRequestId: bAgent ? this._newSessionId() : "",
+                                clientRequestId: sCid,
                                 // 20261011：本会话最近就绪的报表结果，供"分析一下这个结果"（后端校验归属/状态）
                                 focusedArtifactId: bAgent ? ((this._mFocusArt || {})[sSessionId] || "") : "",
                                 // 20261011：会话场景（新会话首条消息写入后端，之后以后端为准）
                                 scene: bAgent ? this._normScene(oCfg.agentType) : "",
                                 skillId: bAgent ? this._skillRequestId() : ""
                         });
+                        if (bAgent) {
+                                this._startLive(oPending, sCid, sSessionId);
+                        }
 
                         return pReq.then(function (oRes) {
                                 // V5：响应到达前用户已停止 → 丢弃本次回复（后端已存库）
@@ -1220,6 +1225,9 @@ sap.ui.define([
                                         return;
                                 }
                                 that._stopThinkingTicker();
+                                if (bAgent) {
+                                        that._endLive(oPending.uid, oRes && oRes.status === "ERROR" ? "error" : "ok");
+                                }
                                 oChatModel.setProperty("/messages/" + iAssistantIdx + "/waiting", false);
                                 if (!bAgent && oRes.status === "ERROR") {
                                         fnSetError(oRes.message || oRB.getText("errServiceReturned"));
@@ -1253,6 +1261,9 @@ sap.ui.define([
                                         return;
                                 }
                                 that._stopThinkingTicker();
+                                if (bAgent) {
+                                        that._endLive(oPending.uid, "error");
+                                }
                                 fnSetError((oErr && oErr.message) || String(oErr));
                                 if (bAgent) {
                                         that._updateAgentSessionStatus(sSessionId, "ERROR");
@@ -1292,7 +1303,8 @@ sap.ui.define([
                                 var sPath = "/messages/" + iIndex;
                                 oChatModel.setProperty(sPath + "/elapsedText",
                                         that._rb().getText("waitElapsed", [Math.round((Date.now() - iStart) / 1000)]));
-                                if (bAgent && ++iTick % 3 === 0) {
+                                // 20261028：拿到真实步骤后不再轮换固定文案（标题跟着当前步骤走，见 _applyLive）
+                                if (bAgent && ++iTick % 3 === 0 && !(oE.liveSteps && oE.liveSteps.length)) {
                                         iPos = (iPos + 1) % aPhases.length;
                                         oChatModel.setProperty(sPath + "/thinkingLabel", that._rb().getText(aPhases[iPos]));
                                 }
@@ -1324,6 +1336,225 @@ sap.ui.define([
                                 window.clearInterval(this._iThinkTimer);
                                 this._iThinkTimer = null;
                         }
+                },
+
+                /* =========================================================
+                 * 20261028：Agent「边跑边看」—— 回复返回之前，每 0.7～1.5 秒按本轮 ClientRequestId
+                 * 查一次运行进度（ChatService.getAgentProgress），把已经走完 / 正在走的步骤画进思考卡：
+                 * 模型调工具前的一句话、工具和关键参数、结果行数与耗时、前几行预览、已校验 SQL。
+                 * 后端还没有 AgentProgress 时不轮询，思考卡照旧显示阶段文案。
+                 * 步骤画成一段 HTML（liveHtml，同 runHtml / extraHtml 的做法）；内容不变不重绘，
+                 * 新出现的步骤和刚完成的步骤各播一次小动效，展开过的 SQL 重绘后保持展开。
+                 * ========================================================= */
+
+                LIVE_POLL_MS: [700, 1000, 1500],
+
+                _startLive: function (oEntry, sCid, sSid) {
+                        var that = this;
+                        if (!sCid || !ChatService.supportsAgentProgress || !ChatService.supportsAgentProgress()) {
+                                return;
+                        }
+                        this._mLive = this._mLive || {};
+                        this._bindLiveToggle();
+                        var oLive = this._mLive[oEntry.uid] = { cid: sCid, sid: sSid, timer: 0, stopped: false, fails: 0, n: 0, seen: {} };
+                        var fnPoll = function () {
+                                if (oLive.stopped) {
+                                        return;
+                                }
+                                ChatService.getAgentProgress(sCid).then(function (o) {
+                                        if (oLive.stopped) {
+                                                return;
+                                        }
+                                        oLive.fails = 0;
+                                        that._applyLive(oEntry.uid, (o && o.steps) || [], false);
+                                        if (o && o.status === "DONE") {
+                                                return;   // 后端已走完，等回复本身到达即可
+                                        }
+                                        fnNext();
+                                }).catch(function () {
+                                        if (++oLive.fails >= 3) {
+                                                oLive.stopped = true;   // 连续失败就放弃，思考卡退回阶段文案
+                                                return;
+                                        }
+                                        fnNext();
+                                });
+                        };
+                        var fnNext = function () {
+                                var a = that.LIVE_POLL_MS;
+                                oLive.n++;
+                                oLive.timer = setTimeout(fnPoll, oLive.n < 8 ? a[0] : oLive.n < 20 ? a[1] : a[2]);
+                        };
+                        oLive.timer = setTimeout(fnPoll, 350);
+                },
+
+                /**
+                 * 回复到达 / 出错 / 停止：不再轮询；正常结束时再取一次进度补齐最后一步，
+                 * 还挂着「进行中」的步骤按结局收口（完成 / 失败 / 已停止）
+                 */
+                _endLive: function (sUid, sHow) {
+                        var that = this;
+                        var oLive = this._mLive && this._mLive[sUid];
+                        if (!oLive) {
+                                return;
+                        }
+                        oLive.stopped = true;
+                        clearTimeout(oLive.timer);
+                        delete this._mLive[sUid];
+                        var fnClose = function (aSteps) {
+                                var oHit = that._entryByUid(sUid, oLive.sid);
+                                var aBase = aSteps && aSteps.length ? aSteps : ((oHit && oHit.entry.liveSteps) || []);
+                                if (!aBase.length) {
+                                        return;
+                                }
+                                var sEnd = sHow === "ok" ? "OK" : sHow === "stopped" ? "STOPPED" : "ERROR";
+                                that._applyLive(sUid, aBase.map(function (st) {
+                                        return String(st.status || "").toUpperCase() === "RUNNING" ? Object.assign({}, st, { status: sEnd }) : st;
+                                }), true, oLive);
+                        };
+                        if (sHow === "ok") {
+                                ChatService.getAgentProgress(oLive.cid).then(function (o) {
+                                        fnClose((o && o.steps) || null);
+                                }).catch(function () { fnClose(null); });
+                        } else {
+                                fnClose(null);
+                        }
+                },
+
+                /** 把一份步骤写进消息条目（当前会话直接走模型绑定；切走的会话只改缓存） */
+                _applyLive: function (sUid, aSteps, bFinal, oLiveArg) {
+                        var oLive = oLiveArg || (this._mLive && this._mLive[sUid]);
+                        if (!oLive) {
+                                return;
+                        }
+                        var oHit = this._entryByUid(sUid, oLive.sid);
+                        if (!oHit) {
+                                return;
+                        }
+                        var oEntry = oHit.entry;
+                        var aShow = (aSteps || []).filter(function (st) { return st && st.phase !== "TOOL_DECISION"; });
+                        if (!aShow.length) {
+                                return;
+                        }
+                        var sHtml = this._liveHtml(sUid, aShow, oLive.seen);
+                        aShow.forEach(function (st) { oLive.seen[String(st.seq)] = String(st.status || "RUNNING").toUpperCase(); });
+                        var oRun = null;
+                        aShow.forEach(function (st) {
+                                if (String(st.status || "").toUpperCase() === "RUNNING") { oRun = st; }
+                        });
+                        var oChat = this.getView().getModel("chat");
+                        var bShown = this._sMessagesSession === oLive.sid && (oChat.getProperty("/messages") || [])[oHit.index] === oEntry;
+                        var bNear = bShown && this._isNearBottom();
+                        oEntry.liveSteps = aShow;
+                        var mSet = { liveHtml: sHtml };
+                        if (!bFinal && oRun) {
+                                mSet.thinkingLabel = (oRun.toolLabel ? oRun.toolLabel + " · " : "") + (oRun.label || "") + "…";
+                        }
+                        Object.keys(mSet).forEach(function (k) {
+                                if (oEntry[k] === mSet[k]) {
+                                        return;
+                                }
+                                if (bShown) {
+                                        oChat.setProperty("/messages/" + oHit.index + "/" + k, mSet[k]);
+                                } else {
+                                        oEntry[k] = mSet[k];
+                                }
+                        });
+                        if (bNear && !bFinal) {
+                                this._scrollToBottom();
+                        }
+                },
+
+                /** 步骤列表 HTML（所有文字先转义，标签由这里构造） */
+                _liveHtml: function (sUid, aSteps, mSeen) {
+                        var esc = Formatter.escapeHtml;
+                        var mOpen = this._mLiveOpen || {};
+                        var sCheck = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.4l3 3 6-6.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+                        var sNote = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M3 8h10M3 11.5h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+                        var mBad = { REJECTED: "被拒，已自动调整", ERROR: "失败", DENIED: "无权限", STOPPED: "已停止" };
+                        var fnSec = function (ms) {
+                                return ms >= 50 ? (ms / 1000).toFixed(1) + " 秒" : "";
+                        };
+                        var fnNum = function (v) { return /^[-+]?[\d,]+(\.\d+)?%?$/.test(String(v).trim()); };
+                        var s = '<div class="lvSteps" data-live-uid="' + esc(sUid) + '">';
+                        aSteps.forEach(function (st) {
+                                var sSeq = String(st.seq);
+                                var sSt = String(st.status || "RUNNING").toUpperCase();
+                                var bRun = sSt === "RUNNING";
+                                var bBad = !!mBad[sSt];
+                                var bNote = st.phase === "NOTE";
+                                var bTool = st.phase === "EXECUTING";
+                                var sPrev = mSeen[sSeq];
+                                var sCls = "lvStep " + (bNote ? "lvNote" : bTool ? "lvTool" : "lvPhase") +
+                                        (bRun ? " is-run" : sSt === "STOPPED" ? " is-stop" : bBad ? " is-bad" : " is-ok") +
+                                        (sPrev === undefined ? " is-new" : sPrev === "RUNNING" && !bRun ? " is-done" : "");
+                                var sDot = bNote ? sNote : bRun ? '<i class="lvSpin"></i>' : bBad ? "!" : sCheck;
+                                s += '<div class="' + sCls + '" data-seq="' + esc(sSeq) + '"><span class="lvDot">' + sDot + '</span><div class="lvMain">';
+                                if (bNote) {
+                                        s += '<div class="lvSay">' + esc(st.label || "") + "</div></div></div>";
+                                        return;
+                                }
+                                var aRes = [];
+                                if (bRun) {
+                                        aRes.push(bTool ? "进行中…" : "…");
+                                } else if (bBad) {
+                                        aRes.push(mBad[sSt]);
+                                } else {
+                                        if (bTool && st.rows !== null && st.rows !== undefined && st.rows !== "") {
+                                                aRes.push(st.rows + " 行");
+                                        }
+                                        var sT = fnSec(parseInt(st.elapsedMs, 10) || 0);
+                                        if (sT) {
+                                                aRes.push(sT);
+                                        }
+                                }
+                                s += '<div class="lvLine">' + (st.toolLabel ? '<span class="lvTn">' + esc(st.toolLabel) + "</span>" : "") +
+                                        '<span class="lvLab">' + esc(st.label || "") + "</span>" +
+                                        '<span class="lvRes">' + esc(aRes.join(" · ")) + "</span></div>";
+                                var aArgs = Array.isArray(st.args) ? st.args : [];
+                                if (aArgs.length) {
+                                        s += '<div class="lvArgs">' + aArgs.slice(0, 6).map(function (kv) {
+                                                var a = Array.isArray(kv) ? kv : [kv && kv.k, kv && kv.v];
+                                                return '<span class="lvChip"><span class="lvChipK">' + esc(a[0] || "") + "</span>" + esc(a[1] === undefined ? "" : a[1]) + "</span>";
+                                        }).join("") + "</div>";
+                                }
+                                var oPv = !bRun && st.preview && Array.isArray(st.preview.columns) && Array.isArray(st.preview.rows) ? st.preview : null;
+                                if (oPv && oPv.rows.length) {
+                                        var aCols = oPv.columns.slice(0, 5);
+                                        s += '<table class="lvPrev"><thead><tr>' + aCols.map(function (c) { return "<th>" + esc(c) + "</th>"; }).join("") +
+                                                "</tr></thead><tbody>" + oPv.rows.slice(0, 3).map(function (r) {
+                                                        return "<tr>" + aCols.map(function (_, i) {
+                                                                var v = Array.isArray(r) ? r[i] : "";
+                                                                return "<td" + (fnNum(v) ? ' class="num"' : "") + ">" + esc(v === null || v === undefined ? "" : v) + "</td>";
+                                                        }).join("") + "</tr>";
+                                                }).join("") + "</tbody></table>";
+                                }
+                                if (!bRun && st.detail) {
+                                        s += '<details class="lvMore" data-seq="' + esc(sSeq) + '"' + (mOpen[sUid + ":" + sSeq] ? " open" : "") +
+                                                '><summary>查看 SQL</summary><pre class="lvSql">' + esc(st.detail) + "</pre></details>";
+                                }
+                                s += "</div></div>";
+                        });
+                        return s + "</div>";
+                },
+
+                /** 记住展开过的「查看 SQL」，步骤重绘后保持展开（toggle 不冒泡，用捕获） */
+                _bindLiveToggle: function () {
+                        if (this._bLiveToggle || typeof document === "undefined") {
+                                return;
+                        }
+                        this._bLiveToggle = true;
+                        var that = this;
+                        document.addEventListener("toggle", function (e) {
+                                var d = e.target;
+                                if (!d || !d.classList || !d.classList.contains("lvMore")) {
+                                        return;
+                                }
+                                var oRoot = d.closest("[data-live-uid]");
+                                if (oRoot) {
+                                        that._mLiveOpen = that._mLiveOpen || {};
+                                        that._mLiveOpen[oRoot.getAttribute("data-live-uid") + ":" + d.getAttribute("data-seq")] = d.open;
+                                }
+                        }, true);
                 },
 
                 /**
@@ -1549,6 +1780,9 @@ sap.ui.define([
                         // 未开始打字的占位气泡标记为已停止
                         var aMsgs = oChatModel.getProperty("/messages");
                         var oLast = aMsgs && aMsgs[aMsgs.length - 1];
+                        if (oLast && this._mLive && this._mLive[oLast.uid]) {
+                                this._endLive(oLast.uid, "stopped");
+                        }
                         if (oLast && oLast.streaming) {
                                 oLast.avatarStopped = true;
                                 oLast.streaming = false;
@@ -1948,7 +2182,9 @@ sap.ui.define([
                 _agentMeta: function (oRes, bIncludeDone) {
                         var oRB = this._rb();
                         var oFinished = TraceService.finish(oRes);
-                        var sBase = oRB.getText("agentMeta", TraceService.stats(oFinished));
+                        var aStats = TraceService.stats(oFinished);
+                        // 20261028：确定性流程（报表选择 / 参数卡，不调模型）没有轮次和工具，只显示耗时，不写「0 轮 · 0 次工具」
+                        var sBase = Number(aStats[0]) || Number(aStats[1]) ? oRB.getText("agentMeta", aStats) : String(aStats[2] || "");
                         var sPrefix = bIncludeDone ? oRB.getText("sessStCompleted") : "";
                         if (oFinished.status === "TIMEOUT") {
                                 sPrefix = oRB.getText("agentStTimeout");
@@ -2234,14 +2470,22 @@ sap.ui.define([
                                         var oLiveCard = new VBox({ visible: "{chat>requestPending}" })
                                                 .addStyleClass("agentThinkingCard agentThinkingLive");
                                         oLiveCard.addItem(oLiveHead);
-                                        oLiveCard.addItem(new HTML({ content: '<div class="thinkBar"><i></i></div>', sanitizeContent: false }));
+                                        // 20261028：拿到真实步骤（AgentProgress）后，流动进度条换成步骤列表（_liveHtml）
+                                        oLiveCard.addItem(new HTML({ content: '<div class="thinkBar"><i></i></div>', sanitizeContent: false,
+                                                visible: "{= !${chat>liveHtml} }" }));
+                                        oLiveCard.addItem(new HTML({ content: "{chat>liveHtml}", visible: "{= !!${chat>liveHtml} }",
+                                                preferDOM: false, sanitizeContent: false }));
                                         oCol.addItem(oLiveCard);
                                         // 折叠由外层未绑定容器控制（避免 setVisible 回写绑定属性）
                                         var oStepsWrap = new VBox({ visible: false });
                                         var oStepsBox = new VBox({
-                                                visible: "{chat>thinking/hasPhases}"
+                                                // 20261028：这一轮有实时步骤时，展开看的就是实时步骤（更全：含模型的说明、参数、预览）
+                                                visible: "{= !!${chat>thinking/hasPhases} && !${chat>liveHtml} }"
                                         }).addStyleClass("agentThinkingSteps");
                                         oStepsWrap.addItem(oStepsBox);
+                                        var oLiveDone = new HTML({ content: "{chat>liveHtml}", visible: "{= !!${chat>liveHtml} }",
+                                                preferDOM: false, sanitizeContent: false });
+                                        oStepsWrap.addItem(oLiveDone);
                                         oStepsBox.bindAggregation("items", {
                                                 path: "chat>thinking/phases",
                                                 templateShareable: false,
@@ -2301,7 +2545,7 @@ sap.ui.define([
                                         }).addStyleClass("agentThinkingTitle"));
                                         oDoneHead.addItem(oFoldIcon);
                                         oDoneHead.attachBrowserEvent("click", function () {
-                                                if (!oStepsBox.getVisible()) {
+                                                if (!oStepsBox.getVisible() && !oLiveDone.getVisible()) {
                                                         return;   // 无阶段数据时不可展开
                                                 }
                                                 var bOpen = !oStepsWrap.getVisible();

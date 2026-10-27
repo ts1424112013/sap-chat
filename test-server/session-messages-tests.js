@@ -385,5 +385,26 @@ async function test(name, fn) { await fn(); passed++; console.log('  ✅ ' + nam
     const small = c._pushReportResult(result, 'RSMALL');
     assert.ok(!small.extraHtml.includes('data-act="all"'));
   });
+  await test('20261028：边跑边看 —— 进度步骤写进条目、文字转义、标题跟着当前步骤；刚完成的一步带动效', () => {
+    const c = controller(); activate(c, 'LIVE');
+    c._isNearBottom = () => false;
+    const e = add(c, '');
+    c._mLive = { [e.uid]: { cid: 'C1', sid: 'LIVE', timer: 0, stopped: false, fails: 0, n: 0, seen: {} } };
+    c._applyLive(e.uid, [
+      { seq: 1, phase: 'UNDERSTANDING', label: '理解问题', status: 'OK', elapsedMs: 400 },
+      { seq: 2, phase: 'TOOL_DECISION', label: '检查可用工具', status: 'OK' },
+      { seq: 3, phase: 'NOTE', label: '先查 <script>x</script>', status: 'OK' },
+      { seq: 4, phase: 'EXECUTING', toolLabel: '数据分析查询', label: '按类型', status: 'RUNNING', args: [['表', 'MARA']] }
+    ], false);
+    assert.ok(e.liveHtml.includes('先查 &lt;script&gt;') && !e.liveHtml.includes('<script>'));
+    assert.ok(!e.liveHtml.includes('检查可用工具'));          // 工具判断这一步不显示
+    assert.ok(e.liveHtml.includes('进行中') && e.liveHtml.includes('lvChipK'));
+    assert.equal(e.thinkingLabel, '数据分析查询 · 按类型…');
+    c._applyLive(e.uid, e.liveSteps.map((st) => st.seq === 4 ? Object.assign({}, st, {
+      status: 'OK', rows: 5, elapsedMs: 600, detail: 'SELECT 1', preview: { columns: ['类型', '数量'], rows: [['FERT', '128']] } }) : st), false);
+    assert.ok(e.liveHtml.includes('5 行 · 0.6 秒') && e.liveHtml.includes('<details') && e.liveHtml.includes('class="num"'));
+    assert.ok(e.liveHtml.includes('is-done') && !e.liveHtml.includes('is-new'));
+  });
+
   console.log(`\n━━ 结果：${passed} 通过，0 失败`);
 })().catch((err) => { console.error(err); process.exitCode = 1; });

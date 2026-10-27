@@ -201,8 +201,15 @@ sap.ui.define([], function () {
                                         var sAnswer;
                                         var oAnalysis = null;
                                         if (bInv) {
-                                                aTrace.push({ phase: "EXECUTING", tool: "get_stock_snapshot", label: "查询库存快照（MARD 0001/A001，演示）", status: "OK", elapsedMs: 580, rows: 2 });
-                                                aTrace.push({ phase: "EXECUTING", tool: "get_daily_movement", label: "查询当天收发（MSEG 过账日汇总，演示）", status: "OK", elapsedMs: 710, rows: 2 });
+                                                // 20261028：note / args / preview 是「边跑边看」（AgentProgress）才用的字段，过程摘要按原样显示
+                                                aTrace.push({ phase: "EXECUTING", tool: "get_stock_snapshot", label: "查询库存快照（MARD 0001/A001，演示）", status: "OK", elapsedMs: 580, rows: 2,
+                                                        note: "先看 A001 在 0001 工厂各库位的当前库存", toolLabel: "库存快照", liveLabel: "A001 · 0001 工厂",
+                                                        args: [["表", "MARD"], ["工厂", "0001"], ["物料", "A001"]],
+                                                        preview: { columns: ["库位", "非限制", "质检"], rows: [["1001", "80", "0"], ["1002", "20", "20"]] } });
+                                                aTrace.push({ phase: "EXECUTING", tool: "get_daily_movement", label: "查询当天收发（MSEG 过账日汇总，演示）", status: "OK", elapsedMs: 710, rows: 2,
+                                                        note: "再看今天的收发，判断库存是怎么变过来的", toolLabel: "当天收发", liveLabel: "按移动类型汇总",
+                                                        args: [["表", "MSEG"], ["过账日", "今天"]],
+                                                        preview: { columns: ["移动类型", "数量"], rows: [["101 入库", "+50"], ["261 生产领料", "-30"]] } });
                                                 aTrace.push({ phase: "COMPOSING", label: "整理回答", status: "OK", elapsedMs: 1200 });
                                                 sAnswer = [
                                                         "【A001 在 0001 工厂的库存分析】(单位: PC)",
@@ -256,8 +263,16 @@ sap.ui.define([], function () {
                                                         ],
                                                         datasets: [oDsGroup, oDsTrend]
                                                 };
-                                                aTrace.push({ phase: "EXECUTING", tool: "sap_data_analysis", label: "数据分析查询: 按物料类型统计, 5 行", status: "OK", elapsedMs: 640, rows: 5 });
-                                                aTrace.push({ phase: "EXECUTING", tool: "sap_data_analysis", label: "数据分析查询: 按创建月份趋势, 6 行", status: "OK", elapsedMs: 520, rows: 6 });
+                                                aTrace.push({ phase: "EXECUTING", tool: "sap_data_analysis", label: "数据分析查询: 按物料类型统计, 5 行", status: "OK", elapsedMs: 640, rows: 5,
+                                                        note: "先按物料类型统计 MARA 里的物料数量", toolLabel: "数据分析查询", liveLabel: "按物料类型统计",
+                                                        args: [["表", "MARA"], ["分组", "物料类型"]],
+                                                        detail: "SELECT mtart, COUNT(*) AS cnt\n  FROM mara\n GROUP BY mtart\n ORDER BY cnt DESCENDING",
+                                                        preview: { columns: ["物料类型", "数量"], rows: oDsGroup.rows.slice(0, 3) } });
+                                                aTrace.push({ phase: "EXECUTING", tool: "sap_data_analysis", label: "数据分析查询: 按创建月份趋势, 6 行", status: "OK", elapsedMs: 520, rows: 6,
+                                                        note: "再看近半年每个月新建了多少物料", toolLabel: "数据分析查询", liveLabel: "按创建月份趋势",
+                                                        args: [["表", "MARA"], ["按", "创建月份"], ["范围", "近 6 个月"]],
+                                                        detail: "SELECT substring( ersda, 1, 6 ) AS month, COUNT(*) AS cnt\n  FROM mara\n WHERE ersda >= '20260401'\n GROUP BY substring( ersda, 1, 6 )",
+                                                        preview: { columns: ["创建月份", "数量"], rows: oDsTrend.rows.slice(-3) } });
                                                 aTrace.push({ phase: "COMPOSING", label: "生成结构化分析", status: "OK", elapsedMs: 860 });
                                                 sAnswer = [
                                                         "【物料主档分析】",
@@ -382,6 +397,110 @@ sap.ui.define([], function () {
 
                 _mockSaveUsers: function () {
                         try { window.localStorage.setItem("zaiChat.mockUsers", JSON.stringify(this._oMockUsers || [])); } catch (e) { /* 忽略 */ }
+                },
+
+                /* =====================================================================
+                 * 20261028：Agent「边跑边看」的演示后端（与后端 AgentProgress 同一份契约）
+                 * ---------------------------------------------------------------------
+                 * 真实后端：Agent 循环每走一步就把这一步写进进度表（独立数据库连接提交），
+                 * 前端在回复返回前按本轮 ClientRequestId 每秒查一次 AgentProgress。
+                 * 演示：先照常算出结果，再把结果里的过程摘要按时间线一步步"放"出来，放完才返回回答。
+                 * 进度步骤：{ seq, phase, label, toolLabel, tool, args:[[键,值]], status: RUNNING / OK / REJECTED / ERROR / DENIED,
+                 *            elapsedMs, rows, detail(已校验 SQL), preview:{columns, rows(≤3)} }
+                 *   phase：UNDERSTANDING / SKILL / PLANNING / TOOL_DECISION / NOTE(模型调工具前的一句话) / EXECUTING / COMPOSING
+                 * ===================================================================== */
+                _mockLiveRun: function (sCid, pResult) {
+                        var Service = this;
+                        if (!sCid || typeof setTimeout !== "function") {
+                                return pResult;
+                        }
+                        var mRuns = this._mMockLive = this._mMockLive || {};
+                        Object.keys(mRuns).forEach(function (k) {
+                                if (Date.now() - mRuns[k].at > 10 * 60 * 1000) { delete mRuns[k]; }
+                        });
+                        var oRun = mRuns[sCid] = { at: Date.now(), status: "RUNNING", seq: 0, steps: [] };
+                        var fnAdd = function (o) {
+                                var oStep = Object.assign({ status: "RUNNING", elapsedMs: null, rows: null }, o, { seq: ++oRun.seq });
+                                oRun.steps.push(oStep);
+                                return oStep;
+                        };
+                        var oFirst = fnAdd({ phase: "UNDERSTANDING", label: "理解问题" });
+                        return pResult.then(function (r) {
+                                var aScript = Service._mockLiveScript(r);
+                                return new Promise(function (fnResolve) {
+                                        var i = 0;
+                                        var fnNext = function () {
+                                                if (i >= aScript.length) {
+                                                        oRun.status = "DONE";
+                                                        r.elapsedMs = Date.now() - oRun.at;   // 演示：总耗时按实际播放时间，与步骤对得上
+                                                        fnResolve(r);
+                                                        return;
+                                                }
+                                                var t = aScript[i++];
+                                                var iDur = Math.max(380, Math.min(1500, Math.round((t.elapsedMs || 0) * 1.3)));
+                                                var oStep;
+                                                if (t.phase === "UNDERSTANDING") {
+                                                        oStep = oFirst;
+                                                        iDur = 250;
+                                                } else {
+                                                        if (t.note) {
+                                                                fnAdd({ phase: "NOTE", label: t.note, status: "OK" });
+                                                        }
+                                                        oStep = fnAdd({ phase: t.phase, label: t.liveLabel || t.label, toolLabel: t.toolLabel || "",
+                                                                tool: t.tool || "", args: t.args || [] });
+                                                }
+                                                setTimeout(function () {
+                                                        Object.assign(oStep, {
+                                                                status: t.status || "OK",
+                                                                elapsedMs: t.phase === "UNDERSTANDING" ? Date.now() - oRun.at : t.elapsedMs || 0,
+                                                                rows: t.rows === undefined ? null : t.rows,
+                                                                detail: t.detail || "", preview: t.preview || null
+                                                        });
+                                                        setTimeout(fnNext, t.note ? 220 : 120);
+                                                }, iDur + (t.note ? 450 : 0));
+                                        };
+                                        fnNext();
+                                });
+                        }, function (e) {
+                                oFirst.status = "ERROR";
+                                oRun.status = "DONE";
+                                throw e;
+                        });
+                },
+
+                /** 把演示结果的过程摘要排成播放脚本；参数卡类回复补上「匹配报表 → 读取参数定义 → 生成参数卡」 */
+                _mockLiveScript: function (r) {
+                        var aT = ((r && r.trace) || []).filter(function (t) { return t && t.phase; }).slice();
+                        if (!aT.length || aT[0].phase !== "UNDERSTANDING") {
+                                aT.unshift({ phase: "UNDERSTANDING", label: "理解问题", status: "OK", elapsedMs: 300 });
+                        }
+                        var oPend = null;
+                        try { oPend = r && r.pendingParamsJson ? JSON.parse(r.pendingParamsJson) : null; } catch (e) { oPend = null; }
+                        if (oPend && Array.isArray(oPend.params)) {
+                                var sName = oPend.report_name || oPend.tcode || oPend.report_id || "";
+                                var iAt = aT.length && aT[aT.length - 1].phase === "COMPOSING" ? aT.length - 1 : aT.length;
+                                aT.splice(iAt, 0,
+                                        { phase: "EXECUTING", tool: "match_report", toolLabel: "匹配报表", liveLabel: sName, status: "OK", elapsedMs: 320,
+                                                note: "先在报表登记里找到「" + sName + "」", args: [["编号", oPend.report_id || oPend.tcode || ""]] },
+                                        { phase: "EXECUTING", tool: "read_params", toolLabel: "读取参数定义", liveLabel: oPend.params.length + " 个选择项",
+                                                status: "OK", elapsedMs: 260,
+                                                preview: { columns: ["参数", "必填"], rows: oPend.params.slice(0, 4).map(function (p) {
+                                                        return [p.label || p.param_id, p.required ? "是" : ""];
+                                                }) } });
+                                if (aT[aT.length - 1].phase === "COMPOSING") {
+                                        aT[aT.length - 1] = Object.assign({}, aT[aT.length - 1], { liveLabel: "生成参数卡" });
+                                }
+                        }
+                        return aT;
+                },
+
+                /** 演示的 AgentProgress：{ status: RUNNING / DONE / NONE, steps } */
+                _mockAgentProgress: function (sCid) {
+                        var oRun = (this._mMockLive || {})[sCid];
+                        if (!oRun) {
+                                return { status: "NONE", steps: [] };
+                        }
+                        return { status: oRun.status, steps: JSON.parse(JSON.stringify(oRun.steps)) };
                 }
         };
 });

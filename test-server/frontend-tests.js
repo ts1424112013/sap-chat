@@ -389,6 +389,18 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   modelController._applySessionModel();
   check('模型配置为空时不沿用失效编号', modelData['/currentModel'] === '');
 
+  console.log('\n━━ Agent 边跑边看（演示后端）');
+  const MockBackend = load('zai/chat/service/MockBackend');
+  const sc = MockBackend._mockLiveScript({
+    trace: [{ phase: 'UNDERSTANDING', label: '理解问题' }, { phase: 'COMPOSING', label: '整理报表参数' }],
+    pendingParamsJson: JSON.stringify({ report_id: 'R1', report_name: '出货', params: [{ param_id: 'A', label: '工厂', required: true }] })
+  });
+  check('参数卡类回复补上「匹配报表 → 读取参数定义」两步，最后一步叫「生成参数卡」',
+    sc.map((t) => t.tool || t.phase).join() === 'UNDERSTANDING,match_report,read_params,COMPOSING' && sc[3].liveLabel === '生成参数卡',
+    sc.map((t) => t.tool || t.phase).join());
+  check('没有过程摘要时也从「理解问题」开始', MockBackend._mockLiveScript({}).map((t) => t.phase).join() === 'UNDERSTANDING');
+  check('不认识的运行编号：进度为 NONE', MockBackend._mockAgentProgress.call({}, 'X').status === 'NONE');
+
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

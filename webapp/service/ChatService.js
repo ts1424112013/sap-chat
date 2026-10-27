@@ -492,7 +492,8 @@ sap.ui.define([
                   */
                 sendTask: function (oPayload) {
                         if (this._sConfig.mode === "mock") {
-                                return this._mockSendSkillTask(oPayload);
+                                // 20261028：演示模式按过程摘要一步步放出进度（getAgentProgress 读），放完才返回回答
+                                return this._mockLiveRun(oPayload.clientRequestId, this._mockSendSkillTask(oPayload));
                         }
                         if (this._taskApiAvailable === false) {
                                 if (oPayload.skillId && oPayload.skillId !== "NONE") {
@@ -1066,6 +1067,31 @@ sap.ui.define([
                                 return null;
                         }
                         return oOut;
+                },
+
+                /**
+                  * 20261028：Agent「边跑边看」—— 回复返回之前，按本轮 ClientRequestId 查已经走完 / 正在走的步骤。
+                  * 后端契约（待实现，见 功能计划书/Agent实时过程/01-边跑边看_接口约定与后端改造）：函数导入 AgentProgress（GET，参数 ClientRequestId），
+                  * GenericResult 返回，ResultJson = { status: "RUNNING" | "DONE" | "NONE", steps: [ { seq, phase, label,
+                  * toolLabel, tool, args: [[键, 值]], status, elapsedMs, rows, detail, preview: { columns, rows } } ] }。
+                  * 后端还没有这个函数导入时 supportsAgentProgress() = false，前端不轮询，照旧显示阶段文案。
+                  */
+                supportsAgentProgress: function () {
+                        return this._sConfig.mode === "mock" || this._fiHasParam("AgentProgress", "ClientRequestId");
+                },
+
+                /** @returns {Promise<{status: string, steps: object[]}>} 失败时 reject（调用方退避重试几次后放弃） */
+                getAgentProgress: function (sCid) {
+                        if (this._sConfig.mode === "mock") {
+                                return Promise.resolve(this._mockAgentProgress(sCid));
+                        }
+                        return this._taskCall("AgentProgress", { ClientRequestId: sCid || "" }, false).then(function (o) {
+                                if (!o.success) {
+                                        throw new Error(o.message || "AgentProgress failed");
+                                }
+                                var r = o.result || {};
+                                return { status: String(r.status || "NONE").toUpperCase(), steps: Array.isArray(r.steps) ? r.steps : [] };
+                        });
                 },
 
                 /**
