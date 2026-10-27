@@ -694,7 +694,9 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .apvTabBtn .sapMBtnText { font-size: .86rem !important; font-weight: 500; color: var(--sub) !important; }
 .apvTabBtn:hover .sapMBtnText { color: var(--text) !important; }
 .apvTabBtn[data-on="yes"] .sapMBtnText { color: var(--text) !important; font-weight: 600; }
-.apvTabBtn[data-on="yes"] .sapMBtnInner::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; border-radius: 2px; background: var(--accent); }
+/* 20261027：当前页签下划线画在内容层（画在 .sapMBtnInner 上，点了页签获得焦点后会被 style.css 抹掉） */
+.apvTabBtn .sapMBtnContent { position: static !important; }
+.apvTabBtn[data-on="yes"] .sapMBtnContent::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; border-radius: 2px; background: var(--accent); }
 .apvTabBtn.sapMFocusable:focus .sapMBtnInner, .apvTabBtn:focus .sapMBtnInner { outline-offset: -2px; }
 
 /* 内容区（只有这里滚动） */
@@ -926,9 +928,11 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .modelPill { margin-left: .2rem; min-width: 0; }
 .modelPill .sapMBtnInner { display: inline-flex !important; align-items: center; max-width: 15rem; height: 1.95rem !important; min-height: 1.95rem !important; padding: 0 .7rem 0 .6rem !important; border-radius: 999px !important; border: 1px solid var(--line) !important; background: transparent !important; box-shadow: none !important; }
 .modelPill .sapMBtnIcon { font-size: .82rem !important; color: var(--accent) !important; margin: 0 .35rem 0 0 !important; width: auto !important; }
-.modelPill .sapMBtnContent { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 !important; }
+.modelPill .sapMBtnContent { display: inline-flex !important; align-items: center; min-width: 0; padding: 0 !important; }
+.modelPill .sapMBtnContent bdi { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modelPill .sapMBtnText, .modelPill .sapMBtnContent bdi { font-size: .78rem !important; font-weight: 500; color: var(--text-2) !important; }
-.modelPill .sapMBtnInner::after { content: ""; flex: none; width: .34rem; height: .34rem; margin: 0 0 .18rem .5rem; border-right: 1.5px solid var(--sub); border-bottom: 1.5px solid var(--sub); transform: rotate(45deg); }
+/* 20261027：箭头画在内容层（画在 .sapMBtnInner 上会被 style.css 的「聚焦按钮去伪元素」抹掉，点过一次就没了） */
+.modelPill .sapMBtnContent::after { content: ""; flex: none; width: .34rem; height: .34rem; margin: 0 0 .18rem .5rem; border-right: 1.5px solid var(--sub); border-bottom: 1.5px solid var(--sub); transform: rotate(45deg); }
 .modelPill:hover .sapMBtnInner { background: var(--hover) !important; border-color: var(--line-strong) !important; }
 .modelPill:hover .sapMBtnContent bdi { color: var(--text) !important; }
 @media (max-width: 599px) { .modelPill .sapMBtnInner { max-width: 9rem; } }

@@ -33,18 +33,22 @@
     background: transparent !important; box-shadow: none !important; color: var(--text-2) !important;
     transition: background .15s var(--ease), border-color .15s var(--ease);
 }
-/* 技能图标（叠层）：mask + currentColor，跟随文字颜色 */
-.skillPill .sapMBtnInner::before {
+/* 技能图标（叠层）：mask + currentColor，跟随文字颜色。
+   20261027：图标和下拉箭头画在内容层 .sapMBtnContent 上，不画在 .sapMBtnInner 上 ——
+   style.css 为去掉鼠标点击后的聚焦环，会把「聚焦按钮的 .sapMBtnInner::before/::after」一律 content:none，
+   点过技能后（弹层关闭焦点回到胶囊）图标和箭头就被一起抹掉，胶囊只剩灰底「技能」两个字 */
+.skillPill .sapMBtnContent::before {
     content: ""; flex: none; width: .88rem; height: .88rem; margin-right: .38rem;
     background-color: currentColor; -webkit-mask: var(--sk-ico) center / contain no-repeat; mask: var(--sk-ico) center / contain no-repeat;
 }
 /* 下拉箭头（与模型胶囊同一画法） */
-.skillPill .sapMBtnInner::after {
+.skillPill .sapMBtnContent::after {
     content: ""; flex: none; width: .32rem; height: .32rem; margin: 0 0 .18rem .5rem;
     border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); opacity: .7;
     transition: transform .15s var(--ease);
 }
-.skillPill .sapMBtnContent { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 !important; line-height: normal !important; }
+.skillPill .sapMBtnContent { display: inline-flex !important; align-items: center; min-width: 0; padding: 0 !important; line-height: normal !important; }
+.skillPill .sapMBtnContent bdi { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 注意：纯文字按钮的 .sapMBtnInner 自己也带 .sapMBtnText 类，所以「颜色继承」只能写在内容层上，写在 .sapMBtnText 上会让内层继承按钮外层的黑色 */
 .skillPill .sapMBtnInner { font-size: .78rem !important; font-weight: 500; }
 .skillPill .sapMBtnContent, .skillPill .sapMBtnContent bdi { font-size: .78rem !important; font-weight: inherit; color: inherit !important; }
@@ -54,7 +58,7 @@
 
 /* 弹层打开：蓝框、箭头朝上 */
 .skillOpen:not(.skillOn) .skillPill .sapMBtnInner { border-color: var(--accent) !important; background: var(--accent-soft) !important; color: var(--accent-deep) !important; }
-.skillOpen .skillPill .sapMBtnInner::after { transform: rotate(-135deg); margin-bottom: -.12rem; }
+.skillOpen .skillPill .sapMBtnContent::after { transform: rotate(-135deg); margin-bottom: -.12rem; }
 
 /* 已选技能：胶囊 + × 合成一个蓝色胶囊（外框画在 slot 上） */
 .skillSlot.skillOn { border-color: var(--accent); background: var(--accent-soft); }
@@ -63,7 +67,7 @@
     border-color: transparent !important; background: transparent !important; color: var(--accent-deep) !important;
 }
 .skillOn .skillPill .sapMBtnInner { font-weight: 600; }
-.skillOn .skillPill .sapMBtnInner::after { display: none; }
+.skillOn .skillPill .sapMBtnContent::after { display: none; }
 .skillOn .skillPill:not(.sapMBtnDisabled):hover .sapMBtnInner { background: transparent !important; border-color: transparent !important; color: var(--accent) !important; }
 .skillClear .sapMBtnInner, .skillRetry .sapMBtnInner {
     display: inline-flex !important; align-items: center; justify-content: center;
@@ -78,15 +82,16 @@
 /* 技能已停用 / 不可见：琥珀色提醒 */
 .skillSlot.skillWarn { border-color: var(--sk-warn); background: var(--sk-warn-soft); }
 .skillWarn .skillPill .sapMBtnInner { border-color: transparent !important; background: transparent !important; color: var(--sk-warn-text) !important; padding-right: .2rem !important; }
-.skillWarn .skillPill .sapMBtnInner::after { display: none; }
+.skillWarn .skillPill .sapMBtnContent::after { display: none; }
 .skillWarn .skillClear .sapMBtnIcon { color: var(--sk-warn-text) !important; }
 
 /* 不能选（自动场景 / 未启用 / 读取中）：虚线变灰 */
 .skillOff .skillPill .sapMBtnInner { border-style: dashed !important; border-color: var(--line-strong) !important; }
-.skillOff .skillPill .sapMBtnInner::after { display: none; }
+.skillOff .skillPill .sapMBtnContent::after { display: none; }
 /* 20261027：不能选时胶囊不再禁用（点了说明原因），外观保持原来的灰；悬停稍微提亮，表示能点 */
 .skillOff .skillPill:not(.sapMBtnDisabled) .sapMBtnInner { opacity: .6; transition: opacity .15s; }
-.skillOff .skillPill:not(.sapMBtnDisabled):hover .sapMBtnInner { opacity: .85; background: transparent !important; border-color: var(--line-strong) !important; color: inherit !important; }
+/* 颜色不能写 inherit：会继承按钮外层的纯黑（20261027 修） */
+.skillOff .skillPill:not(.sapMBtnDisabled):hover .sapMBtnInner { opacity: .85; background: transparent !important; border-color: var(--line-strong) !important; color: var(--text-2) !important; }
 
 /* ---------------- 首页：输入框下方提示行 + 做法正文 ---------------- */
 .skillHintWrap { width: min(100%, var(--content-max)); box-sizing: border-box; margin: .6rem auto 0; padding: 0 .4rem; }
