@@ -29,9 +29,22 @@ function loadUI(overrides) {
   }
   const service=load('zai/chat/service/ChatService');service._testLoad=load;return service;
 }
-test('8 个内置技能均满足长度、场景、工具和版本约束', () => {
-  assert.equal(Skills.builtin.length, 8);
+test('18 个内置技能均满足长度、场景、工具和版本约束，编号不重复', () => {
+  assert.equal(Skills.builtin.length, 18);
   for (const s of Skills.builtin) assert.equal(Skills.validate(s).id, s.id);
+  assert.equal(new Set(Skills.builtin.map(s => s.id)).size, Skills.builtin.length);
+});
+test('10 个标准业务流程技能：数据分析场景、只用查表三件套、正文带通用取数纪律', () => {
+  const ids = ['DATA_SD_SALES','DATA_SD_ORDER_TRACE','DATA_SD_BACKLOG','DATA_MM_PO_TRACE','DATA_MM_VENDOR',
+    'DATA_MM_STOCK','DATA_MM_MOVEMENT','DATA_PP_ORDER','DATA_PP_SHORTAGE','DATA_PP_MASTER'];
+  for (const id of ids) {
+    const s = Skills.builtin.find(x => x.id === id);
+    assert.ok(s, id);
+    assert.deepEqual(s.scenes, ['DATA']);
+    assert.deepEqual(s.tools, ['search_tables','describe_table','run_sql']);
+    assert.match(s.body, /【先确认】[\s\S]*【取数】[\s\S]*【(口径|判定)】[\s\S]*【输出】[\s\S]*【通用】/);
+    assert.ok(s.body.length <= 3000, id + ' 正文 ' + s.body.length + ' 字');
+  }
 });
 test('拒绝自动场景、保留编号、未知工具、跨场景工具、超长正文和非法轮数', () => {
   const s = Skills.builtin[0];
@@ -168,7 +181,7 @@ test('技能总开关（演示）：关时聊天拿不到技能、管理照常�
   assert.equal(await s.getSkillEnabled(), false);                     // 关能存住（不是删键回到默认开）
   let r=await s.getSkills({scene:'CODE',sessionId:'S'});
   assert.equal(r.enabled,false); assert.equal(r.skills.length,0);
-  r=await s.getSkills({includeInactive:true}); assert.equal(r.skills.length,8);
+  r=await s.getSkills({includeInactive:true}); assert.equal(r.skills.length,Skills.builtin.length);
   s._mockSendAgent=async()=>({trace:[],answer:'演示',status:'OK'});
   await assert.rejects(()=>s.sendTask({scene:'CODE',sessionId:'S',taskId:'T',skillId:'CODE_EXPLAIN'}), /尚未启用/);
   await s.setSkillEnabled(true);
