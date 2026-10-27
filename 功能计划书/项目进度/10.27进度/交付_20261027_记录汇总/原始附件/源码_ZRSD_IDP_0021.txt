@@ -1,0 +1,1565 @@
+REPORT zrsd_idp_0021 .
+************************************************************************
+* Purpose: iDPBG Project for GET FTU AVAILABLE INVENTORY / create Goods
+*          Tranfser Ticket ---fencang.
+* Logical:
+* SAP Module:    SD
+* Funcitonal Spec NO:(SAPSDA-126)
+* T-CODE:
+* Author: hikki
+* EXT:57732257
+* Add Date:  2018/08/11
+*----------------------------------------------------------------------*
+**Customer Object:
+* 1.Table: MARD
+* 2.Domain:
+*----------------------------------------------------------------------*
+* change History:
+*
+*   Date     Author      TP Prod.  TP date       R=uest NO.
+* --------- --------    ---------------------   -----------------------*
+* 2015/05/26  Rains
+*----------------------------------------------------------------------*
+TABLES: mara,mard,lips,vbuk,vbap,zidpcontrolvalue,zidpsd030,zidpmm560,
+        zidpsd017,zidpsd015,zidpmmwhi,zidpmmwhh,zidpmm016,zctbs_zzbsb,zidpsd082.
+TYPE-POOLS:slis.
+DATA:fc_alv    TYPE slis_fieldcat_alv OCCURS 10 WITH HEADER LINE,
+     wa_layout TYPE slis_layout_alv.
+DATA:g_repid LIKE sy-repid.
+DATA:l_loekz LIKE ekpo-loekz,
+     l_elikz LIKE ekpo-elikz.
+DATA: BEGIN OF it_out OCCURS 100,
+        matnr LIKE mara-matnr,
+        bismt LIKE mara-bismt,
+        lgort LIKE mard-lgort,
+      END OF it_out.
+DATA: BEGIN OF m_misc OCCURS 100,
+        werks     LIKE zidpmmwhi-werks,
+        loadno    LIKE zidpsd047-loadno,
+        matnr     LIKE zidpmmwhi-matnr,
+        lgort     LIKE zidpmmwhi-lgort,
+        erfmg     LIKE zidpmmwhi-erfmg,
+        docnumber LIKE zidpmmwhi-docnumber,
+      END OF m_misc.
+DATA:m_misc1 LIKE TABLE OF  m_misc WITH HEADER LINE.
+DATA: BEGIN OF it_mard OCCURS 100,
+        werks       LIKE mard-werks,
+        matnr       LIKE mard-matnr,
+        bismt       LIKE mara-bismt,
+        lgort       LIKE mard-lgort,
+        labst       LIKE mard-labst,
+        res         LIKE mdps-mng01,
+        avl         LIKE mdps-mng01,
+        model       LIKE zidpmmtlk-tlk03,                   "mali150609
+        pspnr       LIKE mspr-pspnr,
+        bsflag(15)  TYPE c,
+        fbsflag(15) TYPE c,
+        mcoo        LIKE zidpmmtlk-tlk58,
+      END OF it_mard.
+DATA: BEGIN OF it_mspr OCCURS 100,
+        werks LIKE mspr-werks,
+        matnr LIKE mspr-matnr,
+        bismt LIKE mara-bismt,
+        lgort LIKE mspr-lgort,
+        prlab LIKE mspr-prlab,
+        pspnr LIKE mspr-pspnr,
+        res   LIKE mdps-mng01,
+        avl   LIKE mdps-mng01,
+        model LIKE zidpmmtlk-tlk03,
+      END OF it_mspr.
+
+DATA: BEGIN OF it_order OCCURS 100,
+        vbeln  LIKE vbap-vbeln,
+        posnr  LIKE vbap-posnr,
+        loadno LIKE zidpsd015-loadno,
+        werks  LIKE mard-werks,
+        matnr  LIKE mard-matnr,
+        lgort  LIKE mard-lgort,
+        kwmeng LIKE vbap-kwmeng,
+        bismt  LIKE mara-bismt,
+        matnr1 LIKE mard-matnr,
+        labst  LIKE mard-labst,
+        res    LIKE mdps-mng01,
+        avl    LIKE mdps-mng01,
+        model  LIKE zidpmmtlk-tlk03,
+        pspnr  LIKE mspr-pspnr,
+        mcoo   LIKE zidpmmtlk-tlk58,
+      END OF it_order.
+DATA:l_matedoc LIKE mkpf-mblnr,subrc LIKE sy-subrc.
+DATA: BEGIN OF it_avl OCCURS 100.
+        INCLUDE STRUCTURE mdps.
+DATA: END OF it_avl.
+DATA: tem     LIKE mdps-mng01,
+      tem1    LIKE mdps-mng01,
+      tem2    LIKE mdps-mng01,
+      matnr_t LIKE mara-matnr,
+      lgort_t LIKE mard-lgort,
+      dat01_t LIKE mdps-dat01.
+DATA:BEGIN OF s_itab OCCURS 100,
+       docnumber LIKE zidpmmwhi-docnumber,
+       erfmg     LIKE zidpmmwhi-erfmg,
+       matnr     LIKE zidpmmwhi-matnr,
+     END OF s_itab.
+
+
+DATA: BEGIN OF ikk OCCURS 100,
+        check  LIKE rmmmb-kznul,
+        werks  LIKE mard-werks,
+        matnr  LIKE mard-matnr,
+        bismt  LIKE mara-bismt,
+        lgort  LIKE mard-lgort,
+        labst  LIKE mard-labst,
+        res    LIKE mdps-mng01,
+        avl    LIKE mdps-mng01,
+        model  LIKE zidpmmtlk-tlk03,
+        fqty   LIKE mard-labst,
+        flgort LIKE mard-lgort,
+        fmatnr LIKE mard-matnr,
+      END OF ikk.
+
+DATA: BEGIN OF ikk1 OCCURS 100.
+        INCLUDE STRUCTURE ikk.
+DATA:   mblnr LIKE zfghubin-mblnr.
+DATA: pflag LIKE zfghubin-flag.
+DATA: message LIKE zfghubin-message.
+DATA: END OF ikk1.
+DATA l_sender TYPE soextreci1-receiver.
+DATA: l_site   LIKE zidpcontrolvalue-cvalue1.
+***add by xiaohu 20190528 begin*************
+RANGES: r_plant FOR zidpcontrolvalue-werks.
+MOVE 'I'  TO r_plant-sign.
+MOVE 'EQ' TO r_plant-option.
+MOVE zidpcontrolvalue-werks TO r_plant-low.
+APPEND r_plant.
+***add by xiaohu 20190528 end****************
+
+SELECTION-SCREEN: BEGIN OF BLOCK 1 WITH FRAME TITLE TEXT-001.
+  SELECTION-SCREEN: SKIP.
+  PARAMETERS: p_werks LIKE vbap-werks OBLIGATORY DEFAULT 'ABZ1'.
+  SELECT-OPTIONS: s_kdmat FOR mara-bismt NO INTERVALS.
+  SELECT-OPTIONS: s_matnr FOR mara-matnr NO INTERVALS.
+  SELECT-OPTIONS: s_lgort FOR mard-lgort NO INTERVALS.
+  SELECTION-SCREEN: SKIP 1.
+  PARAMETERS: h1 RADIOBUTTON GROUP h1,
+              h2 RADIOBUTTON GROUP h1,
+              h4 RADIOBUTTON GROUP h1,
+              h3 RADIOBUTTON GROUP h1.
+  SELECT-OPTIONS: s_loadno FOR zidpsd015-loadno NO INTERVALS NO-DISPLAY.
+  SELECT-OPTIONS: s_datum FOR sy-datum NO INTERVALS NO-DISPLAY.
+
+SELECTION-SCREEN: END OF BLOCK 1.
+SELECTION-SCREEN: BEGIN OF BLOCK 2 WITH FRAME TITLE TEXT-002.
+  SELECTION-SCREEN: SKIP.
+  PARAMETERS: r1 RADIOBUTTON GROUP rad1,
+              r2 RADIOBUTTON GROUP rad1.
+SELECTION-SCREEN: END OF BLOCK 2.
+PARAMETERS: p_c1 TYPE c AS CHECKBOX DEFAULT 'X'.
+PARAMETERS: p_c2 TYPE c AS CHECKBOX .
+
+START-OF-SELECTION.
+  PERFORM check_authorization.
+  PERFORM get_data.  " GET P/N
+  PERFORM out_put.   " Display result.
+
+*&---------------------------------------------------------------------*
+*&      Form  get_data
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM get_data.
+*  IF NOT s_lgort[] IS INITIAL.
+*    LOOP AT s_lgort.
+*      SELECT SINGLE * FROM zidpcontrolvalue WHERE cvalue2 = s_lgort-low
+*                                              AND werks = p_werks
+*                                              AND ctype = 'EDI/LGORT'.
+*      IF sy-subrc <> 0.
+*        MESSAGE e001(00) WITH
+*        'The lgort is not EDI SHIPPING,Please use zdpsd021'.
+*      ENDIF.
+*    ENDLOOP.
+*  ENDIF.
+  IF h3 <> 'X'.
+    IF h1 = 'X'."成品庫存
+      IF NOT s_matnr[] IS INITIAL.
+        SELECT matnr bismt INTO TABLE it_out FROM mara
+         WHERE matnr IN s_matnr
+           AND mtart = 'ZFRT'.
+      ELSEIF NOT s_kdmat[] IS INITIAL.
+        SELECT matnr bismt INTO TABLE it_out FROM mara
+         WHERE bismt IN s_kdmat
+           AND mtart = 'ZFRT'.
+      ELSE.
+        SELECT matnr bismt INTO TABLE it_out FROM mara
+         WHERE mtart = 'ZFRT'.
+      ENDIF.
+    ELSEIF h2 = 'X'."原物料/半成品庫存
+      IF NOT s_matnr[] IS INITIAL.
+        SELECT matnr bismt INTO TABLE it_out FROM mara
+         WHERE matnr IN s_matnr
+           AND mtart <> 'ZFRT'.
+      ELSEIF NOT s_kdmat[] IS INITIAL.
+        SELECT matnr bismt INTO TABLE it_out FROM mara
+         WHERE bismt IN s_kdmat
+           AND mtart <> 'ZFRT'.
+      ELSE.
+        SELECT matnr bismt INTO TABLE it_out FROM mara
+         WHERE mtart <> 'ZFRT'.
+      ENDIF.
+    ELSE.
+      IF NOT s_matnr[] IS INITIAL.
+        SELECT matnr bismt INTO TABLE it_out FROM mara
+         WHERE matnr IN s_matnr
+           AND mtart <> 'ZFRT'.
+      ELSEIF NOT s_kdmat[] IS INITIAL.
+        SELECT matnr bismt INTO TABLE it_out FROM mara
+         WHERE bismt IN s_kdmat
+           AND mtart <> 'ZFRT'.
+      ELSE.
+        SELECT matnr bismt INTO TABLE it_out FROM mara
+         WHERE mtart <> 'ZFRT'.
+      ENDIF.
+    ENDIF.
+******add by lily NPI Special stock begin 20210610*****
+    SELECT SINGLE * FROM zidpcontrolvalue WHERE werks = p_werks
+                      AND ctype = 'NPI'.
+    IF sy-subrc = 0.
+      LOOP AT it_out.
+        SELECT * INTO CORRESPONDING FIELDS OF it_mspr  FROM mspr
+         WHERE matnr = it_out-matnr
+              AND werks =  p_werks
+              AND lgort IN  s_lgort
+              AND sobkz = 'Q'.
+          IF sy-subrc = 0.
+            it_mspr-bismt = it_out-bismt.
+            APPEND it_mspr.
+          ENDIF.
+        ENDSELECT.
+      ENDLOOP.
+      IF p_c1 = 'X'.
+        DELETE it_mspr WHERE prlab = 0.
+      ENDIF.
+******add by lily NPI Special stock end 20210610*****
+    ELSE.
+
+      DATA(lt_tmp) = it_out[].
+
+      WITH +data
+            AS (
+             SELECT DISTINCT matnr,bismt FROM @lt_tmp AS zda  ##ITAB_KEY_IN_SELECT
+               )
+      SELECT d~*,z~bismt
+         FROM mard AS d INNER JOIN +data AS z ON d~matnr = z~matnr
+      WHERE d~werks = @p_werks
+        AND d~lgort IN @s_lgort
+      INTO CORRESPONDING FIELDS OF TABLE @it_mard.
+
+
+*      LOOP AT it_out.
+*        SELECT * INTO CORRESPONDING FIELDS OF it_mard FROM mard
+*         WHERE matnr = it_out-matnr
+*           AND werks = p_werks
+*           AND lgort IN s_lgort.
+*          IF sy-subrc = 0.
+*            it_mard-bismt = it_out-bismt.
+*            APPEND it_mard.
+*          ENDIF.
+*        ENDSELECT.
+*      ENDLOOP.
+
+      SORT it_out.
+      DELETE ADJACENT DUPLICATES FROM it_out.
+********優化SQL end by lily 20240724
+      IF p_c1 = 'X'.
+        DELETE it_mard WHERE labst = 0.
+      ENDIF.
+
+    ENDIF.
+
+*    if p_c1 = 'X'.
+*      delete it_mard where labst = 0.
+*    endif.
+******add by lily NPI Special stock begin 20210610*****
+    LOOP AT it_mspr.
+      MOVE-CORRESPONDING it_mspr TO it_mard.
+      it_mard-labst = it_mspr-prlab.
+      APPEND  it_mard.
+    ENDLOOP.
+******add by lily NPI Special stock end 20210610*****
+    CLEAR matnr_t.
+**********add by lily 20220504 begin********
+    IF h4 = 'X'.
+      LOOP AT it_mard.
+        IF it_mard-matnr NE matnr_t OR
+                  it_mard-lgort NE lgort_t.
+          CLEAR:tem,tem1,tem2.
+
+*          SELECT SUM( b~erfmg ) INTO tem1 FROM zidpmmwhh AS a INNER JOIN
+*                    zidpmmwhi AS b ON  a~docnumber = b~docnumber
+*                                           WHERE b~werks = it_mard-werks
+*                                                  AND a~mblnr = ''
+*                                             AND b~matnr = it_mard-matnr
+*                                             AND b~lgort = it_mard-lgort
+*                                               AND b~markdeletion NE 'X'.
+          SELECT * INTO CORRESPONDING FIELDS OF TABLE s_itab FROM zidpmmwhi
+                         WHERE werks = it_mard-werks
+                        AND matnr = it_mard-matnr
+                        AND lgort = it_mard-lgort
+                          AND markdeletion NE 'X'
+                           %_HINTS ORACLE 'INDEX(ZIDPMMWHI"PN")'.
+          LOOP AT s_itab.
+            SELECT SINGLE * FROM zidpmmwhh WHERE docnumber = s_itab-docnumber.
+            IF zidpmmwhh-doctype NE 'G'.
+              DELETE s_itab.
+              CONTINUE.
+            ENDIF.
+            IF zidpmmwhh-mblnr = ''.
+              tem1 = tem1 + s_itab-erfmg.
+            ELSE.
+              DELETE s_itab.
+            ENDIF.
+          ENDLOOP.
+
+          SELECT SUM( a~erfmg ) INTO tem2
+                      FROM zidpsd047 AS a INNER JOIN zidpsd046 AS b
+                      ON a~werks = b~werks AND a~loadno = b~loadno
+                      WHERE a~werks = it_mard-werks
+                       AND  b~scflag <> 'Y'
+                       AND  a~matnr = it_mard-matnr
+                       AND  a~lgort = it_mard-lgort
+                                         %_HINTS ORACLE 'INDEX(ZIDPSD047"0")'.
+          IF tem1 GT 0.
+******modify by lily 20231227 begin *
+******comment by lily 20231227 begin 改变写法，目前写法如果一个费领单的有两个相同料号的话，会重复抓取*
+*            LOOP AT s_itab.
+*              SELECT werks matnr lgort erfmg docnumber APPENDING
+*          CORRESPONDING FIELDS OF TABLE m_misc FROM   zidpmmwhi
+*                                            WHERE werks = it_mard-werks
+*                                       AND docnumber = s_itab-docnumber
+*                                          AND matnr = s_itab-matnr
+*                                          AND lgort = it_mard-lgort
+*                                          AND markdeletion NE 'X'.
+*
+*
+*            ENDLOOP.
+            IF s_itab[] IS NOT INITIAL.
+              SORT s_itab BY docnumber.
+              SELECT werks matnr lgort erfmg docnumber APPENDING
+          CORRESPONDING FIELDS OF TABLE m_misc FROM   zidpmmwhi
+                FOR ALL ENTRIES IN s_itab
+                                            WHERE werks = it_mard-werks
+                                       AND docnumber = s_itab-docnumber
+                                          AND matnr = s_itab-matnr
+                                          AND lgort = it_mard-lgort
+                                          AND markdeletion NE 'X'.
+
+
+            ENDIF.
+******modify by lily 20231227 end *
+          ENDIF.
+
+          IF tem2 GT 0.
+            SELECT a~werks a~loadno a~matnr a~lgort a~erfmg APPENDING
+  CORRESPONDING FIELDS OF TABLE m_misc1 FROM zidpsd047 AS a INNER JOIN
+  zidpsd046 AS b ON a~werks = b~werks AND a~loadno = b~loadno
+            WHERE a~werks = it_mard-werks
+             AND  b~scflag <> 'Y'
+             AND  a~matnr = it_mard-matnr
+             AND  a~lgort = it_mard-lgort
+                  %_HINTS ORACLE 'INDEX(ZIDPSD047"0")'.
+          ENDIF.
+
+          IF NOT m_misc1[] IS INITIAL.
+            LOOP AT m_misc1.
+              SELECT SINGLE * FROM zidpsd015 WHERE werks = p_werks
+                                             AND loadno = m_misc1-loadno
+                                                              AND zoga908 NE ' '.
+
+              IF sy-subrc  = 0.
+                SELECT SINGLE * FROM zidpmmwhi WHERE werks = m_misc1-werks
+                                     AND docnumber = zidpsd015-zoga908.
+*                                     and matnr = m_misc-matnr
+*                                     and markdeletion ne 'X'
+*                                    and lgort = m_misc-lgort.
+                IF sy-subrc = 0.
+*                  tem2 = tem2 - m_misc1-erfmg.
+                  DELETE m_misc1.
+                ENDIF.
+              ELSE.
+                SELECT SINGLE * FROM zidpsd015 WHERE werks = 'ABS1'
+                                           AND loadno = m_misc1-loadno
+                                                            AND zoga908 NE ' '.
+
+                IF sy-subrc  = 0.
+                  SELECT SINGLE * FROM zidpmmwhi WHERE werks = m_misc1-werks
+                                       AND docnumber = zidpsd015-zoga908.
+*                                     and matnr = m_misc-matnr
+*                                     and markdeletion ne 'X'
+*                                    and lgort = m_misc-lgort.
+                  IF sy-subrc = 0.
+*                  tem2 = tem2 - m_misc1-erfmg.
+                    DELETE m_misc1.
+                  ENDIF.
+                ENDIF.
+
+*****add by lily 20241220 for csd begin*****
+                SELECT SINGLE * FROM zidpsd015 WHERE werks = 'AJS1'
+                                           AND loadno = m_misc1-loadno
+                                                            AND zoga908 NE ' '.
+
+                IF sy-subrc  = 0.
+                  SELECT SINGLE * FROM zidpmmwhi WHERE werks = m_misc1-werks
+                                       AND docnumber = zidpsd015-zoga908.
+*                                     and matnr = m_misc-matnr
+*                                     and markdeletion ne 'X'
+*                                    and lgort = m_misc-lgort.
+                  IF sy-subrc = 0.
+*                  tem2 = tem2 - m_misc1-erfmg.
+                    DELETE m_misc1.
+                  ENDIF.
+                ENDIF.
+*****add by lily 20241220 for csd end*****
+***模組出貨費領add by lily begin*****
+                SELECT SINGLE * FROM zidpsd082 WHERE werks =  m_misc1-werks
+                                                AND vbeln = m_misc1-loadno.
+                IF sy-subrc  = 0.
+                  SELECT SINGLE * FROM zidpmmwhi WHERE werks = m_misc1-werks
+                                       AND docnumber = zidpsd082-docnumber.
+*                                     and matnr = m_misc-matnr
+*                                     and markdeletion ne 'X'
+*                                    and lgort = m_misc-lgort.
+                  IF sy-subrc = 0.
+*                  tem2 = tem2 - m_misc1-erfmg.
+                    DELETE m_misc1.
+                  ENDIF.
+                ENDIF.
+***模組出貨費領add by lily end******
+              ENDIF.
+            ENDLOOP.
+          ENDIF.
+          LOOP AT m_misc1.
+            MOVE-CORRESPONDING m_misc1 TO m_misc.
+            APPEND m_misc.
+          ENDLOOP.
+*          tem = tem1 + tem2.
+          IF NOT m_misc[] IS INITIAL.
+            LOOP AT m_misc.
+              it_order-werks = p_werks.
+              it_order-lgort = it_mard-lgort.
+              it_order-matnr = it_mard-matnr.
+              it_order-model = it_mard-model.
+              it_order-mcoo = it_mard-mcoo.
+              it_order-bismt = it_mard-bismt.
+              it_order-labst = it_mard-labst.
+              tem = tem + m_misc-erfmg.
+              it_order-res = tem.
+              it_order-avl = it_mard-labst - tem.
+              it_order-loadno = m_misc-loadno.
+              it_order-kwmeng = m_misc-erfmg.
+              SELECT SINGLE zoga908 INTO it_order-vbeln FROM zidpsd015
+                                            WHERE werks = m_misc-werks
+                                            AND loadno = m_misc-loadno.
+              IF sy-subrc NE 0.
+                it_order-vbeln = m_misc-docnumber.
+              ENDIF.
+              SELECT SINGLE docitem INTO it_order-posnr FROM zidpmmwhi
+                                     WHERE werks = m_misc-werks
+                                 AND docnumber = it_order-vbeln.
+              APPEND it_order.
+              CLEAR it_order.
+            ENDLOOP.
+          ENDIF.
+        ENDIF.
+        it_mard-res = tem.
+        it_mard-avl = it_mard-labst - tem.
+        MODIFY it_mard.
+        matnr_t = it_mard-matnr.
+        lgort_t = it_mard-lgort.
+        CLEAR:m_misc,m_misc[],m_misc1,m_misc1[].
+      ENDLOOP.
+**********add by lily 20220504 end********
+    ELSE.
+      LOOP AT it_mard.
+*    SELECT SINGLE * FROM zidpcontrolvalue WHERE cvalue2 = it_mard-lgort
+*                                                    AND werks = p_werks
+*                                                AND ctype = 'EDI/LGORT'
+*.
+*      IF sy-subrc = 0.
+*        SELECT SINGLE tlk03 FROM zidpmmtlk
+*              INTO it_mard-model
+*             WHERE tlk01 = it_mard-matnr
+*                 AND werks = it_mard-werks.
+*        MODIFY it_mard.
+*        IF it_mard-matnr NE matnr_t OR
+*           it_mard-lgort NE lgort_t.
+*          CLEAR tem.
+*         SELECT * FROM zidpsd095 INTO CORRESPONDING FIELDS OF TABLE iki
+*                                            WHERE werks = it_mard-werks
+*                                              AND matnr = it_mard-matnr
+*                                              AND bismt = it_mard-bismt
+*                                              AND lgort = it_mard-lgort
+*                                                        AND flag <> 'Y'
+*                                                        AND flag <> 'D'
+*                                                        AND flag <> 'P'
+*.
+*        ENDIF.
+*        LOOP AT iki WHERE lgort = it_mard-lgort.
+*          it_order-vbeln = iki-vbeln.
+*          it_order-loadno = iki-loadno.
+*          it_order-matnr = iki-matnr.
+*          it_order-werks = iki-werks.
+*          it_order-lgort = iki-lgort.
+*          it_order-kwmeng = iki-qty.
+*          it_order-matnr1 = it_mard-matnr.
+*          it_order-model = it_mard-model.
+*          it_order-bismt = it_mard-bismt.
+*          it_order-labst = it_mard-labst.
+*          tem = tem + it_order-kwmeng.
+*          it_order-res = tem.
+*          it_order-avl = it_mard-labst - tem.
+*          APPEND it_order.
+*        ENDLOOP.
+*        it_mard-res = tem.
+*        it_mard-avl = it_mard-labst - tem.
+*        MODIFY it_mard.
+*        matnr_t = it_mard-matnr.
+*        lgort_t = it_mard-lgort.
+*      ELSE.
+        SELECT SINGLE  tlk03 tlk58  FROM zidpmmtlk
+          INTO (it_mard-model,it_mard-mcoo)
+         WHERE tlk01 = it_mard-matnr
+             AND werks = it_mard-werks.
+***增加检查料号在一般贸易和保税时是否有备案begin 20241216 lily***
+
+        CLEAR l_site.
+        SELECT SINGLE cvalue1 INTO l_site
+        FROM zidpcontrolvalue
+        WHERE ctype = 'PLANTINFO'
+        AND werks = it_mard-werks.
+        SELECT SINGLE * FROM zidpmm016 WHERE  werks = it_mard-werks
+                                           AND lgort = it_mard-lgort .
+        IF zidpmm016-indicator5 = 'Y'.
+          SELECT SINGLE * FROM zctbs_zzbsb
+          WHERE  bsb01 = zidpmm016-category9
+           AND   bsb04 =  it_mard-matnr
+            AND  werks =  l_site.
+          IF sy-subrc = 0.
+            it_mard-bsflag = 'Y'."保税备案标识
+          ELSE.
+            it_mard-bsflag = 'N'.
+          ENDIF.
+        ELSE.
+          SELECT SINGLE * FROM zctbs_zzbsb
+          WHERE  ( bsb01 = ' ' OR bsb01 = 'null' )
+               AND  bsb04 = it_mard-matnr
+              AND  werks =  l_site.
+          IF sy-subrc = 0.
+            it_mard-fbsflag = 'Y'."非保税备案标识
+          ELSE.
+            it_mard-fbsflag = 'N'.
+          ENDIF.
+        ENDIF.
+***增加检查料号在一般贸易和保税时是否有备案begin 20241216 end**
+        MODIFY it_mard.
+        IF it_mard-matnr NE matnr_t OR
+          it_mard-lgort NE lgort_t.
+          CLEAR tem.
+          CALL FUNCTION 'ZRFC_SD_IDP_0050_A1'
+            EXPORTING
+              matnr = it_mard-matnr
+              werks = p_werks
+*             XPLSCN        = ' '
+            TABLES
+              mdpsx = it_avl.
+        ENDIF.
+        CLEAR: dat01_t.
+        LOOP AT it_avl WHERE ( delkz = 'VJ' OR delkz = 'VC' OR delkz = 'RP' )  "Add 'RP' by lily 20240102)
+                         AND lgort = it_mard-lgort.
+          IF it_avl-delkz = 'VJ' AND it_avl-dat01 NE dat01_t.
+            SELECT b~vbeln b~posnr b~matnr b~werks b~lgort b~lfimg
+              INTO (it_order-vbeln,it_order-posnr,it_order-matnr,
+                    it_order-werks,it_order-lgort,it_order-kwmeng)
+*            from vbuk as a inner join lips as b on a~vbeln = b~vbeln
+              FROM likp AS a INNER JOIN lips AS b ON a~vbeln = b~vbeln"modify by RAIN 20220427
+             WHERE a~wbstk NE 'C'
+               AND b~erdat = it_avl-dat01
+               AND b~werks = p_werks
+               AND b~matnr = it_mard-matnr
+               AND b~lgort = it_avl-lgort
+               AND b~ps_psp_pnr = it_avl-pspel.
+              it_order-matnr1 = it_mard-matnr.
+              it_order-model = it_mard-model.
+              it_order-mcoo = it_mard-mcoo.
+              it_order-bismt = it_mard-bismt.
+              it_order-labst = it_mard-labst.
+              tem = tem + it_order-kwmeng.
+              it_order-res = tem.
+              it_order-avl = it_mard-labst - tem.
+              SELECT SINGLE loadno INTO it_order-loadno FROM zidpsd015
+              WHERE werks = it_order-werks AND zoga48 = it_order-vbeln.
+              it_order-pspnr = it_avl-pspel."add by lily20210610
+              APPEND it_order.
+              CLEAR it_order.
+            ENDSELECT.
+          ELSEIF  it_avl-delkz = 'VC' AND it_avl-dat01 NE dat01_t.
+            SELECT b~vbeln b~posnr b~matnr b~werks b~lgort b~kwmeng
+              INTO (it_order-vbeln,it_order-posnr,it_order-matnr,
+                    it_order-werks,it_order-lgort,it_order-kwmeng)
+*            from vbuk as a inner join vbap as b on a~vbeln = b~vbeln
+              FROM vbak AS a INNER JOIN vbap AS b ON a~vbeln = b~vbeln"modify by RAIN 20220427
+             WHERE a~lfstk NE 'C'
+               AND b~erdat = it_avl-dat01
+               AND b~werks = p_werks
+               AND b~matnr = it_mard-matnr
+               AND b~lgort = it_avl-lgort
+               AND b~ps_psp_pnr = it_avl-pspel.
+              it_order-matnr1 = it_mard-matnr.
+              it_order-model = it_mard-model.
+              it_order-mcoo = it_mard-mcoo.
+              it_order-bismt = it_mard-bismt.
+              it_order-labst = it_mard-labst.
+              tem = tem + it_order-kwmeng.
+              it_order-res = tem.
+              it_order-avl = it_mard-labst - tem.
+              SELECT SINGLE loadno INTO it_order-loadno FROM zidpsd015
+             WHERE werks = it_order-werks AND zoga47 = it_order-vbeln.
+              it_order-pspnr = it_avl-pspel."add by lily20210610
+              APPEND it_order.
+              CLEAR it_order.
+            ENDSELECT.
+****將退貨PO計算到備置庫存中begin lily 20240102**
+*          ELSEIF  it_avl-delkz = 'RP' AND it_avl-dat01 NE dat01_t.
+          ELSEIF it_avl-delkz = 'RP'.
+            SELECT b~ebeln b~ebelp b~matnr b~werks b~lgort b~menge
+           INTO (it_order-vbeln,it_order-posnr,it_order-matnr,
+                 it_order-werks,it_order-lgort,it_order-kwmeng)
+           FROM ekko AS a INNER JOIN ekpo AS b ON a~ebeln = b~ebeln
+*          WHERE  a~bedat = it_avl-dat01
+              WHERE a~ebeln = it_avl-delnr
+              AND b~loekz = ''
+              AND b~elikz = ''
+            AND b~werks = p_werks
+            AND b~matnr = it_mard-matnr
+            AND b~lgort = it_avl-lgort
+            AND b~ps_psp_pnr = it_avl-pspel.
+*              it_order-kwmeng = it_avl-mng01.
+              it_order-matnr1 = it_mard-matnr.
+              it_order-model = it_mard-model.
+              it_order-mcoo = it_mard-mcoo.
+              it_order-bismt = it_mard-bismt.
+              it_order-labst = it_mard-labst.
+              tem = tem + it_order-kwmeng.
+              it_order-res = tem.
+              it_order-avl = it_mard-labst - tem.
+              APPEND it_order.
+              CLEAR it_order.
+            ENDSELECT.
+****將退貨PO計算到備置庫存中end lily 20240102**
+          ENDIF.
+          dat01_t = it_avl-dat01.
+        ENDLOOP.
+        it_mard-res = tem.
+        it_mard-avl = it_mard-labst - tem.
+        MODIFY it_mard.
+        matnr_t = it_mard-matnr.
+        lgort_t = it_mard-lgort.
+*      ENDIF.
+      ENDLOOP.
+    ENDIF.
+    IF r1 = 'X'.
+      IF NOT s_lgort IS INITIAL.
+        SORT it_mard BY werks lgort bismt matnr.
+      ELSE.
+        SORT it_mard BY werks bismt matnr.
+      ENDIF.
+    ELSE.
+      IF NOT s_lgort IS INITIAL.
+        SORT it_order BY werks lgort bismt matnr1 avl.
+      ELSE.
+        SORT it_order BY werks bismt matnr1 avl.
+      ENDIF.
+    ENDIF.
+
+*****ADD BY HIKKI FENCANG***
+    IF p_c2 = 'X'.
+      DELETE it_mard WHERE avl >= 0.
+      IF NOT it_mard[] IS INITIAL.
+        PERFORM stockmail.
+      ENDIF.
+    ENDIF.
+****************************
+  ELSE.
+*    SELECT * FROM zidpsd095 INTO CORRESPONDING FIELDS OF TABLE ikk
+*                           WHERE werks = p_werks
+*                           AND matnr IN s_matnr
+*                           AND bismt IN s_kdmat
+*                           AND lgort IN s_lgort
+*                           AND loadno IN s_loadno
+*                           AND erdat IN s_datum
+*                           AND flag <> 'Y'
+*                           AND flag <> 'D'
+*                           AND flag <> 'P'.
+
+    IF NOT s_matnr[] IS INITIAL.
+      SELECT matnr bismt INTO TABLE it_out FROM mara
+       WHERE matnr IN s_matnr
+         AND mtart = 'ZFRT'.
+    ELSEIF NOT s_kdmat[] IS INITIAL.
+      SELECT matnr bismt INTO TABLE it_out FROM mara
+       WHERE bismt IN s_kdmat
+         AND mtart = 'ZFRT'.
+    ELSE.
+      SELECT matnr bismt INTO TABLE it_out FROM mara
+       WHERE mtart = 'ZFRT'.
+    ENDIF.
+
+    LOOP AT it_out.
+      SELECT * INTO CORRESPONDING FIELDS OF it_mard FROM mard
+       WHERE matnr = it_out-matnr
+*         AND werks IN ('ABG1','ABZ1','ABS1')        "add by xiaohu 20190528
+         AND werks  = p_werks
+         AND lgort IN s_lgort.
+        IF sy-subrc = 0.
+          it_mard-bismt = it_out-bismt.
+          APPEND it_mard.
+        ENDIF.
+      ENDSELECT.
+    ENDLOOP.
+*    IF p_c1 = 'X'.
+*      DELETE it_mard WHERE labst = 0.
+*    ENDIF.
+    CLEAR matnr_t.
+    LOOP AT it_mard.
+      SELECT SINGLE tlk03 tlk58 FROM zidpmmtlk
+        INTO (it_mard-model, it_mard-mcoo)
+        WHERE tlk01 = it_mard-matnr
+          AND werks IN ('ABG1','ABZ1','ABS1')      "add by xiaohu 20190528
+          AND tlk26 <> 'Y'.
+      IF sy-subrc = 0.
+        MODIFY it_mard.
+      ELSE.
+        DELETE it_mard.
+      ENDIF.
+    ENDLOOP.
+    LOOP AT it_mard.
+      IF it_mard-matnr NE matnr_t OR
+        it_mard-lgort NE lgort_t AND
+        it_mard-werks = 'ABG1' OR it_mard-werks = 'ABZ1' OR it_mard-werks = 'ABS1'.
+        CLEAR tem.
+        CALL FUNCTION 'ZRFC_SD_IDP_0050_A1'
+          EXPORTING
+            matnr = it_mard-matnr
+            werks = it_mard-werks    "add by xiaohu 20190528
+*           XPLSCN        = ' '
+          TABLES
+            mdpsx = it_avl.
+      ENDIF.
+      CLEAR: dat01_t.
+      LOOP AT it_avl WHERE ( delkz = 'VJ' OR delkz = 'VC'  OR delkz = 'RP' )
+                       AND lgort = it_mard-lgort.
+        IF it_avl-delkz = 'VJ' AND it_avl-dat01 NE dat01_t.
+          SELECT b~vbeln b~posnr b~matnr b~werks b~lgort b~lfimg
+            INTO (it_order-vbeln,it_order-posnr,it_order-matnr,
+                  it_order-werks,it_order-lgort,it_order-kwmeng)
+*            from vbuk as a inner join lips as b on a~vbeln = b~vbeln
+            FROM likp AS a INNER JOIN lips AS b ON a~vbeln = b~vbeln"modify by RAIN 20220427
+           WHERE a~wbstk NE 'C'
+             AND b~erdat = it_avl-dat01
+*           AND b~werks IN  ('ABG1','ABZ1','ABS1')       "add by xiaohu 20190528
+            AND b~werks =  it_mard-werks       "add by xiaohu 20190528
+             AND b~matnr = it_mard-matnr
+             AND b~lgort = it_avl-lgort.
+            it_order-matnr1 = it_mard-matnr.
+            it_order-model = it_mard-model.
+            it_order-mcoo = it_mard-mcoo.
+            it_order-bismt = it_mard-bismt.
+            it_order-labst = it_mard-labst.
+            tem = tem + it_order-kwmeng.
+            it_order-res = tem.
+            it_order-avl = it_mard-labst - tem.
+            SELECT SINGLE loadno INTO it_order-loadno FROM zidpsd015
+            WHERE werks = it_order-werks AND zoga48 = it_order-vbeln.
+            APPEND it_order.
+            CLEAR it_order.
+          ENDSELECT.
+        ELSEIF  it_avl-delkz = 'VC' AND it_avl-dat01 NE dat01_t.
+          SELECT b~vbeln b~posnr b~matnr b~werks b~lgort b~kwmeng
+            INTO (it_order-vbeln,it_order-posnr,it_order-matnr,
+                  it_order-werks,it_order-lgort,it_order-kwmeng)
+*            from vbuk as a inner join vbap as b on a~vbeln = b~vbeln
+            FROM vbak AS a INNER JOIN vbap AS b ON a~vbeln = b~vbeln"modify by RAIN 20220427
+           WHERE a~lfstk NE 'C'
+             AND b~erdat = it_avl-dat01
+*           AND b~werks IN  ('ABG1','ABZ1','ABS1')       "add by xiaohu 20190528
+            AND b~werks =  it_mard-werks       "add by xiaohu 201905288
+             AND b~matnr = it_mard-matnr
+             AND b~lgort = it_avl-lgort.
+            it_order-matnr1 = it_mard-matnr.
+            it_order-model = it_mard-model.
+            it_order-mcoo = it_mard-mcoo.
+            it_order-bismt = it_mard-bismt.
+            it_order-labst = it_mard-labst.
+            tem = tem + it_order-kwmeng.
+            it_order-res = tem.
+            it_order-avl = it_mard-labst - tem.
+            SELECT SINGLE loadno INTO it_order-loadno FROM zidpsd015
+           WHERE werks = it_order-werks AND zoga47 = it_order-vbeln.
+            APPEND it_order.
+            CLEAR it_order.
+          ENDSELECT.
+        ELSEIF it_avl-delkz = 'RP'..
+          SELECT b~ebeln b~ebelp b~matnr b~werks b~lgort b~menge
+         INTO (it_order-vbeln,it_order-posnr,it_order-matnr,
+               it_order-werks,it_order-lgort,it_order-kwmeng)
+         FROM ekko AS a INNER JOIN ekpo AS b ON a~ebeln = b~ebeln
+*          WHERE  a~bedat = it_avl-dat01
+            WHERE a~ebeln = it_avl-delnr
+            AND b~loekz = ''
+            AND b~elikz = ''
+*           AND b~werks IN  ('ABG1','ABZ1','ABS1')       "add by xiaohu 20190528
+            AND b~werks =  it_mard-werks       "add by xiaohu 20190528
+          AND b~matnr = it_mard-matnr
+          AND b~lgort = it_avl-lgort
+          AND b~ps_psp_pnr = it_avl-pspel.
+*              it_order-kwmeng = it_avl-mng01.
+            it_order-matnr1 = it_mard-matnr.
+            it_order-model = it_mard-model.
+            it_order-mcoo = it_mard-mcoo.
+            it_order-bismt = it_mard-bismt.
+            it_order-labst = it_mard-labst.
+            tem = tem + it_order-kwmeng.
+            it_order-res = tem.
+            it_order-avl = it_mard-labst - tem.
+            APPEND it_order.
+            CLEAR it_order.
+          ENDSELECT.
+****將退貨PO計算到備置庫存中end lily 20240102**
+        ENDIF.
+        dat01_t = it_avl-dat01.
+      ENDLOOP.
+      it_mard-res = tem.
+      it_mard-avl = it_mard-labst - tem.
+      MODIFY it_mard.
+      matnr_t = it_mard-matnr.
+      lgort_t = it_mard-lgort.
+    ENDLOOP.
+    IF r1 = 'X'.
+      IF NOT s_lgort IS INITIAL.
+        SORT it_mard BY werks lgort bismt matnr.
+      ELSE.
+        SORT it_mard BY werks bismt matnr.
+      ENDIF.
+    ELSE.
+      IF NOT s_lgort IS INITIAL.
+        SORT it_order BY werks lgort bismt matnr1 avl.
+      ELSE.
+        SORT it_order BY werks bismt matnr1 avl.
+      ENDIF.
+    ENDIF.
+    DATA: iqty(10) TYPE c.
+    DATA: BEGIN  OF fuck OCCURS 50.
+            INCLUDE STRUCTURE mdps.
+    DATA: END OF fuck.
+    DATA: mard-labst_t LIKE mard-labst,
+          lgort_t      LIKE mard-lgort.
+    DELETE it_mard WHERE avl >= 0.
+    LOOP AT it_mard.
+      MOVE-CORRESPONDING it_mard TO ikk.
+      ikk-fqty = 0 - it_mard-avl.
+      ikk-fmatnr = it_mard-matnr.
+
+      DATA:l_zflag TYPE char1,
+           l_count TYPE char2,
+           l_ztype TYPE char2.
+      DATA: BEGIN OF it_zcompare OCCURS 0.
+              INCLUDE STRUCTURE zidpmmcus .
+      DATA: END OF it_zcompare .
+      CLEAR :l_zflag , l_ztype.
+      CLEAR :it_zcompare[].
+      CLEAR:l_count.
+
+      SELECT SINGLE * FROM zidpmm560 WHERE werks = it_mard-werks AND  matnr = it_mard-matnr AND delflg <> 'Y'.
+      IF  sy-subrc = 0.
+        SELECT  * FROM zidpcontrolvalue
+     WHERE werks = it_mard-werks
+       AND ctype = 'EDI/LGORT'
+       AND cvalue1 <> it_mard-lgort.
+
+          CLEAR: mard-labst_t.
+          SELECT SINGLE labst INTO mard-labst_t
+                        FROM mard WHERE matnr = it_mard-matnr
+                        AND werks = it_mard-werks
+                        AND lgort = zidpcontrolvalue-cvalue1.
+
+          IF mard-labst_t <> 0.
+            CLEAR tem.
+            CALL FUNCTION 'ZRFC_SD_IDP_0050_A1'
+              EXPORTING
+                matnr = ikk-fmatnr
+                werks = it_mard-werks
+              TABLES
+                mdpsx = fuck.
+
+            LOOP AT fuck WHERE lgort = zidpcontrolvalue-cvalue1 AND
+                              ( delkz = 'VJ' OR delkz = 'VC' OR delkz = 'RP' ).
+              tem = tem +  fuck-mng01.
+            ENDLOOP.
+
+
+            iqty = mard-labst_t - tem.
+
+            IF  iqty  >= ikk-fqty.
+              ikk-flgort = zidpcontrolvalue-cvalue1.
+            ENDIF.
+            CLEAR tem.
+            CLEAR mard.
+            CLEAR fuck.
+            FREE fuck.
+            CLEAR zidpcontrolvalue.
+          ENDIF.
+        ENDSELECT.
+      ELSE.
+        SELECT  * FROM zidpcontrolvalue
+       WHERE werks = it_mard-werks
+         AND ctype = 'EDI/LGORT'
+         AND cvalue2 <> it_mard-lgort.
+
+          CLEAR: mard-labst_t.
+          SELECT SINGLE labst INTO mard-labst_t
+                        FROM mard WHERE matnr = it_mard-matnr
+                        AND werks = it_mard-werks
+                        AND lgort = zidpcontrolvalue-cvalue2.
+
+          IF mard-labst_t <> 0.
+            CLEAR tem.
+            CALL FUNCTION 'ZRFC_SD_IDP_0050_A1'
+              EXPORTING
+                matnr = ikk-fmatnr
+                werks = it_mard-werks
+              TABLES
+                mdpsx = fuck.
+
+            LOOP AT fuck WHERE lgort = zidpcontrolvalue-cvalue2 AND
+                              ( delkz = 'VJ' OR delkz = 'VC' OR delkz = 'RP' ).
+              tem = tem +  fuck-mng01.
+            ENDLOOP.
+
+
+            iqty = mard-labst_t - tem.
+
+            IF  iqty  >= ikk-fqty.
+              ikk-flgort = zidpcontrolvalue-cvalue2.
+            ENDIF.
+            CLEAR tem.
+            CLEAR mard.
+            CLEAR fuck.
+            FREE fuck.
+            CLEAR zidpcontrolvalue.
+          ENDIF.
+        ENDSELECT.
+      ENDIF.
+      APPEND ikk.
+      CLEAR ikk.
+    ENDLOOP.
+  ENDIF.
+  CLEAR:ikk,it_mard.
+ENDFORM.                    " get_data
+
+*&---------------------------------------------------------------------*
+*&      Form  out_put
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM out_put.
+  CLEAR: fc_alv.
+  REFRESH: fc_alv.
+  IF h3 <> 'X'.
+    IF r1 = 'X'.
+      IF sy-langu = 'E'.
+        PERFORM fill_alv_structure USING:
+        'IT_MARD'   'WERKS'   'PLANT' '' '' ,
+        'IT_MARD'   'MATNR'   'HH PN'  '' '',
+        'IT_MARD'   'BISMT'   'CUST PN' '' '' ,
+        'IT_MARD'   'LGORT'   'SLOC'  '' '',
+        'IT_MARD'   'LABST'   'INVENTORY' '' '' ,
+        'IT_MARD'   'RES'   'RESERVATION' '' ''  ,
+        'IT_MARD'   'AVL'   'AVAILABLE' '' '' ,
+        'IT_MARD'   'MODEL'   'MODEL' '' '' ,
+        'IT_MARD'   'MCOO'   'MCOO' '' '' ,
+        'IT_MARD'   'PSPNR'   'WBS' '' '' ,
+         'IT_MARD'   'BSFLAG'   'Bonded Flag' '' '' ,
+         'IT_MARD'   'FBSFLAG'   'Non-Bonded Flag' '' '' .
+
+      ELSEIF sy-langu = 'M'.
+        PERFORM fill_alv_structure USING:
+        'IT_MARD'   'WERKS'   '工廠' '' '' ,
+        'IT_MARD'   'MATNR'   '鴻海料號' '' '' ,
+        'IT_MARD'   'BISMT'   '客戶料號' '' '' ,
+        'IT_MARD'   'LGORT'   '倉碼' '' '' ,
+        'IT_MARD'   'LABST'   '庫存' '' '' ,
+        'IT_MARD'   'RES'   '備置庫存' '' '' ,
+        'IT_MARD'   'AVL'   '可用庫存' '' '' ,
+        'IT_MARD'   'MODEL'   '機種' '' '' ,
+        'IT_MARD'   'MCOO'   'MCOO' '' '' ,
+        'IT_MARD'   'PSPNR'   'WBS' '' '' ,
+         'IT_MARD'   'BSFLAG'   '保稅備案Flag' '' '' ,
+         'IT_MARD'   'FBSFLAG'   '一般贸易备案 Flag' '' '' .
+      ENDIF.
+      wa_layout-colwidth_optimize = 'X'.
+      CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+        EXPORTING
+          i_callback_program = g_repid
+          is_layout          = wa_layout
+          it_fieldcat        = fc_alv[]
+        TABLES
+          t_outtab           = it_mard.
+    ELSEIF r2 = 'X'.
+      IF sy-langu = 'E'.
+        PERFORM fill_alv_structure USING:
+        'IT_ORDER'   'WERKS'   'PLANT' '' '' ,
+        'IT_ORDER'   'MATNR1'   'HH PN' '' '' ,
+        'IT_ORDER'   'BISMT'   'CUST PN' '' '' ,
+        'IT_ORDER'   'LGORT'   'SLOC'  '' '',
+        'IT_ORDER'   'LABST'   'INVENTORY' '' '' ,
+        'IT_ORDER'   'RES'   'RESERVATION' '' '' ,
+        'IT_ORDER'   'AVL'   'AVAILABLE' '' '' ,
+        'IT_ORDER'   'VBELN'   'OPEN ORDER' '' '' ,
+        'IT_ORDER'   'LOADNO'   'LOADNO' '' '' ,
+        'IT_ORDER'   'MATNR'   'ORDER PN' '' '' ,
+        'IT_ORDER'   'KWMENG'   'ORDER QTY' '' '',
+        'IT_ORDER'   'MODEL'   'MODEL' '' '',
+        'IT_MARD'   'MCOO'   'MCOO' '' '' ,
+        'IT_ORDER'   'PSPNR'   'WBS' '' ''.
+
+      ELSEIF sy-langu = 'M'.
+        PERFORM fill_alv_structure USING:
+        'IT_ORDER'   'WERKS'   '工廠' '' '' ,
+        'IT_ORDER'   'MATNR'   '鴻海料號' '' '' ,
+        'IT_ORDER'   'BISMT'   '客戶料號' '' '' ,
+        'IT_ORDER'   'LGORT'   '倉碼' '' '' ,
+        'IT_ORDER'   'LABST'   '庫存' '' '' ,
+        'IT_ORDER'   'RES'     '備置庫存' '' '' ,
+        'IT_ORDER'   'AVL'     '可用庫存'  '' '',
+        'IT_ORDER'   'VBELN'   '未處理訂單' '' '' ,
+        'IT_ORDER'   'LOADNO'   'LOADNO' '' '' ,
+        'IT_ORDER'   'MATNR'   '訂單料號'  '' '',
+        'IT_ORDER'   'KWMENG'  '訂單數量'  '' '',
+        'IT_ORDER'   'MODEL'   '機種'  '' '',
+        'IT_MARD'   'MCOO'   'MCOO' '' '' ,
+        'IT_ORDER'   'PSPNR'   '工作細分產品階段' '' ''.
+      ENDIF.
+      wa_layout-colwidth_optimize = 'X'.
+      CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+        EXPORTING
+          i_callback_program = g_repid
+          is_layout          = wa_layout
+          it_fieldcat        = fc_alv[]
+        TABLES
+          t_outtab           = it_order.
+    ENDIF.
+  ELSE.
+    IF sy-langu = 'E'.
+      PERFORM fil_alv_structure USING:
+      'IKK'   'CHECK'   'CHOOSE' 'X' 'X' 'X',
+      'IKK'   'WERKS'   'PLANT' '' '' '' ,
+      'IKK'   'MATNR'   'HH PN'  '' '' '',
+      'IKK'   'BISMT'   'CUST PN' '' '' '' ,
+      'IKK'   'LGORT'   'SLOC'  '' '' '',
+      'IKK'   'LABST'   'INVENTORY' '' '' '',
+      'IKK'   'RES'   'RESERVATION' '' '' '',
+      'IKK'   'AVL'   'AVAILABLE' '' '' '',
+      'IKK'   'MODEL'   'MODEL' '' '' '',
+      'IKK'   'FLGORT'   'F SLOC' '' 'X' 'X' ,
+      'IKK'   'FMATNR'   'F HHPN' '' 'X' 'X',
+      'IKK'   'FQTY'   'F QTY' '' 'X' 'X' .
+    ELSEIF sy-langu = 'M'.
+      PERFORM fil_alv_structure USING:
+      'IKK'   'CHECK'   '選擇' 'X' 'X' 'X',
+      'IKK'   'WERKS'   '工廠' '' '' '' ,
+      'IKK'   'MATNR'   '鴻海料號' '' '' '' ,
+      'IKK'   'BISMT'   '客戶料號' '' '' '' ,
+      'IKK'   'LGORT'   '倉碼' '' '' '' ,
+      'IKK'   'LABST'   '庫存' '' '' '',
+      'IKK'   'RES'   '備置庫存' '' '' '',
+      'IKK'   'AVL'   '可用庫存' '' '' '',
+      'IKK'   'MODEL'   '機種' '' '' '',
+      'IKK'   'FLGORT'   '建議轉撥倉碼' '' 'X' 'X' ,
+      'IKK'   'FMATNR'   '建議HH料號' '' 'X' 'X',
+      'IKK'   'FQTY'   '建議數量' '' 'X' 'X' .
+    ENDIF.
+    wa_layout-colwidth_optimize = 'X'.
+    CALL FUNCTION 'REUSE_ALV_LIST_DISPLAY'
+      EXPORTING
+        i_interface_check        = ''
+        i_callback_program       = 'ZRSD_IDP_0021'
+        is_layout                = wa_layout
+        i_callback_pf_status_set = 'PFSTAT'
+        i_callback_user_command  = 'COMMD'
+        it_fieldcat              = fc_alv[]
+        i_default                = 'X'
+        i_save                   = 'A'
+      TABLES
+        t_outtab                 = ikk.
+  ENDIF.
+
+ENDFORM.                    " write_alv
+*&---------------------------------------------------------------------*
+*&      Form  fill_alv_structure
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_WA_LAYOUT_COLWIDTH_OPTIMIZE  text
+*      -->P_=  text
+*      -->P_0095   text
+*----------------------------------------------------------------------*
+FORM fill_alv_structure USING p_tablename p_fieldname
+                           p_text  p_check p_edit.
+
+  MOVE:
+          p_fieldname     TO fc_alv-fieldname ,
+          p_text          TO fc_alv-reptext_ddic,
+          p_check         TO fc_alv-checkbox,
+          p_edit          TO fc_alv-edit.
+
+  APPEND fc_alv.
+  CLEAR fc_alv.
+
+ENDFORM.                    " fill_alv_structure
+
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_AUTHORIZATION
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM check_authorization.
+  RANGES:p_plant FOR ekpo-werks.
+  p_plant-sign = 'I'.
+  p_plant-option = 'EQ'.
+  p_plant-low = p_werks.
+  APPEND p_plant.
+
+  CALL FUNCTION 'ZRFC_MM_IDP_0104'
+    TABLES
+      input  = p_plant[]
+      output = p_plant[].
+
+  IF p_plant[] IS INITIAL.
+    IF sy-langu = 'E'.
+      MESSAGE i004(zmm) WITH 'You have no authority to use this plant'.
+    ELSE.
+      MESSAGE i004(zmm) WITH '您沒有這個工廠的權限!'.
+    ENDIF.
+    STOP.
+  ENDIF.
+
+ENDFORM.                    " CHECK_AUTHORIZATION
+*---------------------------------------------------------------------*
+*       FORM commd                                                    *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+*  -->  RF_UCOMM                                                      *
+*  -->  SELFIELD                                                      *
+*---------------------------------------------------------------------*
+FORM commd USING rf_ucomm LIKE sy-ucomm selfield TYPE slis_selfield.
+  CASE rf_ucomm .
+    WHEN '&CREATE'.
+      PERFORM cretran.
+      PERFORM out_put1.
+    WHEN 'BACK'.
+      LEAVE SCREEN.
+    WHEN 'EXIT'.
+      LEAVE SCREEN.
+    WHEN '&SEL_ALL'.
+      PERFORM sel_all.
+    WHEN '&DESEL_ALL'.
+      PERFORM des_all.
+  ENDCASE.
+ENDFORM.
+
+
+*---------------------------------------------------------------------*
+*       FORM PFSTAT                                                   *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+*  -->  P_EXTAB                                                       *
+*---------------------------------------------------------------------*
+FORM pfstat USING p_extab TYPE slis_t_extab.
+  SET PF-STATUS 'SD01'.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  cretran
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM cretran.
+  DATA:gm_code   LIKE bapi2017_gm_code OCCURS 0 WITH HEADER LINE,
+       gm_header LIKE bapi2017_gm_head_01 OCCURS 0 WITH HEADER LINE,
+       gm_item   LIKE bapi2017_gm_item_create OCCURS 0 WITH HEADER LINE,
+       it_return LIKE bapiret2 OCCURS 0 WITH HEADER LINE.
+  DATA:l_matedoc LIKE mkpf-mblnr,subrc LIKE sy-subrc.
+  DATA: item(4) TYPE c.
+  DATA: lt_hubin LIKE zidpsd066 OCCURS 0 WITH HEADER LINE.
+
+  LOOP AT ikk WHERE check = 'X'.
+    ikk1 = ikk.
+    APPEND ikk1.
+  ENDLOOP.
+
+  DELETE ADJACENT DUPLICATES FROM ikk1.
+  CLEAR :ikk1.
+
+  CLEAR: gm_code,gm_header,gm_item,it_return.
+  REFRESH: gm_code,gm_header,gm_item,it_return.
+
+  gm_header-pstng_date = sy-datum.
+  gm_code-gm_code = '04'.
+  gm_header-header_txt = 'EDI SHIPPING'.
+  gm_header-doc_date = sy-datum.
+  APPEND gm_header.
+
+  LOOP AT ikk1.
+*    gm_item-material = ikk1-matnr.
+    gm_item-material_long = ikk1-matnr."Modify by Liv 20220503 使用40位物料字段
+    gm_item-entry_qnt = ikk1-fqty.
+    gm_item-stge_loc =  ikk1-flgort.
+    gm_item-move_stloc = ikk1-lgort.
+    gm_item-plant =  ikk1-werks.
+    gm_item-move_type = '311'.
+    APPEND gm_item .
+*    clear: gm_item-material,gm_item-entry_qnt.
+    CLEAR: gm_item-material_long,gm_item-entry_qnt."Modify by Liv 20220503 使用40位物料字段
+  ENDLOOP.
+  CLEAR gm_item .
+  IF NOT gm_item[] IS INITIAL.
+    CALL FUNCTION 'BAPI_GOODSMVT_CREATE'
+      EXPORTING
+        goodsmvt_header  = gm_header
+        goodsmvt_code    = gm_code
+      IMPORTING
+        materialdocument = l_matedoc
+      TABLES
+        goodsmvt_item    = gm_item
+        return           = it_return.
+
+    COMMIT WORK AND WAIT.
+    WAIT UP TO 2 SECONDS.
+    READ TABLE it_return WITH KEY type = 'E'.
+    IF l_matedoc <> ''.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING
+          wait = 'Y'.
+      ikk1-mblnr = l_matedoc.
+      ikk1-pflag = 'Y'..
+    ELSE.
+      ikk1-pflag = 'N'.
+      ikk1-message = it_return-message.
+    ENDIF.
+  ENDIF.
+  LOOP AT ikk1.
+    ikk1-mblnr = l_matedoc.
+    ikk1-message = it_return-message.
+    MODIFY ikk1.
+  ENDLOOP.
+  CLEAR gm_item.
+  FREE gm_item.
+ENDFORM.                    " cretran
+*&---------------------------------------------------------------------*
+*&      Form  sel_all
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM sel_all.
+  LOOP AT ikk.
+    ikk-check = 'X'.
+    MODIFY ikk.
+  ENDLOOP.
+  PERFORM out_put."gengxinbaobiao
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  des_all
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM des_all.
+  LOOP AT ikk.
+    ikk-check = ' '.
+    MODIFY ikk.
+  ENDLOOP.
+  PERFORM out_put.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  out_put1
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM out_put1.
+  CLEAR: fc_alv.
+  REFRESH: fc_alv.
+  IF sy-langu = 'E'.
+    PERFORM fill_alv_structure USING:
+   'IKK1'   'WERKS'   'PLANT' '' ''  ,
+     'IKK1'   'MATNR'   'HH PN'  '' '' ,
+     'IKK1'   'BISMT'   'CUST PN' '' ''  ,
+    'IKK1'   'LGORT'   'SLOC'  '' '' ,
+     'IKK1'   'LABST'   'INVENTORY' '' '' ,
+     'IKK1'   'RES'   'RESERVATION' '' '' ,
+   'IKK1'   'AVL'   'AVAILABLE' '' '' ,
+  'IKK1'   'MODEL'   'MODEL' '' '' ,
+     'IKK1'   'FLGORT'   'F SLOC' '' ''  ,
+       'IKK1'   'FMATNR'   'F HHPN' '' '' ,
+     'IKK1'   'FQTY'   'F QTY' '' ''  ,
+    'IKK1'   'MBLNR'   'material document' '' '',
+    'IKK1'   'PFLAG'   'document STATUS' '' '',
+    'IKK1'   'MESSAGE'   'message' ''  ''.
+  ELSEIF sy-langu = 'M'.
+    PERFORM fill_alv_structure USING:
+    'IKK1'   'WERKS'   '工廠' '' ''  ,
+    'IKK1'   'MATNR'   '鴻海料號' '' ''  ,
+    'IKK1'   'BISMT'   '客戶料號' '' ''  ,
+   'IKK1'   'LGORT'   '倉碼' '' '' ,
+    'IKK1'   'LABST'   '庫存' '' '' ,
+    'IKK1'   'RES'   '備置庫存' '' '' ,
+    'IKK1'   'AVL'   '可用庫存' '' '' ,
+    'IKK1'   'MODEL'   '機種' '' '' ,
+    'IKK1'   'FLGORT'   '建議轉撥倉碼' '' ''  ,
+    'IKK1'   'FMATNR'   '建議HH料號' '' '' ,
+    'IKK1'   'FQTY'   '建議數量' '' ''  ,
+    'IKK1'   'MBLNR'   'material document' '' '',
+    'IKK1'   'PFLAG'   'document STATUS' '' '' ,
+    'IKK1'   'MESSAGE'   'message' '' '' .
+  ENDIF.
+  wa_layout-colwidth_optimize = 'X'.
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program       = 'ZRSD_IDP_0021'
+      is_layout                = wa_layout
+      i_callback_pf_status_set = 'PFSTAT'
+      i_callback_user_command  = 'COMMD'
+      it_fieldcat              = fc_alv[]
+      i_default                = 'X'
+      i_save                   = 'A'
+    TABLES
+      t_outtab                 = ikk1.
+
+ENDFORM.                                                    " out_put1
+*&---------------------------------------------------------------------*
+*&      Form  fil_alv_structure
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_1477   text
+*      -->P_1478   text
+*      -->P_1479   text
+*      -->P_1480   text
+*      -->P_1481   text
+*      -->P_1482   text
+*----------------------------------------------------------------------*
+FORM fil_alv_structure USING p_tablename p_fieldname
+                           p_text  p_check p_edit p_input.
+
+  MOVE:
+          p_fieldname     TO fc_alv-fieldname ,
+          p_text          TO fc_alv-reptext_ddic,
+          p_check         TO fc_alv-checkbox,
+          p_edit          TO fc_alv-edit,
+          p_input         TO fc_alv-input.
+
+  APPEND fc_alv.
+  CLEAR fc_alv.
+
+ENDFORM.                    " fill_alv_structure
+*&---------------------------------------------------------------------*
+*&      Form  stockmail
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM stockmail.
+  DATA: p_email(40)    TYPE c VALUE 'jolin.sl.chen@foxconn.com',
+        g_table_lines  LIKE sy-tabix, " table index
+        g_table_lines2 LIKE sy-tabix, " table index
+        g_tab          TYPE x VALUE '09'. " TAB value
+  DATA: x_doc_chng LIKE sodocchgi1, " document attributes
+        it_objpack LIKE sopcklsti1 OCCURS 0 WITH HEADER LINE,
+        " attachment table
+        it_objhead LIKE solisti1 OCCURS 0 WITH HEADER LINE,
+        " object header table
+        it_objbin  LIKE solisti1 OCCURS 0 WITH HEADER LINE,
+        " binary table
+        it_objtxt  LIKE solisti1 OCCURS 0 WITH HEADER LINE,
+        it_reclist LIKE somlreci1 OCCURS 0 WITH HEADER LINE.
+  CLEAR it_reclist.
+  DATA: mail_n(60) TYPE c,
+        regflag    TYPE c.
+
+
+  SELECT memo INTO it_reclist-receiver FROM zidpcontrolvalue
+   WHERE werks = p_werks
+     AND ctype = 'AUTO_MINUS_STOCK_MAIL'
+     AND indicator1 = 'ACT'.
+    it_reclist-rec_type = 'U'.
+    APPEND it_reclist.
+  ENDSELECT.
+  IF it_reclist[] IS INITIAL.
+    EXIT.
+  ENDIF.
+*-set document attributes
+  CLEAR: x_doc_chng.
+  x_doc_chng-obj_name = 'HEADING'.
+
+  CONCATENATE sy-datum sy-uzeit
+              ' iDPBG Auto Minus Stock Message (ZDPSD021) '
+         INTO mail_n SEPARATED BY space.
+
+  x_doc_chng-obj_descr = mail_n.
+*-set body text
+  it_objtxt = 'Dear All :'.
+  APPEND it_objtxt.
+  it_objtxt = ''.
+  APPEND it_objtxt.
+  IF sy-langu = 'E'.
+    it_objtxt = 'iDPBG Auto Minus Stock Message (ZDPSD021) Result:'.
+  ELSE.
+    it_objtxt = 'iDPBG Auto Minus Stock Message (ZDPSD021)'.
+  ENDIF.
+  APPEND it_objtxt.
+  it_objtxt = 'It is automatic sent by SAP,do not write back!'.
+  APPEND it_objtxt.
+  it_objtxt = ''.
+  APPEND it_objtxt.
+*-document size
+  CLEAR g_table_lines.
+  DESCRIBE TABLE it_objtxt LINES g_table_lines.
+  READ TABLE it_objtxt INDEX g_table_lines.
+  x_doc_chng-doc_size =
+             ( g_table_lines - 1 ) * 255 + strlen( it_objtxt ).
+*-set packing list for body text
+  CLEAR it_objpack-transf_bin.     "fujian
+  it_objpack-head_start = 1.
+  it_objpack-head_num   = 0.
+  it_objpack-body_start = 1.
+  it_objpack-body_num   = g_table_lines.
+  it_objpack-doc_type   = 'RAW'.
+*  it_objpack-doc_type = 'xls'.
+  APPEND it_objpack.
+  CLEAR it_objpack.
+*-set object header
+  DATA:gong(25)    TYPE c,
+       l_menge(13) TYPE c.
+  IF sy-langu = 'E'.
+    CONCATENATE sy-datum  sy-uzeit
+                ' iDPBG Auto Minus Stock Message (ZDPSD021)  '
+           INTO gong.
+  ELSE.
+    CONCATENATE sy-datum  sy-uzeit
+                ' iDPBG Auto Minus Stock Message (ZDPSD021)  '
+           INTO gong.
+  ENDIF.
+  it_objhead = gong.
+  APPEND it_objhead.
+  CLEAR it_objhead.
+
+*-packing list for attachment
+  it_objpack-transf_bin = 'X'.
+  it_objpack-head_start = 1.
+  it_objpack-head_num = 4.
+  it_objpack-body_start = 1.
+*  IT_OBJPACK-BODY_NUM = G_TABLE_LINES .
+  it_objpack-body_num = 1000.
+  it_objpack-doc_type = 'RAW' .
+*  it_objpack-doc_type = 'XLS' .
+  it_objpack-obj_name = 'ABCD'.
+  it_objpack-obj_descr = 'List2'.
+  it_objpack-doc_size = g_table_lines * 255.
+  APPEND it_objpack.
+  CLEAR it_objpack.
+*--code for attachment -- end
+
+  DATA:head_p(13) TYPE c.
+  DATA:inx_p LIKE sy-tabix.
+  DATA:k_labst(13) TYPE c.
+  DATA:k_res(13) TYPE c.
+  DATA:k_avl(13) TYPE c.
+
+  CONCATENATE sy-datum 'GRIR' INTO head_p.
+
+**------ Error Message ------**
+  IF sy-langu = 'E'.
+    CONCATENATE '|Plant|Material number|CPN|LGORT|INVENTORY|RESERVATION|available|model|' '' INTO it_objbin-line.
+  ELSE.
+    CONCATENATE '|Plant|Material number|CPN|LGORT|INVENTORY|RESERVATION|available|model|' '' INTO it_objbin-line.
+  ENDIF.
+  APPEND it_objbin.
+  LOOP AT it_mard.
+    k_labst = it_mard-labst.
+    k_res = it_mard-res.
+    k_avl = it_mard-avl.
+    CONCATENATE '|' it_mard-werks
+                '|' it_mard-matnr
+                '|' it_mard-bismt
+                '|' it_mard-lgort
+                '|' k_labst
+                '|' k_res
+                '|' k_avl
+                '|' it_mard-model '|'
+    INTO it_objbin-line.
+    APPEND it_objbin.
+  ENDLOOP.
+
+  inx_p = sy-tabix.
+  CLEAR it_objbin.
+*-Sending the document
+  l_sender = 'hikki.jw.cheng@foxconn.com'.
+  CALL FUNCTION 'SO_DOCUMENT_SEND_API1'
+    EXPORTING
+      document_data              = x_doc_chng
+      put_in_outbox              = 'X'
+      sender_address             = l_sender
+      sender_address_type        = 'INT'
+      commit_work                = 'X'
+    TABLES
+      packing_list               = it_objpack
+      object_header              = it_objhead
+      contents_bin               = it_objbin
+      contents_txt               = it_objtxt
+      receivers                  = it_reclist
+    EXCEPTIONS
+      too_many_receivers         = 1
+      document_not_sent          = 2
+      document_type_not_exist    = 3
+      operation_no_authorization = 4
+      parameter_error            = 5
+      x_error                    = 6
+      enqueue_error              = 7
+      OTHERS                     = 8.
+
+  IF sy-subrc <> 0.
+  ELSE.
+    SUBMIT rsconn01 AND RETURN.
+    COMMIT WORK AND WAIT.
+  ENDIF.
+ENDFORM.                    " stockmail
