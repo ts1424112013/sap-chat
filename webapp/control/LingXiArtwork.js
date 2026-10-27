@@ -50,7 +50,7 @@ sap.ui.define([], function () {
         function svg(sPrefix) {
                 sPrefix = sPrefix || nextId();
                 if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(sPrefix)) { throw new Error("Invalid artwork prefix"); }
-                var s = '<svg xmlns="http://www.w3.org/2000/svg" width="260" height="268" viewBox="' + sViewBox + '" class="lingxiArtwork" role="img" aria-label="灵犀 LingXi"><title>灵犀 LingXi</title><defs>';
+                var s = '<svg xmlns="http://www.w3.org/2000/svg" width="260" height="268" viewBox="' + sViewBox + '" class="lingxiArtwork" role="img" aria-label="灵犀 Lynx"><title>灵犀 Lynx</title><defs>';
                 aParts.forEach(function (p) {
                         s += '<linearGradient id="' + sPrefix + "-" + p.key + '" x1="' + p.x1 + '" y1="' + p.y1 + '" x2="' + p.x2 + '" y2="' + p.y2 + '" gradientUnits="userSpaceOnUse">';
                         p.stops.forEach(function (c) { s += '<stop offset="' + c[0] + '" stop-color="' + c[1] + '"/>'; });

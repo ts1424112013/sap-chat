@@ -10,5 +10,5 @@ vm.runInNewContext(fs.readFileSync(path.join(root, 'webapp/control/LingXiArtwork
 fs.writeFileSync(path.join(root, 'webapp/images/lingxi-mark.svg'), artwork.svg('lingxi-mark') + '\n');
 const inner = artwork.svg('lingxi-favicon').replace('width="260" height="268"', 'x="3" y="2" width="58" height="60"');
 fs.writeFileSync(path.join(root, 'webapp/images/lingxi-favicon.svg'),
-  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><title>灵犀 LingXi</title><rect width="64" height="64" rx="15" fill="#24424D"/>' + inner + '</svg>\n');
-console.log('LingXi static logo and favicon generated.');
+  '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><title>灵犀 Lynx</title><rect width="64" height="64" rx="15" fill="#24424D"/>' + inner + '</svg>\n');
+console.log('Lynx static logo and favicon generated.');

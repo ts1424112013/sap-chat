@@ -575,7 +575,7 @@ sap.ui.define([
                         oSettings.setProperty("/userName", oUser ? (oUser.userName || oUser.userId) : "");
                         oSettings.setProperty("/userInitials", oUser ? String(oUser.userId || "").substring(0, 2).toUpperCase() : "");
                         if (oUser) {
-                                // 20261025：顶部欢迎卡片（按时段问候 + LingXi 动效），替换原 MessageToast
+                                // 20261025：顶部欢迎卡片（按时段问候 + Lynx 动效），替换原 MessageToast
                                 WelcomeToast.show({
                                         title: oRB.getText("welcomeTitle", [oRB.getText(WelcomeToast.greetingKey()), oUser.userName || oUser.userId]),
                                         sub: oRB.getText("welcomeSub")

@@ -114,7 +114,7 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   check('深夜抽取舒缓文案',
     HeroGreeting.pick('', atHour(0), () => 0.99).key.startsWith('Night'));
 
-  console.log('\n━━ LingXi · 任务表情');
+  console.log('\n━━ Lynx · 任务表情');
   check('等待后端和请求未完成时使用思考动效',
     LingXiState.message(true, false, false) === 'thinking' &&
     LingXiState.message(false, false, true) === 'thinking' &&

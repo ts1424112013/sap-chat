@@ -1496,7 +1496,7 @@ sap.ui.define([
                                         ? oRoot.Login : oRoot;
                                 if ((d.Success || "") !== "X") {
                                         // 未开通权限等业务拒绝：透传后端原话给界面
-                                        throw new Error("srv:" + (d.Message || "该账号未开通 LingXi 使用权限，请联系管理员"));
+                                        throw new Error("srv:" + (d.Message || "该账号未开通 Lynx 使用权限，请联系管理员"));
                                 }
                                 var oInfo = {};
                                 try { oInfo = JSON.parse(d.Json || "{}"); } catch (e) { oInfo = {}; }
