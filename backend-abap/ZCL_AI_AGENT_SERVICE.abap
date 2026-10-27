@@ -126,6 +126,15 @@
 *   ls_fturn-kind; agent_model_allowed 内有 'AGENT_MODELS_FIORI'
 *=======================================================================
 * V15.5 20261023: 技能选择/任务沿用、做法卡、工具交集执行护栏与快照审计。
+* V15.6 20261028(边跑边看, 设计: 功能计划书/Agent实时过程/01): 运行进度 ——
+*   analyze_agent 新增可选参数 iv_request_id(= 前端 ClientRequestId), 运行中
+*   经 ZCL_AI_AGENT_PROGRESS 把步骤写进 ZAI_AGENT_PROG(独立连接提交), 前端
+*   在回复返回前调 AgentProgress 读。挂点: 开头 start; 每轮调模型前 sync
+*   (+ 本轮占位); 工具执行前 sync(+ 模型那句话 + 工具占位); 数据分析查询后
+*   sync(+ 前 3 行预览); 结构化分析前 sync(+ 占位); 收口与 finish_det 里
+*   sync + finish。进度写失败只关掉进度, 不影响回答; 不改 Trace / 审计口径。
+*   ★ 重贴后核对标记: 进度调用 start 1 处 / sync 7 处 / finish 2 处,
+*     另有 plan_running / kv_running / preview_of 各 1 处
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -192,6 +201,7 @@ CLASS zcl_ai_agent_service DEFINITION
                 iv_scene      TYPE string OPTIONAL  " V15.2: 新会话场景(已有会话以库内为准)
                 iv_skill_id   TYPE string OPTIONAL  " 空=沿用, NONE=取消
                 iv_task_id    TYPE string OPTIONAL  " 技能上下文候选, 必须校验归属
+                iv_request_id TYPE string OPTIONAL  " V15.6: 前端 ClientRequestId = 运行进度键(边跑边看)
       EXPORTING es_result     TYPE ty_agent_result.
 
   PRIVATE SECTION.
@@ -405,6 +415,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       es_result-trace_json = '[]'.
       RETURN.
     ENDIF.
+
+    " V15.6 边跑边看: 开始记运行进度(没带请求编号 / AGENT_PROGRESS=OFF 时不记)
+    zcl_ai_agent_progress=>start( iv_request_id ).
 
     " ---------------- 0. 领域路由 + 模型 + 预算 ----------------
     DATA(lv_domain) = zcl_ai_domain_cards=>match_domain( iv_question ).
@@ -921,6 +934,12 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
       lv_round = lv_round + 1.
 
+      " V15.6 边跑边看: 写入已走完的步骤 + 本轮模型调用占位(下一条新步骤原地接替; 没有新步骤按完成收口)
+      zcl_ai_agent_progress=>sync(
+        it_trace   = lt_trace
+        is_running = VALUE #( phase = 'PLANNING'
+                              label = COND #( WHEN lv_round = 1 THEN '规划步骤' ELSE '根据结果决定下一步' ) ) ).
+
       " ---- 最后一轮: 强制收口(必须在自查清单通过后 final) ----
       IF lv_round = lv_max_rounds.
         CLEAR ls_msg.
@@ -1110,6 +1129,12 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           CONTINUE.
         ENDIF.
 
+        " V15.6 边跑边看: 模型那句话 + 查询占位(查询名 / 表作参数小标签)
+        zcl_ai_agent_progress=>sync(
+          it_trace   = lt_trace
+          iv_note    = zcl_ai_agent_guard=>sanitize_summary( ls_out-summary )
+          is_running = zcl_ai_agent_progress=>plan_running( iv_tool = ls_out-tool is_plan = ls_plan ) ).
+
         lt_ds = zcl_ai_data_analysis_service=>execute_plan( ls_plan ).
 
         " V1.3.0 阶段事件: 每条查询一行 EXECUTING(查询名/行数/耗时/脱敏错误)
@@ -1123,6 +1148,15 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                           elapsed_ms = ls_ds-elapsed_ms
                           rows       = ls_ds-total_rows ) TO lt_trace.
         ENDLOOP.
+
+        " V15.6 边跑边看: 每条查询一步(第一条接替查询占位), 带前 3 行预览
+        DATA lt_prog_prev TYPE zcl_ai_agent_progress=>tt_preview.
+        CLEAR lt_prog_prev.
+        LOOP AT lt_ds INTO DATA(ls_ds_prev).
+          APPEND zcl_ai_agent_progress=>preview_of( it_columns = ls_ds_prev-columns
+                                                    it_rows    = ls_ds_prev-rows ) TO lt_prog_prev.
+        ENDLOOP.
+        zcl_ai_agent_progress=>sync( it_trace = lt_trace it_preview = lt_prog_prev ).
 
         APPEND LINES OF lt_ds TO lt_datasets.
 
@@ -1175,6 +1209,12 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         APPEND ls_msg TO lt_messages.
         CONTINUE.
       ENDIF.
+
+      " V15.6 边跑边看: 模型那句话 + 工具占位(校验后的参数作小标签; 执行完的第一条步骤原地接替)
+      zcl_ai_agent_progress=>sync(
+        it_trace   = lt_trace
+        iv_note    = zcl_ai_agent_guard=>sanitize_summary( ls_out-summary )
+        is_running = zcl_ai_agent_progress=>kv_running( iv_tool = ls_out-tool it_kv = lt_norm ) ).
 
       " ---- V15.2: 代码分析 read_program_source(只读源码; 对象/权限校验在 exec_read_source) ----
       IF ls_out-tool = zcl_ai_tool_registry=>gc_tool_read_source.
@@ -1387,6 +1427,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
             lv_ana_perr TYPE string.
       CLEAR: lv_ana_ms, lv_ana_err, lv_ana_out, lv_ana_perr.
 
+      " V15.6 边跑边看: 写入回答步骤 + 结构化分析占位(下方 COMPOSING 行原地接替)
+      zcl_ai_agent_progress=>sync( it_trace   = lt_trace
+                                   is_running = VALUE #( phase = 'COMPOSING' label = '生成结构化分析' ) ).
       GET RUN TIME FIELD DATA(lv_t_ana0).
       CLEAR ls_msg.
       ls_msg-role    = 'user'.
@@ -1468,6 +1511,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     es_result-answer     = lv_answer.
     es_result-rounds     = |{ lv_round }|.
     es_result-elapsed_ms = |{ lv_total_ms }|.
+    " V15.6 边跑边看: 最后几步写完, 运行头置 DONE(前端随回复一起收口)
+    zcl_ai_agent_progress=>sync( lt_trace ).
+    zcl_ai_agent_progress=>finish( ).
     es_result-trace_json = /ui2/cl_json=>serialize(
                              data        = lt_trace
                              compress    = abap_true
@@ -2338,6 +2384,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     APPEND VALUE #( phase = 'COMPOSING' label = COND #( WHEN iv_label IS NOT INITIAL
                                                         THEN iv_label ELSE '整理回答' )
                     status = 'OK' elapsed_ms = 0 ) TO lt_det_trace.
+    " V15.6 边跑边看: 确定性应答也写进度(很快, 前端多半在回复到达后一次拿全)
+    zcl_ai_agent_progress=>sync( lt_det_trace ).
+    zcl_ai_agent_progress=>finish( ).
     es_result-trace_json = /ui2/cl_json=>serialize(
                              data = lt_det_trace compress = abap_true
                              pretty_name = /ui2/cl_json=>pretty_mode-camel_case ).

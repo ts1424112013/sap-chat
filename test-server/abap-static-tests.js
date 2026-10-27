@@ -12,6 +12,8 @@
  *   4) 报表选择项（10.24 记录 #03a）：REPORT_SERVICE V1.0.13 整理 R / C / F、EXEC_SAP V1.1b 组装选择屏
  *   5) 报表自动登记（10.24 记录 #03b）：ZCL_AI_RPT_SCANNER / ZAI_RPT_REG 只在约定处写表；全库行长 ≤ 255
  *   6) 10.27 记录：SCANNER V1.0a 修复补回；EXEC_SAP V1.1c 作业语言 RPT_JOB_LANGU + 作业中止原因落表
+ *   8) 10.28 边跑边看：ZCL_AI_AGENT_PROGRESS 只用独立连接写进度表、不碰主事务、写失败只关进度；
+ *      AGENT_SERVICE V15.6 的挂点数量与位置；DPC V15.9 的 AgentProgress 分支与前端参数名一致
  * 只能查文本层面的约定，语法与运行时仍以 SAP 激活与现场验证为准。
  */
 const fs = require('fs');
@@ -298,6 +300,40 @@ check('REPORT_SERVICE V1.0.15：ty_param 有 group_label；主 SELECT 清单不�
   /validation_rule, help_text, sort_no, active, sel_kind\s+FROM zai_rpt_param/i.test(rsMethods2) && !/sel_kind,\s*group_label/i.test(rsMethods2) &&
   /lv_gcols\s+TYPE string VALUE `PARAM_ID, GROUP_LABEL`/.test(rsMethods2) && /SELECT \(lv_gcols\) FROM zai_rpt_param/.test(rsMethods2) && /CATCH cx_sy_dynamic_osql_error/.test(rsMethods2));
 check('ZAI_RPT_REG V1.0a：预览按块分段打【块】标题（先赋给变量再 WRITE）', /^\*& V1\.0a 20261027/m.test(regRaw) && /ls_p-group_label <> lv_blk/.test(reg) && /WRITE: \/ lv_bln COLOR COL_GROUP\./.test(reg));
+
+// ---------------------------------------------------------------- 8) 10.28 边跑边看
+console.log('\n[8] 10.28 边跑边看：ZCL_AI_AGENT_PROGRESS V1.0 / AGENT_SERVICE V15.6 / DPC V15.9');
+const prRaw = read('ZCL_AI_AGENT_PROGRESS.abap'), pr = codeOnly(prRaw);
+const prM = (n) => methodOf(pr, n);
+const agRaw = read('ZCL_AI_AGENT_SERVICE.abap'), ag = codeOnly(agRaw);
+const dpRaw = read('ZCL_ZAI_CHAT_DPC_EXT.abap'), dp = codeOnly(dpRaw);
+const prWrites = pr.match(/\b(?:INSERT|UPDATE|MODIFY|DELETE FROM)\s+zai_agent_prog\b[^.]*/gi) || [];
+check('进度表的写（INSERT / UPDATE / MODIFY / DELETE）都带 CONNECTION (gc_con)', prWrites.length >= 5 && prWrites.every((w) => /CONNECTION \(gc_con\)/i.test(w)),
+  prWrites.filter((w) => !/CONNECTION \(gc_con\)/i.test(w)).join(' | '));
+check('独立连接是 R/3*AI_PROG；start / sync / finish 写完都 COMMIT CONNECTION', /gc_con\s+TYPE dbcon_name VALUE 'R\/3\*AI_PROG'/i.test(pr) &&
+  ['start', 'sync', 'finish'].every((n) => /COMMIT CONNECTION \(gc_con\)/.test(prM(n))));
+check('进度类不碰主事务（没有 COMMIT WORK / ROLLBACK）', !/COMMIT WORK|ROLLBACK/i.test(pr));
+check('start / sync / finish 都包在 TRY … CATCH cx_root（写失败只关掉进度）', ['start', 'sync', 'finish'].every((n) => /TRY\.[\s\S]*CATCH cx_root\.[\s\S]*CLEAR gv_on/.test(prM(n))));
+check('read 只读本人（uname = @sy-uname）且没有写', /uname = @sy-uname/.test(prM('read')) && !/\b(INSERT|UPDATE|MODIFY|DELETE)\b/i.test(prM('read')));
+check('开关 AGENT_PROGRESS = OFF 时不记；请求编号超过 32 位不记', /cfgkey = 'AGENT_PROGRESS'/.test(prM('start')) && /'OFF'/.test(prM('start')) && /strlen\( iv_run_id \) > 32/.test(prM('start')));
+check('LOOP 的 FROM 不写算术式（先算进 lv_from）', /lv_from = gv_synced \+ 1\.\s*LOOP AT it_trace INTO DATA\(ls_t\) FROM lv_from\./.test(prM('sync')));
+check('预览单元格超 60 字截断、参数值超 40 字截断、SQL 原文不进参数小标签', /substring\( val = lv_cell len = 60 \)/.test(prM('preview_of')) &&
+  /substring\( val = lv_v len = 40 \)/.test(prM('kv_running')) && /<> 'sql'/.test(prM('kv_running')));
+check('AGENT_SERVICE V15.6：analyze_agent 有可选参数 iv_request_id', /^\* V15\.6 20261028/m.test(agRaw) &&
+  /CLASS-METHODS analyze_agent[\s\S]*?iv_request_id TYPE string OPTIONAL[\s\S]*?EXPORTING es_result/i.test(ag));
+const agCnt = (re) => (ag.match(re) || []).length;
+check('进度调用数：start 1 / sync 7 / finish 2', agCnt(/zcl_ai_agent_progress=>start\(/g) === 1 && agCnt(/zcl_ai_agent_progress=>sync\(/g) === 7 &&
+  agCnt(/zcl_ai_agent_progress=>finish\(/g) === 2, 'start ' + agCnt(/zcl_ai_agent_progress=>start\(/g) + ' / sync ' + agCnt(/zcl_ai_agent_progress=>sync\(/g) + ' / finish ' + agCnt(/zcl_ai_agent_progress=>finish\(/g));
+check('每轮调模型前写本轮占位（循环里 sync 在 zcl_ai_llm_client=>chat 之前）', /lv_round = lv_round \+ 1\.\s*zcl_ai_agent_progress=>sync\([\s\S]*?is_running = VALUE #\( phase = 'PLANNING'[\s\S]*?zcl_ai_llm_client=>chat\(/.test(ag));
+check('工具执行前写模型那句话 + 工具占位：数据分析在 execute_plan 前、扁平参数工具在参数校验后', agCnt(/iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \)/g) === 2 &&
+  /plan_running\([^)]*\) \)\.\s*lt_ds = zcl_ai_data_analysis_service=>execute_plan/.test(ag) && /CONTINUE\.\s*ENDIF\.\s*zcl_ai_agent_progress=>sync\([\s\S]*?kv_running\(/.test(ag));
+check('数据分析查询后带预览 sync（preview_of 按查询逐条）', /LOOP AT lt_ds INTO DATA\(ls_ds_prev\)\.[\s\S]*?preview_of\([\s\S]*?zcl_ai_agent_progress=>sync\( it_trace = lt_trace it_preview = lt_prog_prev \)/.test(ag));
+check('收口：sync + finish 在 trace_json 序列化之前；finish_det 里也有', /zcl_ai_agent_progress=>finish\( \)\.\s*es_result-trace_json = \/ui2\/cl_json=>serialize/.test(ag) &&
+  /zcl_ai_agent_progress=>finish\( \)/.test(methodOf(ag, 'finish_det')));
+const feCs = fs.readFileSync(path.join(__dirname, '../webapp/service/ChatService.js'), 'utf8');
+check('DPC V15.9：AGENTPROGRESS 读 ClientRequestId 调 read；AnalyzeTask 传 iv_request_id = lv_at_rid', /^\* V15\.9 20261028/m.test(dpRaw) &&
+  /WHEN 'AGENTPROGRESS'\.[\s\S]*?zcl_ai_agent_progress=>read\(\s*v8_param\( it_parameter = it_parameter iv_name = 'ClientRequestId' \)/.test(dp) && /iv_request_id\s+= lv_at_rid/.test(dp));
+check('前端发的 FI 名 / 参数名 = DPC 读的（AgentProgress / ClientRequestId）', /_taskCall\("AgentProgress", \{ ClientRequestId:/.test(feCs) && /_fiHasParam\("AgentProgress", "ClientRequestId"\)/.test(feCs));
 
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);

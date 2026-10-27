@@ -130,6 +130,14 @@
 *   前端不能决定权限、白名单、报表存在性与运行成功与否
 *=======================================================================
 * V15.8 20261023: SkillList / SkillSave / AnalyzeTask.SkillId; 技能上下文只信本人任务。
+* V15.9 20261028(边跑边看, 设计: 功能计划书/Agent实时过程/01): 运行进度 ——
+*   ① ANALYZETASK 把已解析的 ClientRequestId(lv_at_rid)传给
+*     AGENT_SERVICE.analyze_agent(iv_request_id), 作为本次运行的进度键;
+*   ② 新增函数导入 AgentProgress(GET; 参数 ClientRequestId; 返回 GenericResult),
+*     ResultJson = ZCL_AI_AGENT_PROGRESS=>read(只读, 只返回本人的运行)。
+*   SEGW: Function Import AgentProgress, HTTP Method GET, Return Type
+*   GenericResult(Complex Type, Cardinality 1), 参数 ClientRequestId Edm.String 32。
+*   ★ 重贴后核对标记: 有 WHEN 'AGENTPROGRESS' 与 iv_request_id = lv_at_rid
 CLASS zcl_zai_chat_dpc_ext DEFINITION
   PUBLIC
   INHERITING FROM zcl_zai_chat_dpc
@@ -282,6 +290,15 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
     ENDIF.
 
     CASE to_upper( iv_action_name ).
+      WHEN 'AGENTPROGRESS'.
+        " V15.9 边跑边看: 本人某次 Agent 运行的进度(只读; AnalyzeTask 返回前前端约每秒查一次)
+        DATA ls_prog_reply TYPE ty_generic_result.
+        CLEAR ls_prog_reply.
+        ls_prog_reply-success     = 'X'.
+        ls_prog_reply-result_json = zcl_ai_agent_progress=>read(
+                                      v8_param( it_parameter = it_parameter iv_name = 'ClientRequestId' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata( ls_prog_reply ) CHANGING cr_data = er_data ).
+
       WHEN 'SKILLLIST'.
         DATA: ls_sk_list TYPE zcl_ai_skill_service=>ty_list, lv_sk_error TYPE string,
               ls_sk_reply TYPE ty_generic_result.
@@ -606,6 +623,7 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
                     iv_scene             = lv_at_scn
                     iv_task_id           = lv_at_tid
                     iv_skill_id          = lv_at_skill
+                    iv_request_id        = lv_at_rid   " V15.9: 运行进度键(边跑边看)
           IMPORTING es_result            = ls_atask ).
 
         IF ls_atask-status <> 'DENIED' AND ls_atask-status <> 'ERROR'.
