@@ -22,6 +22,16 @@
 *   ② offset/length 位置不允许 strlen() 表达式 → SHIFT RIGHT DELETING TRAILING 替代循环
 *   ③ STRING 写入位置子串赋值非法(writer 位置须 flat) → STRIP_LITERALS 改 CHAR 4000 缓冲
 *   ★ 重贴后核对标记: validate_sql 内应有 "SHIFT lv_sql RIGHT DELETING TRAILING space."
+* V1.2.3 20261028(10.28 记录 #02: 工单分析 SQL 反复失败): 把模型常犯的通用 SQL 写法
+*   在校验阶段就说清楚怎么改, 不再落到含糊的报错或生成程序里的编译错:
+*   ① "别名.字段" → 提示写成 别名~字段(原来报"检测到语句分隔符"); 分号单独提示
+*   ② 双引号 → 提示别名不要加引号(原来报"注释符或反引号")
+*   ③ 常量之外出现中文 / 全角符号 → 提示别名只用英文、符号用半角
+*   ④ LIMIT / TOP / FETCH FIRST、CURRENT_DATE / NOW( ) / sy-datum(提示今天日期)、
+*     DATEDIFF 等日期函数(提示 DATS_DAYS_BETWEEN / DATS_ADD_DAYS / SUBSTRING)、
+*     IFNULL / NVL(提示 COALESCE)
+*   只加拒绝条件, 原有放行 / 拒绝规则不变
+*   ★ 重贴后核对标记: validate_sql 内有 DATA(lv_ascii) 与 DATS_DAYS_BETWEEN 提示
 *=======================================================================
 CLASS zcl_ai_sql_guard DEFINITION
   PUBLIC
@@ -162,6 +172,19 @@ CLASS zcl_ai_sql_guard IMPLEMENTATION.
       RETURN.
     ENDIF.
 
+    " V1.2.3: 通用 SQL 的"别名.字段"写法单独报清楚 —— 原来落到下面的"语句分隔符",
+    " 模型看不出要改成 ~, 反复重写直到次数用完(10.28 记录 #02)
+    FIND REGEX '[A-Z_][A-Z0-9_]*\.[A-Z_*]' IN lv_bare.
+    IF sy-subrc = 0.
+      ev_error = `字段请写成 别名~字段(如 K~AUFNR、P~WEMNG), Open SQL 不用点号 . 限定字段; ` &&
+                 `表别名写在 FROM / JOIN 后(如 FROM AFKO AS K)`.
+      RETURN.
+    ENDIF.
+    IF lv_bare CS ';'.
+      ev_error = '只允许单条 SELECT 语句, 不要写分号 ;'.
+      RETURN.
+    ENDIF.
+
     IF lv_bare CS ';' OR lv_bare CS '.'.
       " 数字间的小数点(如 1.5)不算语句分隔符, 先摘除再判断
       DATA(lv_dot_check) = lv_bare.
@@ -171,8 +194,20 @@ CLASS zcl_ai_sql_guard IMPLEMENTATION.
         RETURN.
       ENDIF.
     ENDIF.
-    IF lv_bare CS '"' OR lv_bare CS '`'.
-      ev_error = '不允许使用注释符或反引号'.
+    IF lv_bare CS '"'.
+      " V1.2.3: 双引号在 ABAP 里是注释符; 模型多半是给别名加了引号
+      ev_error = '不允许使用双引号: 别名直接写英文(如 AS WIP_QTY), 不要加引号; 字符串常量用单引号'.
+      RETURN.
+    ENDIF.
+    IF lv_bare CS '`'.
+      ev_error = '不允许使用反引号, 字符串常量用单引号'.
+      RETURN.
+    ENDIF.
+    " V1.2.3: 字符串常量之外只能是 ASCII —— 中文别名、全角逗号 / 括号会在生成程序里编译失败
+    DATA(lv_ascii) = `ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_~,()=<>*+-/%:@!&|^?[]{}$#.\ `.
+    IF lv_bare CN lv_ascii.
+      ev_error = `别名和字段名只能用英文字母、数字、下划线(检测到中文或全角符号); ` &&
+                 `中文只能出现在单引号常量里, 逗号和括号用半角`.
       RETURN.
     ENDIF.
     IF lv_scan NS 'FROM'.
@@ -209,6 +244,30 @@ CLASS zcl_ai_sql_guard IMPLEMENTATION.
 
     " 整词边界: 关键字前后为非字母数字(或边界)
     DATA(lv_bare_pad) = | { lv_bare } |.
+
+    " V1.2.3: 通用 SQL 方言先给出可照做的改法(否则只会在生成程序里报编译错)
+    FIND REGEX `[^A-Z0-9_](LIMIT|TOP\s+[0-9]+|FETCH\s+FIRST)[^A-Z0-9_]` IN lv_bare_pad.
+    IF sy-subrc = 0.
+      ev_error = '不支持 LIMIT / TOP / FETCH FIRST: 返回行数由系统控制; 需要前 N 条请 ORDER BY 后在回答里取前 N 条'.
+      RETURN.
+    ENDIF.
+    FIND REGEX `[^A-Z0-9_](CURRENT_DATE|CURRENT_TIMESTAMP|SYSDATE|GETDATE|NOW\s*\(|SY-DATUM|SY-UZEIT)` IN lv_bare_pad.
+    IF sy-subrc = 0.
+      ev_error = |不支持取当前日期的函数或 sy-datum: 请直接写日期常量, 今天是 '{ sy-datum }'|.
+      RETURN.
+    ENDIF.
+    FIND REGEX `[^A-Z0-9_](DATEDIFF|DATE_DIFF|DATEADD|DATE_ADD|DATE_FORMAT|TO_CHAR|TO_DATE|EXTRACT|YEAR|MONTH)\s*\(` IN lv_bare_pad.
+    IF sy-subrc = 0.
+      ev_error = `日期直接按 YYYYMMDD 字符串比较; 日期差用 DATS_DAYS_BETWEEN( 日期1, 日期2 ), ` &&
+                 `加减天数用 DATS_ADD_DAYS( 日期, 天数 ), 取年月用 SUBSTRING( 日期, 1, 6 )`.
+      RETURN.
+    ENDIF.
+    FIND REGEX `[^A-Z0-9_](IFNULL|NVL|ISNULL)\s*\(` IN lv_bare_pad.
+    IF sy-subrc = 0.
+      ev_error = '空值处理请用 COALESCE( 字段, 默认值 )'.
+      RETURN.
+    ENDIF.
+
     LOOP AT lt_kw INTO DATA(lv_kw).
       DATA(lv_pat) = |[^A-Z0-9_]{ lv_kw }[^A-Z0-9_]| .
       FIND REGEX lv_pat IN lv_bare_pad.

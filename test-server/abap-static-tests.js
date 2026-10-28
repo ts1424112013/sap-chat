@@ -16,6 +16,8 @@
  *      AGENT_SERVICE V15.6 的挂点数量与位置；DPC V15.9 的 AgentProgress 分支与前端参数名一致
  *  10) Agent闭环增强/02 第 0 步：LLM_CLIENT V1.5 取用量、AGENT_SERVICE V15.8 用量只写审计
  *      （TOOL_ID = LLM_CALL）、DATA_ANALYSIS V13.4 数据集行数写在明细前面并按整行回填
+ *  11) 10.28 #02：SQL_EXECUTOR V1.3 长 SQL 安全断行、SQL_GUARD V1.2.3 写法提示、DDIC_TOOLS V1.3 前导零、
+ *      DOMAIN_CARDS V1.4 与技能「生产工单进度」
  * 只能查文本层面的约定，语法与运行时仍以 SAP 激活与现场验证为准。
  */
 const fs = require('fs');
@@ -421,6 +423,43 @@ check('rows_sent / note 只在回填模型（iv_max_chars > 0）且少写了行�
 check('build_datasets_json 签名不变（AnalysisJson 仍传 iv_max_chars = 0）',
   /CLASS-METHODS build_datasets_json\s+IMPORTING it_datas\s+TYPE tt_dataset\s+iv_max_chars TYPE i DEFAULT gc_model_chars\s+RETURNING VALUE\(rv\)\s+TYPE string\./.test(da) &&
   /build_datasets_json\( it_datas\s+= it_datas\s+iv_max_chars = 0 \)/.test(da));
+
+// ---------------------------------------------------------------- 11) 10.28 #02：工单分析 SQL 反复失败
+console.log('\n[11] 10.28 #02：长 SQL 断行（SQL_EXECUTOR V1.3）/ 写法提示（SQL_GUARD V1.2.3）/ 前导零（DDIC_TOOLS V1.3）/ DATA 域卡 V1.4');
+const exRaw2 = read('ZCL_AI_SQL_EXECUTOR.abap'), ex2 = codeOnly(exRaw2), exRun = methodOf(ex2, 'run_sql');
+const segMax = +((ex2.match(/CONSTANTS gc_seg_max TYPE i VALUE (\d+)\./) || [])[1] || 0);
+const lineLen = +((ex2.match(/ty_srcline TYPE c LENGTH (\d+)/) || [])[1] || 0);
+check('EXECUTOR V1.3：每行上限 gc_seg_max + 1（逗号留在本行）< 生成源码行长 ty_srcline',
+  /^\* V1\.3 20261028/m.test(exRaw2) && segMax > 0 && lineLen > 0 && segMax + 1 < lineLen, 'gc_seg_max=' + segMax + ' 行长=' + lineLen);
+check('不再按 230 断行；断点只取常量之外的空格 / 逗号（数单引号奇偶），找不到就拒绝',
+  !/230/.test(exRun) && /IF lv_ch1 = ` ` OR lv_ch1 = `,`\./.test(exRun) && /lv_q = count\( val = lv_lead sub = `'` \)\./.test(exRun) &&
+  /IF lv_q MOD 2 = 0\./.test(exRun) && /IF lv_scut < 0\.[\s\S]*?RETURN\./.test(exRun));
+check('SQL 段只用 substring( )，不用 offset 写法（教训：offset / length 位置禁表达式）',
+  !/lv_clean\+/.test(exRun) && /lv_seg = substring\( val = lv_clean off = lv_spos len = lv_segl \)\./.test(exRun));
+check('编译报错回填出错行及上一行（行号转换失败、取不到时退回前 200 字符）',
+  /CATCH cx_sy_conversion_error\./.test(exRun) && /READ TABLE lt_source INTO lv_errline INDEX lv_lno\./.test(exRun) && /出错位置附近/.test(exRun));
+const sgRaw = read('ZCL_AI_SQL_GUARD.abap'), sg = codeOnly(sgRaw), sgVal = methodOf(sg, 'validate_sql');
+check('GUARD V1.2.3："别名.字段" 在通用"语句分隔符"检查之前单独提示改用 ~',
+  /^\* V1\.2\.3 20261028/m.test(sgRaw) && sgVal.indexOf('别名~字段') > 0 && sgVal.indexOf('别名~字段') < sgVal.indexOf('检测到语句分隔符'));
+check('双引号 / 中文与全角 / LIMIT / 当前日期（带今天）/ 日期函数 / IFNULL 都有可照做的提示',
+  /不要加引号/.test(sgVal) && /IF lv_bare CN lv_ascii\./.test(sgVal) && /LIMIT\|TOP/.test(sgVal) && /今天是 '\{ sy-datum \}'/.test(sgVal) &&
+  /DATS_DAYS_BETWEEN/.test(sgVal) && /COALESCE/.test(sgVal));
+check('原有关键字黑名单与表权限检查保留（INTO / WITH / VIEW_AUTHORITY_CHECK）',
+  /APPEND 'INTO'\s+TO lt_kw\./.test(sgVal) && /APPEND 'WITH'\s+TO lt_kw\./.test(sgVal) && /CALL FUNCTION 'VIEW_AUTHORITY_CHECK'/.test(sgVal));
+const ddRaw = read('ZCL_AI_DDIC_TOOLS.abap'), dd = codeOnly(ddRaw), ddDesc = methodOf(dd, 'describe_table');
+check('DDIC_TOOLS V1.3：describe_table 字段带 decimals / convexit；有 ALPHA 时给补零提示；仍没有 {{ 模板',
+  /^\* V1\.3 20261028/m.test(ddRaw) && /"convexit":"/.test(ddDesc) && /"decimals":/.test(ddDesc) && /IF ls_f-convexit = 'ALPHA'\./.test(ddDesc) &&
+  /'000000131002'/.test(ddDesc) && !/\{\{/.test(dd));
+const dcData = (dcRaw.match(/ELSEIF lv_domain = gc_dom_data\.[\s\S]*?ELSEIF lv_domain = gc_dom_code\./) || [''])[0];
+check('DOMAIN_CARDS V1.4：DATA 卡讲前导零、点号、函数写法（带今天日期）、相除、一对多不和 SUM 同 JOIN',
+  /^\* V1\.4\s+20261028/m.test(dcRaw) && /'000000131002'/.test(dcData) && /不要写 H\.KUNNR/.test(dcData) &&
+  /今天是 \{ sy-datum \}/.test(dcData) && /DIVISION\( 分子, 分母, 2 \)/.test(dcData) && /EXISTS \( SELECT J~OBJNR FROM JEST AS J/.test(dcData) &&
+  /AFRU\(报工\)/.test(dcData));
+const skills = require('../webapp/utils/SkillCatalog.js');
+const ppOrder = skills.builtin.find((x) => x.id === 'DATA_PP_ORDER');
+check('技能「生产工单进度」：工单号补零、在制口径（标明暂定）、状态不和 SUM 同 JOIN、比率在回答里算；正文 ≤ 3000',
+  !!ppOrder && /'000000131002'/.test(ppOrder.body) && /在制数量（暂定口径/.test(ppOrder.body) && /不要和数量 SUM/.test(ppOrder.body) &&
+  /在回答里算/.test(ppOrder.body) && ppOrder.body.length <= 3000);
 
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);

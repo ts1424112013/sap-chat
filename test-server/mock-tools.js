@@ -537,6 +537,12 @@ async function execute(toolId, args) {
         };
       }
 
+      // 10.28 #02：与 ZCL_AI_SQL_GUARD V1.2.3 一致，通用 SQL 写法在校验阶段就拒绝并给出改法
+      const dialectErr = sqlDialectError(sql);
+      if (dialectErr) {
+        return { status: 'REJECTED', summary: 'SQL 写法不符合 Open SQL', rows: 0, data: { error: dialectErr } };
+      }
+
       // 执行（轻量 SELECT 引擎：WHERE/GROUP BY/聚合/ORDER BY）
       const mockResult = execMockSelect(sql);
       const columns = mockResult.length > 0 ? Object.keys(mockResult[0]) : [];
@@ -568,4 +574,60 @@ async function execute(toolId, args) {
   }
 }
 
-module.exports = { getToolsForDomain, execute };
+/**
+ * 对照 ZCL_AI_SQL_GUARD V1.2.3（10.28 记录 #02）：单引号常量换成空格后，按 SAP 端同样的顺序检查
+ * 模型常写的通用 SQL 写法，返回给模型的提示与 SAP 端一致；返回空串表示通过。
+ */
+function stripSqlLiterals(sql) {
+  return sql.replace(/'(?:[^']|'')*'/g, (m) => ' '.repeat(m.length));
+}
+function sqlDialectError(sql, today) {
+  const work = String(sql || '').trim().replace(/\.+\s*$/, '');
+  const bare = stripSqlLiterals(work.toUpperCase());
+  const pad = ' ' + bare + ' ';
+  if (/[A-Z_][A-Z0-9_]*\.[A-Z_*]/.test(bare)) {
+    return '字段请写成 别名~字段(如 K~AUFNR、P~WEMNG), Open SQL 不用点号 . 限定字段; 表别名写在 FROM / JOIN 后(如 FROM AFKO AS K)';
+  }
+  if (bare.includes(';')) { return '只允许单条 SELECT 语句, 不要写分号 ;'; }
+  if (bare.includes('"')) { return '不允许使用双引号: 别名直接写英文(如 AS WIP_QTY), 不要加引号; 字符串常量用单引号'; }
+  if (bare.includes('`')) { return '不允许使用反引号, 字符串常量用单引号'; }
+  if (/[^A-Z0-9_~,()=<>*+\-/%:@!&|^?[\]{}$#.\\ ']/.test(bare)) {
+    return '别名和字段名只能用英文字母、数字、下划线(检测到中文或全角符号); 中文只能出现在单引号常量里, 逗号和括号用半角';
+  }
+  if (/[^A-Z0-9_](LIMIT|TOP\s+[0-9]+|FETCH\s+FIRST)[^A-Z0-9_]/.test(pad)) {
+    return '不支持 LIMIT / TOP / FETCH FIRST: 返回行数由系统控制; 需要前 N 条请 ORDER BY 后在回答里取前 N 条';
+  }
+  if (/[^A-Z0-9_](CURRENT_DATE|CURRENT_TIMESTAMP|SYSDATE|GETDATE|NOW\s*\(|SY-DATUM|SY-UZEIT)/.test(pad)) {
+    const d = today || new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    return `不支持取当前日期的函数或 sy-datum: 请直接写日期常量, 今天是 '${d}'`;
+  }
+  if (/[^A-Z0-9_](DATEDIFF|DATE_DIFF|DATEADD|DATE_ADD|DATE_FORMAT|TO_CHAR|TO_DATE|EXTRACT|YEAR|MONTH)\s*\(/.test(pad)) {
+    return '日期直接按 YYYYMMDD 字符串比较; 日期差用 DATS_DAYS_BETWEEN( 日期1, 日期2 ), 加减天数用 DATS_ADD_DAYS( 日期, 天数 ), 取年月用 SUBSTRING( 日期, 1, 6 )';
+  }
+  if (/[^A-Z0-9_](IFNULL|NVL|ISNULL)\s*\(/.test(pad)) { return '空值处理请用 COALESCE( 字段, 默认值 )'; }
+  return '';
+}
+
+/**
+ * 对照 ZCL_AI_SQL_EXECUTOR V1.3：模型 SQL 放进生成程序时每行 ≤ 180 字符，
+ * 只在常量之外的空格（不保留）或逗号（留在本行）处断开；找不到安全断点返回 null。
+ */
+function splitSqlLines(sql, max = 180) {
+  const out = [];
+  let spos = 0;
+  while (spos < sql.length) {
+    const rest = sql.length - spos;
+    if (rest <= max) { out.push(sql.substr(spos, rest)); break; }
+    let scut = -1;
+    for (let scand = spos + max; scand > spos; scand--) {
+      const ch = sql[scand];
+      if ((ch === ' ' || ch === ',') && ((sql.slice(0, scand).match(/'/g) || []).length % 2 === 0)) { scut = scand; break; }
+    }
+    if (scut < 0) { return null; }
+    out.push(sql.substr(spos, sql[scut] === ',' ? scut - spos + 1 : scut - spos));
+    spos = scut + 1;
+  }
+  return out;
+}
+
+module.exports = { getToolsForDomain, execute, sqlDialectError, splitSqlLines };

@@ -16,6 +16,12 @@
 *   以内(长回答会被模型输出上限截断, 导致协议失败), 问具体报错时直接答触发条件
 *   与行号, 整体解读程序时才用四段结构
 *   ★ 重贴后核对标记: CODE 域卡第 2 条含 keyword, 第 4 条含 1500 字
+* V1.4   20261028(10.28 记录 #02: 工单分析 SQL 反复失败 / 工单号查不到): DATA 域卡
+*   第 2 条明确不要写 H.KUNNR 点号; 第 3 条补 WHERE 中的 EXISTS / IN 子查询;
+*   新增第 11 条(编号字段补前导零, AUFNR 12 位)、第 12 条(函数写法与不支持的通用
+*   SQL, 带今天日期; 数量相除用 DIVISION 或在回答里算)、第 13 条(一对多的表不和
+*   SUM 同 JOIN, 状态用 EXISTS 过滤); 表地图补 AUFK / AFRU / AFVC / JEST / TJ02T
+*   ★ 重贴后核对标记: DATA 域卡含 '000000131002' 与 DATS_DAYS_BETWEEN
 *=======================================================================
 CLASS zcl_ai_domain_cards DEFINITION
   PUBLIC
@@ -149,10 +155,12 @@ CLASS zcl_ai_domain_cards IMPLEMENTATION.
         |1. 只允许一条 SELECT; INTO/UP TO/PACKAGE SIZE 由系统自动添加,\n| &&
         |   语句中出现这些子句会被直接拒绝。\n| &&
         |2. 推荐统一使用以下 SAP Open SQL 写法: 表使用别名(如 VBAK AS H),\n| &&
-        |   字段使用别名加波浪号(如 H~KUNNR), 多表使用显式 JOIN ... ON。\n| &&
+        |   字段使用别名加波浪号(如 H~KUNNR, 不要写 H.KUNNR, 点号会被拒绝),\n| &&
+        |   多表使用显式 JOIN ... ON。\n| &&
         |   JOIN 优先写 LEFT OUTER JOIN/INNER JOIN, 不要混用隐式逗号连接。\n| &&
         |3. 支持: 多表 JOIN(最多 8 张)/GROUP BY/HAVING/聚合(COUNT/SUM/AVG/\n| &&
-        |   MIN/MAX)/CASE WHEN/ORDER BY。当前系统 7.50: 不支持 FROM 子查询、\n| &&
+        |   MIN/MAX)/CASE WHEN/ORDER BY/WHERE 中的 EXISTS 与 IN 子查询。\n| &&
+        |   当前系统 7.50: 不支持 FROM 子查询、\n| &&
         |   不支持 WITH(CTE)和窗口函数, 不要尝试。\n| &&
         |4. SELECT 中的非聚合字段必须全部出现在 GROUP BY。聚合字段使用英文\n| &&
         |   ASCII 别名, 只用字母/数字/下划线(如 ORDER_CNT、NETWR_TOTAL),\n| &&
@@ -167,6 +175,19 @@ CLASS zcl_ai_domain_cards IMPLEMENTATION.
         |9. 单次请求最多执行 5 次 run_sql(含修正重试); 语句编译/执行报错时\n| &&
         |   按报错信息修正后重试, 同一错误不要重试超过一次。\n| &&
         |10. 表权限不足或表属于受保护表时, 如实告知用户, 不要换表绕过。\n| &&
+        |11. 编号字段在库里补足前导零: describe_table 中 convexit 为 ALPHA 的字段, 值是纯数字\n| &&
+        |    时按 len 左补 0。例: 工单 AUFNR(12 位)131002 写成 '000000131002'; 采购订单 EBELN、\n| &&
+        |    销售订单 VBELN、供应商 LIFNR、客户 KUNNR 是 10 位; 物料号 MATNR 以 describe_table 为准。\n| &&
+        |12. 函数括号内侧留空格, 如 SUM( P~WEMNG )、COALESCE( X, 0 )。不支持 LIMIT/TOP、\n| &&
+        |    CURRENT_DATE/NOW( )/sy-datum(今天是 { sy-datum }, 直接写日期常量)、DATEDIFF、\n| &&
+        |    IFNULL/NVL: 日期差用 DATS_DAYS_BETWEEN( 日期1, 日期2 ), 空值用 COALESCE。\n| &&
+        |    数量/金额字段不能用 / 相除: 比率(完成率、报废率等)查出分子分母后在回答里算,\n| &&
+        |    必须在 SQL 里算时用 DIVISION( 分子, 分母, 2 )。\n| &&
+        |13. 一对多的表(JEST 状态、AFRU 报工、RESB 组件、EKET 计划行等)不要和数量 SUM\n| &&
+        |    放进同一条 JOIN, 会重复累计。按状态过滤用 EXISTS 子查询, 例如\n| &&
+        |    WHERE EXISTS ( SELECT J~OBJNR FROM JEST AS J WHERE J~OBJNR = A~OBJNR\n| &&
+        |    AND J~STAT = 'I0002' AND J~INACT = ' ' )(I0002 = REL, 状态码以 TJ02T 为准);\n| &&
+        |    需要列出状态文字时单独再查一次。\n| &&
         |\n| &&
         |【推荐 SQL 模板】\n| &&
         |SELECT H~KUNNR AS CUSTOMER_ID, C~NAME1 AS CUSTOMER_NAME,\n| &&
@@ -182,7 +203,8 @@ CLASS zcl_ai_domain_cards IMPLEMENTATION.
         |- MM 采购: EKKO(采购订单头)/EKPO(行项目)/EBAN(采购申请)\n| &&
         |- MM 库存: MARA/MARC(工厂视图)/MARD(库位)/MSEG+MKPF(物料凭证)\n| &&
         |- SD 销售: VBAK(销售订单头)/VBAP(行项目)/LIKP+LIPS(交货)/VBRK+VBRP(开票)/KNA1(客户)\n| &&
-        |- PP 生产: AFKO(订单头)/AFPO(订单项)/RESB(预留)\n| &&
+        |- PP 生产: AUFK(订单主数据, OBJNR)/AFKO(订单头)/AFPO(订单项)/RESB(预留)/\n| &&
+        |  AFRU(报工)/AFVC+AFVV(工序)/JEST+TJ02T(系统状态)\n| &&
         |- FI/CO: BKPF(凭证头)/BSEG(凭证行)/ACDOCA(总账行项目)/SKAT(科目文本)/CSKS(成本中心)\n|.
 
     ELSEIF lv_domain = gc_dom_code.

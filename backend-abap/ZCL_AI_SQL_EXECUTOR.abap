@@ -42,6 +42,15 @@
 *   ② length 位置不允许算术表达式 lv_last_sp - lv_start → lv_cut 变量
 *   ③ 尾行无 length 子串改显式 length
 *   ★ 重贴后核对标记: 本类应搜到 "lv_cut = lv_last_sp - lv_start."
+* V1.3 20261028(10.28 记录 #02: 工单分析的 SQL 几乎都编译失败, 单表查询正常):
+*   ① 根因: 模型 SQL 按 230 字符断行, 但生成源码行类型 ty_srcline 是 C(200),
+*     每行第 201~230 个字符被静默截掉 → 超过 200 字符的 SQL(多表 JOIN)必然
+*     编译失败, 报错只附前 200 字符源码, 模型看不出原因, 反复重写直到次数用完。
+*     改为每行 ≤ gc_seg_max(180): 只在字符串常量之外的空格 / 逗号处断行,
+*     找不到安全断点直接拒绝, 不再硬切
+*   ② 编译报错改为回填出错行及上一行(原为生成源码前 200 字符)
+*   ★ 重贴后核对标记: 私有常量 gc_seg_max = 180; run_sql 内有 count( val = lv_lead sub = `'` );
+*     不再有 "IF lv_segl <= 230"
 
 *=======================================================================
 CLASS zcl_ai_sql_executor DEFINITION
@@ -72,6 +81,9 @@ CLASS zcl_ai_sql_executor DEFINITION
 
     TYPES: ty_srcline TYPE c LENGTH 200,
            tt_source  TYPE STANDARD TABLE OF ty_srcline WITH DEFAULT KEY.
+
+    " V1.3: 模型 SQL 每行最多字符数(必须小于 ty_srcline 的 200, 逗号断行时本行可多 1 个)
+    CONSTANTS gc_seg_max TYPE i VALUE 180.
 
     " 按字面量外的空格断行(≤198字符/行), 不切断字符串常量、不压缩其内空格
     CLASS-METHODS split_source
@@ -151,28 +163,56 @@ CLASS zcl_ai_sql_executor IMPLEMENTATION.
     APPEND |CHANGING cr_data TYPE REF TO data cv_err TYPE string.| TO lt_source.
     APPEND |TRY.| TO lt_source.
 
-    " ---- 模型 SQL 段(>230 按空格断行, 断不出空格则硬切) ----
-    " V1.2.4: offset/length 位置禁算术表达式(教训三犯!), 全部显式变量;
-    "         STRING 无 length offset 也被拒, APPEND 前先算段长
-    DATA lv_segl TYPE i.
+    " ---- 模型 SQL 段: 每行 ≤ gc_seg_max 字符 ----
+    " V1.3: 原按 230 断行, 但行类型 ty_srcline 是 C(200) —— 每行第 201~230 个字符被
+    "       静默截掉, 超过 200 字符的 SQL 必然编译失败(多表 JOIN 的工单查询首当其冲)。
+    "       改为每行 ≤ 180: 从第 180 个字符往回找字符串常量之外的空格(不保留)或
+    "       逗号(留在本行); 引号个数为偶数 = 在常量之外('' 转义成对出现, 不影响奇偶)。
+    "       找不到安全断点就拒绝, 绝不硬切。只用 substring( )/count( ), 不用 offset 写法
+    DATA: lv_segl TYPE i,
+          lv_rest TYPE i,
+          lv_q    TYPE i,
+          lv_ch1  TYPE string,
+          lv_lead TYPE string.
     lv_spos = 0.
     WHILE lv_spos < strlen( lv_clean ).
-      lv_segl = strlen( lv_clean ) - lv_spos.
-      IF lv_segl <= 230.
-        APPEND lv_clean+lv_spos(lv_segl) TO lt_source.
+      lv_rest = strlen( lv_clean ) - lv_spos.
+      IF lv_rest <= gc_seg_max.
+        lv_seg = substring( val = lv_clean off = lv_spos len = lv_rest ).
+        APPEND lv_seg TO lt_source.
         EXIT.
       ENDIF.
-      lv_scand = lv_spos + 230.
-      lv_scut  = lv_spos + 230.
-      DO 40 TIMES.
-        IF lv_clean+lv_scand(1) = ` `.
-          lv_scut = lv_scand.
-          EXIT.
+      lv_scut  = -1.
+      lv_scand = lv_spos + gc_seg_max.
+      WHILE lv_scand > lv_spos.
+        lv_ch1 = substring( val = lv_clean off = lv_scand len = 1 ).
+        IF lv_ch1 = ` ` OR lv_ch1 = `,`.
+          lv_lead = substring( val = lv_clean len = lv_scand ).
+          lv_q = count( val = lv_lead sub = `'` ).
+          IF lv_q MOD 2 = 0.
+            lv_scut = lv_scand.
+            EXIT.
+          ENDIF.
         ENDIF.
         lv_scand = lv_scand - 1.
-      ENDDO.
-      lv_segl = lv_scut - lv_spos.
-      lv_seg  = lv_clean+lv_spos(lv_segl).
+      ENDWHILE.
+      IF lv_scut < 0.
+        rs_run-status = 'ERROR'.
+        rs_run-error  = |SQL 中有超过 { gc_seg_max } 个字符没有空格或逗号的连续片段, 无法安全断行。| &&
+                        |请在字段、运算符和关键字之间加空格后重试|.
+        rs_run-dataset-status = 'ERROR'.
+        rs_run-dataset-error  = rs_run-error.
+        log_run( iv_sql = lv_clean iv_status = 'REJECTED' iv_rows = 0
+                 iv_error = rs_run-error iv_session_id = iv_session_id ).
+        RETURN.
+      ENDIF.
+      lv_ch1 = substring( val = lv_clean off = lv_scut len = 1 ).
+      IF lv_ch1 = `,`.
+        lv_segl = lv_scut - lv_spos + 1.   " 逗号留在本行
+      ELSE.
+        lv_segl = lv_scut - lv_spos.       " 空格由换行代替
+      ENDIF.
+      lv_seg = substring( val = lv_clean off = lv_spos len = lv_segl ).
       APPEND lv_seg TO lt_source.
       lv_spos = lv_scut + 1.
     ENDWHILE.
@@ -199,13 +239,43 @@ CLASS zcl_ai_sql_executor IMPLEMENTATION.
 
     IF sy-subrc <> 0.
       " V1.2.2: 错误回填附生成源码摘要 —— 审计/回模型都可见编译器实际收到什么
-      DATA(lv_srccode) = concat_lines_of( table = lt_source sep = ` | ` ).
-      IF strlen( lv_srccode ) > 200.
-        lv_srccode = lv_srccode(200).
+      " V1.3: 原来只给生成源码前 200 字符(多是固定的 PROGRAM/FORM 行, 看不到出错处),
+      "       改为给出错行及其上一行; 行号取不到时退回前 200 字符
+      DATA: lv_srccode TYPE string,
+            lv_lno     TYPE i,
+            lv_lprev   TYPE i.
+      TRY.
+          lv_lno = lv_line.
+        CATCH cx_sy_conversion_error.
+          lv_lno = 0.
+      ENDTRY.
+      DATA lv_errline TYPE ty_srcline.
+      DATA lv_found   TYPE abap_bool.
+      lv_found = abap_false.
+      IF lv_lno > 0.
+        READ TABLE lt_source INTO lv_errline INDEX lv_lno.
+        IF sy-subrc = 0.
+          lv_found = abap_true.
+        ENDIF.
+      ENDIF.
+      IF lv_found = abap_true.
+        lv_srccode = condense( CONV string( lv_errline ) ).
+        lv_lprev = lv_lno - 1.
+        IF lv_lprev > 4.                      " 前 4 行是固定的 PROGRAM/FORM/TRY
+          READ TABLE lt_source INTO lv_errline INDEX lv_lprev.
+          IF sy-subrc = 0.
+            lv_srccode = |{ condense( CONV string( lv_errline ) ) } \| { lv_srccode }|.
+          ENDIF.
+        ENDIF.
+      ELSE.
+        lv_srccode = concat_lines_of( table = lt_source sep = ` | ` ).
+        IF strlen( lv_srccode ) > 200.
+          lv_srccode = lv_srccode(200).
+        ENDIF.
       ENDIF.
       rs_run-status = 'ERROR'.
       rs_run-error  = |SQL 编译错误(第 { lv_line } 行): { lv_msg } ({ lv_word }). | &&
-                      |请检查表/字段名与 Open SQL 语法后重试. 生成源码: [{ lv_srccode }]|.
+                      |出错位置附近: [{ lv_srccode }]. 请按 Open SQL 写法修正后重试|.
       rs_run-dataset-status = 'ERROR'.
       rs_run-dataset-error  = rs_run-error.
       log_run( iv_sql = lv_clean iv_status = 'ERROR' iv_rows = 0

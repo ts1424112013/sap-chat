@@ -40,6 +40,11 @@
 *   ★ 重贴后核对标记: 本方法内应有 "DATA lv_last_fj TYPE i."
 *         删除私有黑名单副本, 委托 GUARD=>is_sensitive(单一来源);
 *         json_str 修复 CRLF 转义顺序(裸 CR 产生非法 JSON)
+* V1.3 20261028(10.28 记录 #02: 工单号 131002 查不到): describe_table 每个字段
+*         补 decimals(有小数位时)与 convexit(有转换例程时); 出现 ALPHA 字段时
+*         结果加 tip —— 库里存的是补足前导零的值, 如 AUFNR 131002 → '000000131002'。
+*         沿用本类写法: 反引号拼接、显式 DATA 声明, 不用花括号转义模板
+*         ★ 重贴后核对标记: describe_table 内有 DATA lv_alpha TYPE abap_bool. 与 "convexit"
 *=======================================================================
 CLASS zcl_ai_ddic_tools DEFINITION
   PUBLIC
@@ -239,15 +244,31 @@ CLASS zcl_ai_ddic_tools IMPLEMENTATION.
     DATA: lt_fields TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
           lv_n      TYPE i.
     DATA ls_f TYPE dfies.   " V1.1.4
+    " V1.3: 需要补前导零的字段(转换例程 ALPHA)出现时, 结果里加一句写法提示
+    DATA lv_alpha TYPE abap_bool.
+    DATA lv_extra TYPE string.
+    DATA lv_dec   TYPE i.
     LOOP AT lt_dfies INTO ls_f.
       lv_n = lv_n + 1.
       IF lv_n > gc_max_fields.
         EXIT.
       ENDIF.
+      " V1.3: 小数位(数量 / 金额字段)与转换例程(ALPHA = 库里补足前导零)
+      CLEAR lv_extra.
+      IF ls_f-decimals > 0.
+        lv_dec = ls_f-decimals.
+        lv_extra = `,"decimals":` && |{ lv_dec }|.
+      ENDIF.
+      IF ls_f-convexit IS NOT INITIAL.
+        lv_extra = lv_extra && `,"convexit":"` && ls_f-convexit && `"`.
+        IF ls_f-convexit = 'ALPHA'.
+          lv_alpha = abap_true.
+        ENDIF.
+      ENDIF.
       DATA lv_fitem TYPE string.
       lv_fitem = `{"name":` && json_str( CONV string( ls_f-fieldname ) ) &&
                  `,"desc":` && json_str( CONV string( ls_f-fieldtext ) ) &&
-                 `,"type":"` && ls_f-datatype && `","len":` && |{ ls_f-leng }| &&
+                 `,"type":"` && ls_f-datatype && `","len":` && |{ ls_f-leng }| && lv_extra &&
                  `,"key":` && COND string( WHEN ls_f-keyflag = 'X' THEN 'true' ELSE 'false' ) &&
                  `,"checktable":` && json_str( COND string( WHEN ls_f-checktable IS INITIAL THEN '' ELSE ls_f-checktable ) ) &&
                  `},`.
@@ -270,6 +291,10 @@ CLASS zcl_ai_ddic_tools IMPLEMENTATION.
               `,"desc":` && json_str( CONV string( lv_ddtext ) ) &&
               `,"field_count":` && CONV string( lines( lt_dfies ) ) &&
               `,"truncated":` && COND string( WHEN lines( lt_dfies ) > gc_max_fields THEN 'true' ELSE 'false' ) &&
+              COND string( WHEN lv_alpha = abap_true
+                           THEN `,"tip":"convexit 为 ALPHA 的字段在库里存的是补足前导零的值: 值是纯数字时按 len 左补 0 再比较, ` &&
+                                `例如 AUFNR(len 12) 的 131002 要写成 '000000131002'"`
+                           ELSE `` ) &&
               `,"fields":[` && lv_fields_json && `]}`.
 
   ENDMETHOD.

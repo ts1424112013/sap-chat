@@ -16,6 +16,7 @@ const { TaskStore, isActiveStatus } = require('./task-store');
 const { ReportStore, RUN_STATUS } = require('./report-store');
 const { quickRoute, isTcodeLike } = require('./intent-route');
 const { extractJsonObject, inferAction, salvageAnswer } = require('./agent-loop');
+const { sqlDialectError, splitSqlLines } = require('./mock-tools');
 
 const USER = 'TESTER';
 const SESSION = 'SESS_TEST_0001';
@@ -541,6 +542,35 @@ function scenario14() {
   check('正文不足 40 字符不兜底', salvageAnswer('{"action":"final","answer":"在 1290 行') === '');
 }
 
+// 20261028（10.28 记录 #02）：工单分析 SQL —— 写法校验与生成程序断行（对照 SQL_GUARD V1.2.3 / SQL_EXECUTOR V1.3）
+function scenario15() {
+  console.log('\n━━ 场景 15: 工单分析 SQL 写法校验与断行（10.28 #02）');
+  const ok = "SELECT K~AUFNR, K~GAMNG, P~PSMNG, P~WEMNG FROM AFKO AS K INNER JOIN AFPO AS P ON P~AUFNR = K~AUFNR WHERE K~AUFNR = '000000131002'";
+  check('正确的 Open SQL（别名~字段）通过', sqlDialectError(ok) === '');
+  check('EXISTS 子查询按状态过滤通过', sqlDialectError("SELECT A~AUFNR FROM AUFK AS A WHERE EXISTS ( SELECT J~OBJNR FROM JEST AS J WHERE J~OBJNR = A~OBJNR AND J~STAT = 'I0002' AND J~INACT = ' ' )") === '');
+  check('常量里的中文、点号、分号不误判', sqlDialectError("SELECT MATNR FROM MAKT WHERE MAKTX = '螺丝 M8.5; 不锈钢' AND SPRAS = '1'") === '');
+  check('结尾句点允许', sqlDialectError('SELECT MATNR FROM MARA.') === '');
+  check('a.aufnr 点号写法 → 提示改成 ~', /别名~字段/.test(sqlDialectError('SELECT k.aufnr FROM afko AS k')));
+  check('分号单独提示', /分号/.test(sqlDialectError('SELECT MATNR FROM MARA; SELECT 1 FROM T')));
+  check('双引号别名 → 提示不要加引号', /双引号/.test(sqlDialectError('SELECT SUM( WEMNG ) AS "WIP" FROM AFPO')));
+  check('中文别名 → 提示只用英文', /中文或全角/.test(sqlDialectError('SELECT SUM( WEMNG ) AS 在制数量 FROM AFPO')));
+  check('全角逗号 → 同样提示', /中文或全角/.test(sqlDialectError('SELECT AUFNR，GAMNG FROM AFKO')));
+  check('LIMIT / TOP → 提示行数由系统控制', /LIMIT/.test(sqlDialectError('SELECT AUFNR FROM AFKO LIMIT 10')) && /LIMIT/.test(sqlDialectError('SELECT TOP 10 AUFNR FROM AFKO')));
+  check('CURRENT_DATE / sy-datum → 给出今天日期', /今天是 '20261028'/.test(sqlDialectError('SELECT AUFNR FROM AFKO WHERE GLTRP < CURRENT_DATE', '20261028')) && /今天是/.test(sqlDialectError('SELECT AUFNR FROM AFKO WHERE GLTRP < @sy-datum')));
+  check('DATEDIFF / YEAR( ) → 提示 DATS_DAYS_BETWEEN / SUBSTRING', /DATS_DAYS_BETWEEN/.test(sqlDialectError('SELECT DATEDIFF( GLTRP, GSTRP ) AS D FROM AFKO')) && /SUBSTRING/.test(sqlDialectError('SELECT YEAR( GLTRP ) AS Y FROM AFKO')));
+  check('IFNULL / NVL → 提示 COALESCE', /COALESCE/.test(sqlDialectError('SELECT IFNULL( WEMNG, 0 ) AS W FROM AFPO')));
+  check('字段名里含 LIMIT / YEAR 子串不误判', sqlDialectError('SELECT KLIMK, GJAHR AS FISCYEAR FROM KNKK') === '');
+
+  const longSql = "SELECT A~AUFNR, A~WERKS, K~GAMNG, P~WEMNG, T~TXT04 FROM AUFK AS A INNER JOIN AFKO AS K ON K~AUFNR = A~AUFNR INNER JOIN AFPO AS P ON P~AUFNR = A~AUFNR LEFT OUTER JOIN JEST AS J ON J~OBJNR = A~OBJNR AND J~INACT = ' ' LEFT OUTER JOIN TJ02T AS T ON T~ISTAT = J~STAT AND T~SPRAS = '1' WHERE A~AUFNR = '000000131002'";
+  const lines = splitSqlLines(longSql);
+  check('310 字符的工单查询：每行 ≤ 181，拼回后与原句一致（不再丢字符）',
+    !!lines && lines.every(l => l.length <= 181) && lines.join(' ').replace(/\s+/g, ' ') === longSql.replace(/\s+/g, ' '), JSON.stringify(lines));
+  const lit = "'" + '螺 丝 '.repeat(20) + "'";
+  const litLines = splitSqlLines("SELECT M~MATNR FROM MARA AS M INNER JOIN MAKT AS T ON T~MATNR = M~MATNR WHERE T~MAKTX LIKE " + lit + " AND M~MTART = 'FERT' ORDER BY M~MATNR");
+  check('不在字符串常量里的空格处断行', !!litLines && litLines.every(l => (l.match(/'/g) || []).length % 2 === 0));
+  check('超过 180 字符没有空格的片段 → 拒绝，不硬切', splitSqlLines('SELECT ' + 'X'.repeat(300) + ' FROM T') === null);
+}
+
 function main() {
   console.log('╔══════════════════════════════════════════╗');
   console.log('║ 任务/报表协议测试(本地 Mock/契约, 无 LLM) ║');
@@ -560,6 +590,7 @@ function main() {
   scenario12();
   scenario13();
   scenario14();
+  scenario15();
 
   console.log(`\n${'='.repeat(50)}`);
   console.log(`总计: ${passed} 通过, ${failed} 失败`);
