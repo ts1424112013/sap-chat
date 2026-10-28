@@ -14,6 +14,8 @@
  *   6) 10.27 记录：SCANNER V1.0a 修复补回；EXEC_SAP V1.1c 作业语言 RPT_JOB_LANGU + 作业中止原因落表
  *   8) 10.28 边跑边看：ZCL_AI_AGENT_PROGRESS 只用独立连接写进度表、不碰主事务、写失败只关进度；
  *      AGENT_SERVICE V15.6 的挂点数量与位置；DPC V15.9 的 AgentProgress 分支与前端参数名一致
+ *  10) Agent闭环增强/02 第 0 步：LLM_CLIENT V1.5 取用量、AGENT_SERVICE V15.8 用量只写审计
+ *      （TOOL_ID = LLM_CALL）、DATA_ANALYSIS V13.4 数据集行数写在明细前面并按整行回填
  * 只能查文本层面的约定，语法与运行时仍以 SAP 激活与现场验证为准。
  */
 const fs = require('fs');
@@ -343,7 +345,7 @@ const gdRaw = read('ZCL_AI_AGENT_GUARD.abap'), gd = codeOnly(gdRaw);
 const trRaw = read('ZCL_AI_TOOL_REGISTRY.abap'), tr = codeOnly(trRaw);
 const dcRaw = read('ZCL_AI_DOMAIN_CARDS.abap');
 check('LLM_CLIENT V1.4：chat 多一个出参 ev_finish（OpenAI finish_reason / Ollama done_reason，转小写）', /^\* V1\.4 20261028/m.test(lcRaw) &&
-  /ev_attempts\s+TYPE i\s+ev_finish\s+TYPE string\./.test(lc) && /ev_finish\s+= to_lower\( ls_choice-finish_reason \)/.test(lc) &&
+  /ev_attempts\s+TYPE i\s+ev_finish\s+TYPE string\b/.test(lc) && /ev_finish\s+= to_lower\( ls_choice-finish_reason \)/.test(lc) &&
   /ev_finish\s+= to_lower\( ls_olr-done_reason \)/.test(lc) && /CLEAR: ev_content, ev_elapsed, ev_error, ev_attempts, ev_finish\./.test(lc));
 check('AGENT_SERVICE V15.7：两处调模型都取 ev_finish = lv_llm_fin', /^\* V15\.7 20261028/m.test(agRaw) && agCnt(/ev_finish\s+= lv_llm_fin/g) === 2);
 const agProto = (ag.match(/IF lv_protocol_ok = abap_false\.\s*lv_plan_ms = lv_plan_ms \+ lv_llm_ms\.[\s\S]*?\n      ENDIF\./) || [''])[0];
@@ -376,6 +378,49 @@ check('DOMAIN_CARDS V1.3：CODE 卡先 keyword 定位、回答 1500 字以内', 
 check('降级提示的阶段清单不再带 [PHASE] 代码、跳过 TOOL_DECISION', !/- \[\{ ls_s-phase \}\]/.test(methodOf(ag, 'build_degrade_answer')) &&
   /WHERE phase <> 'TOOL_DECISION'/.test(methodOf(ag, 'build_degrade_answer')));
 check('进度小标签认得 keyword（关键词）', /WHEN 'keyword'\.\s+rv = '关键词'\./.test(prM('arg_label')));
+
+// ---------------------------------------------------------------- 10) 02 方案第 0 步：模型用量记审计 + 数据集按整行回填
+console.log('\n[10] Agent闭环增强/02 第 0 步：用量记审计（LLM_CLIENT V1.5 / AGENT_SERVICE V15.8）+ 数据集按整行回填（DATA_ANALYSIS V13.4）');
+const lcChat = methodOf(lc, 'chat');
+const lcUsage = methodOf(lc, 'parse_usage');
+check('LLM_CLIENT V1.5：chat 新增出参 ev_usage TYPE ty_usage；ty_usage 声明在 chat 之前；单独 CLEAR ev_usage',
+  /^\* V1\.5 20261028/m.test(lcRaw) && /ev_finish\s+TYPE string\s+ev_usage\s+TYPE ty_usage\./.test(lc) &&
+  lc.indexOf('BEGIN OF ty_usage,') > 0 && lc.indexOf('BEGIN OF ty_usage,') < lc.indexOf('CLASS-METHODS chat') && /CLEAR ev_usage\./.test(lcChat));
+check('chat：失败分支 RETURN 之后、正文解析 TRY 之前取用量（失败的调用不解析）',
+  /IF lv_fail IS NOT INITIAL\.[\s\S]*?RETURN\.\s*ENDIF\.\s*ev_usage = parse_usage\( lv_resp \)\.\s*TRY\./.test(lcChat));
+check('parse_usage：PUBLIC；自己的 TRY / CATCH cx_root 清空返回，不影响正文；认 DeepSeek / OpenAI / Ollama 三种字段',
+  /PUBLIC SECTION\.[\s\S]*?CLASS-METHODS parse_usage[\s\S]*?PRIVATE SECTION\./.test(lc) &&
+  /TRY\.[\s\S]*?\/ui2\/cl_json=>deserialize\([\s\S]*?CATCH cx_root\.\s*CLEAR rs\.\s*RETURN\.\s*ENDTRY\./.test(lcUsage) &&
+  /json = 'prompt_cache_hit_tokens'/.test(lcUsage) && /json = 'cached_tokens'/.test(lcUsage) && /json = 'eval_count'/.test(lcUsage) &&
+  !/ev_/.test(lcUsage));
+const agAudit = methodOf(ag, 'save_audit');
+check('AGENT_SERVICE V15.8：三处调模型都取 ev_usage，并各记一次 log_llm_call',
+  /^\* V15\.8 20261028/m.test(agRaw) && agCnt(/zcl_ai_llm_client=>chat\(/g) === 3 &&
+  agCnt(/ev_usage\s+= ls_(llm|ana)_use/g) === 3 && agCnt(/log_llm_call\( EXPORTING/g) === 3);
+check('用量只进审计：LLM_CALL 只出现在 save_audit 里（不进 lt_trace / TraceJson / 进度表）',
+  agCnt(/'LLM_CALL'/g) === 1 && /tool_id\s+= 'LLM_CALL'/.test(agAudit) && /row_cnt\s+= ls_c-out_tokens/.test(agAudit) &&
+  !/phase\s*=\s*'LLM_CALL'/.test(ag));
+check('save_audit 声明 it_calls（OPTIONAL），主流程传入 lt_llm_calls',
+  /it_calls\s+TYPE tt_llm_call OPTIONAL/.test(ag) && /it_trace\s+= lt_trace\s+it_calls\s+= lt_llm_calls \)/.test(ag));
+check('log_llm_call：SUMMARY 截到 200 字符；网关没返回写"未返回"',
+  /IF strlen\( lv_sum \) > 200\.\s*lv_sum = lv_sum\(200\)\./.test(methodOf(ag, 'log_llm_call')) && /`未返回`/.test(methodOf(ag, 'log_llm_call')));
+check('两处数据集回填都按整行裁到 GUARD 上限以内；run_sql 回填副本不再改写 total_rows',
+  agCnt(/iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 200/g) === 2 && !/ls_feed_ds-total_rows\s*=/.test(ag) &&
+  !/ls_feed_ds-error\s*=/.test(ag));
+const daRaw = read('ZCL_AI_DATA_ANALYSIS_SERVICE.abap'), da = codeOnly(daRaw);
+const daBuild = methodOf(da, 'build_datasets_json');
+check('DATA_ANALYSIS V13.4：数据集 JSON 行数与截断写在明细前面（name → lv_head → status/columns → rows → 尾部）',
+  /^\* V13\.4\s+20261028/m.test(daRaw) &&
+  /rv = rv && `\{"name":` && json_str\( ls_ds-name \) && lv_head && lv_seg && lv_rows && lv_tail\./.test(daBuild) &&
+  /lv_head = \|,"total_rows":\{ lv_total \}\|/.test(daBuild));
+check('rows_sent / note 只在回填模型（iv_max_chars > 0）且少写了行或查询达上限时出现；按整行裁剪',
+  /IF iv_max_chars > 0 AND \( lv_row_n < lv_total OR ls_ds-truncated = abap_true \)\.[\s\S]*?"rows_sent"/.test(daBuild) &&
+  /IF lv_cap > 0\s+AND lv_fixed \+ strlen\( lv_rows \) \+ strlen\( lv_row \) \+ 2 > lv_cap\.\s*EXIT\./.test(daBuild) &&
+  /lv_cap = COND #\( WHEN iv_max_chars > 0 THEN iv_max_chars \* lv_ds_idx DIV lv_ds_cnt ELSE 0 \)\./.test(daBuild) &&
+  /DATA\(lv_ds_idx\) = sy-tabix\.\s*IF lv_ds_idx > 1\./.test(daBuild));
+check('build_datasets_json 签名不变（AnalysisJson 仍传 iv_max_chars = 0）',
+  /CLASS-METHODS build_datasets_json\s+IMPORTING it_datas\s+TYPE tt_dataset\s+iv_max_chars TYPE i DEFAULT gc_model_chars\s+RETURNING VALUE\(rv\)\s+TYPE string\./.test(da) &&
+  /build_datasets_json\( it_datas\s+= it_datas\s+iv_max_chars = 0 \)/.test(da));
 
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);

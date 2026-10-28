@@ -150,6 +150,17 @@
 *   ★ 重贴后核对标记: 两处 zcl_ai_llm_client=>chat 都有 ev_finish = lv_llm_fin;
 *     有 salvage_answer( lv_content ) 与 salvage_answer( lv_bad_first );
 *     exec_read_source 声明有 iv_keyword; 常量有 gc_src_hits / gc_src_ctx
+* V15.8 20261028(功能计划书/Agent闭环增强/02 第 0 步):
+*   ① 每次调模型(主调用 / 换模型重试 / 结构化分析)记一行用量: 轮次、模型、输入 /
+*     输出 token、缓存命中、结束原因、发送字数。只写审计 ZAI_AGENT_STEP(TOOL_ID =
+*     'LLM_CALL', ROW_CNT = 输出 token), 不进 lt_trace, 所以不进 TraceJson / 进度表 /
+*     思考卡; 网关没返回用量时写"未返回", 不影响主流程
+*   ② 数据分析 / run_sql 结果回填改为按整行裁剪(上限 = GUARD 单结果上限 - 200),
+*     不再被 trim_result 按字符拦腰切断; run_sql 回填副本不再改写 total_rows,
+*     "共 N 行 / 回填前 M 行"由 DATA_ANALYSIS_SERVICE 写在明细前面
+*   依赖: ZCL_AI_LLM_CLIENT V1.5(ev_usage) / ZCL_AI_DATA_ANALYSIS_SERVICE V13.4
+*   ★ 重贴后核对标记: 三处 zcl_ai_llm_client=>chat 都有 ev_usage; log_llm_call( 调用 3 处;
+*     save_audit 声明有 it_calls; 两处 build_datasets_json 回填带 iv_max_chars
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -197,6 +208,15 @@ CLASS zcl_ai_agent_service DEFINITION
              detail      TYPE string,     " run_sql 的已校验 SQL(仅 Trace 展开查看)
            END OF ty_trace_step.
     TYPES tt_trace TYPE STANDARD TABLE OF ty_trace_step WITH DEFAULT KEY.
+
+    " V15.8: 一次模型调用的用量(只写审计 ZAI_AGENT_STEP, TOOL_ID = 'LLM_CALL')
+    TYPES: BEGIN OF ty_llm_call,
+             summary    TYPE string,   " → SUMMARY(≤200): 轮次 / 模型 / token / 结束原因 / 发送字数
+             out_tokens TYPE i,        " → ROW_CNT: 输出 token(网关没返回时 0)
+             status     TYPE string,   " OK / ERROR
+             elapsed_ms TYPE i,
+           END OF ty_llm_call.
+    TYPES tt_llm_call TYPE STANDARD TABLE OF ty_llm_call WITH DEFAULT KEY.
 
     CONSTANTS: gc_max_rounds     TYPE i VALUE 10,    " 默认最大轮数(V14: SQL 场景需 10, 计划 §5.1; 可配置覆盖)
                gc_budget_ms      TYPE i VALUE 180000, " 默认总预算 180s(V14; 需 ICM PROCTIMEOUT≥200s, 计划 §5.2)
@@ -319,7 +339,20 @@ CLASS zcl_ai_agent_service DEFINITION
                 iv_rounds     TYPE i
                 iv_status     TYPE string
                 iv_ms         TYPE i
-                it_trace      TYPE tt_trace.
+                it_trace      TYPE tt_trace
+                it_calls      TYPE tt_llm_call OPTIONAL.  " V15.8: 模型调用用量(写在步骤之后)
+
+    " V15.8: 记一次模型调用的用量到 ct_calls(只进审计, 不进 lt_trace)
+    CLASS-METHODS log_llm_call
+      IMPORTING iv_round    TYPE i
+                iv_kind     TYPE string
+                iv_model_id TYPE string
+                it_messages TYPE zcl_ai_llm_client=>tt_messages
+                is_usage    TYPE zcl_ai_llm_client=>ty_usage
+                iv_finish   TYPE string
+                iv_ms       TYPE i
+                iv_error    TYPE string
+      CHANGING  ct_calls    TYPE tt_llm_call.
 
     " V15(P2): 报表意图确定性应答(登记卡/参数表单引导)。
     " 只回答"是什么/要什么参数", 不执行不假装执行;
@@ -937,6 +970,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     " V13: lv_plan_ms = 规划阶段累计耗时(非最终轮的模型调用, 含修复轮)
     DATA lv_plan_ms TYPE i VALUE 0.
     DATA lv_switched TYPE abap_bool VALUE abap_false.   " V15.3: 本次运行是否已切换过备选模型
+    DATA lt_llm_calls TYPE tt_llm_call.                 " V15.8: 每次模型调用的用量(只进审计)
     lv_round    = 0.
     lv_repaired = abap_false.
     CLEAR: lv_answer, lv_bad_first, lv_cut_first.
@@ -981,8 +1015,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       DATA: lv_content TYPE string,
             lv_llm_ms  TYPE i,
             lv_llm_err TYPE string,
-            lv_llm_fin TYPE string.   " V15.7: 结束原因(length = 被 MAX_TOKENS 截断)
-      CLEAR: lv_content, lv_llm_ms, lv_llm_err, lv_llm_fin.
+            lv_llm_fin TYPE string,   " V15.7: 结束原因(length = 被 MAX_TOKENS 截断)
+            ls_llm_use TYPE zcl_ai_llm_client=>ty_usage.   " V15.8: 本次调用用量
+      CLEAR: lv_content, lv_llm_ms, lv_llm_err, lv_llm_fin, ls_llm_use.
 
       zcl_ai_llm_client=>chat(
         EXPORTING is_cfg      = ls_call
@@ -990,7 +1025,18 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         IMPORTING ev_content  = lv_content
                   ev_elapsed  = lv_llm_ms
                   ev_error    = lv_llm_err
-                  ev_finish   = lv_llm_fin ).
+                  ev_finish   = lv_llm_fin
+                  ev_usage    = ls_llm_use ).
+      log_llm_call( EXPORTING iv_round    = lv_round
+                              iv_kind     = '主调用'
+                              iv_model_id = CONV string( ls_call-model_id )
+                              it_messages = lt_messages
+                              is_usage    = ls_llm_use
+                              iv_finish   = lv_llm_fin
+                              iv_ms       = lv_llm_ms
+                              iv_error    = COND #( WHEN lv_llm_err IS NOT INITIAL THEN lv_llm_err
+                                                    WHEN lv_content IS INITIAL THEN `模型返回了空内容` )
+                    CHANGING  ct_calls    = lt_llm_calls ).
 
       " ---- V15.3(BE-07): 首选模型失败 → 本场景白名单内换一个启用模型再试一次 ----
       IF ( lv_llm_err IS NOT INITIAL OR lv_content IS INITIAL ) AND lv_switched = abap_false.
@@ -1014,14 +1060,25 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           ENDIF.
           ls_call = ls_cfg.
           ls_call-timeout_sec = lv_rest_s.
-          CLEAR: lv_content, lv_llm_ms, lv_llm_err, lv_llm_fin.
+          CLEAR: lv_content, lv_llm_ms, lv_llm_err, lv_llm_fin, ls_llm_use.
           zcl_ai_llm_client=>chat(
             EXPORTING is_cfg      = ls_call
                       it_messages = lt_messages
             IMPORTING ev_content  = lv_content
                       ev_elapsed  = lv_llm_ms
                       ev_error    = lv_llm_err
-                      ev_finish   = lv_llm_fin ).
+                      ev_finish   = lv_llm_fin
+                      ev_usage    = ls_llm_use ).
+          log_llm_call( EXPORTING iv_round    = lv_round
+                                  iv_kind     = '换模型重试'
+                                  iv_model_id = CONV string( ls_call-model_id )
+                                  it_messages = lt_messages
+                                  is_usage    = ls_llm_use
+                                  iv_finish   = lv_llm_fin
+                                  iv_ms       = lv_llm_ms
+                                  iv_error    = COND #( WHEN lv_llm_err IS NOT INITIAL THEN lv_llm_err
+                                                        WHEN lv_content IS INITIAL THEN `模型返回了空内容` )
+                        CHANGING  ct_calls    = lt_llm_calls ).
         ENDIF.
       ENDIF.
 
@@ -1233,10 +1290,13 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
         CLEAR ls_msg.
         ls_msg-role    = 'user'.
+        " V15.8: 先按整行裁到 GUARD 上限以内(总行数 / 回填行数写在明细前面), trim_result 只作保险
         ls_msg-content = zcl_ai_agent_guard=>wrap_tool_result(
                            iv_tool = ls_out-tool
                            iv_json = zcl_ai_agent_guard=>trim_result(
-                                       iv_text = zcl_ai_data_analysis_service=>build_datasets_json( lt_ds ) ) ).
+                                       iv_text = zcl_ai_data_analysis_service=>build_datasets_json(
+                                                   it_datas     = lt_ds
+                                                   iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 200 ) ) ).
         APPEND ls_msg TO lt_messages.
 
         CONTINUE.
@@ -1377,15 +1437,16 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                                iv_session_id = iv_session_id ).
 
               " 回填裁剪: 副本只留前 200 行给模型; 全量数据集进前端通道
+              " V15.8: total_rows 保持查询取回的真实行数, 再按整行裁到 GUARD 上限以内;
+              "       "共 N 行 / 回填前 M 行"由 build_datasets_json 写在明细前面
               DATA(ls_feed_ds) = ls_run-dataset.
               IF lines( ls_feed_ds-rows ) > zcl_ai_sql_executor=>gc_llm_rows.
                 DELETE ls_feed_ds-rows FROM zcl_ai_sql_executor=>gc_llm_rows + 1.
-                ls_feed_ds-total_rows  = zcl_ai_sql_executor=>gc_llm_rows.
-                ls_feed_ds-truncated   = abap_true.
-                ls_feed_ds-error       = |共 { ls_run-dataset-total_rows } 行, 已仅回填前 { zcl_ai_sql_executor=>gc_llm_rows } 行明细; 如需整体结论请改用 GROUP BY 汇总|.
               ENDIF.
               lv_sql_json = '{"ok":' && COND #( WHEN ls_run-status = 'OK' THEN 'true' ELSE 'false' ) &&
-                            ',"dataset":' && zcl_ai_data_analysis_service=>build_datasets_json( VALUE #( ( ls_feed_ds ) ) ) && '}'.
+                            ',"dataset":' && zcl_ai_data_analysis_service=>build_datasets_json(
+                                               it_datas     = VALUE #( ( ls_feed_ds ) )
+                                               iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 200 ) && '}'.
 
               lv_sql_label = COND #( WHEN ls_run-status = 'OK'
                                      THEN |SQL 查询: { ls_run-dataset-name }, { ls_run-dataset-total_rows } 行|
@@ -1490,8 +1551,10 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       DATA: lv_ana_ms   TYPE i,
             lv_ana_err  TYPE string,
             lv_ana_out  TYPE string,
-            lv_ana_perr TYPE string.
-      CLEAR: lv_ana_ms, lv_ana_err, lv_ana_out, lv_ana_perr.
+            lv_ana_perr TYPE string,
+            lv_ana_fin  TYPE string,                          " V15.8: 结束原因(只记审计)
+            ls_ana_use  TYPE zcl_ai_llm_client=>ty_usage.     " V15.8: 用量(只记审计)
+      CLEAR: lv_ana_ms, lv_ana_err, lv_ana_out, lv_ana_perr, lv_ana_fin, ls_ana_use.
 
       " V15.6 边跑边看: 写入回答步骤 + 结构化分析占位(下方 COMPOSING 行原地接替)
       zcl_ai_agent_progress=>sync( it_trace   = lt_trace
@@ -1512,7 +1575,19 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                   it_messages = lt_messages
         IMPORTING ev_content  = lv_ana_out
                   ev_elapsed  = lv_ana_ms
-                  ev_error    = lv_ana_err ).
+                  ev_error    = lv_ana_err
+                  ev_finish   = lv_ana_fin
+                  ev_usage    = ls_ana_use ).
+      log_llm_call( EXPORTING iv_round    = lv_round
+                              iv_kind     = '结构化分析'
+                              iv_model_id = CONV string( ls_call_ana-model_id )
+                              it_messages = lt_messages
+                              is_usage    = ls_ana_use
+                              iv_finish   = lv_ana_fin
+                              iv_ms       = lv_ana_ms
+                              iv_error    = COND #( WHEN lv_ana_err IS NOT INITIAL THEN lv_ana_err
+                                                    WHEN lv_ana_out IS INITIAL THEN `模型返回了空内容` )
+                    CHANGING  ct_calls    = lt_llm_calls ).
 
       IF lv_ana_err IS INITIAL AND lv_ana_out IS NOT INITIAL.
         zcl_ai_agent_guard=>parse_analysis_output(
@@ -1621,7 +1696,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                 iv_rounds     = lv_round
                 iv_status     = es_result-status
                 iv_ms         = lv_total_ms
-                it_trace      = lt_trace ).
+                it_trace      = lt_trace
+                it_calls      = lt_llm_calls ).   " V15.8: 模型调用用量
     zcl_ai_skill_service=>audit( iv_run_id = CONV string( lv_run_id ) iv_session_id = iv_session_id
       iv_task_id = ls_task-task_id is_skill = ls_skill iv_user_seq = lv_pre_seq_i + 1 ).
 
@@ -2353,6 +2429,57 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                  elapsed_ms = ls_t-elapsed_ms
                  created_at = |{ sy-datum }{ sy-uzeit }| ) ).
     ENDLOOP.
+
+    " ---- V15.8: 模型调用用量(TOOL_ID = LLM_CALL; ROW_CNT = 输出 token) ----
+    LOOP AT it_calls INTO DATA(ls_c).
+      lv_step_no = lv_step_no + 1.
+      INSERT zai_agent_step FROM @(
+        VALUE #( mandt      = sy-mandt
+                 run_id     = iv_run_id
+                 step_no    = lv_step_no
+                 tool_id    = 'LLM_CALL'
+                 summary    = COND #( WHEN strlen( ls_c-summary ) > 200
+                                      THEN ls_c-summary(200) ELSE ls_c-summary )
+                 row_cnt    = ls_c-out_tokens
+                 status     = ls_c-status
+                 elapsed_ms = ls_c-elapsed_ms
+                 created_at = |{ sy-datum }{ sy-uzeit }| ) ).
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+  METHOD log_llm_call.
+
+    " V15.8(02 方案第 0 步): 审计用量行。网关没返回用量时写"未返回";
+    " 发送字数 = 本次全部消息正文长度之和(网关不给 token 时也能估算输入规模)
+    DATA lv_chars TYPE i.
+    LOOP AT it_messages INTO DATA(ls_m).
+      lv_chars = lv_chars + strlen( ls_m-content ).
+    ENDLOOP.
+
+    DATA(lv_in)    = COND string( WHEN is_usage-has_usage = abap_true
+                                  THEN |{ is_usage-prompt_tokens }| ELSE `未返回` ).
+    DATA(lv_out)   = COND string( WHEN is_usage-has_usage = abap_true
+                                  THEN |{ is_usage-completion_tokens }| ELSE `未返回` ).
+    DATA(lv_cache) = COND string( WHEN is_usage-cache_known = abap_true
+                                  THEN |{ is_usage-cache_hit_tokens }| ELSE `未返回` ).
+    DATA(lv_fin)   = COND string( WHEN iv_finish IS INITIAL THEN `-` ELSE iv_finish ).
+
+    DATA(lv_sum) = |R{ iv_round } { iv_kind } 模型={ iv_model_id } 输入={ lv_in } 输出={ lv_out }| &&
+                   | 缓存={ lv_cache } 结束={ lv_fin } 发送字数={ lv_chars }|.
+    IF iv_error IS NOT INITIAL.
+      lv_sum = |{ lv_sum } 失败={ iv_error }|.
+    ENDIF.
+    IF strlen( lv_sum ) > 200.
+      lv_sum = lv_sum(200).
+    ENDIF.
+
+    APPEND VALUE #( summary    = lv_sum
+                    out_tokens = COND #( WHEN is_usage-has_usage = abap_true
+                                         THEN is_usage-completion_tokens ELSE 0 )
+                    status     = COND #( WHEN iv_error IS INITIAL THEN `OK` ELSE `ERROR` )
+                    elapsed_ms = iv_ms ) TO ct_calls.
 
   ENDMETHOD.
 

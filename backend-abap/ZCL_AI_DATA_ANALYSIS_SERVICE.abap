@@ -24,6 +24,13 @@
 *   ★ 重贴后核对标记: grep ZIDPMM455 应有 2 处(常量+注释); 原
 *   ZIDPPP099 能力不变; 本类重贴激活后 AGENT_GUARD/AGENT_SERVICE
 *   若显示 inactive 重激活即可(签名未变, 只改常量值)
+* V13.4  20261028(功能计划书/Agent闭环增强/02 第 0 步): build_datasets_json 把
+*   total_rows / truncated 挪到明细前面; total_rows = 查询取回的行数(原为本次写出
+*   的行数, 不裁剪时相同); 回填模型(iv_max_chars > 0)按整行裁剪, 少写了行或查询
+*   达上限时补 rows_sent 与 note("共取回 N 行, 本次只回填前 M 行…")。
+*   多个数据集按累计份额分预算(第 i 个写到 iv_max_chars * i / n), 不再让第一个
+*   用光预算。AnalysisJson(iv_max_chars = 0)字段不变, 只是顺序变化, 前端按字段名读取
+*   ★ 重贴后核对标记: build_datasets_json 内有 "rows_sent"、lv_fixed、lv_cap; 签名未变
 * 激活顺序: 本类 -> ZCL_AI_TOOL_REGISTRY -> ZCL_AI_AGENT_GUARD
 *           -> ZCL_AI_AGENT_SERVICE -> ZCL_ZAI_CHAT_DPC_EXT
 *=======================================================================
@@ -939,28 +946,40 @@ CLASS zcl_ai_data_analysis_service IMPLEMENTATION.
 
   METHOD build_datasets_json.
 
-    " 组织: [ {name,status,error,columns,rows,total_rows,truncated,
+    " 组织: [ {name,status,total_rows,truncated,[rows_sent,note],error,columns,rows,
     "          elapsed_ms,source} ]
-    " 数值列不加引号(计划 §8 契约); iv_max_chars > 0 时按行裁剪并注明
-    " (仅用于回填模型), = 0 时不裁剪(AnalysisJson 用)
+    " V13.4 20261028(Agent闭环增强/02 第 0 步): 行数与截断信息挪到明细前面 ——
+    " 回填模型时就算后面被截断, 模型也先看到"共几行 / 回填几行"。
+    " total_rows = 查询取回的行数(原为本次写出的行数; 不裁剪时两者相同);
+    " 按字符预算少写了行时补 rows_sent 与 note(只在 iv_max_chars > 0 时)。
+    " 数值列不加引号(计划 §8 契约); iv_max_chars > 0 时按整行裁剪
+    " (仅用于回填模型), = 0 时不裁剪(AnalysisJson 用, 字段与原来一致)
 
     rv = `[`.
+    DATA(lv_ds_cnt) = lines( it_datas ).
 
     LOOP AT it_datas INTO DATA(ls_ds).
 
-      IF sy-tabix > 1.
+      DATA(lv_ds_idx) = sy-tabix.
+      IF lv_ds_idx > 1.
         rv = rv && `,`.
       ENDIF.
 
-      rv = rv && `{"name":` && json_str( ls_ds-name ).
+      " 多个数据集按累计份额分预算: 第 i 个(共 n 个)写到 iv_max_chars * i / n 为止,
+      " 前面没用完的自动留给后面 —— 避免第一个用光预算、后面的只剩表头还超长
+      DATA lv_cap TYPE i.
+      lv_cap = COND #( WHEN iv_max_chars > 0 THEN iv_max_chars * lv_ds_idx DIV lv_ds_cnt ELSE 0 ).
 
+      " 取回行数: 以 total_rows 为准, 防御性地不小于实际明细行数
+      DATA(lv_total) = nmax( val1 = ls_ds-total_rows val2 = lines( ls_ds-rows ) ).
+
+      " ---- status / error / columns(明细之前的固定部分) ----
       DATA lv_seg TYPE string.
       lv_seg = `,"status":` && json_str( ls_ds-status ).
       IF ls_ds-error IS NOT INITIAL.
         lv_seg = lv_seg && `,"error":` && json_str( ls_ds-error ).
       ENDIF.
 
-      " ---- columns ----
       lv_seg = lv_seg && `,"columns":[`.
       LOOP AT ls_ds-columns INTO DATA(ls_col).
         IF sy-tabix > 1.
@@ -971,15 +990,20 @@ CLASS zcl_ai_data_analysis_service IMPLEMENTATION.
                  `,"numeric":` && COND string( WHEN ls_col-numeric = abap_true
                                                THEN `true` ELSE `false` ) && `}`.
       ENDLOOP.
-      rv = rv && lv_seg && `]`.
+      lv_seg = lv_seg && `]`.
 
-      " ---- rows(受字符预算约束; 预算检查含后续字段约 60 字符余量) ----
+      " ---- 明细之后的尾部 ----
+      DATA lv_tail TYPE string.
+      lv_tail = |,"elapsed_ms":{ ls_ds-elapsed_ms },"source":| && json_str( ls_ds-source ) && `}`.
+
+      " ---- rows(按整行裁剪; 预算含已写部分 + 本数据集头尾 + 约 300 字符行数说明余量) ----
+      DATA lv_fixed TYPE i.
+      lv_fixed = strlen( rv ) + strlen( json_str( ls_ds-name ) ) + strlen( lv_seg )
+               + strlen( lv_tail ) + 300.
       DATA lv_rows TYPE string.
       lv_rows = `,"rows":[`.
       DATA lv_row_n TYPE i.
       lv_row_n = 0.
-      DATA lv_budget_cut TYPE abap_bool.
-      lv_budget_cut = abap_false.
 
       LOOP AT ls_ds-rows INTO DATA(ls_cells).
         DATA lv_row TYPE string.
@@ -998,9 +1022,8 @@ CLASS zcl_ai_data_analysis_service IMPLEMENTATION.
         ENDLOOP.
         lv_row = lv_row && `]`.
 
-        IF iv_max_chars > 0
-           AND strlen( rv ) + strlen( lv_rows ) + strlen( lv_row ) + 60 > iv_max_chars.
-          lv_budget_cut = abap_true.
+        IF lv_cap > 0
+           AND lv_fixed + strlen( lv_rows ) + strlen( lv_row ) + 2 > lv_cap.
           EXIT.
         ENDIF.
 
@@ -1010,18 +1033,30 @@ CLASS zcl_ai_data_analysis_service IMPLEMENTATION.
         lv_rows = lv_rows && lv_row.
         lv_row_n = lv_row_n + 1.
       ENDLOOP.
+      lv_rows = lv_rows && `]`.
 
-      rv = rv && lv_rows && `]`.
-
-      lv_seg = |,"total_rows":{ lv_row_n }| &&
-               |,"truncated":{ COND string( WHEN ls_ds-truncated = abap_true
-                                            THEN 'true' ELSE 'false' ) }| &&
-               |,"elapsed_ms":{ ls_ds-elapsed_ms }| &&
-               |,"source":{ json_str( ls_ds-source ) }|.
-      IF lv_budget_cut = abap_true.
-        lv_seg = lv_seg && `,"note":"已按回填字符预算截断"`.
+      " ---- 行数与截断(写在明细前面) ----
+      DATA lv_head TYPE string.
+      lv_head = |,"total_rows":{ lv_total }| &&
+                |,"truncated":{ COND string( WHEN ls_ds-truncated = abap_true
+                                             THEN 'true' ELSE 'false' ) }|.
+      IF iv_max_chars > 0 AND ( lv_row_n < lv_total OR ls_ds-truncated = abap_true ).
+        DATA lv_note TYPE string.
+        CLEAR lv_note.
+        IF ls_ds-truncated = abap_true.
+          lv_note = |查询已达取数上限, 实际行数可能多于 { lv_total } 行|.
+        ENDIF.
+        IF lv_row_n < lv_total.
+          IF lv_note IS NOT INITIAL.
+            lv_note = lv_note && `; `.
+          ENDIF.
+          lv_note = lv_note && |共取回 { lv_total } 行, 本次只回填前 { lv_row_n } 行明细, | &&
+                    |不能用这些行加总代替全量; 需要整体结论请改用 GROUP BY 汇总|.
+        ENDIF.
+        lv_head = lv_head && |,"rows_sent":{ lv_row_n }| && `,"note":` && json_str( lv_note ).
       ENDIF.
-      rv = rv && lv_seg && `}`.
+
+      rv = rv && `{"name":` && json_str( ls_ds-name ) && lv_head && lv_seg && lv_rows && lv_tail.
 
     ENDLOOP.
 

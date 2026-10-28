@@ -119,6 +119,7 @@ async function callLLM(messages) {
   );
 
   let response;
+  const t0 = Date.now();
   try {
     response = await post(body);
   } catch (e) {
@@ -132,7 +133,23 @@ async function callLLM(messages) {
     }
   }
 
+  logUsage(response.data, Date.now() - t0);
   return response.data.choices[0].message;
+}
+
+/**
+ * 与 ABAP AGENT_SERVICE V15.8 对齐（02 方案第 0 步）：每次调模型打印一行用量，只进服务端日志。
+ * 本地是 GLM，速度与公司 DeepSeek 不同，这里只用来核对字段能否取到。
+ */
+function logUsage(data, ms) {
+  const u = (data && data.usage) || null;
+  const choice = (data && data.choices && data.choices[0]) || {};
+  const cache = !u ? '未返回'
+    : u.prompt_cache_hit_tokens != null ? u.prompt_cache_hit_tokens
+    : (u.prompt_tokens_details && u.prompt_tokens_details.cached_tokens != null) ? u.prompt_tokens_details.cached_tokens
+    : '未返回';
+  console.log(`[LLM_CALL] ${ms}ms 输入=${u ? u.prompt_tokens : '未返回'} 输出=${u ? u.completion_tokens : '未返回'}` +
+    ` 缓存=${cache} 结束=${choice.finish_reason || '-'}`);
 }
 
 /**

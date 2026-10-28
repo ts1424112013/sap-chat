@@ -23,6 +23,13 @@
 *         MAX_TOKENS 被截断)。Agent 据此区分"回答太长被截断"与"格式写错",
 *         给出对应的重写提示。老调用方不用改
 *         ★ 重贴后核对标记: chat 声明有 ev_finish; 解析段有 to_lower( ls_choice-finish_reason )
+* V1.5 20261028(功能计划书/Agent闭环增强/02 第 0 步): 新增可选出参 ev_usage = 本次
+*         调用的用量(输入 / 输出 token、前缀缓存命中)。由 PUBLIC 方法 parse_usage
+*         单独解析: OpenAI 兼容 usage(DeepSeek 风格 prompt_cache_hit_tokens /
+*         OpenAI 风格 prompt_tokens_details.cached_tokens)、Ollama prompt_eval_count /
+*         eval_count; 没有字段或解析失败时返回空, 不影响正文解析。老调用方不用改
+*         ★ 重贴后核对标记: chat 声明有 ev_usage TYPE ty_usage; 有 ev_usage = parse_usage( lv_resp );
+*           PUBLIC 有 parse_usage 声明
 *=======================================================================
 CLASS zcl_ai_llm_client DEFINITION
   PUBLIC
@@ -36,6 +43,15 @@ CLASS zcl_ai_llm_client DEFINITION
              content TYPE string,
            END OF ty_message.
     TYPES tt_messages TYPE STANDARD TABLE OF ty_message WITH DEFAULT KEY.
+
+    " V1.5: 一次调用的用量(网关没返回时 has_usage / cache_known 为空)
+    TYPES: BEGIN OF ty_usage,
+             prompt_tokens     TYPE i,          " 输入 token
+             completion_tokens TYPE i,          " 输出 token
+             cache_hit_tokens  TYPE i,          " 输入中命中前缀缓存的 token
+             has_usage         TYPE abap_bool,  " X = 网关返回了输入 / 输出 token
+             cache_known       TYPE abap_bool,  " X = 网关返回了缓存命中字段(0 也有效)
+           END OF ty_usage.
 
     " 发送一轮对话请求
     " @parameter is_cfg      | 模型配置(ZAI_MODEL_CFG 单行)
@@ -51,7 +67,13 @@ CLASS zcl_ai_llm_client DEFINITION
                 ev_elapsed   TYPE i
                 ev_error     TYPE string
                 ev_attempts  TYPE i                    " V1.3: 实际请求次数(1 或 2)
-                ev_finish    TYPE string.              " V1.4: 结束原因(length = 被 MAX_TOKENS 截断)
+                ev_finish    TYPE string               " V1.4: 结束原因(length = 被 MAX_TOKENS 截断)
+                ev_usage     TYPE ty_usage.            " V1.5: 用量(输入 / 输出 token、缓存命中)
+
+    " V1.5: 从响应 JSON 取用量。单独解析, 没有字段或解析失败返回空, 不抛异常
+    CLASS-METHODS parse_usage
+      IMPORTING iv_json      TYPE string
+      RETURNING VALUE(rs)    TYPE ty_usage.
 
     " V1.3: 一次失败是否值得重试(网络层失败 / 429 / 5xx; 读超时与 4xx 不重试)
     " @parameter iv_code       | HTTP 状态码(网络层失败时为 0)
@@ -112,6 +134,22 @@ CLASS zcl_ai_llm_client DEFINITION
              done_reason TYPE string,  " V1.4: stop / length
            END OF ty_ol_resp.
 
+    " ---- V1.5 用量解析结构(OpenAI 兼容 usage + Ollama 计数, 一次反序列化) ----
+    TYPES: BEGIN OF ty_tok_detail,   " OpenAI: usage.prompt_tokens_details
+             cached_tokens TYPE i,
+           END OF ty_tok_detail.
+    TYPES: BEGIN OF ty_oai_usage,
+             prompt_tokens           TYPE i,
+             completion_tokens       TYPE i,
+             prompt_cache_hit_tokens TYPE i,              " DeepSeek 风格
+             prompt_tokens_details   TYPE ty_tok_detail,  " OpenAI 风格
+           END OF ty_oai_usage.
+    TYPES: BEGIN OF ty_usage_resp,
+             usage             TYPE ty_oai_usage,
+             prompt_eval_count TYPE i,     " Ollama 输入 token
+             eval_count        TYPE i,     " Ollama 输出 token
+           END OF ty_usage_resp.
+
 ENDCLASS.
 
 
@@ -130,6 +168,7 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
           lx        TYPE REF TO cx_root.
 
     CLEAR: ev_content, ev_elapsed, ev_error, ev_attempts, ev_finish.
+    CLEAR ev_usage.
 
     " ---------------- 0. 配置校验 ----------------
     IF is_cfg-endpoint_url IS INITIAL AND is_cfg-destination IS INITIAL.
@@ -323,6 +362,9 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
       RETURN.
     ENDIF.
 
+    " V1.5: 用量单独解析(失败返回空), 正文解析照旧
+    ev_usage = parse_usage( lv_resp ).
+
     TRY.
         IF is_cfg-model_type = 'OLLAMA'.
           DATA ls_olr TYPE ty_ol_resp.
@@ -366,6 +408,49 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
 
     IF ev_error IS INITIAL AND ev_content IS INITIAL.
       ev_error = '模型返回了空内容, 请检查 API_MODEL 名称是否正确'.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD parse_usage.
+
+    " V1.5: 一次反序列化同时取 OpenAI 兼容 usage 与 Ollama 计数; 字段缺失保持 0。
+    " 只读用量, 任何异常都返回空 —— 不能因为用量格式不同把正常回答判成失败
+    CLEAR rs.
+    IF iv_json IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    DATA ls_u TYPE ty_usage_resp.
+    TRY.
+        /ui2/cl_json=>deserialize(
+          EXPORTING json = iv_json
+                    name_mappings = VALUE #( ( abap = 'USAGE'                   json = 'usage' )
+                                             ( abap = 'PROMPT_TOKENS'           json = 'prompt_tokens' )
+                                             ( abap = 'COMPLETION_TOKENS'       json = 'completion_tokens' )
+                                             ( abap = 'PROMPT_CACHE_HIT_TOKENS' json = 'prompt_cache_hit_tokens' )
+                                             ( abap = 'PROMPT_TOKENS_DETAILS'   json = 'prompt_tokens_details' )
+                                             ( abap = 'CACHED_TOKENS'           json = 'cached_tokens' )
+                                             ( abap = 'PROMPT_EVAL_COUNT'       json = 'prompt_eval_count' )
+                                             ( abap = 'EVAL_COUNT'              json = 'eval_count' ) )
+          CHANGING  data = ls_u ).
+      CATCH cx_root.
+        CLEAR rs.
+        RETURN.
+    ENDTRY.
+
+    rs-prompt_tokens     = COND #( WHEN ls_u-usage-prompt_tokens > 0
+                                   THEN ls_u-usage-prompt_tokens ELSE ls_u-prompt_eval_count ).
+    rs-completion_tokens = COND #( WHEN ls_u-usage-completion_tokens > 0
+                                   THEN ls_u-usage-completion_tokens ELSE ls_u-eval_count ).
+    rs-has_usage = xsdbool( rs-prompt_tokens > 0 OR rs-completion_tokens > 0 ).
+
+    " 缓存命中: 网关返回了字段才算已知(0 = 没命中, 也是有效值)
+    IF iv_json CS '"prompt_cache_hit_tokens"' OR iv_json CS '"cached_tokens"'.
+      rs-cache_known      = abap_true.
+      rs-cache_hit_tokens = nmax( val1 = ls_u-usage-prompt_cache_hit_tokens
+                                  val2 = ls_u-usage-prompt_tokens_details-cached_tokens ).
     ENDIF.
 
   ENDMETHOD.
