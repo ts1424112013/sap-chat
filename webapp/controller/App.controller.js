@@ -1137,6 +1137,10 @@ sap.ui.define([
                         var sSendToken = this._newSessionId();
                         this._sStreamToken = sSendToken;
                         this._sAbortToken = "";
+                        // 20261028：侧栏这一行转圈，直到本轮结束（切到别的会话也继续转，见 _syncSessionRunning）
+                        this._mSessRun = this._mSessRun || {};
+                        this._mSessRun[sSendToken] = sSessionId;
+                        this._syncSessionRunning();
 
                         // 本轮拥有当前消息和动画时才允许收尾，迟到响应不能影响下一轮。
                         var fnIsCurrent = function () {
@@ -1269,6 +1273,13 @@ sap.ui.define([
                                         that._updateAgentSessionStatus(sSessionId, "ERROR");
                                 }
                                 fnFinish();
+                        }).then(function (v) {
+                                // 20261028：整轮（含打字效果）结束 → 侧栏这一行停止转圈；不在当前会话时也走这里
+                                that._sessRunDone(sSendToken);
+                                return v;
+                        }, function (e) {
+                                that._sessRunDone(sSendToken);
+                                throw e;
                         });
                 },
 
@@ -1329,6 +1340,50 @@ sap.ui.define([
                         }
                         oChat.setProperty("/activityText", s);
                         oChat.setProperty("/logoState", LingXiState.activity(bBusy, bReportRunning, bStreaming));
+                        this._syncSessionRunning();
+                },
+
+                /**
+                 * 20261028：正在跑的会话 → { 会话号: true }。
+                 * 两种来源：本页发出、还没结束的提问（_mSessRun，按发送令牌记，离开会话不清）；
+                 * 后台执行中的报表（_mRuns 里还在跟踪的）。后端 STATUS = RUNNING 不算 —— 中途出错的会话会一直停在 RUNNING
+                 */
+                _runningSids: function () {
+                        var m = {};
+                        var mSend = this._mSessRun || {};
+                        Object.keys(mSend).forEach(function (k) {
+                                if (mSend[k]) {
+                                        m[mSend[k]] = true;
+                                }
+                        });
+                        var mRuns = this._mRuns || {};
+                        Object.keys(mRuns).forEach(function (k) {
+                                if (mRuns[k] && mRuns[k].timer && mRuns[k].sessionId) {
+                                        m[mRuns[k].sessionId] = true;
+                                }
+                        });
+                        return m;
+                },
+
+                /** 20261028：侧栏会话行右侧的转圈（样式类 sessItemRunning，见 style-gale.css） */
+                _syncSessionRunning: function () {
+                        var oList = typeof this.byId === "function" ? this.byId("sessionList") : null;   // _syncActivity 也调，列表还没建好时跳过
+                        if (!oList) {
+                                return;
+                        }
+                        var mRun = this._runningSids();
+                        oList.getItems().forEach(function (oItem) {
+                                var sSid = oItem.data("sid");
+                                oItem.toggleStyleClass("sessItemRunning", !!sSid && !!mRun[sSid]);
+                        });
+                },
+
+                /** 20261028：一轮提问结束（正常 / 出错 / 迟到的响应），撤掉它的转圈 */
+                _sessRunDone: function (sToken) {
+                        if (this._mSessRun && this._mSessRun[sToken]) {
+                                delete this._mSessRun[sToken];
+                                this._syncSessionRunning();
+                        }
                 },
 
                 _stopThinkingTicker: function () {
@@ -1778,6 +1833,9 @@ sap.ui.define([
                         this._sAbortToken = this._sStreamToken;
                         this._sStreamToken = "";
                         this._stopThinkingTicker();   // V13：Agent 等待期思考状态一并停止
+                        if (this._mSessRun) {
+                                delete this._mSessRun[this._sAbortToken];   // 20261028：停止后侧栏不再转圈（下面 _syncActivity 会同步）
+                        }
 
                         // 未开始打字的占位气泡标记为已停止
                         var aMsgs = oChatModel.getProperty("/messages");
@@ -2918,6 +2976,7 @@ sap.ui.define([
                         oList.getItems().forEach(function (oItem) {
                                 oItem.toggleStyleClass("sessItemCurrent", !!sCurrent && oItem.data("sid") === sCurrent);
                         });
+                        this._syncSessionRunning();
                 },
 
                 /** 会话列表项工厂：标题 + 时间 + 悬浮操作（置顶/重命名/删除，V10）
@@ -3039,6 +3098,10 @@ sap.ui.define([
                         var sCurId = this.getView().getModel("session").getProperty("/currentId");
                         if (sCurId && sCurId === o.SessionId) {
                                 oItem.addStyleClass("sessItemCurrent");
+                        }
+                        // 20261028：正在跑的会话，右侧转圈（运行期由 _syncSessionRunning 切换）
+                        if (this._runningSids()[o.SessionId]) {
+                                oItem.addStyleClass("sessItemRunning");
                         }
                         return oItem;
                 },

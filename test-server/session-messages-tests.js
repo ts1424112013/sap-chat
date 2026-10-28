@@ -406,5 +406,32 @@ async function test(name, fn) { await fn(); passed++; console.log('  ✅ ' + nam
     assert.ok(e.liveHtml.includes('is-done') && !e.liveHtml.includes('is-new'));
   });
 
+  await test('20261028：侧栏转圈 —— 本页没结束的提问 + 后台执行中的报表都算；离开会话不清，结束才撤', () => {
+    const c = controller();
+    const item = (sid) => ({ sid, cls: new Set(), data(k) { return k === 'sid' ? this.sid : undefined; },
+      toggleStyleClass(n, on) { if (on) { this.cls.add(n); } else { this.cls.delete(n); } } });
+    const items = [item('A'), item('B'), item('C'), item(undefined)];
+    c.byId = (id) => id === 'sessionList' ? { getItems: () => items } : null;
+    c._mSessRun = { T1: 'A' };
+    c._mRuns = { R1: { sessionId: 'B', timer: -1 }, R2: { sessionId: 'C', timer: null } };
+    assert.deepEqual(Object.keys(c._runningSids()).sort(), ['A', 'B']);
+    c._syncSessionRunning();
+    assert.deepEqual(items.map((i) => i.cls.has('sessItemRunning')), [true, true, false, false]);
+    c._releaseBusy();                                  // 切到别的会话：还在跑的照样转
+    c._syncSessionRunning();
+    assert.ok(items[0].cls.has('sessItemRunning'));
+    c._sessRunDone('T1');                              // 这一轮结束
+    assert.ok(!items[0].cls.has('sessItemRunning') && items[1].cls.has('sessItemRunning'));
+    c._sessRunDone('T1');                              // 迟到的第二次收尾不报错
+  });
+  await test('20261028：步骤详情只有 SQL 才叫「查看 SQL」，其余叫「查看详情」', () => {
+    const c = controller();
+    const html = c._liveHtml('U', [
+      { seq: 1, phase: 'EXECUTING', label: '模型输出格式不对, 已要求重写', status: 'REJECTED', detail: '输出缺少 action 字段' },
+      { seq: 2, phase: 'EXECUTING', label: '按类型', status: 'OK', detail: '  select a from mara' }
+    ], {});
+    assert.ok(html.includes('<summary>查看详情</summary>') && html.includes('<summary>查看 SQL</summary>'));
+  });
+
   console.log(`\n━━ 结果：${passed} 通过，0 失败`);
 })().catch((err) => { console.error(err); process.exitCode = 1; });

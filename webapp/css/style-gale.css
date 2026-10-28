@@ -1401,6 +1401,19 @@ body, body.sapUiBody { background: var(--bg) !important; }
 }
 @keyframes sessFlash { 0%, 35% { opacity: 1; } 100% { opacity: 0; } }
 .sessPinBtn.sessPinPop .sapMBtnIcon { animation: replyPop .45s cubic-bezier(.3, 1.6, .5, 1); }
+/* 20261028：正在跑的会话（Agent 执行中 / 报表后台执行中）—— 右侧一个小圈在转，状态徽标先收起；
+   鼠标移上去时让位给操作排 */
+.sessionList .sessionItem.sessItemRunning .sessItemBox { padding-right: 1.5rem; box-sizing: border-box; }
+.sessionList .sessionItem.sessItemRunning .agentStChip { display: none !important; }
+.sessionList .sessionItem.sessItemRunning .sessItemRow::after {
+        content: ""; position: absolute; right: .75rem; top: 50%; width: .82rem; height: .82rem; margin-top: -.41rem;
+        box-sizing: border-box; border-radius: 50%; pointer-events: none;
+        border: 2px solid color-mix(in srgb, var(--sub) 28%, transparent); border-top-color: var(--text-2);
+        animation: spin360 .9s linear infinite, sessRunIn .25s var(--ease);
+        transition: opacity .16s var(--ease);
+}
+.sessionList .sessionItem.sessItemRunning:hover .sessItemRow::after { opacity: 0; }
+@keyframes sessRunIn { from { opacity: 0; } to { opacity: 1; } }
 
 /* 删除后的「撤销」卡片（utils/UndoToast.js，底部提示栈）：反色小卡 + 倒计时条，悬停暂停 */
 .undoToast {
