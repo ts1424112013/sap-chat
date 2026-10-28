@@ -197,6 +197,7 @@ ${toolLines}
   let finalAnswer = '';
   const describedTables = new Set();
   let repaired = false;   // 协议修复重试只允许一次（对照 ABAP 计划书 P1-2 / lv_repaired）
+  let badFirst = '';      // 20261028：第一次协议失败的原始输出（兜底用，对照 lv_bad_first）
   let protocolError = '';
 
   while (round < maxRounds && (Date.now() - startTime) < BUDGET_MS) {
@@ -220,9 +221,10 @@ ${toolLines}
     let parseErr = '';
     try {
       // 20261019（BE-01）：与 ABAP AGENT_GUARD V1.1.4 同口径 —— 取第一个平衡的 {...}，内容不做任何替换
-      const jsonText = extractJsonObject(assistantMsg.content || '');
+      // 20261028（GUARD V1.1.5）：优先取含 "action" 的对象；缺 action 按字段推断
+      const jsonText = extractJsonObject(assistantMsg.content || '', '"action"');
       if (!jsonText) throw new Error('输出中未找到 JSON');
-      parsed = JSON.parse(jsonText);
+      parsed = inferAction(JSON.parse(jsonText));
       if (!parsed.action) throw new Error('缺少 action 字段');
     } catch (e) {
       parseErr = e.message;
@@ -234,12 +236,20 @@ ${toolLines}
       console.error('JSON 解析失败:', assistantMsg.content);
       if (!repaired) {
         repaired = true;
+        badFirst = assistantMsg.content || '';
         trace.push({ phase: 'ROUND_' + round, label: `协议错误，修复重试(${parseErr})`, status: 'RETRY' });
         messages.push({
           role: 'user',
           content: '【协议错误】你上一条输出不符合协议。请重新仅输出一行 JSON，不要包含任何其他文字：\n{"action":"tool","tool":"<工具ID>","summary":"<一句话说明>","args":{...}}\n或 {"action":"final","summary":"<一句话说明>","answer":"<最终回答>"}'
         });
         continue;
+      }
+      // 20261028（AGENT_SERVICE V15.7）：两次都不合协议 → 先从两次坏输出里保留回答正文
+      const salvaged = salvageAnswer(assistantMsg.content) || salvageAnswer(badFirst);
+      if (salvaged) {
+        finalAnswer = salvaged + '\n\n（说明: 模型这次的输出格式不完整, 以上是保留下来的内容, 结尾可能不完整。）';
+        trace.push({ phase: 'COMPOSING', label: '整理回答(格式不完整, 已保留可用内容)', status: 'OK' });
+        break;
       }
       protocolError = `模型输出两次不符合协议(${parseErr})`;
       break;
@@ -322,11 +332,13 @@ ${toolLines}
 }
 
 /**
- * 取第一个平衡的 {...}（对照 ZCL_AI_AGENT_GUARD.extract_json_object V1.1.4）：
- * 只在对象内部跟踪字符串与转义；对象外的围栏、说明文字、不成对引号都忽略
+ * 取第一个平衡的 {...}（对照 ZCL_AI_AGENT_GUARD.extract_json_object V1.1.5）：
+ * 只在对象内部跟踪字符串与转义；对象外的围栏、说明文字、不成对引号都忽略。
+ * 20261028：给了 key 时取第一个包含它的顶层对象（说明文字里的代码 { x } 不再被误当协议对象），
+ * 都不含时退回第一个对象
  */
-function extractJsonObject(text) {
-  let depth = 0, start = -1, inStr = false, esc = false;
+function extractJsonObject(text, key) {
+  let depth = 0, start = -1, inStr = false, esc = false, first = '';
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
     if (inStr) {
@@ -340,10 +352,56 @@ function extractJsonObject(text) {
       depth++;
     } else if (c === '}' && depth > 0) {
       depth--;
-      if (depth === 0) return text.substring(start, i + 1);
+      if (depth === 0) {
+        const obj = text.substring(start, i + 1);
+        if (!key || obj.toLowerCase().indexOf(key.toLowerCase()) >= 0) return obj;
+        if (!first) first = obj;
+      }
     }
   }
-  return '';
+  return first;
 }
 
-module.exports = { runAgent, extractJsonObject };
+/** 缺 action 时按字段推断（对照 GUARD V1.1.5 parse_model_json）：有 tool → tool，只有 answer → final */
+function inferAction(parsed) {
+  if (parsed && !parsed.action) {
+    if (parsed.tool) parsed.action = 'tool';
+    else if (parsed.answer) parsed.action = 'final';
+  }
+  return parsed;
+}
+
+/**
+ * 两次协议失败后的兜底（对照 GUARD V1.1.5 salvage_answer）：
+ * 被截断的 {"action":"final",...,"answer":"... 取 answer 已输出部分；完全没有 JSON 的纯文字原样取用；
+ * 想调工具的输出、以 { 或 ```json 开头但没有 answer 的输出、不足 40 字符的正文都返回空
+ */
+function salvageAnswer(raw) {
+  const text = String(raw || '');
+  if (!text || text.length > 200000) return '';
+  if (/"action"\s*:\s*"tool"/i.test(text)) return '';
+  let out = '';
+  const m = /"answer"\s*:\s*"/.exec(text);
+  if (m) {
+    let i = m.index + m[0].length;
+    const start = i;
+    let esc = false;
+    for (; i < text.length; i++) {
+      const c = text[i];
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') break;
+    }
+    let body = text.substring(start, i).replace(/\\(u[0-9A-Fa-f]{0,3})?$/, '');
+    try {
+      out = JSON.parse('"' + body + '"');
+    } catch (e) {
+      out = body.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/g, '"');
+    }
+  } else if (!/^\s*(```[A-Za-z]*\s*)?\{/.test(text)) {
+    out = text;
+  }
+  return out.replace(/\s+/g, ' ').trim().length < 40 ? '' : out;
+}
+
+module.exports = { runAgent, extractJsonObject, inferAction, salvageAnswer };

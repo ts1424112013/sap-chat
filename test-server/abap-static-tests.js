@@ -335,5 +335,47 @@ check('DPC V15.9：AGENTPROGRESS 读 ClientRequestId 调 read；AnalyzeTask 传 
   /WHEN 'AGENTPROGRESS'\.[\s\S]*?zcl_ai_agent_progress=>read\(\s*v8_param\( it_parameter = it_parameter iv_name = 'ClientRequestId' \)/.test(dp) && /iv_request_id\s+= lv_at_rid/.test(dp));
 check('前端发的 FI 名 / 参数名 = DPC 读的（AgentProgress / ClientRequestId）', /_taskCall\("AgentProgress", \{ ClientRequestId:/.test(feCs) && /_fiHasParam\("AgentProgress", "ClientRequestId"\)/.test(feCs));
 
+
+// ---------------------------------------------------------------- 9) 10.28 记录 #01：协议失败兜底 + 源码关键词定位
+console.log('\n[9] 10.28 #01：协议失败兜底 + 读源码关键词定位（GUARD V1.1.5 / LLM_CLIENT V1.4 / AGENT_SERVICE V15.7 / REGISTRY / DOMAIN_CARDS V1.3）');
+const lcRaw = read('ZCL_AI_LLM_CLIENT.abap'), lc = codeOnly(lcRaw);
+const gdRaw = read('ZCL_AI_AGENT_GUARD.abap'), gd = codeOnly(gdRaw);
+const trRaw = read('ZCL_AI_TOOL_REGISTRY.abap'), tr = codeOnly(trRaw);
+const dcRaw = read('ZCL_AI_DOMAIN_CARDS.abap');
+check('LLM_CLIENT V1.4：chat 多一个出参 ev_finish（OpenAI finish_reason / Ollama done_reason，转小写）', /^\* V1\.4 20261028/m.test(lcRaw) &&
+  /ev_attempts\s+TYPE i\s+ev_finish\s+TYPE string\./.test(lc) && /ev_finish\s+= to_lower\( ls_choice-finish_reason \)/.test(lc) &&
+  /ev_finish\s+= to_lower\( ls_olr-done_reason \)/.test(lc) && /CLEAR: ev_content, ev_elapsed, ev_error, ev_attempts, ev_finish\./.test(lc));
+check('AGENT_SERVICE V15.7：两处调模型都取 ev_finish = lv_llm_fin', /^\* V15\.7 20261028/m.test(agRaw) && agCnt(/ev_finish\s+= lv_llm_fin/g) === 2);
+const agProto = (ag.match(/IF lv_protocol_ok = abap_false\.\s*lv_plan_ms = lv_plan_ms \+ lv_llm_ms\.[\s\S]*?\n      ENDIF\./) || [''])[0];
+check('协议失败：先记一条 REJECTED 步骤（原因 + 输出开头），再决定重写或收口', /lv_cut\) = xsdbool\( lv_llm_fin = 'length' \)/.test(agProto) &&
+  /APPEND VALUE #\( phase\s+= 'EXECUTING'[\s\S]*?status\s+= 'REJECTED'[\s\S]*?lv_bad_head[\s\S]*?\) TO lt_trace\.\s*IF lv_repaired = abap_false\./.test(agProto));
+check('被截断时修复提示要求压缩回答重写；记下第一次的坏输出', /IF lv_cut = abap_true\.\s*ls_msg-content = \|【协议错误】你上一条输出太长/.test(agProto) &&
+  /lv_bad_first = lv_content\./.test(agProto) && /lv_cut_first = lv_cut\./.test(agProto));
+check('第二次仍失败：先 salvage 本次、再 salvage 第一次，保留到就按 OK 返回并注明，否则才 ERROR', /salvage_answer\( lv_content \)[\s\S]*?salvage_answer\( lv_bad_first \)[\s\S]*?es_result-status = 'OK'\.[\s\S]*?EXIT\.[\s\S]*?es_result-status\s+= 'ERROR'\./.test(agProto) &&
+  /以上是保留下来的内容/.test(agProto));
+check('lv_bad_first / lv_cut_first 每次运行开头清空', /CLEAR: lv_answer, lv_bad_first, lv_cut_first\./.test(ag));
+check('GUARD V1.1.5：优先取含 "action" 的对象；缺 action 按字段推断（tool → tool，answer → final）', /^\* V1\.1\.5 20261028/m.test(gdRaw) &&
+  /extract_json_object\( iv_text = iv_raw iv_key = '"action"' \)/.test(methodOf(gd, 'parse_model_json')) &&
+  /IF es_out-tool IS NOT INITIAL\.\s*es_out-action = 'tool'\.\s*ELSEIF es_out-answer IS NOT INITIAL\.\s*es_out-action = 'final'\./.test(methodOf(gd, 'parse_model_json')));
+check('extract_json_object：iv_key 可选；含 key 才返回，否则记第一个、最后退回第一个', /CLASS-METHODS extract_json_object\s+IMPORTING iv_text\s+TYPE string\s+iv_key\s+TYPE string OPTIONAL/.test(gd) &&
+  /IF iv_key IS INITIAL OR lv_obj CS iv_key\./.test(methodOf(gd, 'extract_json_object')) && /rv = lv_first\./.test(methodOf(gd, 'extract_json_object')));
+const gdSalv = methodOf(gd, 'salvage_answer');
+check('salvage_answer：PUBLIC；调工具的输出不兜底；取 answer 已输出部分或纯文字；不足 40 字符返回空', /PUBLIC SECTION\.[\s\S]*?CLASS-METHODS salvage_answer[\s\S]*?PRIVATE SECTION\./.test(gd) &&
+  /"action"\\s\*:\\s\*"tool"/.test(gdSalv) && /"answer"\\s\*:\\s\*"/.test(gdSalv) && /json_unescape\( lv_body \)/.test(gdSalv) &&
+  /\\A\\s\*\(```\[A-Za-z\]\*\\s\*\)\?\\\{/.test(gdSalv) && /< 40\./.test(gdSalv));
+check('GUARD 仍只有 3 处 REPLACE ALL OCCURRENCES OF REGEX（V1.1.4 核对标记不变）', (gd.match(/REPLACE ALL OCCURRENCES OF REGEX/g) || []).length === 3);
+const agSrc = methodOf(ag, 'exec_read_source');
+check('exec_read_source：有 iv_keyword；关键词分支在分页之前 RETURN；LOOP FROM / TO 用变量', /iv_keyword\s+TYPE string OPTIONAL/.test(ag) &&
+  /IF lv_kw IS NOT INITIAL\.[\s\S]*?IF lv_line CS lv_kw\.[\s\S]*?LOOP AT lt_lines INTO lv_line FROM lv_from TO lv_to\.[\s\S]*?RETURN\.\s*ENDIF\.\s*lv_start = 1\./.test(agSrc) &&
+  /gc_src_hits\s+TYPE i VALUE 20/.test(ag) && /gc_src_ctx\s+TYPE i VALUE 6\./.test(ag));
+check('关键词结果带 hits / hit_lines / more_hits，未命中给提示', /"hits":\{ lv_hits \},"hit_lines":\[\{ lv_hl \}\]/.test(agSrc) && /"more_hits":/.test(agSrc) && /"tip":"没有命中/.test(agSrc));
+check('分发把 keyword 传给 exec_read_source', /iv_keyword = zcl_ai_agent_guard=>kv_get\( it_kv = lt_norm iv_name = 'keyword' \)/.test(ag));
+check('REGISTRY：read_program_source 有 keyword 参数（TEXT、可选），描述里说明 keyword 用法', /APPEND VALUE #\( name = 'keyword' ptype = gc_pt_text required = abap_false \)\s+TO lt_p\.\s+APPEND VALUE #\(\s+tool_id\s+= gc_tool_read_source/.test(tr) &&
+  /给 keyword 时按关键词定位/.test(tr));
+check('DOMAIN_CARDS V1.3：CODE 卡先 keyword 定位、回答 1500 字以内', /^\* V1\.3\s+20261028/m.test(dcRaw) && /keyword 搜索定位/.test(dcRaw) && /回答控制在 1500 字以内/.test(dcRaw));
+check('降级提示的阶段清单不再带 [PHASE] 代码、跳过 TOOL_DECISION', !/- \[\{ ls_s-phase \}\]/.test(methodOf(ag, 'build_degrade_answer')) &&
+  /WHERE phase <> 'TOOL_DECISION'/.test(methodOf(ag, 'build_degrade_answer')));
+check('进度小标签认得 keyword（关键词）', /WHEN 'keyword'\.\s+rv = '关键词'\./.test(prM('arg_label')));
+
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);

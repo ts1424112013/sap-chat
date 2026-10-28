@@ -1529,8 +1529,10 @@ sap.ui.define([
                                                 }).join("") + "</tbody></table>";
                                 }
                                 if (!bRun && st.detail) {
+                                        // 20261028：只有 SQL 才叫「查看 SQL」；模型切换、协议重写等步骤的说明叫「查看详情」
+                                        var bSql = /^\s*(SELECT|WITH)\b/i.test(String(st.detail));
                                         s += '<details class="lvMore" data-seq="' + esc(sSeq) + '"' + (mOpen[sUid + ":" + sSeq] ? " open" : "") +
-                                                '><summary>查看 SQL</summary><pre class="lvSql">' + esc(st.detail) + "</pre></details>";
+                                                '><summary>' + (bSql ? "查看 SQL" : "查看详情") + '</summary><pre class="lvSql">' + esc(st.detail) + "</pre></details>";
                                 }
                                 s += "</div></div>";
                         });

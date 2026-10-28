@@ -1,0 +1,4126 @@
+************************************************************************
+* Program name : ZRPP_IDP_0299                                         *
+* Program title: For Central Packout Project                           *
+* T-code       : ZDPPP299                                              *
+* Author       : Ruilong WANG                                          *
+* Date         : 20160331                                              *
+************************************************************************
+REPORT zrpp_idp_0299 MESSAGE-ID zpp NO STANDARD PAGE
+HEADING LINE-SIZE 255.
+*----------------------------------------------------------------------*
+*      -- Statement tables --
+*----------------------------------------------------------------------*
+TABLES:zidpmmwhh,zidpmmwhi,zidppp099,aufk,afpo,zidpmmctrlvalue,
+       t001l,zidpmmcontrol2,mast,marc,zidpmmtlk,zidppp100,zidppp098,
+       zidpcontrolvalue.
+*----------------------------------------------------------------------*
+*      -- Define internal table & Ranges --
+*----------------------------------------------------------------------*
+* by H2410433,New logic for CSD rework 20220816
+DATA: g_flag(1) TYPE c VALUE 'N'.
+DATA: g_npiflag(1) TYPE c VALUE 'N'. "add by erin 20260622
+DATA:BEGIN OF itab_group OCCURS 0,
+       werks  LIKE zidppp099-werks,
+       fmatnr LIKE zidppp099-gmatnr,
+       ffloor LIKE zidppp099-gfloor,
+       fgfmg  LIKE zidppp099-fgfmg,
+     END OF itab_group.
+DATA:BEGIN OF itab_aufnr OCCURS 0,
+       daufnr LIKE zidppp099-daufnr,
+     END OF itab_aufnr.
+***************
+DATA: stb LIKE stpox OCCURS 0 WITH HEADER LINE.
+DATA: bom LIKE stb OCCURS 0 WITH HEADER LINE.
+DATA: g_enq LIKE seqg3 OCCURS 0 WITH HEADER LINE.
+DATA: t_zidppp099 LIKE zidppp099 OCCURS 0 WITH HEADER LINE.
+DATA: zmsg(50) TYPE c.
+DATA: l_ignore_err  TYPE c.
+DATA: l_chk_flag(1) TYPE c.
+DATA: g_status LIKE bsvx-sttxt .
+DATA: l_flag(1) TYPE c.
+DATA: c_flag(1) TYPE c.
+DATA: s_flag(1) TYPE c.
+DATA: post_flag(1) TYPE c.   "ADD BY 吳翠婷 20221010   允許進行FG入庫功能的功能標識
+DATA: l_errmess(50) TYPE c.
+DATA: or_no LIKE jest-objnr.
+DATA: t_zmwhh1 LIKE zidpmmwhh OCCURS 0 WITH HEADER LINE.
+DATA: t_zmwhh2 LIKE zidpmmwhh OCCURS 0 WITH HEADER LINE.
+DATA: t_zmwhi LIKE zidpmmwhi OCCURS 0 WITH HEADER LINE.
+DATA: p_emplyee_id LIKE ztlogin0002-emplyee_id.
+DATA: g_err_str(50) TYPE c.
+DATA: l_error(100) TYPE c.
+DATA: BEGIN OF t_zmwhh OCCURS 0.
+        INCLUDE STRUCTURE t_zmwhh1.
+DATA:mess(50),
+      END OF t_zmwhh.
+DATA: g_qtya LIKE afpo-psmng.
+DATA: l_qtyc LIKE afpo-wemng.
+DATA: l_qtyb LIKE t_zidppp099-fgfmg.
+DATA: l_qtyd LIKE afpo-wemng.
+DATA: g_cogi_flag(1) TYPE c,
+      g_werks        LIKE marc-werks.
+DATA: p_times TYPE i.
+DATA: g_flgort LIKE zidppp100-flgort.
+DATA: g_glgort LIKE zidppp100-glgort.
+DATA: g_mlgort LIKE zidppp100-mlgort.
+DATA: g_nlgort LIKE zidppp100-nlgort.
+DATA: l_pallet LIKE zidppp099-pallet.
+DATA: post_wrong_entries LIKE  bapi_coru_param-ins_err,
+      testrun            LIKE  bapi_coru_param-testrun,
+      return             LIKE  bapiret1.
+DATA : p_lfgja  LIKE marv-lfgja,
+       p_lfmon  LIKE marv-lfmon,
+       p_lfmon2 LIKE marc-lfmon.
+DATA: athdrlevels LIKE bapi_pp_hdrlevel OCCURS 0 WITH HEADER LINE .
+DATA : itab_i LIKE bapi2017_gm_item_create OCCURS 0 WITH HEADER LINE.
+DATA : itab_l LIKE bapi_link_conf_goodsmov OCCURS 0 WITH HEADER LINE.
+DATA: return_moves LIKE	bapi2017_gm_item_show OCCURS 0
+        WITH HEADER LINE.
+DATA: failedgmoves  LIKE  bapi_coru_fgm OCCURS 0 WITH HEADER LINE.
+DATA: c_failedgmoves LIKE bapi_coru_fgm OCCURS 0 WITH HEADER LINE.
+DATA: detail_return LIKE bapi_coru_return OCCURS 0 WITH HEADER LINE.
+DATA: timetickets LIKE bapi_pp_timeticket OCCURS 0 WITH HEADER LINE.
+
+DATA: t_zmwhhb LIKE t_zmwhh OCCURS 0 WITH HEADER LINE.
+DATA: BEGIN OF input1 OCCURS 0,
+        werks          LIKE zidpppmodel-werks,
+        posid          LIKE prps-posid, "AFPO-PROJN,add by erin 20260622
+        auart(4),                       "ci?N?u3aAt??
+        matnr          LIKE zidppp052-matnr,
+        a_matnr        LIKE zidppp052-a_matnr, "3Qci?NaoRA?1
+        qty(16),                                              "?u3a?A?q
+        start_date(10) TYPE c,          "?}?u?e?
+        routing(10),                    "ci?N?uAA?o?u
+        h_matnr        LIKE zidppp052-matnr,
+        "RiBOMRA?1cIaI?i?URiBOMci?N?X?OaoRA?1
+        menge(20),                      "?i?URiBOMci?N?X?ORA?1ao?A?q
+        account(10),                    "ci?N?-p?i?O(Aq?{?n5401030000)
+        g_l(10),                        "ci?N?-p?i?O?AAt(Aq?{?nG/L)
+        f_code(10),                     "?O?I?N?X
+        cr(5)          TYPE c,                   "CR?A_?D?U
+        pformat(2),                     "?]?E?e|!
+        address(20),                    "?X3fPSD FLAG
+        floor(25),                      "?O?h?HR?
+        remark1(50),                                          "?u3a3A?1
+        remark2(50),
+        remark3(50),
+        prctr          LIKE zidpfi_bamprc-prctr,
+        item           TYPE i,
+      END OF input1.
+DATA: input LIKE input1 OCCURS 0 WITH HEADER LINE.
+DATA: itab_c LIKE stb OCCURS 0 WITH HEADER LINE.
+DATA: BEGIN OF itab OCCURS 0.
+        INCLUDE STRUCTURE input.
+DATA:   aufnr     LIKE afpo-aufnr,
+        mess(200),
+      END OF itab.
+DATA: g_emplyee_id LIKE ztlogin0002-emplyee_id.
+DATA: p_in LIKE TABLE OF z1tm0053 WITH HEADER LINE.
+DATA: p_ou LIKE TABLE OF z1tm0053 WITH HEADER LINE.
+DATA: matcat LIKE cscmat OCCURS 0 WITH HEADER LINE.
+DATA: g_mblnn LIKE zidpmmwhh-mblnn.
+DATA: g_mblnr LIKE zidpmmwhh-mblnr.
+DATA: t_zcompare LIKE TABLE OF zidpmmcus WITH HEADER LINE.
+DATA: g_postdate LIKE sy-datum.
+DATA: g_line TYPE i.
+DATA: g_isgr(1) TYPE c.
+DATA: g_wbs LIKE prps-posid.
+DATA: g_objnr  LIKE aufk-objnr.
+DATA: l_sku LIKE zidpmmtlk-tlk03.
+DATA: t_resb LIKE TABLE OF resb WITH HEADER LINE.
+
+DATA: lt_mkpf TYPE TABLE OF mkpf,
+      ls_mkpf TYPE mkpf,
+      lt_mseg TYPE TABLE OF mseg.
+
+*----------------------------------------------------------------------*
+*      -- Define global variable & Constants --
+*----------------------------------------------------------------------*
+DATA: g_listindex TYPE i.
+*----------------------------------------------------------------------*
+*      -- ALV Define --
+*----------------------------------------------------------------------*
+TYPE-POOLS: slis.
+DATA: gt_layout TYPE slis_layout_alv.
+DATA: fieldcat    TYPE slis_t_fieldcat_alv,
+      fieldcat_ln LIKE LINE OF fieldcat.
+*----------------------------------------------------------------------*
+*      -- Selection screen --
+*----------------------------------------------------------------------*
+SELECTION-SCREEN BEGIN OF BLOCK b  WITH FRAME TITLE TEXT-010.
+*  SELECTION-SCREEN SKIP 1.
+  PARAMETERS p_werks LIKE zidppp099-werks DEFAULT 'ABZ1'.
+  SELECT-OPTIONS s_pallet FOR zidppp099-pallet.
+  SELECT-OPTIONS s_badat  FOR zidppp099-ersda.
+  SELECT-OPTIONS s_faufnr FOR zidppp099-faufnr.
+  SELECT-OPTIONS s_fmatnr FOR zidppp099-fmatnr.
+  SELECT-OPTIONS s_ffloor FOR zidppp099-ffloor.
+  SELECT-OPTIONS s_gmatnr FOR zidppp099-gmatnr.
+  SELECT-OPTIONS s_gfloor FOR zidppp099-gfloor.
+  SELECT-OPTIONS s_sflag  FOR zidppp099-sflag.
+  SELECT-OPTIONS s_fggrn  FOR zidppp099-fggrn.
+  SELECT-OPTIONS s_daufnr  FOR zidppp099-daufnr.
+  SELECT-OPTIONS s_gaufnr  FOR zidppp099-gaufnr.
+  SELECT-OPTIONS s_pflag  FOR zidppp099-pflag.
+  PARAMETERS runmode TYPE c DEFAULT 'E' NO-DISPLAY."NO-DISPLAY
+
+  SELECTION-SCREEN BEGIN OF BLOCK b2.
+    SELECTION-SCREEN: SKIP 1.
+    SELECTION-SCREEN COMMENT 1(79) TEXT-068.
+  SELECTION-SCREEN END OF BLOCK b2.
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS p_disp RADIOBUTTON GROUP g USER-COMMAND scr DEFAULT 'X'.
+    SELECTION-SCREEN COMMENT (25) comm01 FOR FIELD p_disp." TEXT-002.
+    PARAMETERS p_proc RADIOBUTTON GROUP g.            "process data
+    SELECTION-SCREEN COMMENT (25) comm02 FOR FIELD p_proc." TEXT-001.
+  SELECTION-SCREEN END OF LINE.
+
+  SELECTION-SCREEN BEGIN OF LINE.
+
+*    SELECTION-SCREEN POSITION 3.
+*    PARAMETERS p_del AS CHECKBOX MODIF ID f1.
+*    SELECTION-SCREEN COMMENT (10) comm10 FOR FIELD p_del.
+
+    SELECTION-SCREEN POSITION 33.
+    PARAMETERS p_fgr AS CHECKBOX MODIF ID g.
+    SELECTION-SCREEN COMMENT (10) comm03 FOR FIELD p_fgr.
+  SELECTION-SCREEN END OF LINE.
+
+
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN POSITION 33.
+    PARAMETERS p_wo AS CHECKBOX MODIF ID g.
+    SELECTION-SCREEN COMMENT (10) comm04 FOR FIELD p_wo.
+  SELECTION-SCREEN END OF LINE.
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN POSITION 33.
+    PARAMETERS p_issue AS CHECKBOX MODIF ID g.
+    SELECTION-SCREEN COMMENT (10) comm05 FOR FIELD p_issue.
+  SELECTION-SCREEN END OF LINE.
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN POSITION 33.
+    PARAMETERS p_gr AS CHECKBOX MODIF ID g.
+    SELECTION-SCREEN COMMENT (10) comm06 FOR FIELD p_gr.
+  SELECTION-SCREEN END OF LINE.
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN POSITION 33.
+    PARAMETERS p_close AS CHECKBOX MODIF ID g.
+    SELECTION-SCREEN COMMENT (10) comm07 FOR FIELD p_close.
+  SELECTION-SCREEN END OF LINE.
+*add heyan 20240511
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN POSITION 33.
+    PARAMETERS p_trans AS CHECKBOX MODIF ID g.
+    SELECTION-SCREEN COMMENT (15) comm08 FOR FIELD p_trans.
+  SELECTION-SCREEN END OF LINE.
+
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN POSITION 33.
+    PARAMETERS p_dpost AS CHECKBOX MODIF ID g.
+    SELECTION-SCREEN COMMENT (10) comm09 FOR FIELD p_dpost.
+  SELECTION-SCREEN END OF LINE.
+
+*end heyan
+SELECTION-SCREEN END OF BLOCK b.
+
+*----------------------------------------------------------------------*
+*      -- Include --
+*----------------------------------------------------------------------*
+INCLUDE zpp_bdc.
+
+INITIALIZATION.
+  IF sy-langu = 'M'.
+    comm01 = '查詢數據'.
+    comm02 = '處理數據'.
+    comm03 = '產生FG入庫單'.
+    comm04 = '產生拆解工單'.
+    comm05 = '產生DIS發料'.
+    comm06 = '產生DIS入庫'.
+    comm07 = '工單結案'.
+    comm08 = 'FG轉GB樓層轉播單開立'.
+    comm09 = '轉撥單過帳'.
+*    comm10 = 'M狀態處理'.
+  ELSE.
+    comm01 = 'Inquire data'.
+    comm02 = 'Process data'.
+    comm03 = 'Generate FG stock invoice'.
+    comm04 = 'Generate disassembly work order'.
+    comm05 = 'Generate DIS issuance'.
+    comm06 = 'Generate DIS stock in'.
+    comm07 = 'Work order closing'.
+    comm08 = 'FG to GB floor broadcasting single issuance'.
+    comm09 = 'Transfer bill posting'.
+  ENDIF.
+
+  IF s_badat IS INITIAL.
+    s_badat-sign = 'I'.
+    s_badat-option = 'BT'.
+    s_badat-low = sy-datum - 7.
+    s_badat-high = sy-datum.
+    APPEND s_badat.
+  ENDIF.
+
+AT SELECTION-SCREEN OUTPUT.
+  IF p_proc = ''.
+    LOOP AT SCREEN.
+      IF screen-group1 = 'G'.
+        screen-active = '0'.
+        MODIFY SCREEN.
+      ENDIF.
+*      IF screen-name = 'f1'."'S_KOSTL'.
+*        screen-input = 0.
+*        MODIFY SCREEN.
+*      ENDIF.
+    ENDLOOP.
+  ELSE.
+    LOOP AT SCREEN.
+      IF screen-group1 = 'F1'.
+        screen-active = '0'.
+        MODIFY SCREEN.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+*----------------------------------------------------------------------*
+*      -- At selection screen --
+*----------------------------------------------------------------------*
+AT SELECTION-SCREEN.
+  SELECT SINGLE werks INTO p_werks
+      FROM t001w
+      WHERE werks = p_werks.
+  IF sy-subrc NE 0.
+    MESSAGE e000(zpp) WITH 'The plant does not exist!'.
+  ENDIF.
+
+*----------------------------------------------------------------------*
+*      -- Main program --
+*----------------------------------------------------------------------*
+AT LINE-SELECTION.
+  PERFORM line_selection.
+
+
+START-OF-SELECTION.
+  PERFORM check_authorization.
+  PERFORM pro_middlestatus_data. "add by ruilong 0926
+  SELECT SINGLE * FROM zidpcontrolvalue
+  WHERE werks = p_werks
+    AND ctype = 'ZDPPP299'
+    AND indicator1 = 'ACT'.
+  IF sy-subrc = 0.
+    g_flag = 'Y'.
+  ENDIF.
+****add by erin 20260622
+  SELECT SINGLE * FROM zidpcontrolvalue
+WHERE werks = p_werks
+  AND ctype = 'NPI_PLANT'
+  AND sap_module = 'PP'
+  AND indicator1 = 'ACT'.
+  IF sy-subrc = 0.
+    g_npiflag = 'Y'.
+  ENDIF.
+***end
+
+  CLEAR t_zidppp099. REFRESH t_zidppp099.
+  IF p_disp = 'X'.
+*    IF p_del = 'X'.
+*      PERFORM m_dell_with.
+*    ELSE.
+    PERFORM select_screen_data.
+*    ENDIF.
+  ELSE.
+*    IF s_pallet[] IS INITIAL
+*      AND s_badat[] IS INITIAL.
+*      MESSAGE i000(zpp) WITH 'Pls input palet No!'(024).
+*      STOP.
+*    ENDIF.
+*    PERFORM select_screen_data.
+    DATA: s_sid     LIKE sy-uname, "modify zihao 20260708
+          u_flag(1) TYPE c.       "modify zihao 20260708
+    CLEAR c_flag.
+    GET PARAMETER ID 'ZLG' FIELD s_sid.
+    s_sid = sy-uname.
+    CALL FUNCTION 'ZRFC_PP_IDP_0085'
+      EXPORTING
+        p_werks       = p_werks
+        p_tcode       = 'ZDPPP299'
+        p_action      = '1'
+        p_fir_account = sy-uname
+        p_sec_account = s_sid
+      IMPORTING
+        p_flag        = u_flag.  "modify zihao 20260708
+*    SELECT SINGLE * FROM zidpcontrolvalue
+*     WHERE werks = p_werks
+*       AND ctype = 'CEN_PACKOUT'
+*       AND cvalue = 'ZDPPP299'
+*       AND cvalue1 = p_emplyee_id
+*       AND indicator1 = 'ACT'.
+*    IF sy-subrc = 0.
+    IF u_flag = 'Y'.
+      c_flag = 'Y'.
+    ENDIF.
+    IF p_fgr = 'X'."產生FG入庫單
+      IF c_flag = 'Y'.
+        PERFORM post_document.
+      ELSE.
+        MESSAGE i000(zpp)
+*        WITH 'You have no authority to update'.
+        WITH '沒有權限產生單據，請郵件IT添加'. "modify zihao 20260708
+        STOP.
+      ENDIF.
+    ENDIF.
+    IF p_wo = 'X'."產生拆解工單
+      IF l_flag <> 'N'.
+        IF c_flag = 'Y'.
+          PERFORM generate_wo.
+        ELSE.
+          MESSAGE i000(zpp)
+          WITH 'You have no authority to update'.
+          STOP.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+    IF p_issue = 'X'."產生DIS發料
+      IF l_flag <> 'N'.
+        CLEAR g_isgr.
+        g_isgr = '1'.
+        IF c_flag = 'Y'.
+          PERFORM generate_issue_gr.
+        ELSE.
+          MESSAGE i000(zpp)
+          WITH 'You have no authority to update'.
+          STOP.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+    IF p_gr = 'X'."產生DIS入庫
+      IF l_flag <> 'N'.
+        CLEAR g_isgr.
+        g_isgr = '2'.
+        IF c_flag = 'Y'.
+          PERFORM generate_issue_gr.
+        ELSE.
+          MESSAGE i000(zpp)
+          WITH 'You have no authority to update'.
+          STOP.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+    IF p_close = 'X'.
+      IF l_flag <> 'N'.
+        IF  c_flag = 'Y'.
+*          PERFORM close_wo.
+          PERFORM close_wo1.
+        ELSE.
+          MESSAGE i000(zpp)
+          WITH 'You have no authority to update'.
+          STOP.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+*開立轉播單
+    IF p_trans = 'X' AND l_flag <> 'N' AND c_flag = 'Y'. "add heyan 20240511
+      PERFORM creat_d_doc.
+    ENDIF.
+*轉撥單過帳
+    IF p_dpost = 'X' AND l_flag <> 'N' AND c_flag = 'Y'. "add heyan 20240511
+      PERFORM d_post.
+    ENDIF.
+  ENDIF.
+
+  CLEAR g_line.
+  DESCRIBE TABLE t_zidppp099 LINES g_line .
+
+*****    Add by linsen 240710
+*  IF p_proc = 'X' AND p_wo = 'X' AND p_issue = 'X' AND p_gr = 'X' AND p_close = 'X'.
+*    EXPORT t_zidppp099 TO MEMORY ID 'RFC_295'.
+*  ENDIF.
+*****    END    *****
+  IF g_line > 0.
+*    PERFORM DISPLAY_DATA_LIST.
+    PERFORM out_put.
+  ELSE.
+    IF sy-langu = 'E'.
+      MESSAGE s053(zpp) WITH 'No data found'.
+    ELSE.
+      MESSAGE s044(zpp) WITH '沒有數據'.
+    ENDIF.
+  ENDIF.
+
+end-of-selection.
+
+*&---------------------------------------------------------------------*
+*&      check_authorization
+*&---------------------------------------------------------------------*
+FORM check_authorization.
+
+  RANGES s_werks FOR marc-werks.
+  s_werks-low = p_werks.
+  s_werks-sign = 'I'.
+  s_werks-option = 'EQ'.
+  APPEND s_werks.
+
+  CALL FUNCTION 'ZRFC_MM_IDP_0104'
+    TABLES
+      input  = s_werks[]
+      output = s_werks[].
+
+  IF s_werks[] IS INITIAL.
+    IF sy-langu = 'E'.
+      MESSAGE i004(zmm) WITH 'You have no authority to use this plant'.
+    ELSE.
+      MESSAGE i004(zmm) WITH '你沒有這個工廠的權限'.
+    ENDIF.
+    STOP.
+  ENDIF.
+
+ENDFORM.                    " CHECK_AUTHORIZATION
+
+*&---------------------------------------------------------------------*
+*&      Form  select_screen
+*&---------------------------------------------------------------------*
+
+FORM select_screen.
+
+  IF p_disp = 'X'.
+    SELECT DISTINCT *
+      INTO CORRESPONDING FIELDS OF TABLE t_zidppp099
+      FROM zidppp099
+     WHERE werks = p_werks
+       AND pallet IN s_pallet
+       AND ersda IN s_badat
+       AND faufnr IN s_faufnr
+       AND fmatnr IN s_fmatnr
+       AND ffloor IN s_ffloor
+       AND gmatnr IN s_gmatnr
+       AND gfloor IN s_gfloor
+       AND sflag IN s_sflag
+       AND fggrn IN s_fggrn
+       AND daufnr IN s_daufnr
+       AND gaufnr IN s_gaufnr
+       AND pflag IN s_pflag.
+  ELSE.
+    SELECT DISTINCT *              " modify by ruilong 20160926
+      INTO CORRESPONDING FIELDS OF TABLE t_zidppp099
+      FROM zidppp099
+     WHERE werks = p_werks
+       AND pallet IN s_pallet
+       AND ersda IN s_badat
+       AND faufnr IN s_faufnr
+       AND fmatnr IN s_fmatnr
+       AND ffloor IN s_ffloor
+       AND gmatnr IN s_gmatnr
+       AND gfloor IN s_gfloor
+       AND sflag IN s_sflag
+       AND fggrn IN s_fggrn
+       AND daufnr IN s_daufnr
+       AND gaufnr IN s_gaufnr
+       AND pflag IN s_pflag
+       AND dflag <> 'M'.
+  ENDIF.
+
+  SORT t_zidppp099 BY sdat.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  select_screen_data
+*&---------------------------------------------------------------------*
+
+FORM select_screen_data.
+
+  PERFORM select_screen.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  display_data_list
+*&---------------------------------------------------------------------*
+
+FORM display_data_list.
+  DATA: l_remainder TYPE i.
+  DATA: l_doctypetext LIKE dd07v.
+
+  WRITE: /(04) 'PLANT'(011),
+          (14) 'SFC SCAN TIME'(012),
+          (20) 'PALLET NO'(013),
+          (12) 'FG WO'(014),
+          (18) 'FG PN'(015),
+          (10) 'FG FLOOR'(016),
+          (13) 'Quantity'(017),
+          (04) 'UNIT'(018),
+          (18) 'GB PN'(019),
+          (10) 'GB FLOOR'(020),
+          (04) 'SFCFLAG'(021),
+*          (10) 'FG GR NO'(022),
+          (10) 'FG GR Material NO(039)',
+          (04) 'SAPFLAG'(023),
+
+          (20) 'Dis Wo'(024),
+*          (10) 'Dis Issue NO'(025),
+          (10) 'Dis Material No'(026),
+*          (10) 'Dis GR'(027),
+          (10) 'Dis GR Material NO'(028),
+          (01) 'Dis WO Flag'(029),
+          (10) 'MESSAGE'(069),
+          (20) 'GB WO'(030),
+          (10) 'GB Issue NO'(031),
+          (10) 'GB Issue material NO'(032),
+          (50) 'ERROR MESSAGE1'(033),
+          (50) 'ERROR MESSAGE2'(034),
+          (50) 'ERROR MESSAGE3'(035),
+          (10) 'Creator'(036),
+          (08) 'Creat Date'(037),
+          (06) 'Creat Time'(038).
+
+
+  LOOP AT t_zidppp099.
+
+    g_listindex = sy-tabix.
+    l_remainder = sy-tabix MOD 2.
+    IF l_remainder EQ 1.
+      FORMAT COLOR COL_NORMAL INTENSIFIED OFF.
+    ENDIF.
+
+    CLEAR zidppp099-mess1.
+    PERFORM get_dommain_value_text USING 'ZEISSUEFLAG'
+                                                    t_zidppp099-sflag
+                                                    zidppp099-mess1.
+
+    WRITE: /(04) t_zidppp099-werks,
+          (14) t_zidppp099-sdat,
+          (20) t_zidppp099-pallet,
+          (12) t_zidppp099-faufnr,
+          (18) t_zidppp099-fmatnr,
+          (10) t_zidppp099-ffloor,
+          (13) t_zidppp099-fgfmg,
+          (04) t_zidppp099-meins,
+          (18) t_zidppp099-gmatnr,
+          (10) t_zidppp099-gfloor,
+          (04) t_zidppp099-sflag,
+*          (10) t_zidppp099-fggrn,
+          (10) t_zidppp099-fmbnr,
+          (04) t_zidppp099-pflag,
+          (20) t_zidppp099-daufnr,
+*          (10) t_zidppp099-dissue,
+          (10) t_zidppp099-dimbnr,
+*          (10) t_zidppp099-disgr,
+          (10) t_zidppp099-dgmbnr,
+          (01) t_zidppp099-dflag,
+          (20) t_zidppp099-gaufnr,
+          (10) t_zidppp099-gisue,
+          (10) t_zidppp099-gimbnr,
+          (50) t_zidppp099-mess1,
+          (50) t_zidppp099-mess2,
+          (50) t_zidppp099-mess3,
+          (10) t_zidppp099-ernam,
+          (08) t_zidppp099-ersda,
+          (06) t_zidppp099-erzet.
+
+    FORMAT COLOR OFF.
+    HIDE g_listindex.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  out_put
+*&---------------------------------------------------------------------*
+
+FORM out_put.
+  DATA: c TYPE i.
+  DATA: l_repid TYPE sy-repid.
+  l_repid = sy-repid.
+  DEFINE add_field.
+    c = c + 1.
+    fieldcat_ln-fieldname = &1.
+    fieldcat_ln-reptext_ddic = &2.
+    fieldcat_ln-outputlen = &3.
+    fieldcat_ln-ref_fieldname = &4.
+    fieldcat_ln-inttype = &5.
+    fieldcat_ln-col_pos = c.
+    fieldcat_ln-just = 'L'.
+    APPEND fieldcat_ln TO fieldcat.
+    CLEAR: fieldcat_ln.
+  end-of-definition.
+
+  add_field 'WERKS' TEXT-011 '4' '' ''.
+  add_field 'SDAT' TEXT-012 '14' '' ''.
+  add_field 'PALLET' TEXT-013 '20' '' ''.
+  add_field 'FAUFNR' TEXT-014 '20' 'AUFNR' 'AUFK'.
+  add_field 'FMATNR' TEXT-015 '18' '' ''.
+  add_field 'FFLOOR' TEXT-016 '10' '' ''.
+  add_field 'FGFMG' TEXT-017 '13' '' ''.
+  add_field 'MEINS' TEXT-018 '3' '' ''.
+  add_field 'GMATNR' TEXT-019 '18' '' ''.
+  add_field 'GFLOOR' TEXT-020 '10' '' ''.
+  add_field 'SFLAG' TEXT-021 '1' '' ''.
+*  add_field 'FGGRN' text-022 '10'.
+  add_field 'FMBNR' TEXT-039 '10' '' ''.
+  add_field 'PFLAG' TEXT-023 '1' '' ''.
+  add_field 'DAUFNR' TEXT-024 '20' '' ''.
+*  add_field 'DISSUE' text-025 '10'.
+  add_field 'DIMBNR' TEXT-026 '10' '' ''.
+*  add_field 'DISGR' text-027 '10'.
+  add_field 'DGMBNR' TEXT-028 '10' '' ''.
+  add_field 'DFLAG' TEXT-029 '1' '' ''.
+  add_field 'GAUFNR' TEXT-030 '20' '' ''.
+  add_field 'GISUE' TEXT-031 '10' '' ''.
+  add_field 'GIMBNR' TEXT-032 '10' '' ''.
+  add_field 'MESS1' TEXT-033 '20' '' ''.
+  add_field 'MESS2' TEXT-034 '20' '' ''.
+  add_field 'MESS3' TEXT-035 '20' '' ''.
+  add_field 'ERNAM' TEXT-036 '10' '' ''.
+  add_field 'ERSDA' TEXT-037 '8' '' ''.
+  add_field 'ERZET' TEXT-038 '6' '' ''.
+  add_field 'D_DOC' TEXT-070 '10' '' ''. "heyan 20240531
+  add_field 'CREAT_MES' TEXT-071 '50' '' ''."heyan 20240531
+  add_field 'D_MBLNR' TEXT-072 '10' '' ''. "heyan 20240531
+  add_field 'POST_MES' TEXT-073 '50' '' ''."heyan 20240531
+  add_field 'ZLINE' TEXT-083 '80' '' ''."zihao 20260720
+
+  gt_layout-colwidth_optimize = 'X'.
+  gt_layout-zebra = 'X'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = l_repid
+      it_fieldcat        = fieldcat
+      is_layout          = gt_layout
+      i_default          = 'X'
+      i_save             = 'A'
+    TABLES
+      t_outtab           = t_zidppp099
+    EXCEPTIONS
+      program_error      = 1
+      OTHERS             = 2.
+ENDFORM.                    " out_put
+
+*&---------------------------------------------------------------------*
+*&      Form  get_dommain_value_text
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_1123   text
+*      -->P_ZIDPMMWHH_DOCTYPE  text
+*      -->P_DOCTYPETEXT  text
+*----------------------------------------------------------------------*
+FORM get_dommain_value_text USING VALUE(name) VALUE(value) valuetext.
+  DATA: domname  LIKE dd01l-domname,
+        domvalue LIKE dd07v-domvalue_l,
+        dd07v_wa LIKE dd07v.
+
+  CLEAR valuetext.
+  domname = name.
+  domvalue = value.
+  CALL FUNCTION 'DDUT_DOMVALUE_TEXT_GET'
+    EXPORTING
+      name          = domname
+      value         = domvalue
+      texts_only    = 'X'
+    IMPORTING
+      dd07v_wa      = dd07v_wa
+    EXCEPTIONS
+      not_found     = 1
+      illegal_input = 2
+      OTHERS        = 3.
+  IF sy-subrc EQ 0.
+    valuetext = dd07v_wa-ddtext.
+  ELSE.
+    valuetext = ''.
+  ENDIF.
+
+ENDFORM.
+
+*&--------------------------------------------------------------
+*&      Form  line_selection
+*&--------------------------------------------------------------
+
+FORM line_selection.
+  CASE sy-ucomm.
+    WHEN 'PICK'.
+      CLEAR g_listindex.
+      READ CURRENT LINE.
+      CHECK g_listindex GT 0.
+      READ TABLE t_zmwhh INDEX g_listindex.
+      SET PARAMETER ID 'PARA001' FIELD t_zmwhh-docnumber.
+      SET PARAMETER ID 'PARA002' FIELD t_zmwhh-docyear.
+      CALL TRANSACTION 'ZDPMM053' AND SKIP FIRST SCREEN.
+  ENDCASE.
+ENDFORM.                    " line_selection
+
+*&---------------------------------------------------------------------*
+*&      Form  post_document
+*&---------------------------------------------------------------------*
+FORM post_document.
+
+  DATA: l_woqty LIKE afpo-psmng.
+  DATA: l_grqty LIKE afpo-wemng.
+  DATA: l_tmp_qty LIKE afpo-wemng.
+  DATA: l_confirmqty LIKE afpo-wemng.
+  DATA: l_return LIKE mara-wrkst.
+  DATA: l_grqty2 LIKE afpo-wemng.
+  DATA: l_plant LIKE afpo-dwerk.
+  DATA: l_faufnr LIKE afpo-aufnr.
+  DATA: g_sku LIKE zidpmmtlk-tlk03.
+  DATA: l_value2 LIKE zidpmmcontrol-value2 .
+  DATA: l_remark(30).
+  DATA: ll_tabix LIKE sy-tabix."Add Amelia160904
+
+  PERFORM select_screen.
+  PERFORM update_middstatus.  "modify by ruilong 0926
+
+  PERFORM get_postdate USING p_werks CHANGING l_errmess.
+  IF l_errmess NE ''.
+    PERFORM change_dflag.
+    MODIFY zidppp099 FROM TABLE t_zidppp099.
+    MESSAGE i000(zpp) WITH 'PLS Cheek the postdate!'.
+    STOP.
+  ENDIF.
+*add by WuCuiTing 20221012 CSD工廠需要FG入庫參數
+  SELECT SINGLE * FROM zidpcontrolvalue
+  WHERE werks = p_werks
+  AND ctype = 'CEN_PACKOUT_POST'
+  AND indicator1 = 'ACT' "Add by Yi 20240523
+  AND sap_module = 'PP'.
+  IF sy-subrc = 0.
+    post_flag = 'Y'.
+  ENDIF.
+  "endadd
+
+  LOOP AT t_zidppp099.
+*    LL_TABIX = SY-TABIX."add Amelia160904
+    l_flag = 'Y'.
+
+    IF t_zidppp099-sflag = '5' OR
+     ( t_zidppp099-sflag = '7' AND post_flag <> 'Y' ) OR "*Modify BY WuCuiting 20221012
+     t_zidppp099-sflag = '9' OR
+*     t_zidppp099-sflag = 'T' OR  "Add by zihao fatp 重工拆解 20260703
+     t_zidppp099-sflag = '6' OR  "Add by Yi Argon不在FG入庫 20241021
+     t_zidppp099-sflag = 'A' OR  "Add by Yi Argon不在FG入庫 20241021
+     t_zidppp099-sflag = '8'.
+      t_zidppp099-mess1 = 'Please cheek SFC flag!'(076).
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+
+    IF t_zidppp099-fmbnr <> ''.
+      t_zidppp099-mess1 = 'Already Generate FG GRN!'(077).
+      t_zidppp099-dflag = 'F'.       "add by ruilong 20161010
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    SELECT SINGLE * FROM afpo
+     WHERE aufnr = t_zidppp099-faufnr+4(12).
+    IF sy-subrc <> 0.
+      t_zidppp099-mess1 = 'Wo is not exist!'(078).
+      t_zidppp099-dflag = 'F'.       "add by ruilong 20161010
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    p_times = 25.
+
+    CLEAR:g_err_str.
+    SELECT SINGLE *
+      FROM zidpmmctrlvalue
+     WHERE ctype = 'CWO_NO_COGI'
+       AND werks = t_zidppp099-werks
+       AND indicator1 = 'ACT'.
+    IF sy-subrc = 0.
+      g_cogi_flag = 'N'.
+    ELSE.
+      g_cogi_flag = 'Y'.
+    ENDIF.
+
+*check data
+    DATA: m_value LIKE zidpmmcontrol2-value.
+    DATA: m_auart LIKE aufk-auart.
+    DATA: l_maabc LIKE marc-maabc.
+    DATA: m_psmng LIKE afpo-psmng.
+    DATA: m_quantity LIKE afpo-pgmng.
+    DATA: m_erdat LIKE aufk-erdat.
+    DATA: BEGIN OF itab_it OCCURS 0 ,
+            matnr    LIKE resb-matnr,
+            alpgr    LIKE resb-alpgr,
+            bdmng    LIKE resb-bdmng,
+            enmng    LIKE resb-enmng,
+            quantity LIKE afpo-pgmng,
+          END OF itab_it .
+    DATA:  itab_it1 LIKE itab_it OCCURS 0 WITH HEADER LINE.
+    DATA: l_quantity LIKE afpo-pgmng.
+    DATA: l_errorqty(15) TYPE c.
+    DATA: m_werks LIKE aufk-werks.
+    DATA: m_flag TYPE c.
+    DATA: l_result TYPE c.
+
+*Check A type material issue begin
+* 3.3 Receipt based on A class meterial issued qty for epd2
+    CLEAR m_value.
+    CLEAR m_auart.
+    CLEAR l_maabc.
+    CLEAR m_psmng.
+    CLEAR m_quantity.
+    CLEAR: m_erdat,m_werks,l_quantity.
+*      clear lqty.
+    CLEAR: itab_it, itab_it[],itab_it1,itab_it1[].
+
+* 3.3.1 Get Order type
+    SELECT SINGLE auart werks erdat INTO (m_auart , m_werks , m_erdat)
+                  FROM aufk
+                  WHERE aufk~aufnr = t_zidppp099-faufnr+4(12).
+***Add by Ray 20250611 加管控拆解工單不能入庫************************
+    IF m_auart+1(1) = 'D'.
+      t_zidppp099-mess1 = 'Goods receipt cannot be created for disassembly WO'(082).
+      t_zidppp099-dflag = 'F'.
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+***Add by Ray 20250611 加管控拆解工單不能入庫************************
+*check costing run
+    CALL FUNCTION 'ZFI_IDP_COSTESTIMATE_GETLIST'
+      EXPORTING
+        i_material = t_zidppp099-fmatnr
+        i_plant    = m_werks
+        i_budat    = g_postdate
+      IMPORTING
+        e_result   = l_result.
+    IF l_result = 'N'.
+*        wo_zidppp43a-flag = 'N'.
+      t_zidppp099-mess1 = 'No costing run'(040).
+      t_zidppp099-dflag = 'F'.       "add by ruilong 20161010
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    SELECT SINGLE  werks auart INTO (m_werks,m_auart)
+      FROM aufk
+     WHERE aufnr = t_zidppp099-faufnr+4(12).
+    l_faufnr = t_zidppp099-faufnr+4(12).
+
+    CALL FUNCTION 'ZRFC_PP_IDP_0071'
+      EXPORTING
+        p_plant = m_werks
+        p_aufnr = l_faufnr
+      IMPORTING
+        p_qty   = g_qtya.
+
+    SELECT SINGLE wemng FROM afpo INTO l_qtyc WHERE
+      aufnr = t_zidppp099-faufnr+4(12).
+    l_qtyb = t_zidppp099-fgfmg.
+    l_qtyd = l_qtyb + l_qtyc.
+    IF g_qtya < l_qtyd .
+      l_error = 'GI sets quantity is less than permitted FG quantity!'(041).
+      t_zidppp099-mess1 = l_error.
+      t_zidppp099-dflag = 'F'.       "add by ruilong 20161010
+      MODIFY t_zidppp099.
+      CONTINUE.
+    ENDIF.
+
+    m_flag = 'Y'.
+*工單入庫倉碼抓取來源變更 heyan 20240514
+*    SELECT SINGLE flgort INTO g_flgort
+*      FROM zidppp100
+*     WHERE werks = t_zidppp099-werks
+*       AND ffloor = t_zidppp099-ffloor
+*       AND gfloor = t_zidppp099-gfloor.
+    " 根據生產料號獲取對應的賬冊by H2410433
+    DATA(lv_obx01) = NEW zcl_get_obx01( )->get_obx01( in_werks = t_zidppp099-werks in_matnr = t_zidppp099-fmatnr ).
+
+*直接抓取樓層轉出倉碼（和用戶確認FG入庫和拆退倉碼為同一倉碼，故直接抓出拆退倉碼即GB轉出倉碼）
+    IF t_zidppp099-sflag = 'T'.  "Add by zihao fatp 重工拆解 20260810
+      SELECT SINGLE lgort INTO g_flgort
+      FROM zidpmm094
+      WHERE werks = t_zidppp099-werks
+      AND floor = t_zidppp099-ffloor
+      AND zline = t_zidppp099-zline  "Add by zihao fatp 重工拆解 20260810
+      AND floor_type = 'L'
+      AND lgort_type = 'K'
+      AND obx01 = lv_obx01.
+      IF sy-subrc <> 0.
+        l_error = 'NOT MAINTAIN SLOCATION'.
+        t_zidppp099-mess1 = l_error.
+        t_zidppp099-dflag = 'F'.       "add by ruilong 20161010
+        MODIFY t_zidppp099.
+        CONTINUE.
+      ENDIF.
+    ELSE.
+      SELECT SINGLE lgort INTO g_flgort
+      FROM zidpmm094
+      WHERE werks = t_zidppp099-werks
+      AND floor = t_zidppp099-ffloor
+*      AND gbflag = l_gb
+      AND floor_type = 'L'
+      AND lgort_type = 'K'
+      AND obx01 = lv_obx01.
+      IF sy-subrc <> 0.
+        l_error = 'NOT MAINTAIN SLOCATION'.
+        t_zidppp099-mess1 = l_error.
+        t_zidppp099-dflag = 'F'.       "add by ruilong 20161010
+        MODIFY t_zidppp099.
+        CONTINUE.
+      ENDIF.
+    ENDIF.
+
+    SELECT SINGLE * FROM zidpmmctrlvalue
+     WHERE werks = m_werks
+       AND ctype = 'ZOBJECTCHECK'
+       AND indicator1 = 'ACT'.
+    IF sy-subrc = 0.
+      PERFORM check_zobject USING m_werks m_auart
+      g_flgort t_zidppp099-fmatnr CHANGING m_flag."For 專用賬冊by H2410433 20250901
+    ENDIF.
+    IF m_flag = 'N'.
+      l_error = 'Cus and Wo Category is different'(042).
+      t_zidppp099-mess1 = l_error.
+      t_zidppp099-dflag = 'F'.       "add by ruilong 20161010
+      MODIFY t_zidppp099.
+      CONTINUE.
+    ENDIF.
+    CLEAR m_auart.
+
+    l_ignore_err = ''.
+    l_chk_flag = 'Y'.
+    CLEAR l_plant.
+    SELECT SINGLE psmng wemng dwerk INTO (l_woqty, l_grqty, l_plant)
+    FROM afpo WHERE aufnr = t_zidppp099-faufnr+4(12).
+    l_grqty2 = l_grqty + t_zidppp099-fgfmg.
+
+    IF l_grqty2 > l_woqty.
+      l_chk_flag = 'N'.
+      l_error = 'WO GR > WO QTY'(043).
+      t_zidppp099-mess1 = l_error.
+      t_zidppp099-dflag = 'F'.       "add by ruilong 20161010
+      MODIFY t_zidppp099.
+      CONTINUE.
+    ENDIF.
+
+    SELECT SINGLE igmng INTO l_confirmqty
+         FROM afko WHERE aufnr = t_zidppp099-faufnr+4(12).
+*    SELECT SINGLE * FROM zidpmmcontrol2
+*          WHERE werks = l_plant AND object = 'IGNORECHEC'
+*          AND value = 'ACTIVE'.
+*    IF sy-subrc = 0.
+*      l_ignore_err = 'Y'.
+*    ENDIF.
+
+    IF l_grqty <> l_confirmqty
+      AND  afpo-weunb  <> 'X'
+      AND l_ignore_err <> 'Y'.
+      l_chk_flag = 'N'.
+      l_error = 'WO confirm qty <> WO GR QTY'(044).
+      t_zidppp099-mess1 = l_error.
+      t_zidppp099-dflag = 'F'.       "add by ruilong 20161010
+      MODIFY t_zidppp099.
+      CONTINUE.
+    ENDIF.
+
+    SELECT SINGLE * FROM t001l
+     WHERE werks = l_plant
+       AND lgort = g_flgort.
+    IF sy-subrc <> 0.
+      l_chk_flag = 'N'.
+      l_error = 'Pls Check storage location'(045).
+      t_zidppp099-mess2 = l_error.
+      t_zidppp099-dflag = 'F'.       "add by ruilong 20161010
+      MODIFY t_zidppp099.
+      CONTINUE.
+    ENDIF.
+
+    or_no   = 'OR'.
+    or_no+2 = t_zidppp099-faufnr+4(12).
+    CALL FUNCTION 'STATUS_TEXT_EDIT'
+      EXPORTING
+        objnr         = or_no
+        only_active   = 'X'
+        spras         = 'E'
+        bypass_buffer = '1'
+      IMPORTING
+        line          = g_status.
+    IF g_status CS 'Teco' OR
+       g_status CS 'TECO'.
+      l_chk_flag = 'N'.
+      l_error = 'WO had Teco,GR fail'(046).
+      t_zidppp099-mess2 = l_error.
+      t_zidppp099-dflag = 'F'.       "add by ruilong 20161010
+      MODIFY t_zidppp099.
+      CONTINUE.
+    ENDIF.
+
+****************** check plancost sn***201109**********
+    DATA: l_ctype LIKE zidpmmctrlvalue-ctype.
+    DATA: l_return3(200) TYPE c.
+****check table lock***javen add 20120611.sn
+    PERFORM check_table_lock
+            USING t_zidppp099-fmatnr t_zidppp099-faufnr+4(12) g_err_str.
+    IF NOT g_err_str IS INITIAL.
+      t_zidppp099-mess2 = g_err_str.
+      t_zidppp099-dflag = 'F'.       "add by ruilong 20161010
+      MODIFY t_zidppp099.
+      CONTINUE.
+    ENDIF.
+  ENDLOOP.
+**********************************************add by ruilong20161010
+  CLEAR l_pallet.
+  LOOP AT t_zidppp099 WHERE dflag = 'F'.
+    IF l_pallet = t_zidppp099-pallet.
+      CONTINUE.
+    ENDIF.
+*     loop at t_zidppp099 where pallet = t_zidppp099-pallet.
+    t_zidppp099-dflag = 'F'.
+    MODIFY t_zidppp099 TRANSPORTING dflag WHERE pallet = t_zidppp099-pallet.
+*     endloop.
+    l_pallet = t_zidppp099-pallet.
+  ENDLOOP.
+********************************************************************
+***add by erin 20260622
+  DATA: l_wowbs LIKE afpo-projn. "WBS
+***end
+  LOOP AT t_zidppp099 WHERE dflag <> 'F' .
+    ll_tabix = sy-tabix."add Amelia160904
+    CLEAR athdrlevels.REFRESH athdrlevels.
+    CLEAR detail_return.REFRESH detail_return.
+    CLEAR timetickets. REFRESH timetickets. "Apple 131018
+    CLEAR itab_i. CLEAR itab_i[].
+    CLEAR itab_l. CLEAR itab_l[].
+    CLEAR l_wowbs .  " add by erin 260622
+
+    SELECT SINGLE pwerk meins projn INTO (itab_i-plant ,itab_i-entry_uom,l_wowbs)
+    FROM afpo WHERE aufnr = t_zidppp099-faufnr+4(12).
+
+    athdrlevels-orderid         = t_zidppp099-faufnr+4(12) . "wo
+    athdrlevels-yield           = t_zidppp099-fgfmg. "qty
+
+    IF t_zidppp099-ersda IS INITIAL OR
+      t_zidppp099-ersda = '000000'.
+      t_zidppp099-ersda = g_postdate.
+    ENDIF.
+    IF t_zidppp099-erzet IS INITIAL OR
+       t_zidppp099-erzet = '000000'.
+      t_zidppp099-erzet = sy-uzeit.
+    ENDIF.
+
+    athdrlevels-postg_date = g_postdate.
+    athdrlevels-conf_quan_unit = itab_i-entry_uom.
+    APPEND athdrlevels.
+***add by erin 20260622
+    IF g_npiflag = 'Y' AND l_wowbs IS NOT INITIAL.
+      SELECT SINGLE posid INTO itab_i-wbs_elem
+       FROM prps
+      WHERE pspnr = l_wowbs.
+    ENDIF.
+***end
+*    itab_i-material  = t_zidppp099-fmatnr ."fg pn
+    itab_i-material_long  = t_zidppp099-fmatnr ."fg pn
+    itab_i-stge_loc  = g_flgort . "location
+    itab_i-entry_qnt = t_zidppp099-fgfmg . "qty
+    itab_i-batch     = '' . "batch
+    itab_i-move_type = '101' .
+    itab_i-mvt_ind   = 'F'.
+    APPEND itab_i .
+    itab_l-index_confirm  = 1 .
+    itab_l-index_goodsmov = 1 .
+    APPEND itab_l .
+
+    CLEAR l_faufnr.
+    l_faufnr = t_zidppp099-faufnr+4(12).
+    CALL FUNCTION 'ZRFC_PP_IDP_0218'
+      EXPORTING
+        l_werks   = itab_i-plant
+        l_aufnr   = l_faufnr
+      IMPORTING
+        l_message = l_return.
+
+****check table lock***javen add 20120611.end
+
+    CALL FUNCTION 'BAPI_PRODORDCONF_CREATE_HDR'
+      EXPORTING
+        post_wrong_entries = post_wrong_entries
+        testrun            = testrun
+      IMPORTING
+        return             = return
+      TABLES
+        athdrlevels        = athdrlevels
+        goodsmovements     = itab_i
+        link_conf_goodsmov = itab_l
+        detail_return      = detail_return.
+
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+      EXPORTING
+        wait = 'X'.
+    DATA: l_int TYPE i.
+    DATA: l_cnt TYPE i.
+    l_int = 0.
+    SELECT SINGLE * FROM zidpmmcontrol2
+    WHERE werks = itab_i-plant AND object = 'IGNORECHEC'
+    AND value = 'ACTIVE'.
+    IF sy-subrc = 0.
+      l_ignore_err = 'Y'.
+    ENDIF.
+    LOOP AT detail_return. "a1.
+      IF detail_return-conf_cnt NE '00000000'. "a2
+****confirmation success,get GR DOC
+        DO p_times TIMES.
+          l_int = l_int + 1.
+          CLEAR return_moves.
+          REFRESH return_moves.
+          CLEAR failedgmoves.
+          REFRESH failedgmoves.
+          CALL FUNCTION 'BAPI_PRODORDCONF_GETDETAIL'
+            EXPORTING
+              confirmation        = detail_return-conf_no
+              confirmationcounter = detail_return-conf_cnt
+            TABLES
+              goodsmovements      = return_moves
+              failedgmoves        = failedgmoves.
+          IF sy-subrc = 0 AND return_moves-mat_doc <> ''.
+            EXIT.
+          ENDIF.
+          WAIT UP TO 1 SECONDS.
+        ENDDO.
+****failed,cancel confirmation***javen add 20120611.sn
+        IF return_moves-mat_doc <> ''.
+          l_chk_flag = 'Y'.
+          l_error = 'FG WO GR OK'.
+          t_zidppp099-fmbnr = return_moves-mat_doc.
+          t_zidppp099-mess1 = l_error.
+          t_zidppp099-pflag = '1'.
+          MODIFY t_zidppp099 TRANSPORTING fmbnr pflag mess1.
+
+          SELECT SINGLE tlk03 INTO g_sku
+            FROM zidpmmtlk
+           WHERE tlk01 = t_zidppp099-fmatnr
+             AND werks = t_zidppp099-werks.
+          IF sy-subrc = 0.
+            SELECT SINGLE value2 INTO l_value2
+              FROM zidpmmcontrol
+             WHERE werks = t_zidppp099-werks
+               AND project = 'RELATION'
+               AND value1 = g_sku.
+            IF sy-subrc = 0.
+              CONCATENATE t_zidppp099-ffloor l_value2
+              INTO l_remark SEPARATED BY ','.
+            ELSE.
+              l_remark = 'NOT exist model!'.
+            ENDIF.
+          ELSE.
+            l_remark = 'NOT exist model!'.
+          ENDIF.
+
+          GET PARAMETER ID 'ZLG' FIELD g_emplyee_id.
+          IF g_emplyee_id = '' .
+            g_emplyee_id = 'ITRUN'.
+          ENDIF.
+
+*     Modify by RAIN in 2022/05/05  改為通過函數更新，效果會直接更新MKPF和MATDOC
+*          UPDATE mkpf SET: bktxt = l_remark
+*                           frbnr = g_emplyee_id
+*                           xabln = 'CPRUN'    "modify by ruilong 0926
+*             WHERE mblnr = return_moves-mat_doc AND
+*                   mjahr = return_moves-doc_year.
+          SELECT SINGLE * FROM mkpf INTO ls_mkpf WHERE mblnr = return_moves-mat_doc AND
+                                                       mjahr = return_moves-doc_year.
+          IF sy-subrc = 0.
+            REFRESH:lt_mkpf,lt_mseg.
+            ls_mkpf-bktxt = l_remark.
+            ls_mkpf-frbnr = g_emplyee_id.
+            ls_mkpf-xabln = 'CPRUN'.
+            APPEND ls_mkpf TO lt_mkpf.
+            CALL FUNCTION 'MB_CHANGE_DOCUMENT'
+              TABLES
+                zmkpf = lt_mkpf
+                zmseg = lt_mseg.
+          ENDIF.
+
+          CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+            EXPORTING
+              wait = 'X'.
+          EXIT.
+*        ELSEIF
+*          g_cogi_flag = 'Y'.
+*****failed,save to COGI
+*          l_cnt = 0.
+*          SELECT COUNT(*) INTO l_cnt FROM affw WHERE
+*           aufnr = t_zidppp099-faufnr.
+*          IF l_cnt > 0 .
+*            l_error = 'FG WO GR failed,pls check COGI!'(019).
+*            t_zidppp099-mess1 = l_error.
+*          ELSE.
+*            l_error = 'WO GR failed,unknow error occured!'(021).
+*            t_zidppp099-mess1 = l_error.
+*          ENDIF.
+*          IF l_ignore_err = 'Y' ."add apple131118
+*            l_chk_flag = 'Y'.
+*          ELSE.
+*            l_chk_flag = 'N'.
+*          ENDIF.
+*          t_zidppp099-mess3 = l_error.
+*          EXIT.
+        ELSEIF g_cogi_flag = 'N'.
+
+          CALL FUNCTION 'BAPI_PRODORDCONF_CANCEL'
+            EXPORTING
+              confirmation        = detail_return-conf_no
+              confirmationcounter = detail_return-conf_cnt
+            IMPORTING
+              return              = return.
+*            TABLES
+*              goodsmovements      = return_moves
+*              failedmoves         = c_failedgmoves.
+
+          CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+            EXPORTING
+              wait = 'X'.
+          IF return-type = 'E'. "cancel failed
+            CONCATENATE 'cancel confirmation failed:'(047)
+return-message
+                    INTO l_error.
+            t_zidppp099-mess1 = l_error.
+          ELSE.
+            l_error = 'WO GR failed,confirmation canceled'(048).
+            t_zidppp099-mess1 = l_error.
+*            MODIFY T_ZIDPPP099 INDEX SY-TABIX.
+            MODIFY t_zidppp099 INDEX ll_tabix."add Amelia160904
+          ENDIF.
+          l_chk_flag = 'N'.
+          t_zidppp099-mess1 = l_error.
+          CLEAR t_zidppp099-fmbnr.
+*          MODIFY T_ZIDPPP099 INDEX SY-TABIX.
+          MODIFY t_zidppp099 INDEX ll_tabix."add Amelia160904
+          EXIT.
+        ENDIF.
+****faild,cancel confirmation***javen add 20120611.end
+      ELSE."confirmation failed
+        l_chk_flag = 'N'.
+        CONCATENATE 'WO confirm failed:'(049) detail_return-message
+                    INTO l_error.
+        t_zidppp099-mess1 = l_error.
+        CLEAR t_zidppp099-fmbnr.
+*        MODIFY T_ZIDPPP099 INDEX SY-TABIX.
+        MODIFY t_zidppp099 INDEX ll_tabix."add Amelia160904
+        EXIT.
+      ENDIF. "a2
+    ENDLOOP.
+    UPDATE zidppp099 SET  fmbnr = t_zidppp099-fmbnr
+             pflag = t_zidppp099-pflag
+             mess1 = t_zidppp099-mess1
+    WHERE werks = t_zidppp099-werks
+      AND pallet = t_zidppp099-pallet
+      AND faufnr = t_zidppp099-faufnr
+      AND sdat = t_zidppp099-sdat
+      AND gmatnr = t_zidppp099-gmatnr.
+    COMMIT WORK.  "add Amelia160904
+  ENDLOOP.
+
+  PERFORM change_dflag.
+  MODIFY zidppp099 FROM TABLE t_zidppp099.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  check_zobject
+*&---------------------------------------------------------------------*
+FORM check_zobject USING p_it_werks
+  p_it_doc_type p_it_stge_loc l_fgmatnr CHANGING p_it_flag.
+  DATA: l_ztype TYPE char2.
+  DATA: BEGIN OF it_zcompare OCCURS 0.
+          INCLUDE STRUCTURE zidpmmcus.
+  DATA: END OF it_zcompare.
+  CLEAR: l_ztype.
+  CLEAR: it_zcompare[].
+  l_ztype = '1'.
+  it_zcompare-werks = p_it_werks.
+  it_zcompare-ztype = l_ztype.
+  it_zcompare-zobject = p_it_doc_type.
+  it_zcompare-lgort = p_it_stge_loc.
+  it_zcompare-ebook_mat = l_fgmatnr."For 專用賬冊by H2410433 20250901
+  APPEND it_zcompare.
+  CALL FUNCTION 'ZRFC_MM_IDP_0110'
+    TABLES
+      zcompare = it_zcompare.
+  READ TABLE it_zcompare INDEX 1.
+  IF it_zcompare-zflag = 'N'.
+    p_it_flag = 'N'.
+  ELSE.
+    p_it_flag = 'Y'.
+  ENDIF.
+ENDFORM.
+
+*---------------------------------------------------------------------*
+*       FORM check_table_lock                                         *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+*  -->  P_MATNR                                                       *
+*  -->  P_AUFNR                                                       *
+*  -->  P_ERROR                                                       *
+*---------------------------------------------------------------------*
+FORM check_table_lock
+     USING p_matnr p_aufnr p_error.
+  DATA: l_gage LIKE seqg3-garg.
+  DATA: l_err_num TYPE sy-tabix.
+  DATA: l_num TYPE n.
+  DATA: l_err_flag(1) TYPE c.
+  DATA: l_rsnum LIKE rkpf-rsnum.
+
+  CONCATENATE sy-mandt p_matnr INTO l_gage.
+
+  CLEAR: l_err_num,g_err_str.
+  CLEAR: g_enq,g_enq[].
+****Check table MARC
+  CALL FUNCTION 'ENQUEUE_READ'
+    EXPORTING
+      gclient = sy-mandt
+      gname   = 'MARC'
+      garg    = l_gage
+    IMPORTING
+      number  = l_err_num
+    TABLES
+      enq     = g_enq.
+  IF l_err_num > 0.
+    l_num = l_err_num.
+    LOOP AT g_enq.
+      CONCATENATE 'Material is Locked by:'(050) g_enq-guname
+                  '(' g_enq-gtcode ',MARC,' l_num ')'
+                  INTO g_err_str.
+      EXIT.
+    ENDLOOP.
+  ENDIF.
+
+  CHECK g_err_str IS INITIAL.
+
+****Check table MARA
+  CLEAR: g_enq,g_enq[].
+  CALL FUNCTION 'ENQUEUE_READ'
+    EXPORTING
+      gclient = sy-mandt
+      gname   = 'MARA'
+      garg    = l_gage
+    IMPORTING
+      number  = l_err_num
+    TABLES
+      enq     = g_enq.
+  IF l_err_num > 0.
+    l_num = l_err_num.
+    LOOP AT g_enq.
+      CONCATENATE 'Material is Locked by:'(051) g_enq-guname
+                  '(' g_enq-gtcode ',MARA,' l_num ')'
+                  INTO g_err_str.
+      EXIT.
+    ENDLOOP.
+  ENDIF.
+
+****Check table AUFK(WO header)
+  CHECK g_err_str IS INITIAL.
+  CLEAR: g_enq,g_enq[].
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING
+      input  = p_aufnr
+    IMPORTING
+      output = p_aufnr.
+  CONCATENATE sy-mandt p_aufnr INTO l_gage.
+  CALL FUNCTION 'ENQUEUE_READ'
+    EXPORTING
+      gclient = sy-mandt
+      gname   = 'AUFK'
+      garg    = l_gage
+    IMPORTING
+      number  = l_err_num
+    TABLES
+      enq     = g_enq.
+  IF l_err_num > 0.
+    l_num = l_err_num.
+    LOOP AT g_enq.
+      CONCATENATE 'WO is Locked by:'(052) g_enq-guname
+                  '(' g_enq-gtcode ',AUFK,' l_num ')'
+                  INTO g_err_str.
+      EXIT.
+    ENDLOOP.
+  ENDIF.
+
+****Check table RKPF(WO header)
+  CHECK g_err_str IS INITIAL.
+
+  SELECT SINGLE rsnum FROM afko
+         INTO l_rsnum
+         WHERE aufnr = p_aufnr.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING
+      input  = p_aufnr
+    IMPORTING
+      output = p_aufnr.
+  CONCATENATE sy-mandt l_rsnum INTO l_gage.
+  CLEAR: g_enq,g_enq[].
+  CALL FUNCTION 'ENQUEUE_READ'
+    EXPORTING
+      gclient = sy-mandt
+      gname   = 'RKPF'
+      garg    = l_gage
+    IMPORTING
+      number  = l_err_num
+    TABLES
+      enq     = g_enq.
+  IF l_err_num > 0.
+    l_num = l_err_num.
+    LOOP AT g_enq.
+      CONCATENATE 'WO is Locked by:'(052) g_enq-guname
+                  '(' g_enq-gtcode ',RKPF,' l_num ')'
+                  INTO g_err_str.
+      EXIT.
+    ENDLOOP.
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  generate_wo
+*&---------------------------------------------------------------------*
+
+FORM generate_wo.
+  DATA: l_erfmg LIKE zidpmmwhi-erfmg.
+  DATA: l_arbid LIKE plpo-arbid.
+  DATA: l_wbs LIKE t_zmwhi-ps_psp_pnr.
+  DATA: l_pspnr LIKE prps-pspnr.
+  DATA: l_marc_chk(1) TYPE c.
+  DATA: l_kostl(10) TYPE c.
+  DATA: l_routing(10) TYPE c.
+  DATA: l_fcode(10) TYPE c.
+  DATA: l_flag TYPE flag.
+  DATA: l_gmatnr LIKE zidppp099-gmatnr.
+  DATA: BEGIN OF itab OCCURS 0.
+          INCLUDE STRUCTURE input.
+  DATA:   aufnr     LIKE afpo-aufnr,
+          mess(200),
+        END OF itab.
+
+  PERFORM select_screen.
+  PERFORM update_middstatus.  "modify by ruilong 0926
+  IF g_flag = 'Y'.
+    PERFORM create_diswo.
+  ELSE.
+
+    LOOP AT t_zidppp099.
+      l_flag = 'Y'.
+      CLEAR input.
+      REFRESH input.
+
+      IF t_zidppp099-sflag = '5' ."CG返修/HSG重工不在299開拆解工單
+        t_zidppp099-mess1 = 'Cannot create dis wo!'(079).
+        MODIFY t_zidppp099.
+        l_flag = 'N'.
+        CONTINUE.
+      ENDIF.
+
+      IF t_zidppp099-daufnr <> ''.
+        t_zidppp099-mess1 = 'Already Generate Dis WO!'(080).
+        MODIFY t_zidppp099.
+        l_flag = 'N'.
+        CONTINUE.
+      ENDIF.
+*必須先做FG入庫
+      IF ( t_zidppp099-sflag <> '7' AND
+           t_zidppp099-sflag <> 'T' AND "Add by zihao fatp 重工拆解 20260703
+           t_zidppp099-sflag <> 'C' AND
+           t_zidppp099-sflag <> '9' ).
+        IF t_zidppp099-fmbnr = ''.
+          t_zidppp099-mess1 = 'Pls Generate FG GRN frist!'(081).
+          MODIFY t_zidppp099.
+          l_flag = 'N'.
+          CONTINUE.
+        ENDIF.
+      ENDIF.
+
+      IF t_zidppp099-werks = ''.
+        t_zidppp099-mess1 = 'The Plant Is Null!'.
+        MODIFY t_zidppp099.
+        l_flag = 'N'.
+        CONTINUE.
+      ENDIF.
+
+      IF t_zidppp099-ffloor = ''.
+        t_zidppp099-mess1 = 'The FG floor Is Null!'.
+        MODIFY t_zidppp099.
+        l_flag = 'N'.
+        CONTINUE.
+      ENDIF.
+
+      IF t_zidppp099-fmatnr = ''.
+        t_zidppp099-mess1 = 'The FG material Is Null!'.
+        MODIFY t_zidppp099.
+        l_flag = 'N'.
+        CONTINUE.
+      ENDIF.
+
+      IF t_zidppp099-fgfmg = ''.
+        t_zidppp099-mess1 = 'The FG QTY Is Null!'.
+        MODIFY t_zidppp099.
+        l_flag = 'N'.
+        CONTINUE.
+      ENDIF.
+
+*參數取工單類型 For 拆解 Modify BY Yi 240523
+      SELECT SINGLE cvalue1 INTO input-auart
+        FROM zidpcontrolvalue
+        WHERE werks = t_zidppp099-werks
+          AND ctype = 'DWO_FOR_SPECIAL_ADJUST'
+          AND cvalue = t_zidppp099-sflag
+          AND indicator1 = 'ACT'.
+* end Modify BY Yi 240523
+*原取工單類型參數邏輯
+*      IF t_zidppp099-sflag = '7' .
+*        SELECT SINGLE cvalue1 INTO input-auart
+*        FROM zidpcontrolvalue
+*        WHERE werks = t_zidppp099-werks
+*          AND ctype = 'DWO_FOR_SPECIAL_ADJUST'
+*          AND cvalue = '7'
+*          AND indicator1 = 'ACT'.
+*      ELSEIF t_zidppp099-sflag = '9'.
+*        SELECT SINGLE cvalue1 INTO input-auart
+*        FROM zidpcontrolvalue
+*        WHERE werks = t_zidppp099-werks
+*          AND ctype = 'DWO_FOR_SPECIAL_ADJUST'
+*          AND cvalue = '9'
+*          AND indicator1 = 'ACT'.
+*      ELSEIF t_zidppp099-sflag = '8'.
+*        SELECT SINGLE cvalue1 INTO input-auart
+*        FROM zidpcontrolvalue
+*        WHERE werks = t_zidppp099-werks
+*          AND ctype = 'DWO_FOR_SPECIAL_ADJUST'
+*          AND cvalue = '8'
+*          AND indicator1 = 'ACT'.
+*      ELSEIF t_zidppp099-sflag = 'C'.
+*        SELECT SINGLE cvalue1 INTO input-auart
+*        FROM zidpcontrolvalue
+*        WHERE werks = t_zidppp099-werks
+*          AND ctype = 'DWO_FOR_SPECIAL_ADJUST'
+*          AND cvalue = 'C'
+*          AND indicator1 = 'ACT'.
+*      ELSE.
+*        SELECT SINGLE cvalue1 INTO input-auart
+*        FROM zidpcontrolvalue
+*        WHERE werks = t_zidppp099-werks
+*          AND ctype = 'DWO_FOR_SPECIAL_ADJUST'
+*          AND cvalue = '3'
+*          AND indicator1 = 'ACT'.
+*      ENDIF.
+
+      IF input-auart EQ ''.
+        t_zidppp099-mess1 = 'NO maintain order type,contact IT'(053).
+*      t_zmwhhb-grtxt = 'N'.
+        MODIFY t_zidppp099.
+        l_flag = 'N'.
+        CONTINUE.
+      ENDIF.
+
+      SELECT SINGLE cvalue cvalue1 cvalue2 indicator1_memo
+        INTO (input-prctr,input-account,input-routing,input-f_code)
+        FROM zidpcontrolvalue
+       WHERE werks = t_zidppp099-werks
+         AND ctype = 'DWO_SETTLEMENT_RULE'
+         AND indicator1 = 'ACT'.
+      IF input-prctr EQ ''.
+        t_zidppp099-mess1 = 'NO maintain profit center'(054).
+*      t_zmwhhb-grtxt = 'N'.
+        MODIFY t_zidppp099.
+        l_flag = 'N'.
+        CONTINUE.
+      ENDIF.
+
+      IF input-account EQ ''.
+        t_zidppp099-mess1 = 'NO maintain account type'(055).
+*      t_zmwhhb-grtxt = 'N'.
+        MODIFY t_zidppp099.
+        l_flag = 'N'.
+        CONTINUE.
+      ENDIF.
+
+      IF input-f_code EQ ''.
+        t_zidppp099-mess1 = 'NO maintain cost center'(056).
+        MODIFY t_zidppp099.
+        l_flag = 'N'.
+        CONTINUE.
+      ENDIF.
+*** add by erin 20260622
+      IF g_npiflag = 'Y'.
+        SELECT SINGLE posid INTO input-posid
+         FROM prps AS a
+         INNER JOIN afpo  AS b ON a~pspnr = b~projn
+        WHERE aufnr = t_zidppp099-faufnr+4(12).
+      ENDIF.
+****end
+      input-werks = t_zidppp099-werks.
+      input-a_matnr = t_zidppp099-fmatnr.
+      input-qty = t_zidppp099-fgfmg.
+      input-g_l = 'G/L'.
+      SELECT SINGLE fevor INTO input-pformat
+        FROM afko
+       WHERE aufnr = t_zidppp099-faufnr+4(12).
+      IF input-pformat IS INITIAL.
+        input-pformat = '1'.
+      ENDIF.
+*    INPUT-PFORMAT = '1'.
+      input-address = 'N'.
+      input-floor = t_zidppp099-ffloor.
+*    input-remark2 = 'CPDisWO'.
+
+      CALL FUNCTION 'ZRFC_CONVERT_DATE_FORMAT'
+        EXPORTING
+          p_date = sy-datum
+        IMPORTING
+          l_date = input-start_date.
+
+      SELECT SINGLE tlk03 INTO l_sku
+         FROM zidpmmtlk
+         WHERE werks = t_zidppp099-werks
+           AND tlk01 = t_zidppp099-fmatnr.
+      IF sy-subrc = 0.
+        SELECT SINGLE cvalue1 INTO input-remark1
+          FROM zidpcontrolvalue
+         WHERE werks = t_zidppp099-werks
+           AND ctype = 'D_SWRNO'
+           AND cvalue = l_sku.
+      ENDIF.
+
+      SELECT SINGLE tlk02 INTO input-remark2
+        FROM zidpmmtlk
+       WHERE tlk01 = t_zidppp099-fmatnr
+         AND werks = t_zidppp099-werks.
+      IF sy-subrc <> 0.
+        input-remark2 = t_zidppp099-fmatnr.
+      ENDIF.
+
+      input-remark3 = t_zidppp099-faufnr.
+      APPEND input.
+
+      LOOP AT input.
+        REFRESH itab_c.
+        CLEAR itab_c.
+        REFRESH bom. "add apple150914
+        CLEAR bom.
+
+        IF t_zidppp099-sflag = '7' OR
+           t_zidppp099-sflag = '6' OR "Add by linsen 241001 Argon
+           t_zidppp099-sflag = '9' OR
+           t_zidppp099-sflag = '8' OR
+          ( t_zidppp099-sflag = 'F' AND  t_zidppp099-dflag = '1' ) OR  "add by Yi 240523 FG返GB樓層開拆解
+           t_zidppp099-sflag = 'C'.
+          PERFORM get_bom USING input-a_matnr.
+*        perform process_bom_zfg_fg.
+          LOOP AT itab_c.
+            MOVE-CORRESPONDING itab_c TO bom.
+            APPEND bom.
+            CLEAR bom.
+          ENDLOOP.
+          CLEAR itab_c.REFRESH itab_c.
+          LOOP AT bom.
+            SELECT SINGLE * FROM mast WHERE matnr = bom-idnrk
+                                      AND werks = p_werks.
+            IF sy-subrc EQ 0.
+              PERFORM get_bom_end USING bom-idnrk bom-mngko '1'.
+              LOOP AT itab_c.
+                itab_c-menge =  itab_c-mngko / 1000 * input-qty
+                            * -1."return
+                itab_c-alpgr = ''.
+                itab_c-ewahr = 0.
+                MODIFY itab_c.
+              ENDLOOP.
+            ELSE.
+              itab_c = bom.
+              IF itab_c-alpgr NE '' AND itab_c-ewahr NE '100'.
+              ELSE.
+                itab_c-menge =  bom-mngko  / 1000 * input-qty  * -1.
+                APPEND itab_c.
+              ENDIF.
+            ENDIF.
+          ENDLOOP.
+**********begin add by zihao 2段拆解  20260626**********
+        ELSEIF t_zidppp099-sflag = 'T'.
+          PERFORM get_bom1 USING input-a_matnr.
+*          LOOP AT itab_c.
+*            MOVE-CORRESPONDING itab_c TO bom.
+*            APPEND bom.
+*            CLEAR bom.
+*          ENDLOOP.
+*          CLEAR itab_c.REFRESH itab_c.
+*          LOOP AT bom WHERE idnrk = t_zidppp099-gmatnr AND alpgr IS NOT INITIAL.
+*            DELETE bom WHERE alpgr = bom-alpgr AND idnrk <> t_zidppp099-gmatnr.
+*            EXIT.
+*          ENDLOOP.
+
+          SELECT SINGLE * FROM mast WHERE matnr = t_zidppp099-gmatnr
+                                       AND werks = p_werks.
+          IF sy-subrc = 0.
+            PERFORM get_bom_end1 USING t_zidppp099-gmatnr '1000' '1'.
+            LOOP AT itab_c.
+              itab_c-menge =  itab_c-mngko / 1000 * input-qty
+                          * -1."return
+              itab_c-alpgr = ''.
+              itab_c-ewahr = 0.
+              MODIFY itab_c.
+            ENDLOOP.
+          ENDIF.
+**********end add by zihao 2段拆解  20260626**********
+        ELSE.
+          IF input-a_matnr(2) = '1A'.  "add apple150914
+            PERFORM get_bom USING input-a_matnr.
+            PERFORM process_bom_zfg_fg.
+            CLEAR itab_c.REFRESH itab_c.
+            LOOP AT bom.
+              SELECT SINGLE * FROM mast WHERE matnr = bom-idnrk
+                                        AND werks = p_werks.
+              IF sy-subrc EQ 0.
+                PERFORM get_bom_end USING bom-idnrk bom-mngko '1'.
+                LOOP AT itab_c.
+                  itab_c-menge =  itab_c-mngko / 1000 * input-qty
+                              * -1."return
+                  itab_c-alpgr = ''.
+                  itab_c-ewahr = 0.
+                  MODIFY itab_c.
+                ENDLOOP.
+              ELSE.
+                itab_c = bom.
+                IF itab_c-alpgr NE '' AND itab_c-ewahr NE '100'.
+                ELSE.
+                  itab_c-menge =  bom-mngko  / 1000 * input-qty  * -1.
+                  APPEND itab_c.
+                ENDIF.
+              ENDIF.
+            ENDLOOP.
+          ENDIF.
+        ENDIF.
+
+        PERFORM only_keyparts.
+
+        LOOP AT itab_c.
+          itab_c-menge = ceil( abs( itab_c-menge ) ) * -1.
+          MODIFY itab_c.
+          CLEAR itab_c.
+        ENDLOOP.
+        CLEAR itab_c.
+        itab_c-werks = p_werks.
+        itab_c-idnrk = input-a_matnr."need to issue
+        itab_c-menge = input-qty   .
+        INSERT itab_c INDEX 1.
+        IF ( t_zidppp099-sflag <> '7' AND
+             t_zidppp099-sflag <> 'T' AND   "Add by zihao fatp 重工拆解 20260703
+             t_zidppp099-sflag <> '9' AND
+             t_zidppp099-sflag <> 'C' ).
+          CLEAR itab_c.
+          itab_c-werks = p_werks.
+          itab_c-idnrk = input-h_matnr."need to GR
+          itab_c-menge = input-qty * -1  .
+          INSERT itab_c INDEX 2.
+        ENDIF.
+        LOOP AT itab_c.
+          IF itab_c-idnrk(3) = '1AQ'.
+            itab_c-idnrk = t_zidppp099-gmatnr.
+            MODIFY itab_c INDEX sy-tabix.
+          ENDIF.
+          SELECT SINGLE * FROM marc WHERE matnr = itab_c-idnrk
+                               AND werks = itab_c-werks
+                               AND sobsl = '50'.
+          IF sy-subrc EQ 0.
+            DELETE itab_c.
+            CLEAR itab_c.
+            CONTINUE.
+          ENDIF.
+          l_marc_chk = 'Y'.
+          SELECT SINGLE * FROM marc WHERE matnr = itab_c-idnrk
+                               AND werks = itab_c-werks.
+          IF sy-subrc NE 0.
+            CONCATENATE itab_c-idnrk 'Not exist ' INTO  itab-mess .
+            APPEND itab.
+            l_marc_chk = 'N'.
+            EXIT.
+          ENDIF.
+
+        ENDLOOP.
+
+        IF l_marc_chk = 'Y'.
+
+          PERFORM create_rework_wo USING input.
+
+          IF messtab-msgv1 <> ''.
+            t_zidppp099-daufnr = messtab-msgv1.
+            t_zidppp099-mess1 = 'Generate Dis Wo Success!'.
+            IF t_zidppp099-sflag = '7'.
+              t_zidppp099-pflag = '7'.
+            ELSEIF t_zidppp099-sflag = 'T'. "Add by zihao FATP重工拆解 20260703
+              t_zidppp099-pflag = 'T'.       "Add by zihao FATP重工拆解 20260703
+            ELSEIF t_zidppp099-sflag = '9'.
+              t_zidppp099-pflag = '9'.
+            ELSEIF t_zidppp099-sflag = '8'.
+              t_zidppp099-pflag = '8'.
+            ELSEIF t_zidppp099-sflag = 'C'.
+              t_zidppp099-pflag = 'C'.
+            ELSE.
+              t_zidppp099-pflag = '2'. "拆解工單開立成功，待發料
+            ENDIF.
+            CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+              EXPORTING
+                input  = t_zidppp099-daufnr
+              IMPORTING
+                output = t_zidppp099-daufnr.
+            UPDATE zidppp099 SET  daufnr = t_zidppp099-daufnr  "add Amelia160904
+                                                      pflag = t_zidppp099-pflag
+                                                      mess1 = t_zidppp099-mess1
+                                                WHERE werks = t_zidppp099-werks
+                                                AND pallet = t_zidppp099-pallet
+                                                AND faufnr = t_zidppp099-faufnr
+                                                    AND sdat = t_zidppp099-sdat
+                                                AND gmatnr = t_zidppp099-gmatnr.
+            COMMIT WORK.  "add Amelia160904
+          ELSE.
+            t_zidppp099-daufnr = messtab-msgv1.
+            t_zidppp099-mess1 = 'Generate Dis Wo Failed!'.
+          ENDIF.
+          MODIFY t_zidppp099 TRANSPORTING daufnr pflag mess1.
+        ENDIF.
+      ENDLOOP.
+    ENDLOOP.
+  ENDIF.
+
+  PERFORM change_dflag.
+  MODIFY zidppp099 FROM TABLE t_zidppp099.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  only_keyparts
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM only_keyparts.
+  LOOP AT itab_c.
+    SELECT SINGLE * FROM zidpmmtlk
+    WHERE werks = itab_c-werks
+    AND tlk30 = 'Y'  "RMA KEY PART
+    AND tlk01 = itab_c-idnrk.
+    IF sy-subrc <> 0.
+      DELETE itab_c.
+    ENDIF.
+  ENDLOOP.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  create_rework_wo
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM create_rework_wo USING inp STRUCTURE input.
+  DATA:l_con   TYPE i,
+       l_posnr LIKE resb-posnr,
+       l_meins LIKE mara-meins.
+  DATA: zhead   TYPE thead,
+        zaufnr  TYPE aufnr,
+        t_lines LIKE tline OCCURS 0 WITH HEADER LINE.
+
+  SELECT SINGLE meins INTO l_meins
+    FROM mara
+    WHERE matnr = input-a_matnr.
+
+  CLEAR: bdcdata,messtab.
+  REFRESH: bdcdata,messtab.
+
+  PERFORM bdc_dynpro      USING 'SAPLCOKO1' '0210'.
+  PERFORM bdc_field       USING 'BDC_CURSOR'
+                                'CAUFVD-WERKS'.
+  PERFORM bdc_field       USING 'BDC_OKCODE'
+                                '/00'.
+
+  PERFORM bdc_field       USING 'CAUFVD-WERKS'
+                                 input-werks.
+*****add by erin 20260622
+  IF g_npiflag = 'Y'.
+    PERFORM bdc_field       USING 'AFPOD-PROJN'
+                               input-posid.
+  ENDIF.
+***end
+  PERFORM bdc_field       USING 'AUFPAR-PP_AUFART'
+                                inp-auart.
+
+  PERFORM bdc_dynpro      USING 'SAPLCOKO1' '0115'.
+  PERFORM bdc_field       USING 'BDC_OKCODE'
+                                '=KOAL'.
+  PERFORM bdc_field       USING 'CAUFVD-MATXT'
+                                  inp-a_matnr.
+  PERFORM bdc_field       USING 'BDC_CURSOR'
+                                'CAUFVD-GSTRP'.
+  PERFORM bdc_field       USING 'CAUFVD-GAMNG'
+                                inp-qty.
+  PERFORM bdc_field       USING 'CAUFVD-GMEIN'
+                                l_meins.    """"""""""""
+  PERFORM bdc_field       USING 'CAUFVD-GLTRP'
+                                inp-start_date.
+  PERFORM bdc_field       USING 'CAUFVD-GSTRP'
+                                inp-start_date.
+  PERFORM bdc_field       USING 'CAUFVD-TERKZ'
+                                '3'.
+  PERFORM bdc_field       USING 'CAUFVD-FHORI'
+                                '000'.
+
+  PERFORM bdc_dynpro      USING 'SAPLCOSD' '0129'.
+  PERFORM bdc_field       USING 'BDC_CURSOR'
+                                'CAUFVD-PLNNR'.
+  PERFORM bdc_field       USING 'BDC_OKCODE'
+                                '=BACK'.
+  PERFORM bdc_field       USING 'CAUFVD-PLNNR'
+                                 inp-routing.
+  PERFORM bdc_field       USING 'CAUFVD-PLNTY'
+                                'S'.
+
+*  PERFORM BDC_DYNPRO      USING 'SAPLCOSD' '0310'.
+*  PERFORM BDC_FIELD       USING 'BDC_OKCODE'
+*                                '=OPT2'.
+**********
+
+  PERFORM bdc_dynpro      USING 'SAPLKOBS' '0130'.
+  PERFORM bdc_field       USING 'BDC_CURSOR'
+                                'DKOBR-EMPGE(01)'.
+  PERFORM bdc_field       USING 'BDC_OKCODE'
+                                '/00'.
+  PERFORM bdc_field       USING 'COBRB-KONTY(01)'
+                                 inp-g_l."G/l
+  PERFORM bdc_field       USING 'DKOBR-EMPGE(01)'
+                                inp-account.
+
+  PERFORM bdc_dynpro      USING 'SAPLKOBS' '0130'.
+  PERFORM bdc_field       USING 'BDC_CURSOR'
+                                'DKOBR-EMPGE(01)'.
+  PERFORM bdc_field       USING 'BDC_OKCODE'
+                                '=DETA'.
+
+  PERFORM bdc_dynpro      USING 'SAPLKOBS' '0100'.
+  PERFORM bdc_field       USING 'BDC_OKCODE'
+                                '/00'.
+  PERFORM bdc_field       USING 'BDC_CURSOR'
+                                'COBL-KOSTL'.
+  PERFORM bdc_field       USING 'COBL-KOSTL'
+                                inp-f_code."cost center
+  PERFORM bdc_field       USING 'COBL-PRCTR'     "add by cindy 20141211
+                                inp-prctr."Profit center
+
+  PERFORM bdc_dynpro      USING 'SAPLKOBS' '0100'.
+  PERFORM bdc_field       USING 'BDC_OKCODE'
+                                '=BACK'.
+  PERFORM bdc_field       USING 'BDC_CURSOR'
+                                'COBL-KOSTL'.
+  PERFORM bdc_field       USING 'COBL-KOSTL'
+                                inp-f_code.
+
+
+  PERFORM bdc_dynpro      USING 'SAPLKOBS' '0130'.
+  PERFORM bdc_field       USING 'BDC_CURSOR'
+                                'COBRB-KONTY(01)'.
+  PERFORM bdc_field       USING 'BDC_OKCODE'
+                                '=BACK'.
+**************
+  PERFORM bdc_dynpro      USING 'SAPLCOKO1' '0115'.
+  PERFORM bdc_field       USING 'BDC_OKCODE'
+                                '=KOWE'.
+  PERFORM bdc_field       USING 'CAUFVD-MATXT'
+                                  inp-a_matnr.
+  PERFORM bdc_field       USING 'BDC_CURSOR'
+                                'CAUFVD-CY_SEQNR'.
+  PERFORM bdc_field       USING 'CAUFVD-FEVOR'
+                                inp-pformat..
+  PERFORM bdc_field       USING 'CAUFVD-PRCTR'   "add by cindy 20141211
+                                inp-prctr."Profit center
+
+  PERFORM bdc_dynpro      USING 'SAPLCOKO1' '0115'.
+  PERFORM bdc_field       USING 'BDC_OKCODE'
+                                '=KOSD'.
+  PERFORM bdc_field       USING 'CAUFVD-MATXT'
+                                inp-a_matnr.
+
+  PERFORM bdc_field       USING 'BDC_CURSOR'
+                                'AFPOD-ABLAD'.
+***add by erin 20260622
+* IF g_npiflag = 'Y'.
+*     PERFORM bdc_field       USING 'BDC_OKCODE'  "add Amelia210918
+*                                '=+COI'.
+* ENDIF.
+***end
+*  perform bdc_field       using 'AFPOD-LGORT'
+*                                inp-lgort1.
+  PERFORM bdc_field       USING 'AFPOD-WEMPF'
+                               inp-address.
+  PERFORM bdc_field       USING 'AFPOD-ABLAD'
+                                inp-floor.
+
+************
+  PERFORM bdc_dynpro      USING 'SAPLCOKO1' '0115'.
+  PERFORM bdc_field       USING 'BDC_OKCODE'
+                                '=KPU2'.
+  PERFORM bdc_field       USING 'CAUFVD-MATXT'  "modify by ruilong 0926
+                                   inp-a_matnr.
+
+*  PERFORM bdc_field       USING 'CAUFVD-MATXT'  "modify by ruilong 0926
+*                                   inp-remark2.
+
+  PERFORM bdc_field       USING 'BDC_CURSOR'
+                                'CAUFVD-KLVARP'.
+  CLEAR l_con.
+  LOOP AT itab_c.
+
+*     ADD BY CINDY 20120507 BEGIN
+*
+    l_con = l_con + 1.
+    l_posnr = l_con.
+    PERFORM get_alpha_input USING l_posnr CHANGING l_posnr.
+
+    PERFORM bdc_dynpro      USING 'SAPLCOMK' '0120'.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+                                  'RESBD-MATNR(01)'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+                                  '=KEIN'.
+    PERFORM bdc_field       USING 'FILTER_BOX'
+                                  'NO_FIL'.
+    PERFORM bdc_field       USING 'SORT_BOX'
+                                  'ST_STA'.
+
+    PERFORM bdc_dynpro      USING 'SAPLCOMK' '0120'.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+                                  'RESBD-MENGE(01)'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+                                  '/00'.
+    PERFORM bdc_field       USING 'FILTER_BOX'
+                                  'NO_FIL'.
+    PERFORM bdc_field       USING 'SORT_BOX'
+                                  'ST_STA'.
+    PERFORM bdc_field       USING 'RESBD-POSNR(01)'
+                                  l_posnr.
+    PERFORM bdc_field       USING 'RESBD-MATNR(01)'
+                                  itab_c-idnrk.
+    PERFORM bdc_field       USING 'RESBD-MENGE(01)'
+                                  itab_c-menge.
+    PERFORM bdc_field       USING 'RESBD-POSTP(01)'
+                                  'L'.
+*
+*  IF L_SUBRC = 0.
+*    PERFORM BDC_FIELD       USING 'RESBD-LGORT(01)'
+*                                  ITAB_C-LGORT.
+*  ENDIF.
+*
+    PERFORM bdc_dynpro      USING 'SAPLCOMP' '1020'.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+                                  'RCM01-VORNR'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+                                  '=ENT1'.
+    PERFORM bdc_field       USING 'RCM01-VORNR'
+                                  '0010'.
+
+    PERFORM bdc_dynpro      USING 'SAPLCOMD' '0110'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+                                  '=BACK'.
+  ENDLOOP.
+
+*  release wo
+  PERFORM bdc_dynpro      USING 'SAPLCOMK' '0120'.
+
+  PERFORM bdc_field       USING 'FILTER_BOX'
+                                'NO_FIL'.
+  PERFORM bdc_field       USING 'SORT_BOX'
+                                'ST_STA'.
+  PERFORM bdc_field       USING 'BDC_OKCODE'
+                                '=FREI'.
+
+  PERFORM bdc_dynpro      USING 'SAPLCOMK' '0120'.
+  PERFORM bdc_field       USING 'BDC_OKCODE'
+                                '=BU'.
+
+  PERFORM bdc_field       USING 'FILTER_BOX'
+                                'NO_FIL'.
+  PERFORM bdc_field       USING 'SORT_BOX'
+                                'ST_STA'.
+
+
+*   END ADD BY CINDY 20120507
+
+
+  CALL TRANSACTION 'CO07' WITHOUT AUTHORITY-CHECK USING bdcdata
+                           MODE runmode
+                           UPDATE 'S'
+                           MESSAGES INTO messtab.
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+    EXPORTING
+      wait = 'Y'.
+
+  READ TABLE messtab WITH KEY msgid = 'CO'
+                               msgnr = '100'.
+  IF sy-subrc = 0 .
+*      MOVE-CORRESPONDING ITAB TO ITAB_S.
+    PERFORM get_alpha_input USING messtab-msgv1 CHANGING
+            itab-aufnr.
+*    itab-aufnr = messtab-msgv1.
+
+    CONCATENATE sy-mandt itab-aufnr INTO zhead-tdname.
+    zhead-tdobject = 'AUFK'.
+    zhead-tdid = 'KOPF'.
+    zhead-tdspras = 'E'.
+
+    t_lines-tdformat = '/'.
+    t_lines-tdline = inp-remark1.
+    APPEND t_lines.
+    t_lines-tdline = inp-remark2.
+    APPEND t_lines.
+    t_lines-tdline = inp-remark3.
+    APPEND t_lines.
+
+
+    CALL FUNCTION 'SAVE_TEXT'
+      EXPORTING
+        client          = sy-mandt
+        header          = zhead
+        savemode_direct = 'X'
+      TABLES
+        lines           = t_lines
+      EXCEPTIONS
+        id              = 1
+        language        = 2
+        name            = 3
+        object          = 4
+        OTHERS          = 5.
+
+    IF sy-subrc = 0.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING
+          wait = 'Y'.
+      UPDATE aufk SET ltext = 'E'
+           WHERE aufnr = itab-aufnr
+           AND werks = p_werks.
+      COMMIT WORK AND WAIT.
+    ELSE.
+      CALL FUNCTION 'SAPSCRIPT_MESSAGE'
+        EXPORTING
+          typ    = 'W'                                "#EC NOTEXT
+        EXCEPTIONS
+          OTHERS = 1.
+    ENDIF.
+
+
+  ELSE.
+    CALL FUNCTION 'MESSAGE_TEXT_BUILD'
+      EXPORTING
+        msgid               = messtab-msgid
+        msgnr               = messtab-msgnr
+        msgv1               = messtab-msgv1
+        msgv2               = messtab-msgv2
+        msgv3               = messtab-msgv3
+        msgv4               = messtab-msgv4
+      IMPORTING
+        message_text_output = zmsg.
+    itab-mess = zmsg.
+
+  ENDIF.
+
+*  append itab.
+*  clear: itab,zmsg.
+
+ENDFORM.                    " create_rework_wo
+
+*&---------------------------------------------------------------------*
+*&      Form  get_bom_end
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_BOM_IDNRK  text
+*      -->P_BOM_MNGKO  text
+*----------------------------------------------------------------------*
+FORM get_bom_end USING    p_bom_idnrk
+                          p_bom_mngko
+                          p_bom_type.
+  CLEAR stb.REFRESH stb.
+  CLEAR matcat.REFRESH matcat.
+  DATA:l_qty LIKE resb-bdmng.
+  l_qty = p_bom_mngko.
+  CALL FUNCTION 'CS_BOM_EXPL_MAT_V2'
+    EXPORTING
+      capid                 = 'PP01'
+      datuv                 = sy-datum
+*     datuv                 = sy-datum
+      mktls                 = 'X'
+      mdmps                 = 'X'
+      mehrs                 = 'X'
+      mtnrv                 = p_bom_idnrk
+*     stlal                 = '01'
+      stlan                 = '1'
+*     stpst                 = 0
+*     svwvo                 = 'X'
+      werks                 = p_werks
+*     vrsvo                 = 'X'
+*     ehndl                 = 'X'
+      emeng                 = l_qty
+      fbstp                 = 'E'
+    TABLES
+      stb                   = stb
+      matcat                = matcat
+    EXCEPTIONS
+      alt_not_found         = 1
+      call_invalid          = 2
+      material_not_found    = 3
+      missing_authorization = 4
+      no_bom_found          = 5
+      no_plant_data         = 6
+      no_suitable_bom_found = 7
+      conversion_error      = 8
+      OTHERS                = 9.
+  LOOP AT stb.
+
+    IF p_bom_type = '1' OR p_bom_type = '3' .
+      IF stb-alpgr NE '' AND stb-ewahr NE '100'.
+        DELETE stb.
+      ELSE.
+        stb-verid = 'Y'.
+        MODIFY stb.
+      ENDIF.
+    ELSE.
+      stb-verid = 'Y'.
+      MODIFY stb.
+    ENDIF.
+
+  ENDLOOP.
+
+  APPEND LINES OF stb TO itab_c.
+
+ENDFORM.                    " get_bom_end
+************add begin by zihao 20260720  FATP 拆解重工********
+*&---------------------------------------------------------------------*
+*&      Form  get_bom_end
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_BOM_IDNRK  text
+*      -->P_BOM_MNGKO  text
+*----------------------------------------------------------------------*
+FORM get_bom_end1 USING    p_bom_idnrk
+                          p_bom_mngko
+                          p_bom_type.
+  CLEAR stb.REFRESH stb.
+  CLEAR matcat.REFRESH matcat.
+  DATA:l_qty LIKE resb-bdmng.
+  l_qty = p_bom_mngko.
+  CALL FUNCTION 'CS_BOM_EXPL_MAT_V2'
+    EXPORTING
+      capid                 = 'PP01'
+      datuv                 = sy-datum
+*     datuv                 = sy-datum
+      mktls                 = 'X'
+      mdmps                 = 'X'
+      mehrs                 = 'X'
+      mtnrv                 = p_bom_idnrk
+*     stlal                 = '01'
+      stlan                 = '1'
+*     stpst                 = 0
+*     svwvo                 = 'X'
+      werks                 = p_werks
+*     vrsvo                 = 'X'
+*     ehndl                 = 'X'
+      emeng                 = l_qty
+      fbstp                 = 'E'
+    TABLES
+      stb                   = stb
+      matcat                = matcat
+    EXCEPTIONS
+      alt_not_found         = 1
+      call_invalid          = 2
+      material_not_found    = 3
+      missing_authorization = 4
+      no_bom_found          = 5
+      no_plant_data         = 6
+      no_suitable_bom_found = 7
+      conversion_error      = 8
+      OTHERS                = 9.
+  LOOP AT stb.
+
+    IF p_bom_type = '1' OR p_bom_type = '3' .
+      IF stb-alpgr NE '' AND stb-ewahr NE '100'.
+        DELETE stb.
+      ELSE.
+        stb-verid = 'Y'.
+        MODIFY stb.
+      ENDIF.
+    ELSE.
+      stb-verid = 'Y'.
+      MODIFY stb.
+    ENDIF.
+
+  ENDLOOP.
+
+  APPEND LINES OF stb TO itab_c.
+
+ENDFORM.                    " get_bom_end
+************add end by zihao 20260720  FATP 拆解重工********
+
+*&---------------------------------------------------------------------*
+*&      Form  get_bom
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM get_bom  USING f_matnr.
+  CLEAR itab_c.REFRESH itab_c.
+  DATA:l_qty LIKE resb-bdmng.
+  l_qty = 1000.
+  CALL FUNCTION 'CS_BOM_EXPL_MAT_V2'
+    EXPORTING
+      capid                 = 'BEST'
+      datuv                 = sy-datum
+*     datuv                 = sy-datum
+      mktls                 = 'X'
+      mehrs                 = ''
+      mtnrv                 = f_matnr
+      stlal                 = '01'
+      stlan                 = '1'
+      stpst                 = 0
+      svwvo                 = 'X'
+      werks                 = p_werks
+      vrsvo                 = 'X'
+      ehndl                 = 'X'
+      emeng                 = l_qty
+      fbstp                 = 'E'
+    TABLES
+      stb                   = stb
+*     matcat                = matcat
+    EXCEPTIONS
+      alt_not_found         = 1
+      call_invalid          = 2
+      material_not_found    = 3
+      missing_authorization = 4
+      no_bom_found          = 5
+      no_plant_data         = 6
+      no_suitable_bom_found = 7
+      conversion_error      = 8
+      OTHERS                = 9.
+
+  itab_c[] = stb[].
+  DELETE itab_c WHERE stufe NE '1' OR postp NE 'L' OR sanfe = ''.
+
+ENDFORM.                    " get_bom
+
+************begin add by zihao for FATP 2段式拆解   20260703************
+*&---------------------------------------------------------------------*
+*&      Form  get_bom
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM get_bom1  USING f_matnr.
+  CLEAR itab_c.REFRESH itab_c.
+  DATA:l_qty LIKE resb-bdmng.
+  DATA: lv_stufe TYPE stpox-stufe,
+        lv_alpgr TYPE stpox-alpgr,
+        lv_stlnr TYPE stpox-stlnr.
+  l_qty = 1000.
+  CALL FUNCTION 'CS_BOM_EXPL_MAT_V2'
+    EXPORTING
+      capid                 = 'BEST'
+      datuv                 = sy-datum
+*     datuv                 = sy-datum
+      mktls                 = 'X'
+      mehrs                 = 'X'
+      mdmps                 = 'X'
+      mtnrv                 = f_matnr
+      stlal                 = '01'
+      stlan                 = '1'
+      stpst                 = 0
+      svwvo                 = 'X'
+      werks                 = p_werks
+      vrsvo                 = 'X'
+      ehndl                 = 'X'
+      emeng                 = l_qty
+      fbstp                 = 'E'
+    TABLES
+      stb                   = stb
+*     matcat                = matcat
+    EXCEPTIONS
+      alt_not_found         = 1
+      call_invalid          = 2
+      material_not_found    = 3
+      missing_authorization = 4
+      no_bom_found          = 5
+      no_plant_data         = 6
+      no_suitable_bom_found = 7
+      conversion_error      = 8
+      OTHERS                = 9.
+
+
+  " 1. 获取目标料号的层级、替代群组、父件号
+  READ TABLE stb WITH KEY idnrk = t_zidppp099-gmatnr
+                         ASSIGNING FIELD-SYMBOL(<fs_target>).
+  IF sy-subrc = 0.
+    lv_stufe = <fs_target>-stufe.
+    lv_alpgr = <fs_target>-alpgr.
+    lv_stlnr = <fs_target>-stlnr.  " 父件号（BOM头）
+
+    " 2. 删除条件：同一父件 + 同一层级 + 同一替代群组
+    IF lv_alpgr IS INITIAL.
+      DELETE stb WHERE idnrk = t_zidppp099-gmatnr.
+    ELSE.
+      DELETE stb WHERE stlnr = lv_stlnr
+                    AND stufe = lv_stufe
+                    AND alpgr = lv_alpgr.
+    ENDIF.
+  ENDIF.
+*  " 获取目标料号的层级和替代群组
+*  READ TABLE stb WITH KEY idnrk = t_zidppp099-gmatnr
+*                         ASSIGNING FIELD-SYMBOL(<fs_target>).
+*  IF sy-subrc = 0.
+*    lv_stufe = <fs_target>-stufe.
+*    lv_alpgr = <fs_target>-alpgr.
+*
+*    " 删除同一层级且同一替代群组的所有料号
+*    IF lv_alpgr IS INITIAL.
+*      DELETE stb WHERE stufe = lv_stufe.
+*    ELSE.
+*      DELETE stb WHERE stufe = lv_stufe
+*                    AND alpgr = lv_alpgr.
+*    ENDIF.
+*  ENDIF.
+
+  LOOP AT stb.
+    IF stb-alpgr NE '' AND stb-ewahr NE '100'.
+      DELETE stb.
+    ELSE.
+      stb-verid = 'Y'.
+      MODIFY stb.
+    ENDIF.
+  ENDLOOP.
+  APPEND LINES OF stb TO itab_c.
+ENDFORM.                    " get_bom
+************end add by zihao for FATP 2段式拆解   20260703************
+
+*---------------------------------------------------------------------*
+*       FORM process_bom_zfg_fg                                       *
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+FORM process_bom_zfg_fg.
+  LOOP AT itab_c." WHERE POSTP = 'L'.
+    SELECT SINGLE tlk03 INTO l_sku
+            FROM zidpmmtlk
+            WHERE tlk01 = itab_c-idnrk
+              AND werks = p_werks.
+    IF   sy-subrc EQ 0 AND ( itab_c-dumps = 'X' OR itab_c-dumps = 'x' )
+        AND itab_c-idnrk(3) = '1AQ'.
+
+      CONDENSE itab_c-idnrk.
+      CONCATENATE  itab_c-idnrk  '-A' INTO input-h_matnr.
+      "FIX Part :1AQ123-A01-A.
+      DELETE itab_c.
+    ELSE.
+      MOVE-CORRESPONDING itab_c TO bom.
+      APPEND bom.
+      CLEAR bom.
+    ENDIF.
+  ENDLOOP.
+  CLEAR itab_c.REFRESH itab_c.
+ENDFORM.                    " process_bom_zfg_fg
+
+*&---------------------------------------------------------------------*
+*&      Form  get_ALPHA_INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_L_POSNR  text
+*      <--P_L_POSNR  text
+*----------------------------------------------------------------------*
+FORM get_alpha_input USING    p_l_m
+                     CHANGING p_l.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING
+      input  = p_l_m
+    IMPORTING
+      output = p_l.
+
+ENDFORM.                    " get_ALPHA_INPUT
+
+*&---------------------------------------------------------------------*
+*&      Form  generate_issue_gr   產生DIS發料/入庫
+*----------------------------------------------------------------------*
+FORM generate_issue_gr.
+
+  DATA: l_objnr LIKE aufk-objnr,
+        l_stxxt LIKE bsvx-sttxt,
+        l_werks LIKE aufk-werks,
+        l_auart LIKE aufk-auart.
+
+  CLEAR t_zidppp099.
+  PERFORM select_screen.
+  PERFORM update_middstatus.  "modify by ruilong 0926
+
+  LOOP AT t_zidppp099.
+    l_flag = 'Y'.
+
+    IF t_zidppp099-sflag = '5'  .
+      t_zidppp099-mess1 = 'please cheek SFC flag!'(076).
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+    IF t_zidppp099-sflag = '6' AND t_zidppp099-dimbnr <> ''."add Argon+不允許做拆解退料
+      t_zidppp099-mess1 = 'Argon+请以第二次抛转栈板入库'.
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+*        IF t_zidppp099-sflag = 'A'and t_zidppp099-dimbnr = ''."add Argon+ 只做拆解退料
+*      t_zidppp099-mess1 = '已做發料，請做拆解退料'.
+*      MODIFY t_zidppp099.
+*      l_flag = 'N'.
+*      CONTINUE.
+*    ENDIF.
+
+    IF g_isgr = '1' .
+      IF t_zidppp099-daufnr = ''.
+        t_zidppp099-mess1 = 'NOT Generate Dis WO'.
+        l_flag = 'N'.
+        MODIFY t_zidppp099.
+        CONTINUE.
+      ENDIF.
+
+      IF t_zidppp099-dimbnr <> '' OR t_zidppp099-dimbnr <> ''.
+        t_zidppp099-mess1 = 'Already Generate Issue No. '.
+        l_flag = 'N'.
+        MODIFY t_zidppp099.
+        CONTINUE.
+      ENDIF.
+    ENDIF.
+
+    IF g_isgr = '2' AND t_zidppp099-sflag <> 'A' ."排查Argon第二次拋轉
+      IF t_zidppp099-dimbnr = ''.
+        t_zidppp099-mess1 = 'NOT Generate Dis Issue No.'.
+        l_flag = 'N'.
+        MODIFY t_zidppp099.
+        CONTINUE.
+      ENDIF.
+
+      IF t_zidppp099-dgmbnr <> ''.
+        t_zidppp099-mess1 = 'Already Generate Dis GR No.'.
+        l_flag = 'N'.
+        MODIFY t_zidppp099.
+        CONTINUE.
+      ENDIF.
+    ENDIF.
+
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING
+        input  = t_zidppp099-daufnr
+      IMPORTING
+        output = t_zidppp099-daufnr.
+
+    SELECT SINGLE objnr werks auart INTO (l_objnr,l_werks,l_auart)
+      FROM aufk
+     WHERE aufnr = t_zidppp099-daufnr.
+    IF sy-subrc NE 0.
+      t_zidppp099-mess1 = 'WO not exists'(057).
+      l_flag = 'N'.
+      MODIFY t_zidppp099.
+      CONTINUE.
+    ENDIF.
+
+    CALL FUNCTION 'STATUS_TEXT_EDIT'
+      EXPORTING
+        objnr         = l_objnr
+        only_active   = 'X'
+        spras         = 'E'
+        bypass_buffer = '1'
+      IMPORTING
+        line          = l_stxxt.
+
+    IF l_stxxt CS 'DLFL'.
+      t_zidppp099-mess1 = 'WO is Deleted'(058).
+      l_flag = 'N'.
+      MODIFY t_zidppp099.
+      CONTINUE.
+    ENDIF.
+    IF l_stxxt CS 'CLSD' OR l_stxxt CS 'TECO'.
+      t_zidppp099-mess1 = 'WO is Closed'(059).
+      l_flag = 'N'.
+      MODIFY t_zidppp099.
+      CONTINUE.
+    ENDIF.
+    IF l_stxxt NS 'REL'.
+      t_zidppp099-mess1 = 'WO is not Released'(060).
+      l_flag = 'N'.
+      MODIFY t_zidppp099.
+      CONTINUE.
+    ENDIF.
+
+    CLEAR l_errmess.
+    PERFORM get_postdate USING t_zidppp099-werks CHANGING l_errmess.
+    IF l_errmess NE ''.
+      t_zidppp099-mess1 = l_errmess.
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    GET PARAMETER ID 'ZLG' FIELD g_emplyee_id.
+    IF g_emplyee_id = '' .
+      g_emplyee_id = 'ITRUN'.
+    ENDIF.
+
+    IF g_isgr = '1' .
+      SELECT  * INTO CORRESPONDING FIELDS OF TABLE t_resb
+        FROM resb
+       WHERE aufnr = t_zidppp099-daufnr
+         AND werks = t_zidppp099-werks
+         AND shkzg = 'H' .
+    ELSE.
+      SELECT  * INTO CORRESPONDING FIELDS OF TABLE t_resb
+        FROM resb
+       WHERE aufnr = t_zidppp099-daufnr
+         AND werks = t_zidppp099-werks
+         AND shkzg = 'S' .
+    ENDIF.
+
+*工單入庫倉碼抓取來源變更 heyan 20240514
+*    SELECT SINGLE flgort glgort mlgort nlgort
+*      INTO (g_flgort,g_glgort,g_mlgort,g_nlgort)
+*          FROM zidppp100
+*         WHERE werks = t_zidppp099-werks
+*           AND ffloor = t_zidppp099-ffloor
+*           AND gfloor = t_zidppp099-gfloor.
+*直接抓取樓層轉出倉碼（和用戶確認FG入庫和拆退倉碼為同一倉碼，故直接抓出拆退倉碼即GB轉出倉碼）
+    " 根據生產料號獲取對應的賬冊by H2410433
+    DATA(lv_obx01) = NEW zcl_get_obx01( )->get_obx01( in_werks = t_zidppp099-werks in_matnr = t_zidppp099-fmatnr ).
+    IF t_zidppp099-sflag = 'T'.  "Add by zihao fatp 重工拆解 20260703
+      SELECT SINGLE lgort INTO g_flgort "FG發料倉碼
+      FROM zidpmm094 AS a
+      WHERE werks = t_zidppp099-werks
+      AND floor = t_zidppp099-ffloor
+      AND zline = t_zidppp099-zline  "Add by zihao fatp 重工拆解 20260703
+*      AND gbflag = l_gb
+      AND floor_type = 'L'
+      AND lgort_type = 'K'
+      AND obx01 = lv_obx01.
+      IF sy-subrc NE 0.
+        t_zidppp099-mess1 = 'FG發料和GB入庫倉碼未維護'.
+        MODIFY t_zidppp099.
+        l_flag = 'N'.
+        CONTINUE.
+      ENDIF.
+      g_glgort = g_flgort."GB入庫倉碼
+    ELSE.
+      SELECT SINGLE lgort INTO g_flgort "FG發料倉碼
+         FROM zidpmm094 AS a
+         WHERE werks = t_zidppp099-werks
+         AND floor = t_zidppp099-ffloor
+*      AND gbflag = l_gb
+         AND floor_type = 'L'
+         AND lgort_type = 'K'
+         AND obx01 = lv_obx01.
+      IF sy-subrc NE 0.
+        t_zidppp099-mess1 = 'FG發料和GB入庫倉碼未維護'.
+        MODIFY t_zidppp099.
+        l_flag = 'N'.
+        CONTINUE.
+      ENDIF.
+      g_glgort = g_flgort."GB入庫倉碼
+*拆的附件包和雜項倉碼
+      SELECT SINGLE lgort INTO g_mlgort "附件
+      FROM zidpmm094
+      WHERE werks = t_zidppp099-werks
+      AND floor = t_zidppp099-ffloor
+*      AND gbflag = l_gb
+      AND floor_type = 'L'
+      AND lgort_type = 'F'
+      AND obx01 = lv_obx01.
+      IF sy-subrc NE 0.
+        t_zidppp099-mess1 = '附件包倉碼未維護'.
+        MODIFY t_zidppp099.
+        l_flag = 'N'.
+        CONTINUE.
+      ENDIF.
+
+      SELECT SINGLE lgort INTO g_nlgort "雜項倉
+      FROM zidpmm094
+      WHERE werks = t_zidppp099-werks
+      AND floor = t_zidppp099-ffloor
+*      AND gbflag = l_gb
+      AND floor_type = 'L'
+      AND lgort_type = 'Z'
+      AND obx01 = lv_obx01.
+      IF sy-subrc NE 0.
+        t_zidppp099-mess1 = '雜項倉未維護'.
+        MODIFY t_zidppp099.
+        l_flag = 'N'.
+        CONTINUE.
+      ENDIF.
+    ENDIF.  "Add by zihao fatp 重工拆解 20260703
+
+    REFRESH p_in.
+    CLEAR p_in.
+    LOOP AT t_resb WHERE xwaok = 'X'."排除虛擬料號
+      CLEAR s_flag.
+      p_in-plant = t_zidppp099-werks.
+      p_in-order = t_zidppp099-daufnr.
+      p_in-material = t_resb-matnr.
+      p_in-qty = t_resb-bdmng - t_resb-enmng.
+
+      IF p_in-qty < '0'.
+        s_flag = 'N'.
+        EXIT.
+      ELSEIF p_in-qty = '0'.
+        CONTINUE.
+      ENDIF.
+
+      IF g_isgr = '1'.
+        p_in-sl = g_flgort.
+      ENDIF.
+
+      IF g_isgr = '2' .
+        IF t_zidppp099-sflag = '7' OR
+          t_zidppp099-sflag = 'T' OR "Add by zihao fatp 重工拆解  20260703
+          t_zidppp099-sflag = '6' OR "Add by linsen 241001 Argon
+          t_zidppp099-sflag = 'H' OR "Add by linsen 241001 Argon
+          t_zidppp099-sflag = 'A' OR "Add  241021 Argon
+           t_zidppp099-sflag = '9' OR
+           t_zidppp099-sflag = '8'.
+          p_in-sl = g_glgort.
+        ELSE.
+          IF  t_resb-matnr(3) = '1AG'.
+            p_in-sl = g_glgort.
+          ELSE.
+            SELECT SINGLE *
+              FROM zidppp098
+             WHERE werks = t_zidppp099-werks
+               AND matnr = t_resb-matnr.
+            IF sy-subrc <> 0.
+              p_in-sl = g_mlgort.
+            ELSE.
+              p_in-sl = g_nlgort.
+            ENDIF.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+
+      t_zcompare-werks = p_werks.
+      t_zcompare-ztype = '1'.
+      t_zcompare-zobject = l_auart.
+      t_zcompare-lgort = g_flgort.
+
+      t_zcompare-ebook_mat = t_resb-matnr."For 專用賬冊by H2410433 20250901
+
+      APPEND t_zcompare.
+      CLEAR: t_zcompare.
+
+      APPEND p_in.
+      CLEAR: p_in.
+    ENDLOOP.
+
+    IF s_flag = 'N' OR p_in[] IS INITIAL.
+      t_zidppp099-mess1 = '??/?????????'(099).
+      l_flag = 'N'.
+      MODIFY t_zidppp099.
+      CONTINUE.
+    ENDIF.
+
+
+    CALL FUNCTION 'ZRFC_MM_IDP_0110'
+      TABLES
+        zcompare = t_zcompare.
+
+    LOOP AT t_zcompare.
+      IF t_zcompare-zflag = 'N'.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+
+    IF t_zcompare-zflag = 'N'.
+      t_zidppp099-mess1 = 'The Account WO/Sloc does not match'(061).
+      l_flag = 'N'.
+      MODIFY t_zidppp099.
+      CONTINUE.
+    ENDIF.
+
+    CLEAR l_sku.
+    CLEAR p_ou.
+    REFRESH p_ou.
+    DATA(ls_flag) = t_zidppp099-sflag.
+    PERFORM issue_material USING l_sku ls_flag.
+    READ TABLE p_ou INDEX 1.
+    IF NOT p_ou-document IS INITIAL.  "send material success
+      IF g_isgr = '1'.
+        t_zidppp099-dimbnr = p_ou-document.
+        t_zidppp099-mess1 = 'Issue NO Create Success!'(062).
+        t_zidppp099-pflag = '3'.
+        MODIFY t_zidppp099 TRANSPORTING dimbnr mess1 pflag.
+        UPDATE zidppp099 SET  dimbnr = t_zidppp099-dimbnr
+                               pflag = t_zidppp099-pflag
+                               mess1 = t_zidppp099-mess1
+             WHERE werks = t_zidppp099-werks
+               AND pallet = t_zidppp099-pallet
+               AND faufnr = t_zidppp099-faufnr
+               AND sdat = t_zidppp099-sdat
+               AND gmatnr = t_zidppp099-gmatnr.
+        COMMIT WORK.  "add Amelia160904
+      ELSE.
+        t_zidppp099-dgmbnr = p_ou-document.
+        t_zidppp099-mess1 = 'DIS GR NO Create Success!'(063).
+        t_zidppp099-pflag = '4'.
+        MODIFY t_zidppp099 TRANSPORTING dgmbnr mess1 pflag.
+        UPDATE zidppp099 SET  dgmbnr = t_zidppp099-dgmbnr
+                               pflag = t_zidppp099-pflag
+                               mess1 = t_zidppp099-mess1
+              WHERE werks = t_zidppp099-werks
+                AND pallet = t_zidppp099-pallet
+                AND faufnr = t_zidppp099-faufnr
+                AND sdat = t_zidppp099-sdat
+                AND gmatnr = t_zidppp099-gmatnr.
+        COMMIT WORK.  "add Amelia160904
+      ENDIF.
+    ELSE.
+      t_zidppp099-mess1 = p_ou-message.
+      MODIFY t_zidppp099 TRANSPORTING mess1.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+  ENDLOOP.
+
+  IF g_flag = 'Y'.
+    LOOP AT t_zidppp099.
+      MOVE-CORRESPONDING t_zidppp099 TO itab_aufnr.
+      COLLECT itab_aufnr.CLEAR itab_aufnr.
+    ENDLOOP.
+    LOOP AT itab_aufnr.
+      IF g_isgr = '1'.
+        READ TABLE t_zidppp099 WITH KEY daufnr = itab_aufnr-daufnr
+                                         pflag = '3'.
+        IF sy-subrc = 0.
+          MODIFY t_zidppp099 TRANSPORTING dimbnr mess1 pflag
+         WHERE daufnr = itab_aufnr-daufnr.
+        ENDIF.
+      ELSE.
+        READ TABLE t_zidppp099 WITH KEY daufnr = itab_aufnr-daufnr
+                                         pflag = '4'.
+        IF sy-subrc = 0.
+          MODIFY t_zidppp099 TRANSPORTING dgmbnr mess1 pflag
+         WHERE daufnr = itab_aufnr-daufnr.
+        ENDIF.
+
+      ENDIF.
+    ENDLOOP.
+  ELSE.
+    PERFORM change_dflag.
+  ENDIF.
+
+  MODIFY zidppp099 FROM TABLE t_zidppp099.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  get_postdate
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_AUFK_WERKS  text
+*----------------------------------------------------------------------*
+FORM get_postdate USING pl_werks
+                  CHANGING message.
+  DATA : p_lfgja  LIKE marv-lfgja,
+         p_lfmon  LIKE marv-lfmon,
+         p_lfmon2 LIKE marc-lfmon.
+
+  CALL FUNCTION 'ZRFC_FI_IDP_GET_PERIOD'
+    EXPORTING
+      i_bwkey = pl_werks
+      i_uname = sy-uname
+    IMPORTING
+      e_monat = p_lfmon.
+
+  g_postdate = sy-datum.
+  CLEAR p_lfmon2.
+  p_lfgja = g_postdate+0(4).
+  IF p_lfmon <> g_postdate+4(2).
+    IF g_postdate+4(2) = '12'.
+      g_postdate+0(4) = p_lfgja + 1.
+      p_lfmon2 = 01.
+    ELSE.
+      p_lfmon2 = g_postdate+4(2) + 1.
+    ENDIF.
+    IF p_lfmon2 = p_lfmon.
+      g_postdate+4(2) = p_lfmon.
+      g_postdate+6(2) = '01'.
+    ELSE.
+      CONCATENATE 'Please post on '(074) sy-datum+0(4) p_lfmon
+'(month)!'(075)
+      INTO message.
+    ENDIF.
+  ENDIF.
+ENDFORM.                    " get_postdate
+
+*&---------------------------------------------------------------------*
+*&      Form  issue_material
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_T_ITAB_PRODUCT  text
+*----------------------------------------------------------------------*
+FORM issue_material USING pl_text pl_flag.
+  DATA:
+    itab_header LIKE bapi2017_gm_head_01 OCCURS 0 WITH HEADER LINE,
+    itab_code   LIKE bapi2017_gm_code OCCURS 0 WITH HEADER LINE,
+    itab_item   LIKE bapi2017_gm_item_create OCCURS 0 WITH HEADER LINE,
+    it_return   LIKE bapiret2 OCCURS 0 WITH HEADER LINE,
+    l_tempin    LIKE z1tm0053 OCCURS 0 WITH HEADER LINE,
+    l_matedoc   LIKE mkpf-mblnr,
+    l_order     LIKE aufk-aufnr.
+  DATA: de TYPE i.
+  DATA: porder(12) TYPE c.
+  DATA: prspos(4) TYPE c.
+  DATA: l_line TYPE c.
+  DATA: l_code LIKE sy-subrc .
+  DATA: l_mes LIKE syst-msgv1 .
+  DATA: l_suc TYPE c.
+  DATA:BEGIN OF itab OCCURS 0,
+         werks LIKE resb-werks,
+         aufnr LIKE resb-aufnr,
+         matnr LIKE resb-matnr,
+         rspos LIKE resb-rspos,
+         bdmng LIKE resb-bdmng,
+         enmng LIKE resb-enmng,
+       END OF itab.
+  DATA: lv_base_unit TYPE mara-meins."modify by zihao 20261007
+  CLEAR:l_matedoc,pl_flag.
+  CLEAR: itab_header,itab_code,itab_item,it_return,l_tempin.
+  REFRESH: itab_header,itab_code,itab_item,it_return,l_tempin.
+
+  itab_header-doc_date = sy-datum.
+  itab_header-pstng_date = g_postdate.
+  itab_header-header_txt = pl_text.
+  itab_header-bill_of_lading = g_emplyee_id.
+  itab_header-gr_gi_slip_no = 'CPRUN'. "modify by ruilong 0926
+  itab_code-gm_code = '03'.
+
+
+  SORT p_in BY order .
+  l_suc = 'Y'.
+  LOOP AT p_in  .
+    CHECK l_suc = 'Y'.
+    CLEAR itab[].
+    CALL FUNCTION 'CONVERSION_EXIT_MATN1_INPUT'
+      EXPORTING
+        input  = p_in-material
+      IMPORTING
+        output = p_in-material.
+
+    itab_item-material_long = p_in-material .
+    itab_item-plant = p_in-plant .
+*    itab_item-move_mat = p_in-material.
+    itab_item-move_mat_long = p_in-material."Modify by Liv 20220503 使用40位物料字段
+    itab_item-move_plant = p_in-plant.
+
+
+    SELECT SINGLE meins INTO itab_item-entry_uom FROM mara
+             WHERE matnr EQ p_in-material.
+    IF sy-subrc NE 0 .
+      itab_item-entry_uom = 'EA' .
+    ENDIF .
+    IF g_isgr = '1'.
+      itab_item-move_type = '261'."發料
+
+    ELSE.
+      itab_item-move_type = '531'."入庫
+    ENDIF.
+    itab_item-orderid = p_in-order .
+*** add by erin 20260622
+    IF g_npiflag = 'Y'.
+      SELECT SINGLE posid INTO g_wbs
+       FROM prps AS a
+       INNER JOIN afpo  AS b ON a~pspnr = b~projn
+      WHERE aufnr = p_in-order .
+    ENDIF.
+****end
+    IF NOT g_wbs IS INITIAL."javen add
+      itab_item-spec_stock = 'Q'.
+      itab_item-wbs_elem = g_wbs.
+      itab_item-val_wbs_elem = g_wbs.
+    ENDIF.
+
+    SELECT SINGLE rsnum INTO itab_item-reserv_no
+         FROM afko WHERE aufnr = p_in-order  .
+
+    IF sy-subrc NE 0.
+      CONTINUE.
+    ENDIF.
+
+    itab_item-stge_loc = p_in-sl .
+    CLEAR: prspos,porder,l_line.
+    porder = p_in-order.
+
+    CALL FUNCTION 'CONVERSION_EXIT_AUFNR_INPUT'
+      EXPORTING
+        input  = porder
+      IMPORTING
+        output = porder.
+
+    SELECT werks aufnr matnr rspos bdmng enmng
+    INTO CORRESPONDING FIELDS OF TABLE itab
+    FROM resb
+    WHERE rsnum = itab_item-reserv_no AND
+          werks = p_in-plant AND
+          aufnr = porder AND
+          matnr = p_in-material AND
+          xloek NE 'X'.
+    SORT itab BY rspos.
+
+    DATA : l_bdmng LIKE resb-bdmng.
+    DATA : n_bdmng LIKE resb-bdmng.
+    DATA : l_qty LIKE resb-bdmng.
+    DATA: l_count TYPE i,
+          l_index LIKE sy-tabix.
+    DESCRIBE TABLE itab LINES l_count.
+    CLEAR l_qty.
+*    begin modify by zihao 20260721  FATP拆解
+*    IF t_zidppp099-sflag = 'T'.
+*      l_qty = p_in-qty.
+*    ELSE.
+*      IF t_zidppp099-fgfmg > p_in-qty.
+*        l_qty = p_in-qty.
+*      ELSE.
+*        l_qty = t_zidppp099-fgfmg.
+*      ENDIF.
+*    ENDIF.
+*"begin modify by zihao 20261007
+    l_qty = p_in-qty.
+*  從物料主檔取得基本單位
+    SELECT SINGLE meins INTO lv_base_unit
+      FROM mara
+      WHERE matnr = p_in-material.
+
+    IF lv_base_unit = 'PC'.
+      l_qty = ceil( l_qty ).
+    ENDIF.
+*"end modify by zihao 20261007
+*    end modify by zihao 20260721  FATP拆解
+*    add by linsen  241105 argon+ start
+*    IF t_zidppp099-fgfmg > p_in-qty.
+*      l_qty = p_in-qty.
+*    ELSE.
+*      l_qty = t_zidppp099-fgfmg.
+*    ENDIF.
+*    add by linsen  241105 argon+ end
+
+    LOOP AT itab.
+      l_index = sy-tabix.
+      CLEAR l_bdmng.
+      l_bdmng = itab-bdmng - itab-enmng.
+      IF l_bdmng < 0.
+        l_bdmng = 0 .
+      ENDIF.
+      IF n_bdmng > 0.
+        l_qty = n_bdmng.
+      ENDIF.
+*****Vaulation type emeim ***********
+      CALL FUNCTION 'ZRFC_MM_IDP_0195'
+        EXPORTING
+          plant          = itab_item-plant
+          partno         = itab_item-material_long
+          sloc           = itab_item-stge_loc
+        IMPORTING
+          e_code         = l_code
+          valuation_type = itab_item-batch
+          message        = l_mes.
+      IF l_code = 1.
+        MOVE-CORRESPONDING p_in TO p_ou.
+        p_ou-message = l_mes.
+        APPEND p_ou.
+        CLEAR p_ou.
+        l_suc = 'N'.
+        EXIT.
+      ENDIF.
+*****Vaulation type emeim ***********
+      IF l_qty <= l_bdmng .
+        itab_item-res_item = itab-rspos.
+        itab_item-entry_qnt = l_qty.
+        IF p_in-message EQ '' .
+          APPEND itab_item.
+        ENDIF.
+        EXIT.
+      ELSE.
+        IF l_index = l_count.
+          IF n_bdmng > 0 .
+            l_qty = n_bdmng .
+          ENDIF .
+        ELSE.
+          n_bdmng = l_qty - l_bdmng.
+          l_qty = l_bdmng.
+        ENDIF.
+
+        IF l_qty <= 0.
+          CONTINUE.
+        ENDIF.
+        itab_item-res_item = itab-rspos.
+        itab_item-entry_qnt = l_qty.
+        IF p_in-message EQ '' .
+          APPEND itab_item.
+        ENDIF.
+      ENDIF.
+    ENDLOOP.
+
+    CLEAR n_bdmng.
+    l_order = p_in-order .
+    MOVE-CORRESPONDING p_in TO l_tempin.
+    APPEND l_tempin .
+    CLEAR l_tempin .
+    CLEAR: itab_item.
+  ENDLOOP .
+
+  IF l_suc = 'N'.
+    EXIT.
+  ENDIF.
+
+  CALL FUNCTION 'BAPI_GOODSMVT_CREATE'
+    EXPORTING
+      goodsmvt_header  = itab_header
+      goodsmvt_code    = itab_code
+    IMPORTING
+      materialdocument = l_matedoc
+    TABLES
+      goodsmvt_item    = itab_item
+      return           = it_return.
+*  commit work and wait.
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+    EXPORTING
+      wait = 'X'.
+  de = 1 .
+  DO 100 TIMES. ADD 1 TO de. ENDDO.
+  IF l_matedoc <> ''.
+    LOOP AT l_tempin .
+      MOVE-CORRESPONDING l_tempin TO p_ou.
+      IF p_ou-message EQ '' .
+        p_ou-document = l_matedoc .
+      ENDIF .
+      APPEND p_ou .
+      CLEAR p_ou .
+    ENDLOOP .
+  ELSE .
+    LOOP AT l_tempin .
+      MOVE-CORRESPONDING l_tempin TO p_ou.
+      IF p_ou-message EQ '' .
+        CONCATENATE p_ou-message it_return-message
+           INTO p_ou-message.
+      ENDIF .
+      APPEND p_ou .
+      CLEAR p_ou .
+    ENDLOOP .
+  ENDIF .
+  CLEAR: itab_item,it_return,l_tempin,l_matedoc.
+  REFRESH: itab_item,it_return,l_tempin.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  close_wo
+*&---------------------------------------------------------------------*
+
+FORM close_wo.
+
+  DATA: l_objnr LIKE aufk-objnr,
+        l_stxxt LIKE bsvx-sttxt.
+
+  CLEAR t_zidppp099.
+  PERFORM select_screen.
+*  PERFORM UPDATE_MIDDSTATUS.  "modify by ruilong 0926
+
+  LOOP AT t_zidppp099.
+    l_flag = 'Y'.
+
+    IF ( t_zidppp099-sflag = '5' OR
+       t_zidppp099-sflag = '7' OR
+       t_zidppp099-sflag = 'T' OR   "add by zihao fatp 重工拆解20260703
+       t_zidppp099-sflag = '6' OR  "add Argon+
+      t_zidppp099-sflag = 'H' OR  "add Argon+ 20241022
+      t_zidppp099-sflag = 'A' OR   "add Argon+
+       t_zidppp099-sflag = '9' OR
+       t_zidppp099-sflag = '8' ) AND g_flag = 'N'.
+      t_zidppp099-mess1 = 'please cheek SFC flag!'(076).
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    IF t_zidppp099-daufnr EQ ''.
+      t_zidppp099-mess1 = 'NO Generate WO,NO Close'(064).
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    IF t_zidppp099-dimbnr = '' OR t_zidppp099-dgmbnr = ''.
+      t_zidppp099-mess1 = 'NO Issus OR GR,NO Close'.
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING
+        input  = t_zidppp099-daufnr
+      IMPORTING
+        output = t_zidppp099-daufnr.
+
+    CLEAR g_objnr.
+    SELECT SINGLE objnr INTO g_objnr
+      FROM aufk
+     WHERE aufnr = t_zidppp099-daufnr.
+    IF sy-subrc NE 0.
+      t_zidppp099 = 'WO NOT EXISTS'(065).
+      MODIFY t_zidppp099.
+      CONTINUE.
+    ENDIF.
+
+    CALL FUNCTION 'STATUS_TEXT_EDIT'
+      EXPORTING
+        objnr         = g_objnr
+        only_active   = 'X'
+        spras         = 'E'
+        bypass_buffer = '1'
+      IMPORTING
+        line          = l_stxxt.
+
+    IF l_stxxt CS 'CLSD' OR l_stxxt CS 'TECO'.
+      t_zidppp099-mess1 = 'WO is Closed'(066).
+      IF t_zidppp099-pflag = '4'. "add Amelia240723 sn
+        t_zidppp099-dflag = 'D'.
+        t_zidppp099-pflag = 'D'.
+      ENDIF.                      "add Amelia240723 en
+      MODIFY t_zidppp099.
+      CONTINUE.
+    ENDIF.
+    IF l_stxxt CS 'DLFL'.
+      t_zidppp099-mess1 = 'WO is Deleted'(067).
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    PERFORM bdc_co02_close USING t_zidppp099-daufnr.
+    IF t_zidppp099-pflag <> 'D'.
+      t_zidppp099-mess1 = 'WO TECO FAILED!'.
+      MODIFY t_zidppp099 TRANSPORTING mess1.
+      CONTINUE.
+    ELSE.
+      t_zidppp099-dflag = 'D'.
+      t_zidppp099-mess1 = 'WO TECO SUCCESS!'.
+      MODIFY t_zidppp099 TRANSPORTING pflag dflag mess1.
+    ENDIF.
+  ENDLOOP.
+  MODIFY zidppp099 FROM TABLE t_zidppp099.
+
+ENDFORM.
+
+FORM close_wo1.
+  DATA: l_objnr LIKE aufk-objnr,
+        l_stxxt LIKE bsvx-sttxt.
+  DATA: lt_orders        LIKE TABLE OF bapi_order_key,
+        lt_detail_return LIKE TABLE OF bapi_order_return.
+
+  CLEAR t_zidppp099.
+  PERFORM select_screen.
+
+  LOOP AT t_zidppp099 ASSIGNING FIELD-SYMBOL(<ft>).
+    l_flag = 'Y'.
+
+    IF ( <ft>-sflag = '5' OR
+       <ft>-sflag = '7' OR
+*       <ft>-sflag = 'T' OR  "add by zihao fatp 重工拆解20260703
+       <ft>-sflag = '6' OR  "add Argon+
+      <ft>-sflag = 'H' OR  "add Argon+ 20241022
+      <ft>-sflag = 'A' OR   "add Argon+
+       <ft>-sflag = '9' OR
+       <ft>-sflag = '8' ) AND g_flag = 'N'.
+      <ft>-mess1 = 'please cheek SFC flag!'(076).
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    IF <ft>-daufnr EQ ''.
+      <ft>-mess1 = 'NO Generate WO,NO Close'(064).
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    IF <ft>-dimbnr = '' OR <ft>-dgmbnr = ''.
+      <ft>-mess1 = 'NO Issus OR GR,NO Close'.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING
+        input  = <ft>-daufnr
+      IMPORTING
+        output = <ft>-daufnr.
+
+    CLEAR g_objnr.
+    SELECT SINGLE objnr INTO g_objnr
+      FROM aufk
+     WHERE aufnr = <ft>-daufnr.
+    IF sy-subrc NE 0.
+      <ft>-mess1 = 'WO NOT EXISTS'(065).
+      CONTINUE.
+    ENDIF.
+
+
+    CALL FUNCTION 'STATUS_TEXT_EDIT'
+      EXPORTING
+        objnr         = g_objnr
+        only_active   = 'X'
+        spras         = 'E'
+        bypass_buffer = '1'
+      IMPORTING
+        line          = l_stxxt.
+
+    IF l_stxxt CS 'CLSD' OR l_stxxt CS 'TECO'.
+      <ft>-mess1 = 'WO is Closed'(066).
+      IF <ft>-pflag = '4'. "add Amelia240723 sn
+        <ft>-dflag = 'D'.
+        <ft>-pflag = 'D'.
+      ENDIF.                      "add Amelia240723 en
+      CONTINUE.
+    ENDIF.
+    IF l_stxxt CS 'DLFL'.
+      <ft>-mess1 = 'WO is Deleted'(067).
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+
+    lt_orders = VALUE #(  ( order_number = <ft>-daufnr ) ).
+    CALL FUNCTION 'BAPI_PRODORD_COMPLETE_TECH'
+      EXPORTING
+        scope_compl_tech   = '1'
+        work_process_group = 'COWORK_BAPI'
+        work_process_max   = 99
+      TABLES
+        orders             = lt_orders
+        detail_return      = lt_detail_return.
+    IF sy-subrc = 0.
+      <ft>-mess1 = 'WO TECO Success!'(066).
+      <ft>-dflag = 'D'.
+      <ft>-pflag = 'D'.
+    ELSE.
+      READ TABLE lt_detail_return INDEX 1 ASSIGNING FIELD-SYMBOL(<fs>).
+      <ft>-mess1 = <fs>-message.
+*      <ft>-pflag = 'D'.
+    ENDIF.
+  ENDLOOP.
+  MODIFY zidppp099 FROM TABLE t_zidppp099.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  bdc_co02_close
+*&---------------------------------------------------------------------*
+
+FORM bdc_co02_close USING p_aufnr.
+
+  DATA:l_con   TYPE i,
+       l_stxxt LIKE bsvx-sttxt,
+       l_posnr LIKE resb-posnr,
+       l_meins LIKE mara-meins.
+  DATA: zhead   TYPE thead,
+        zaufnr  TYPE aufnr,
+        t_lines LIKE tline OCCURS 0 WITH HEADER LINE.
+
+  CLEAR: bdcdata,messtab.
+  REFRESH: bdcdata,messtab.
+
+  PERFORM bdc_dynpro      USING 'SAPLCOKO1' '0110'.
+  PERFORM bdc_field       USING 'BDC_CURSOR'
+                                'CAUFVD-AUFNR'.
+  PERFORM bdc_field       USING 'BDC_OKCODE'
+                                '/00'.
+  PERFORM bdc_field       USING 'CAUFVD-AUFNR'
+                                p_aufnr.
+  PERFORM bdc_dynpro      USING 'SAPLCOKO1' '0115'.
+  PERFORM bdc_field       USING 'BDC_OKCODE'
+                                '=TABS'.
+  PERFORM bdc_field       USING 'BDC_CURSOR'
+                                'CAUFVD-GAMNG'.
+  PERFORM bdc_dynpro      USING 'SAPLCOKO1' '0115'.
+  PERFORM bdc_field       USING 'BDC_OKCODE'
+                                '=BU'.
+  PERFORM bdc_field       USING 'BDC_CURSOR'
+                                'CAUFVD-GAMNG'.
+
+  CALL TRANSACTION 'CO02' WITHOUT AUTHORITY-CHECK USING bdcdata
+                             MODE runmode
+                             UPDATE 'S'
+                             MESSAGES INTO messtab.
+  CLEAR l_stxxt.
+
+  CALL FUNCTION 'STATUS_TEXT_EDIT'
+    EXPORTING
+      objnr         = g_objnr
+      only_active   = 'X'
+      spras         = 'E'
+      bypass_buffer = '1'
+    IMPORTING
+      line          = l_stxxt.
+
+  IF l_stxxt CS 'TECO'.
+    t_zidppp099-mess1 = 'WO TECO Success!'(063).
+    t_zidppp099-pflag = 'D'.
+
+  ELSE.
+    CALL FUNCTION 'MESSAGE_TEXT_BUILD'
+      EXPORTING
+        msgid               = messtab-msgid
+        msgnr               = messtab-msgnr
+        msgv1               = messtab-msgv1
+        msgv2               = messtab-msgv2
+        msgv3               = messtab-msgv3
+        msgv4               = messtab-msgv4
+      IMPORTING
+        message_text_output = zmsg.
+    t_zidppp099-mess1 = zmsg.
+
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  update_middstatus  add by ruilong 20160926
+*----------------------------------------------------------------------*
+FORM update_middstatus.
+  DATA: l_mess(30),l_flag(1).
+  DELETE t_zidppp099 WHERE dflag = 'M'.
+  IF NOT t_zidppp099[] IS INITIAL.
+    GET TIME.
+    t_zidppp099-dflag = 'M'.
+*by wzs 20181207
+    CONCATENATE p_emplyee_id '資料處理中'(069) INTO t_zidppp099-mess1.
+    t_zidppp099-edate = sy-datum.
+    t_zidppp099-etime = sy-uzeit.
+    MODIFY t_zidppp099 TRANSPORTING dflag edate etime mess1 WHERE
+werks <> ''.                                     "by wzs 20181207
+    MODIFY zidppp099 FROM TABLE t_zidppp099.
+    IF sy-subrc = 0.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING
+          wait = 'X'.
+      IF sy-subrc <> 0.
+        MESSAGE i000(zpp) WITH 'Modify status M error,pls retry1'(099).
+        STOP.
+      ENDIF.
+    ELSE.
+      MESSAGE i000(zpp) WITH 'Modify status M error,pls retry2'(100).
+      STOP.
+    ENDIF.
+  ELSE.
+    MESSAGE i044(zpp).
+    STOP.
+  ENDIF.
+  t_zidppp099-dflag = ''.
+  t_zidppp099-mess1 = ''.
+  MODIFY t_zidppp099 TRANSPORTING dflag mess1 WHERE werks <> ''."by wzs
+
+ENDFORM.                    " update_middstatus
+
+*&---------------------------------------------------------------------*
+*&      Form  pro_middlestatus_data  add by ruilong 0926
+*&---------------------------------------------------------------------*
+FORM pro_middlestatus_data.
+  DATA:ll_type        LIKE aufk-auart,
+       ll_aufnr       LIKE aufk-aufnr,
+       l_time         LIKE tvro-fahztd,
+       l_flag         LIKE rv56a-selkz,
+       l_sfbv11       LIKE zidppp055-sfbv11,
+       ll_balan       LIKE zidppp055-sfbv05,
+       ll_gisl        LIKE mard-lgort,
+       ll_product(20) TYPE c.
+
+  SELECT DISTINCT *
+    INTO CORRESPONDING FIELDS OF TABLE t_zidppp099
+    FROM zidppp099
+   WHERE werks = p_werks
+     AND pallet IN s_pallet
+     AND ersda IN s_badat
+     AND faufnr IN s_faufnr
+     AND fmatnr IN s_fmatnr
+     AND ffloor IN s_ffloor
+     AND gmatnr IN s_gmatnr
+     AND gfloor IN s_gfloor
+     AND sflag IN s_sflag
+     AND fggrn IN s_fggrn
+     AND daufnr IN s_daufnr
+     AND gaufnr IN s_gaufnr
+     AND pflag IN s_pflag.
+
+  DELETE t_zidppp099 WHERE dflag <> 'M'.
+  LOOP AT t_zidppp099.
+    CALL FUNCTION 'SD_CALC_DURATION_FROM_DATETIME'
+      EXPORTING
+        i_date1       = t_zidppp099-edate
+        i_time1       = t_zidppp099-etime
+        i_date2       = sy-datum
+        i_time2       = sy-uzeit
+      IMPORTING
+        e_tdiff       = l_time
+        e_date2_early = l_flag.
+
+*   IF l_time <= 30000."注釋y Yi 2024011
+    IF l_time <= 10000."Modify By Yi 2024011
+      DELETE t_zidppp099.
+      CONTINUE.
+    ENDIF.
+    t_zidppp099-dflag = 'D'.
+    MODIFY t_zidppp099.
+  ENDLOOP.
+
+  IF NOT t_zidppp099[] IS INITIAL.
+    MODIFY zidppp099 FROM TABLE t_zidppp099.
+    IF sy-subrc = 0.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING
+          wait = 'X'.
+    ELSE.
+      MESSAGE i000(zpp) WITH 'Modify status D error,pls retry'(098).
+      STOP.
+    ENDIF.
+  ENDIF.
+
+ENDFORM.                    " pro_middlestatus_data
+*&---------------------------------------------------------------------*
+*&      Form  CHANGE_DFLAG  add by ruilong 20160926
+*----------------------------------------------------------------------*
+FORM change_dflag.
+
+  LOOP AT t_zidppp099.
+    IF t_zidppp099-pflag = 'D'.
+      t_zidppp099-dflag = 'D'.
+
+    ELSE.
+      t_zidppp099-dflag = ''.
+*      t_zidppp099-mess1 = ''.  " MARK BY ERIN 20260622
+    ENDIF.
+    MODIFY t_zidppp099 .
+  ENDLOOP.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form create_diswo
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM create_diswo .
+  CLEAR input.
+  REFRESH input.
+  SELECT werks,cvalue,cvalue1 FROM zidpcontrolvalue INTO TABLE @DATA(lt_swr) WHERE ctype = 'SWRNO'.
+  LOOP AT t_zidppp099.
+
+    l_flag = 'Y'.
+
+    IF t_zidppp099-daufnr <> ''.
+      t_zidppp099-mess1 = 'Already Generate Dis WO!'.
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    IF t_zidppp099-werks = ''.
+      t_zidppp099-mess1 = 'The Plant Is Null!'.
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    IF t_zidppp099-ffloor = ''.
+      t_zidppp099-mess1 = 'The GB floor Is Null!'.
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    IF t_zidppp099-fmatnr = ''.
+      t_zidppp099-mess1 = 'The GB material Is Null!'.
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    IF t_zidppp099-fgfmg = ''.
+      t_zidppp099-mess1 = 'The GB QTY Is Null!'.
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    IF t_zidppp099-sflag = '7' OR t_zidppp099-sflag = 'F' "add F For FG返GB維修
+      OR t_zidppp099-sflag = 'T' "add by zihao fatp 重工拆解 20260703
+     OR t_zidppp099-sflag = '6' "Add by linsen 241001 Argon
+       OR t_zidppp099-sflag = 'G'."add Amelia240713 已Z5后 變為G  也能產生拆解工單，因為還沒有產生拆解工單
+      SELECT SINGLE cvalue1 INTO input-auart
+      FROM zidpcontrolvalue
+      WHERE werks = t_zidppp099-werks
+        AND ctype = 'DWO_FOR_SPECIAL_ADJUST'
+        AND cvalue =  t_zidppp099-sflag   "modify By Yi
+        AND indicator1 = 'ACT'.
+*    ENDIF.
+      IF input-auart EQ ''.
+        t_zidppp099-mess1 = 'NO maintain order type'(053).
+*      t_zmwhhb-grtxt = 'N'.
+        MODIFY t_zidppp099.
+        l_flag = 'N'.
+        CONTINUE.
+      ENDIF.
+    ENDIF.
+    SELECT SINGLE cvalue cvalue1 cvalue2 indicator1_memo
+      INTO (input-prctr,input-account,input-routing,input-f_code)
+      FROM zidpcontrolvalue
+     WHERE werks = t_zidppp099-werks
+       AND ctype = 'DWO_SETTLEMENT_RULE'
+       AND indicator1 = 'ACT'.
+    IF input-prctr EQ ''.
+      t_zidppp099-mess1 = 'NO maintain profit center'(054).
+*      t_zmwhhb-grtxt = 'N'.
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    IF input-account EQ ''.
+      t_zidppp099-mess1 = 'NO maintain account type'(055).
+*      t_zmwhhb-grtxt = 'N'.
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+
+    IF input-f_code EQ ''.
+      t_zidppp099-mess1 = 'NO maintain cost center'(056).
+      MODIFY t_zidppp099.
+      l_flag = 'N'.
+      CONTINUE.
+    ENDIF.
+*** add by erin 20260622
+    IF g_npiflag = 'Y'.
+      SELECT SINGLE posid INTO input-posid
+       FROM prps AS a
+       INNER JOIN afpo  AS b ON a~pspnr = b~projn
+      WHERE aufnr = t_zidppp099-faufnr+4(12).
+    ENDIF.
+****end
+    input-werks = t_zidppp099-werks.
+    input-a_matnr = t_zidppp099-fmatnr.
+    input-qty = t_zidppp099-fgfmg.
+    input-g_l = 'G/L'.
+    input-pformat = '2'.
+*    INPUT-PFORMAT = '1'.
+    input-address = 'N'.
+    input-floor = t_zidppp099-ffloor.
+*    input-remark2 = 'CPDisWO'.
+
+    CALL FUNCTION 'ZRFC_CONVERT_DATE_FORMAT'
+      EXPORTING
+        p_date = sy-datum
+      IMPORTING
+        l_date = input-start_date.
+
+    SELECT SINGLE tlk03 INTO l_sku
+       FROM zidpmmtlk
+       WHERE werks = t_zidppp099-werks
+         AND tlk01 = t_zidppp099-fmatnr.
+    IF sy-subrc = 0.
+      SELECT SINGLE cvalue1 INTO input-remark1
+        FROM zidpcontrolvalue
+       WHERE werks = t_zidppp099-werks
+         AND ctype = 'D_SWRNO'
+         AND cvalue = l_sku.
+    ENDIF.
+    IF t_zidppp099-sflag = '6'.
+      input-remark2 = t_zidppp099-yl01. "Add by linsen 241106 Argon+
+    ELSE.
+      SELECT SINGLE tlk02 INTO input-remark2
+        FROM zidpmmtlk
+       WHERE tlk01 = t_zidppp099-fmatnr
+         AND werks = t_zidppp099-werks.
+      IF sy-subrc <> 0.
+        input-remark2 = t_zidppp099-fmatnr.
+      ENDIF.
+    ENDIF.
+*    start add by linsen 241115 Argon+
+*    READ TABLE lt_swr INTO DATA(ls_swr) WITH KEY
+*    werks = t_zidppp099-werks cvalue = l_sku+0(3).
+*    input-remark2 = ls_swr-cvalue1.
+*    end add by linsen 241115 Argon+
+    input-remark3 = t_zidppp099-faufnr.
+    APPEND input.
+  ENDLOOP.
+*merge data by werks,fmatnr,ffloor,fgfmg
+  LOOP AT t_zidppp099 WHERE mess1 = ''.
+    MOVE-CORRESPONDING t_zidppp099 TO itab_group.
+    COLLECT itab_group.CLEAR itab_group.
+  ENDLOOP.
+
+*create Dis WO
+  CLEAR t_zidppp099.
+  LOOP AT itab_group.
+    READ TABLE input WITH KEY werks = itab_group-werks
+                            a_matnr = itab_group-fmatnr
+                              floor = itab_group-ffloor.
+    IF sy-subrc = 0.
+      input-qty = itab_group-fgfmg.
+* add Amelia220728 for CSD Mtub
+      CLEAR:bom,bom[].
+      bom-idnrk = itab_group-fmatnr.
+      APPEND bom.
+      CLEAR itab_c.REFRESH itab_c.
+      LOOP AT bom.
+        SELECT SINGLE * FROM mast WHERE matnr = bom-idnrk
+                                  AND werks = input-werks.
+        IF sy-subrc EQ 0.
+          PERFORM get_bom_end USING bom-idnrk 1000 '1'.
+          LOOP AT itab_c.
+            itab_c-menge =  itab_c-mngko / 1000 * input-qty
+                        * -1."return
+            itab_c-alpgr = ''.
+            itab_c-ewahr = 0.
+            MODIFY itab_c.
+          ENDLOOP.
+        ELSE.
+          itab_c = bom.
+          IF itab_c-alpgr NE '' AND itab_c-ewahr NE '100'.
+          ELSE.
+            itab_c-menge =  bom-mngko  / 1000 * input-qty  * -1.
+            APPEND itab_c.
+          ENDIF.
+        ENDIF.
+      ENDLOOP.
+
+      PERFORM only_keyparts.
+
+      LOOP AT itab_c.
+        itab_c-menge = ceil( abs( itab_c-menge ) ) * -1.
+        MODIFY itab_c.
+        CLEAR itab_c.
+      ENDLOOP.
+      CLEAR itab_c.
+      itab_c-werks = input-werks.
+      itab_c-idnrk = input-a_matnr."need to issue
+      itab_c-menge = input-qty.
+      INSERT itab_c INDEX 1.
+
+      LOOP AT itab_c.
+        SELECT SINGLE * FROM marc WHERE matnr = itab_c-idnrk
+                               AND werks = itab_c-werks.
+        IF sy-subrc NE 0.
+          CONCATENATE itab_c-idnrk 'Not exist ' INTO  itab-mess .
+          APPEND itab.
+          EXIT.
+        ENDIF.
+
+        SELECT SINGLE * FROM marc WHERE matnr = itab_c-idnrk
+                             AND werks = itab_c-werks
+                             AND sobsl = '50'.
+        IF sy-subrc EQ 0.
+          DELETE itab_c.
+          CLEAR itab_c.
+          CONTINUE.
+        ENDIF.
+      ENDLOOP.
+
+      PERFORM create_rework_wo USING input.
+      IF messtab-msgv1 <> ''.
+        t_zidppp099-daufnr = messtab-msgv1.
+        t_zidppp099-mess1 = 'Generate Dis Wo Success!'.
+        IF t_zidppp099-sflag = '7'.
+          t_zidppp099-pflag = '7'.
+        ELSEIF t_zidppp099-sflag = 'T'. "add by zihao fatp重工拆解 20260703
+          t_zidppp099-pflag = 'T'. "add by zihao fatp重工拆解 20260703
+        ELSEIF t_zidppp099-sflag = '9'.
+          t_zidppp099-pflag = '9'.
+        ELSEIF t_zidppp099-sflag = '8'.
+          t_zidppp099-pflag = '8'.
+        ELSEIF t_zidppp099-sflag = 'C'.
+          t_zidppp099-pflag = 'C'.
+        ELSE.
+          t_zidppp099-pflag = '2'.
+        ENDIF.
+
+        CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+          EXPORTING
+            input  = t_zidppp099-daufnr
+          IMPORTING
+            output = t_zidppp099-daufnr.
+      ELSE.
+        t_zidppp099-daufnr = messtab-msgv1.
+        t_zidppp099-mess1 = 'Generate Dis Wo Failed!'.
+      ENDIF.
+      MODIFY t_zidppp099 TRANSPORTING daufnr pflag mess1
+              WHERE werks = input-werks
+               AND fmatnr = input-a_matnr
+               AND ffloor = input-floor
+               AND  mess1 = ''.
+      CLEAR t_zidppp099.
+    ENDIF.
+  ENDLOOP.
+  MODIFY zidppp099 FROM TABLE t_zidppp099.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form creat_d_doc
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM creat_d_doc .
+  DATA:outitab_295 LIKE zidpmms011 OCCURS 0 WITH HEADER LINE.
+  DATA:input_295 LIKE zidpmms010 OCCURS 0 WITH HEADER LINE.
+  DATA:l_099_wa TYPE zidppp099.
+  DATA:l_099 LIKE TABLE OF zidppp099.
+  DATA:l_item TYPE i,
+       l_ct   LIKE zidppp099-dflag.
+  DATA:BEGIN OF tt_l OCCURS 0 ,
+         pallet LIKE zidppp099-pallet,
+         faufnr LIKE zidppp099-faufnr,
+       END OF tt_l.
+  DATA:l_npi TYPE c.
+  SELECT SINGLE * FROM zidpcontrolvalue
+    WHERE werks = p_werks AND ctype = 'NPI_PO_CONTROL' AND indicator1 = 'ACT'.
+  IF sy-subrc = 0.
+    l_npi = 'Y'.
+  ELSE.
+    l_npi = 'N'.
+  ENDIF.
+  PERFORM select_screen.
+*篩選FG轉GB未開立轉撥單數據
+  LOOP AT t_zidppp099 WHERE ( sflag = 'F' OR sflag = 'G') AND pflag = 'D' AND d_doc = ''.
+    MOVE-CORRESPONDING t_zidppp099 TO l_099_wa.
+    APPEND l_099_wa TO l_099.
+  ENDLOOP.
+*---get cost center,獲取轉撥單出倉和入倉
+  WITH +a AS (
+    SELECT a~werks ,a~pallet ,a~faufnr ,a~gmatnr ,a~sdat ,a~fmatnr ,a~ffloor ,a~fgfmg ,a~meins ,a~gfloor ,a~sflag ,
+          a~fggrn ,a~fmbnr ,a~pflag ,a~daufnr ,a~dissue ,a~dimbnr ,a~disgr ,a~dgmbnr ,a~dflag ,a~gaufnr ,a~gisue ,
+          a~gimbnr ,a~mess1 ,a~mess2 ,a~mess3 ,a~ernam ,a~ersda ,a~erzet ,a~execflag ,a~gdate ,a~gtime ,a~edate ,a~etime ,
+          a~zflag ,a~d_doc ,a~creat_mes ,a~d_mblnr ,a~post_mes ,a~sfc_gb_matnr ,b~kostl,c~lgort,c1~lgort AS umlgo,d~tlk03 AS model
+      FROM @l_099 AS a ##ITAB_KEY_IN_SELECT
+         LEFT JOIN zidpfi_floor AS b
+           ON a~werks = b~werks AND b~floor_code = a~ffloor
+         LEFT JOIN zidpmm560 AS e  " 新增For涉美物料的管控
+           ON a~werks = e~werks AND a~fmatnr = e~matnr
+         LEFT JOIN zidpmm094 AS c
+           ON a~werks = c~werks AND a~ffloor = c~floor AND c~floor_type = 'L' AND c~lgort_type = 'K'
+*           AND c~obx01 = e~obx01
+           AND c~obx01 = coalesce( e~obx01, ' ' )
+*           AND ( c~obx01 = e~obx01 OR e~obx01 IS NULL )
+         LEFT JOIN zidpmm094 AS c1
+           ON a~werks = c1~werks AND a~gfloor = c1~floor AND c1~floor_type = 'L' AND c1~lgort_type = 'L'
+*           AND c1~obx01 = e~obx01
+          AND c1~obx01 = coalesce( e~obx01, ' ' )
+*          AND ( c1~obx01 = e~obx01 OR e~obx01 IS NULL )
+         LEFT JOIN zidpmmtlk AS d
+           ON d~werks = a~werks AND d~tlk01 = a~fmatnr
+              )
+      SELECT  a~werks ,a~pallet ,a~faufnr ,a~gmatnr ,a~sdat ,a~fmatnr ,a~ffloor ,a~fgfmg ,a~meins ,a~gfloor ,a~sflag ,
+          a~fggrn ,a~fmbnr ,a~pflag ,a~daufnr ,a~dissue ,a~dimbnr ,a~disgr ,a~dgmbnr ,a~dflag ,a~gaufnr ,a~gisue ,
+          a~gimbnr ,a~mess1 ,a~mess2 ,a~mess3 ,a~ernam ,a~ersda ,a~erzet ,a~execflag ,a~gdate ,a~gtime ,a~edate ,a~etime ,
+          a~zflag ,a~d_doc ,a~creat_mes ,a~d_mblnr ,a~post_mes ,a~sfc_gb_matnr ,a~kostl,a~lgort,a~umlgo,b~value2 AS model_des,
+          c~projn
+        FROM +a AS a
+          LEFT JOIN zidpmmcontrol AS b
+            ON a~werks = b~werks AND b~project = 'RELATION'  AND b~value1 = a~model
+          LEFT JOIN afpo AS c
+            ON c~aufnr = substring( a~faufnr,6,12 )
+        ORDER BY a~werks ,a~pallet ASCENDING
+      INTO TABLE @DATA(tt).
+  SORT tt BY werks
+              pallet
+              faufnr
+              gmatnr
+              sdat   ASCENDING..
+  DELETE ADJACENT DUPLICATES FROM tt COMPARING ALL FIELDS .
+*轉撥單by棧板開立，便於查詢
+  LOOP AT tt ASSIGNING FIELD-SYMBOL(<fs>).
+*檢查倉碼，成本中心，機種是否存在
+    IF <fs>-kostl = ''.
+      MODIFY t_zidppp099[] FROM VALUE #( creat_mes = '轉出樓層成本中心未維護，請聯繫經管維護')
+         TRANSPORTING creat_mes
+           WHERE pallet = <fs>-pallet
+             AND faufnr = <fs>-faufnr.
+      CONTINUE.
+    ENDIF.
+    IF <fs>-lgort = ''. "轉出樓層
+      MODIFY t_zidppp099[] FROM VALUE #( creat_mes = '轉出樓層倉碼未維護')
+         TRANSPORTING creat_mes
+           WHERE pallet = <fs>-pallet
+             AND faufnr = <fs>-faufnr.
+      CONTINUE.
+    ENDIF.
+
+    IF <fs>-umlgo = ''. "轉入樓層
+      MODIFY t_zidppp099[] FROM VALUE #( creat_mes = '接收樓層倉碼未維護')
+         TRANSPORTING creat_mes
+           WHERE pallet = <fs>-pallet
+             AND faufnr = <fs>-faufnr.
+      CONTINUE.
+    ENDIF.
+
+    IF <fs>-model_des = ''. "機種
+      MODIFY t_zidppp099[] FROM VALUE #( creat_mes = '機種未維護，請聯繫PE維護')
+         TRANSPORTING creat_mes
+           WHERE pallet = <fs>-pallet
+             AND faufnr = <fs>-faufnr.
+      CONTINUE.
+    ENDIF.
+
+*檢查倉碼，成本中心，機種是否存在
+    IF <fs>-sflag = 'F'.
+      MODIFY t_zidppp099[] FROM VALUE #( post_mes = '接收樓層暫未掃描接收')
+         TRANSPORTING post_mes
+           WHERE pallet = <fs>-pallet
+             AND faufnr = <fs>-faufnr.
+    ENDIF.
+    CLEAR:input_295.
+    l_item = l_item + 1.
+    input_295-batch = l_item. "項次
+    input_295-doctype = 'D'.
+    input_295-matnr = <fs>-gmatnr.
+    input_295-menge = <fs>-fgfmg.
+    input_295-kostl = <fs>-kostl.
+*    input_295-yl2 = lt_header-yl2.
+*    input_295-yl3 = lt_header-yl3.
+    IF l_npi = 'Y'.
+***modify by erin 20260622
+      SELECT SINGLE posid INTO input_295-ps_psp_pnr
+      FROM prps AS a
+      INNER JOIN afpo  AS b ON a~pspnr = b~projn
+     WHERE aufnr = <fs>-faufnr+4(12).
+      input_295-mat_pspnr = input_295-ps_psp_pnr.
+*      input_295-ps_psp_pnr = <fs>-projn.
+*      input_295-mat_pspnr = <fs>-projn.
+    ENDIF.
+* 樓層
+    input_295-floor = <fs>-ffloor.
+    input_295-model = <fs>-model_des.
+    input_295-werks = <fs>-werks.
+    input_295-employid = 'F8888888'.
+    input_295-meins = <fs>-meins.
+    input_295-lgort = <fs>-lgort .
+    input_295-umlgo = <fs>-umlgo.
+    COLLECT input_295.
+*棧板和工單號記錄
+    CLEAR tt_l.
+    tt_l-pallet = <fs>-pallet.
+    tt_l-faufnr = <fs>-faufnr.
+    APPEND tt_l.
+    AT END OF pallet.
+      CALL FUNCTION 'ZRFC_MM_IDP_0295'
+*      IMPORTING
+*        message = l_message "Mark by linsen 231221
+        TABLES
+          input   = input_295
+          outitab = outitab_295.
+*更新開單結果
+      READ TABLE outitab_295 INDEX 1.
+      LOOP AT tt_l.
+        IF outitab_295-document <> ''.
+          l_ct = 'C'.
+
+        ENDIF.
+        MODIFY t_zidppp099[] FROM VALUE #( d_doc = outitab_295-document creat_mes = outitab_295-msg pflag = l_ct )
+         TRANSPORTING d_doc creat_mes pflag
+           WHERE pallet = tt_l-pallet
+             AND faufnr = tt_l-faufnr.
+      ENDLOOP.
+      IF outitab_295-document <> ''.
+        COMMIT WORK AND WAIT.
+      ELSE.
+        ROLLBACK WORK.
+      ENDIF.
+      CLEAR:input_295,outitab_295,tt_l,l_ct.
+      FREE:input_295,outitab_295,tt_l.
+    ENDAT.
+  ENDLOOP.
+*更新表
+  MODIFY zidppp099 FROM TABLE t_zidppp099.
+  COMMIT WORK AND WAIT.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form d_post
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM d_post .
+  DATA:l_post_wa TYPE zidppp099.
+  DATA:l_post LIKE TABLE OF zidppp099.
+  DATA:input_285 LIKE zidpmms007 OCCURS 0 WITH HEADER LINE.
+  DATA:outitab_285 LIKE zidpmms008 OCCURS 0 WITH HEADER LINE.
+  DATA:l_pt LIKE zidppp099-dflag.
+  PERFORM select_screen.
+
+*篩選FG轉GB已開立轉撥單數據
+  LOOP AT t_zidppp099 WHERE ( pflag = 'C' OR pflag = 'D' ) AND sflag = 'G'  AND d_doc <> '' AND d_mblnr = '' .
+    MOVE-CORRESPONDING t_zidppp099 TO l_post_wa.
+    APPEND l_post_wa TO l_POST.
+  ENDLOOP.
+*檢查單據是否過帳
+  SELECT DISTINCT a~werks,a~d_doc,a~pallet,b~docstas,b~mblnr
+    FROM @l_post AS a ##ITAB_KEY_IN_SELECT
+      LEFT JOIN zidpmmwhh AS b
+        ON a~d_doc = b~docnumber
+  INTO TABLE @DATA(ll).
+  LOOP AT ll ASSIGNING FIELD-SYMBOL(<fsl>).
+    CLEAR: input_285,outitab_285,l_pt.
+    FREE :input_285,outitab_285.
+    IF <fsl>-docstas = '1' .
+      MODIFY t_zidppp099[] FROM VALUE #( pflag = 'P' d_mblnr = <fsl>-mblnr  post_mes = '單據已過帳')
+         TRANSPORTING pflag d_mblnr post_mes
+           WHERE pallet = <fsl>-pallet
+             AND faufnr = <fsl>-d_doc.
+      CONTINUE.
+    ENDIF.
+    input_285-document = <fsl>-d_doc.
+    input_285-employid = 'F8888888'.
+    input_285-werks = <fsl>-werks.
+    APPEND input_285.
+
+    CALL FUNCTION 'ZRFC_MM_IDP_0285'
+      TABLES
+        input   = input_285
+        outitab = outitab_285.
+    READ TABLE outitab_285 INDEX 1.
+    IF  outitab_285-mblnr <> ''.
+      l_pt = 'P'.
+      COMMIT WORK AND WAIT.
+    ENDIF.
+    MODIFY t_zidppp099[] FROM VALUE #( d_mblnr = outitab_285-mblnr post_mes = outitab_285-msg pflag = l_pt )
+      TRANSPORTING d_mblnr post_mes pflag
+        WHERE pallet = <fsl>-pallet
+         AND d_doc = <fsl>-d_doc.
+
+  ENDLOOP.
+*更新表
+  MODIFY zidppp099 FROM TABLE t_zidppp099.
+
+ENDFORM.

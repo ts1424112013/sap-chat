@@ -18,6 +18,11 @@
 *         (WAIT UP TO 会触发隐式数据库提交), 不可用时直接重试
 *         ★ 重贴后核对标记: chat 内有 DO 2 TIMES 与 is_retryable( 调用;
 *           有 CALL FUNCTION 'ENQUE_SLEEP'; 定义区有 is_retryable 声明
+* V1.4 20261028(10.28 记录 #01): 新增可选出参 ev_finish = 模型的结束原因
+*         (OpenAI 兼容 finish_reason / Ollama done_reason; 'length' = 达到
+*         MAX_TOKENS 被截断)。Agent 据此区分"回答太长被截断"与"格式写错",
+*         给出对应的重写提示。老调用方不用改
+*         ★ 重贴后核对标记: chat 声明有 ev_finish; 解析段有 to_lower( ls_choice-finish_reason )
 *=======================================================================
 CLASS zcl_ai_llm_client DEFINITION
   PUBLIC
@@ -45,7 +50,8 @@ CLASS zcl_ai_llm_client DEFINITION
       EXPORTING ev_content   TYPE string
                 ev_elapsed   TYPE i
                 ev_error     TYPE string
-                ev_attempts  TYPE i.                   " V1.3: 实际请求次数(1 或 2)
+                ev_attempts  TYPE i                    " V1.3: 实际请求次数(1 或 2)
+                ev_finish    TYPE string.              " V1.4: 结束原因(length = 被 MAX_TOKENS 截断)
 
     " V1.3: 一次失败是否值得重试(网络层失败 / 429 / 5xx; 读超时与 4xx 不重试)
     " @parameter iv_code       | HTTP 状态码(网络层失败时为 0)
@@ -101,8 +107,9 @@ CLASS zcl_ai_llm_client DEFINITION
            END OF ty_oai_resp.
 
     TYPES: BEGIN OF ty_ol_resp,      " Ollama: {"message":{...},"error":"..."}
-             message TYPE ty_message,
-             error   TYPE string,
+             message     TYPE ty_message,
+             error       TYPE string,
+             done_reason TYPE string,  " V1.4: stop / length
            END OF ty_ol_resp.
 
 ENDCLASS.
@@ -122,7 +129,7 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
           lv_t2     TYPE i,
           lx        TYPE REF TO cx_root.
 
-    CLEAR: ev_content, ev_elapsed, ev_error, ev_attempts.
+    CLEAR: ev_content, ev_elapsed, ev_error, ev_attempts, ev_finish.
 
     " ---------------- 0. 配置校验 ----------------
     IF is_cfg-endpoint_url IS INITIAL AND is_cfg-destination IS INITIAL.
@@ -324,9 +331,11 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
                       name_mappings = VALUE #( ( abap = 'MESSAGE' json = 'message' )
                                                ( abap = 'ROLE'    json = 'role' )
                                                ( abap = 'CONTENT' json = 'content' )
-                                               ( abap = 'ERROR'   json = 'error' ) )
+                                               ( abap = 'ERROR'   json = 'error' )
+                                               ( abap = 'DONE_REASON' json = 'done_reason' ) )
             CHANGING  data = ls_olr ).
           ev_content = ls_olr-message-content.
+          ev_finish  = to_lower( ls_olr-done_reason ).
           IF ev_content IS INITIAL AND ls_olr-error IS NOT INITIAL.
             ev_error = ls_olr-error.
           ENDIF.
@@ -344,6 +353,7 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
           READ TABLE ls_oair-choices INTO DATA(ls_choice) INDEX 1.
           IF sy-subrc = 0.
             ev_content = ls_choice-message-content.
+            ev_finish  = to_lower( ls_choice-finish_reason ).
           ENDIF.
           IF ls_oair-error-message IS NOT INITIAL.
             ev_error = ls_oair-error-message.

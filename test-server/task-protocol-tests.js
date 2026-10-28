@@ -15,7 +15,7 @@
 const { TaskStore, isActiveStatus } = require('./task-store');
 const { ReportStore, RUN_STATUS } = require('./report-store');
 const { quickRoute, isTcodeLike } = require('./intent-route');
-const { extractJsonObject } = require('./agent-loop');
+const { extractJsonObject, inferAction, salvageAnswer } = require('./agent-loop');
 
 const USER = 'TESTER';
 const SESSION = 'SESS_TEST_0001';
@@ -518,6 +518,29 @@ function scenario13() {
   check('没有对象返回空串', extractJsonObject('没有 JSON') === '');
 }
 
+// 20261028（10.28 记录 #01）：协议失败兜底（对照 GUARD V1.1.5 / AGENT_SERVICE V15.7）
+function scenario14() {
+  console.log('\n━━ 场景 14: 协议失败兜底（10.28 #01）');
+  const obj = '{"action":"final","summary":"x","answer":"触发条件在第 1290 行"}';
+  const pre = '报错在 |cancel confirmation failed:{ return-message }| 这一行。\n```json\n' + obj + '\n```';
+  check('说明文字里的 ABAP 模板 { x } 不再被当成协议对象', extractJsonObject(pre, '"action"') === obj);
+  check('不给 key 时仍取第一个对象（老行为）', extractJsonObject(pre) === '{ return-message }');
+  check('都不含 key 时退回第一个对象', extractJsonObject('{"a":1} {"b":2}', '"action"') === '{"a":1}');
+  check('缺 action、有 answer → final', inferAction({ summary: 's', answer: 'a' }).action === 'final');
+  check('缺 action、有 tool → tool', inferAction({ tool: 'read_program_source', args: {} }).action === 'tool');
+  check('缺 action、都没有 → 仍报缺 action', !inferAction({ summary: 's' }).action);
+
+  const longAns = '结论：报错来自 FORM post_document 第 1290 行。\n1. 第 1146 行 BAPI_PRODORDCONF_CREATE_HDR 创建确认；\n2. 25 秒内没等到物料凭证就取消确认';
+  const cut = '{"action":"final","summary":"定位报错","answer":"' + JSON.stringify(longAns).slice(1, -1) + '\\u4e';
+  const sv = salvageAnswer(cut);
+  check('被截断的 final：取出 answer 已输出部分（换行还原、尾部半个转义去掉）', sv.indexOf('第 1290 行。\n1. 第 1146 行') > 0 && !/\\u4e$/.test(sv) && sv.endsWith('取消确认'), sv);
+  check('纯文字回答（没有 JSON）原样保留', salvageAnswer(longAns) === longAns);
+  check('想调工具的输出不兜底', salvageAnswer('{"action":"tool","tool":"read_program_source","args":{"name":"ZRPP_IDP_0299","start_line":"1601"}') === '');
+  check('以 { 开头但没有 answer 的输出不兜底', salvageAnswer('{"summary":"继续读下一段源码, 查看报错处理分支以及后续的逻辑和调用关系"}') === '');
+  check('```json 围栏开头但被截断在 answer 之前，不兜底', salvageAnswer('```json\n{"action":"final","summary":"定位报错的触发条件与行号以及后续处理逻辑和建议"') === '');
+  check('正文不足 40 字符不兜底', salvageAnswer('{"action":"final","answer":"在 1290 行') === '');
+}
+
 function main() {
   console.log('╔══════════════════════════════════════════╗');
   console.log('║ 任务/报表协议测试(本地 Mock/契约, 无 LLM) ║');
@@ -536,6 +559,7 @@ function main() {
   scenario11();
   scenario12();
   scenario13();
+  scenario14();
 
   console.log(`\n${'='.repeat(50)}`);
   console.log(`总计: ${passed} 通过, ${failed} 失败`);

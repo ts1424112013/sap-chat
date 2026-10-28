@@ -135,6 +135,21 @@
 *   sync + finish。进度写失败只关掉进度, 不影响回答; 不改 Trace / 审计口径。
 *   ★ 重贴后核对标记: 进度调用 start 1 处 / sync 7 处 / finish 2 处,
 *     另有 plan_running / kv_running / preview_of 各 1 处
+* V15.7 20261028(10.28 记录 #01: 问 ZRPP_IDP_0299 报错原因, 逐段读完 1600 行源码后
+*   第 5 轮 109.7 秒、第 6 轮再次"缺少 action", 两次协议失败终止, 什么都没给出):
+*   ① 读模型结束原因(LLM_CLIENT V1.4 ev_finish): 被 MAX_TOKENS 截断时修复轮
+*     专门要求"压缩回答重写", 不再只说格式不对;
+*   ② 每次协议失败记一条 REJECTED 步骤(原因 + 是否截断 + 输出开头 160 字),
+*     现场能直接看到模型实际输出了什么;
+*   ③ 第二次仍失败时先用 GUARD.salvage_answer 从两次坏输出里保留回答正文
+*     (截断的 answer / 纯文字回答), 保留到就按完成返回并注明可能不完整;
+*     都没有才走原来的"未完成"降级;
+*   ④ read_program_source 新增 keyword 参数: 按关键词定位, 返回命中行与前后
+*     各 gc_src_ctx 行(最多 gc_src_hits 处), 报错文案类问题不必从第 1 行通读;
+*   ⑤ 降级提示的"已完成的阶段"只列中文步骤名, 不再带 [PHASE] 代码
+*   ★ 重贴后核对标记: 两处 zcl_ai_llm_client=>chat 都有 ev_finish = lv_llm_fin;
+*     有 salvage_answer( lv_content ) 与 salvage_answer( lv_bad_first );
+*     exec_read_source 声明有 iv_keyword; 常量有 gc_src_hits / gc_src_ctx
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -190,7 +205,9 @@ CLASS zcl_ai_agent_service DEFINITION
                gc_art_chars      TYPE i VALUE 8000, " V15.1: 注入的报表结果明细截断
                gc_src_page       TYPE i VALUE 400,   " V15.2: read_program_source 每页行数
                gc_src_chars      TYPE i VALUE 18000, " V15.2: 每页源码字符上限(整行截断)
-               gc_src_feed       TYPE i VALUE 24000. " V15.2: 源码工具结果回填上限
+               gc_src_feed       TYPE i VALUE 24000, " V15.2: 源码工具结果回填上限
+               gc_src_hits       TYPE i VALUE 20,    " V15.7: 关键词定位最多返回的命中处数
+               gc_src_ctx        TYPE i VALUE 6.     " V15.7: 每处命中前后各带的行数
 
     " Agent 入口(读请求; 工具全部只读, 不创建/修改/过账任何业务数据)
     CLASS-METHODS analyze_agent
@@ -231,6 +248,7 @@ CLASS zcl_ai_agent_service DEFINITION
     CLASS-METHODS exec_read_source
       IMPORTING iv_name        TYPE string
                 iv_start       TYPE string
+                iv_keyword     TYPE string OPTIONAL   " V15.7: 关键词定位
                 is_cfg         TYPE zai_model_cfg
       EXPORTING ev_json        TYPE string
                 ev_label       TYPE string
@@ -353,6 +371,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           lv_answer   TYPE string,
           lv_round    TYPE i,
           lv_repaired TYPE abap_bool,
+          lv_bad_first TYPE string,     " V15.7: 第一次协议失败时的原始输出(兜底用)
+          lv_cut_first TYPE abap_bool,  " V15.7: 第一次失败是否因长度上限被截断
           lv_t0       TYPE i,
           lv_t1       TYPE i,
           " V1.3.0: 本次运行积累的数据集与结构化分析结果
@@ -919,7 +939,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     DATA lv_switched TYPE abap_bool VALUE abap_false.   " V15.3: 本次运行是否已切换过备选模型
     lv_round    = 0.
     lv_repaired = abap_false.
-    CLEAR lv_answer.
+    CLEAR: lv_answer, lv_bad_first, lv_cut_first.
 
     DO lv_max_rounds TIMES.
 
@@ -960,15 +980,17 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
       DATA: lv_content TYPE string,
             lv_llm_ms  TYPE i,
-            lv_llm_err TYPE string.
-      CLEAR: lv_content, lv_llm_ms, lv_llm_err.
+            lv_llm_err TYPE string,
+            lv_llm_fin TYPE string.   " V15.7: 结束原因(length = 被 MAX_TOKENS 截断)
+      CLEAR: lv_content, lv_llm_ms, lv_llm_err, lv_llm_fin.
 
       zcl_ai_llm_client=>chat(
         EXPORTING is_cfg      = ls_call
                   it_messages = lt_messages
         IMPORTING ev_content  = lv_content
                   ev_elapsed  = lv_llm_ms
-                  ev_error    = lv_llm_err ).
+                  ev_error    = lv_llm_err
+                  ev_finish   = lv_llm_fin ).
 
       " ---- V15.3(BE-07): 首选模型失败 → 本场景白名单内换一个启用模型再试一次 ----
       IF ( lv_llm_err IS NOT INITIAL OR lv_content IS INITIAL ) AND lv_switched = abap_false.
@@ -992,13 +1014,14 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           ENDIF.
           ls_call = ls_cfg.
           ls_call-timeout_sec = lv_rest_s.
-          CLEAR: lv_content, lv_llm_ms, lv_llm_err.
+          CLEAR: lv_content, lv_llm_ms, lv_llm_err, lv_llm_fin.
           zcl_ai_llm_client=>chat(
             EXPORTING is_cfg      = ls_call
                       it_messages = lt_messages
             IMPORTING ev_content  = lv_content
                       ev_elapsed  = lv_llm_ms
-                      ev_error    = lv_llm_err ).
+                      ev_error    = lv_llm_err
+                      ev_finish   = lv_llm_fin ).
         ENDIF.
       ENDIF.
 
@@ -1038,17 +1061,59 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         " ---- 非法输出: 仅允许一次修复重试(计划书 P1-2) ----
         " 修复轮的模型耗时同样计入规划阶段
         lv_plan_ms = lv_plan_ms + lv_llm_ms.
+        " V15.7: 被 MAX_TOKENS 截断单独说明; 每次失败记一条步骤(原因 + 输出开头), 现场可查
+        DATA(lv_cut) = xsdbool( lv_llm_fin = 'length' ).
+        IF lv_cut = abap_true.
+          lv_perr = |{ lv_perr }; 输出达到长度上限被截断|.
+        ENDIF.
+        DATA(lv_bad_head) = substring( val = lv_content
+                                       len = nmin( val1 = 160 val2 = strlen( lv_content ) ) ).
+        REPLACE ALL OCCURRENCES OF REGEX '\s+' IN lv_bad_head WITH ` `.
+        APPEND VALUE #( phase      = 'EXECUTING'
+                        label      = COND #( WHEN lv_repaired = abap_false
+                                             THEN '模型输出格式不对, 已要求重写'
+                                             ELSE '模型重写后格式仍不对' )
+                        status     = 'REJECTED'
+                        elapsed_ms = lv_llm_ms
+                        detail     = |{ lv_perr }。输出共 { strlen( lv_content ) } 字符, 开头: { lv_bad_head }| ) TO lt_trace.
         IF lv_repaired = abap_false.
-          lv_repaired = abap_true.
+          lv_repaired  = abap_true.
+          lv_bad_first = lv_content.
+          lv_cut_first = lv_cut.
           CLEAR ls_msg.
           ls_msg-role    = 'user'.
-          ls_msg-content = |【协议错误】你上一条输出不符合协议({ lv_perr })。| &&
-                           |请重新仅输出一行 JSON, 不要包含任何其他文字:| &&
-                           |\n\{"action":"tool","tool":"<工具ID>","summary":"<一句话说明>","args":\{...\}\}| &&
-                           |\n或 \{"action":"final","summary":"<一句话说明>","answer":"..."\}|.
+          IF lv_cut = abap_true.
+            ls_msg-content = |【协议错误】你上一条输出太长, 超过长度上限被截断, JSON 不完整。| &&
+                             |请重新只输出一行 JSON, 不要包含任何其他文字; answer 压缩到 1200 字以内:| &&
+                             |只写结论、触发条件和关键行号, 代码片段最多 10 行:| &&
+                             |\n\{"action":"final","summary":"<一句话说明>","answer":"..."\}| &&
+                             |\n(如果还需要调用工具, 输出 \{"action":"tool","tool":"<工具ID>","summary":"<一句话说明>","args":\{...\}\})|.
+          ELSE.
+            ls_msg-content = |【协议错误】你上一条输出不符合协议({ lv_perr })。| &&
+                             |请重新仅输出一行 JSON, 不要包含任何其他文字:| &&
+                             |\n\{"action":"tool","tool":"<工具ID>","summary":"<一句话说明>","args":\{...\}\}| &&
+                             |\n或 \{"action":"final","summary":"<一句话说明>","answer":"..."\}|.
+          ENDIF.
           APPEND ls_msg TO lt_messages.
           CONTINUE.
         ELSE.
+          " V15.7: 两次都不合协议 → 先从两次坏输出里保留回答正文, 保留不到才按未完成降级
+          DATA(lv_salvage) = zcl_ai_agent_guard=>salvage_answer( lv_content ).
+          IF lv_salvage IS INITIAL.
+            lv_salvage = zcl_ai_agent_guard=>salvage_answer( lv_bad_first ).
+          ENDIF.
+          IF lv_salvage IS NOT INITIAL.
+            lv_answer = |{ lv_salvage }\n\n（说明: 模型这次的输出格式不完整| &&
+                        COND string( WHEN lv_cut = abap_true OR lv_cut_first = abap_true
+                                     THEN `, 回答过长被截断` ELSE `` ) &&
+                        |, 以上是保留下来的内容, 结尾可能不完整。可以让我"接着说完", 或把问题问得更具体一些。）|.
+            es_result-status = 'OK'.
+            APPEND VALUE #( phase      = 'COMPOSING'
+                            label      = '整理回答(格式不完整, 已保留可用内容)'
+                            status     = 'OK'
+                            elapsed_ms = 0 ) TO lt_trace.
+            EXIT.
+          ENDIF.
           es_result-status  = 'ERROR'.
           es_result-message = |模型输出两次不符合协议, 终止({ lv_perr })|.
           EXIT.
@@ -1223,9 +1288,10 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
               lv_src_ok    TYPE abap_bool.
         CLEAR: lv_src_json, lv_src_label, lv_src_ok.
         exec_read_source(
-          EXPORTING iv_name  = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'name' )
-                    iv_start = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'start_line' )
-                    is_cfg   = ls_cfg
+          EXPORTING iv_name    = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'name' )
+                    iv_start   = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'start_line' )
+                    iv_keyword = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'keyword' )
+                    is_cfg     = ls_cfg
           IMPORTING ev_json  = lv_src_json
                     ev_label = lv_src_label
                     ev_ok    = lv_src_ok ).
@@ -1795,6 +1861,64 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     SPLIT ls_src-source AT cl_abap_char_utilities=>newline INTO TABLE lt_lines.
     lv_total = lines( lt_lines ).
 
+    " V15.7: 关键词定位 —— 返回命中行及前后各 gc_src_ctx 行(相邻命中合并窗口,
+    " 最多 gc_src_hits 处), 报错文案/字段名类问题不必从第 1 行逐段通读。
+    " 行首是行号(右对齐 6 位 + 空格), 与分页读取同一编号; CS 不区分大小写
+    DATA(lv_kw) = condense( val = iv_keyword ).
+    IF lv_kw IS NOT INITIAL.
+      DATA: lt_hit  TYPE STANDARD TABLE OF i WITH DEFAULT KEY,
+            lv_hits TYPE i,
+            lv_from TYPE i,
+            lv_to   TYPE i,
+            lv_last TYPE i,
+            lv_hl   TYPE string.
+      LOOP AT lt_lines INTO lv_line.
+        IF lv_line CS lv_kw.
+          lv_hits = lv_hits + 1.
+          IF lines( lt_hit ) < gc_src_hits.
+            APPEND sy-tabix TO lt_hit.
+          ENDIF.
+        ENDIF.
+      ENDLOOP.
+
+      LOOP AT lt_hit INTO DATA(lv_h).
+        lv_hl   = COND #( WHEN lv_hl IS INITIAL THEN |{ lv_h }| ELSE |{ lv_hl },{ lv_h }| ).
+        lv_from = nmax( val1 = 1 val2 = lv_h - gc_src_ctx ).
+        lv_to   = nmin( val1 = lv_total val2 = lv_h + gc_src_ctx ).
+        IF lv_from <= lv_last.
+          lv_from = lv_last + 1.
+        ELSEIF lv_last > 0.
+          lv_body = lv_body && `   ...` && cl_abap_char_utilities=>newline.
+        ENDIF.
+        IF lv_from > lv_to.
+          CONTINUE.
+        ENDIF.
+        LOOP AT lt_lines INTO lv_line FROM lv_from TO lv_to.
+          IF lv_chars + strlen( lv_line ) + 1 > gc_src_chars.
+            EXIT.
+          ENDIF.
+          lv_body  = lv_body && lv_line && cl_abap_char_utilities=>newline.
+          lv_chars = lv_chars + strlen( lv_line ) + 1.
+        ENDLOOP.
+        lv_last = lv_to.
+      ENDLOOP.
+
+      ev_json = |\{"ok":true,"object":"{ lv_prog }","type":"{ ls_src-objtype }",| &&
+                |"total_lines":{ lv_total },"keyword":"{ json_text( lv_kw ) }",| &&
+                |"hits":{ lv_hits },"hit_lines":[{ lv_hl }],| &&
+                |"more_hits":{ COND string( WHEN lv_hits > lines( lt_hit ) THEN 'true' ELSE 'false' ) },| &&
+                |"note":"{ json_text( lv_note ) }",| &&
+                COND string( WHEN lv_hits = 0
+                             THEN |"tip":"没有命中: 换一段更短、更有区分度的文字再搜, 或用 start_line 分段读取",|
+                             ELSE `` ) &&
+                |"source":"{ json_text( lv_body ) }"\}|.
+      ev_label = COND #( WHEN lv_hits = 0
+                         THEN |搜索源码: { lv_prog } 未找到「{ lv_kw }」(共 { lv_total } 行)|
+                         ELSE |搜索源码: { lv_prog } 找到「{ lv_kw }」{ lv_hits } 处(共 { lv_total } 行)| ).
+      ev_ok = abap_true.
+      RETURN.
+    ENDIF.
+
     " 翻页起点(默认 1; 只接受 1~6 位数字)
     lv_start = 1.
     IF iv_start IS NOT INITIAL AND iv_start CO '0123456789' AND strlen( iv_start ) <= 6.
@@ -2094,8 +2218,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
     IF it_trace IS NOT INITIAL.
       rv = |{ rv }\n已完成的阶段:\n|.
-      LOOP AT it_trace INTO DATA(ls_s).
-        rv = |{ rv }- [{ ls_s-phase }] { ls_s-label }\n|.
+      " V15.7: 只列中文步骤名(不带 [PHASE] 代码; 跳过"检查可用工具"这类内部步骤)
+      LOOP AT it_trace INTO DATA(ls_s) WHERE phase <> 'TOOL_DECISION'.
+        rv = |{ rv }- { ls_s-label }\n|.
       ENDLOOP.
     ENDIF.
 

@@ -34,6 +34,16 @@
 *   搜 "REPLACE ALL OCCURRENCES OF REGEX" 只剩 3 处(validate_args 换行、
 *   sanitize_summary、clean_text), 没有删围栏的那条; extract_json_object
 *   内有 "lv_c = '"' AND lv_depth > 0"
+* V1.1.5 20261028(10.28 记录 #01: 代码分析读完 4 段源码后两次"缺少 action"终止):
+*   ① parse_model_json 优先取含 "action" 的那个平衡对象 —— 回答前的说明文字里
+*     带 ABAP 字符串模板 { x } 时, 原来会把这段代码当成协议对象;
+*   ② 缺 action 时按字段推断: 有 tool → tool, 只有 answer → final(之后照常校验);
+*   ③ 新增 PUBLIC salvage_answer: 两次协议失败后从坏输出里保留回答正文
+*     (被长度上限截断的 answer 已输出部分 / 完全没有 JSON 的纯文字回答);
+*     想调工具的输出与过短正文不兜底
+*   ★ 重贴后核对标记: parse_model_json 内 extract_json_object( iv_text = iv_raw
+*     iv_key = '"action"' ); PUBLIC 有 salvage_answer 声明; extract_json_object
+*     声明有 iv_key TYPE string OPTIONAL
 *         - parse_analysis_plan    查询计划 JSON 解析与规范化
 *                                  (白名单校验在 DATA_ANALYSIS_SERVICE)
 *         - parse_analysis_output  结构化分析输出解析+字段清洗+图表引用校验
@@ -69,6 +79,12 @@ CLASS zcl_ai_agent_guard DEFINITION
       IMPORTING iv_raw       TYPE string
       EXPORTING es_out       TYPE ty_llm_out
                 ev_error     TYPE string.
+
+    " V1.1.5: 两次协议失败后的兜底 —— 从坏输出里取出可读的回答正文;
+    "   是调工具的输出或正文不足 40 字符时返回空
+    CLASS-METHODS salvage_answer
+      IMPORTING iv_raw        TYPE string
+      RETURNING VALUE(rv)     TYPE string.
 
     CLASS-METHODS parse_flat_json
       IMPORTING iv_json      TYPE string
@@ -128,9 +144,11 @@ CLASS zcl_ai_agent_guard DEFINITION
 
   PRIVATE SECTION.
 
-    " 提取文本中第一个配平的 {...} 对象(感知字符串字面量, 支持嵌套)
+    " 提取文本中第一个配平的 {...} 对象(感知字符串字面量, 支持嵌套);
+    " V1.1.5: 给了 iv_key 时取第一个包含它的顶层对象, 都不含时退回第一个对象
     CLASS-METHODS extract_json_object
       IMPORTING iv_text       TYPE string
+                iv_key        TYPE string OPTIONAL
       RETURNING VALUE(rv)     TYPE string.
 
     " 文本清洗: 剥离 HTML 尖括号/引号/控制字符并压缩空白
@@ -159,7 +177,8 @@ CLASS zcl_ai_agent_guard IMPLEMENTATION.
     " V1.1.4(BE-01): 取第一个平衡的 {...}(感知字符串与转义), 内容原样交解析器;
     " ```json 围栏与前后说明文字都在对象之外, 自然被忽略。没有平衡对象时原文
     " 交解析器, 由下面的报错进入修复轮
-    DATA(lv_raw) = extract_json_object( iv_raw ).
+    " V1.1.5: 优先取含 "action" 的对象(说明文字里的代码 { x } 不再被误当协议对象)
+    DATA(lv_raw) = extract_json_object( iv_text = iv_raw iv_key = '"action"' ).
     IF lv_raw IS INITIAL.
       lv_raw = iv_raw.
     ENDIF.
@@ -176,6 +195,15 @@ CLASS zcl_ai_agent_guard IMPLEMENTATION.
         ev_error = |模型输出不是合法 JSON: { lx_json->get_text( ) }|.
         RETURN.
     ENDTRY.
+
+    " V1.1.5: 缺 action 时按字段推断, 之后照常走 tool / final 校验
+    IF es_out-action IS INITIAL.
+      IF es_out-tool IS NOT INITIAL.
+        es_out-action = 'tool'.
+      ELSEIF es_out-answer IS NOT INITIAL.
+        es_out-action = 'final'.
+      ENDIF.
+    ENDIF.
 
     IF es_out-action IS INITIAL.
       ev_error = '输出缺少 action 字段'.
@@ -668,7 +696,9 @@ CLASS zcl_ai_agent_guard IMPLEMENTATION.
           lv_depth  TYPE i,
           lv_start  TYPE i,
           lv_in_str TYPE abap_bool,
-          lv_esc    TYPE abap_bool.
+          lv_esc    TYPE abap_bool,
+          lv_obj    TYPE string,
+          lv_first  TYPE string.
 
     lv_len = strlen( iv_text ).
     IF lv_len = 0 OR lv_len > 200000.
@@ -700,14 +730,91 @@ CLASS zcl_ai_agent_guard IMPLEMENTATION.
             lv_depth = lv_depth - 1.
             IF lv_depth = 0.
               DATA(lv_l) = lv_i - lv_start + 1.
-              rv = iv_text+lv_start(lv_l).
-              RETURN.
+              lv_obj = iv_text+lv_start(lv_l).
+              " V1.1.5: 没给 key 或本对象含 key → 就是它; 否则记下第一个, 继续往后找
+              IF iv_key IS INITIAL OR lv_obj CS iv_key.
+                rv = lv_obj.
+                RETURN.
+              ENDIF.
+              IF lv_first IS INITIAL.
+                lv_first = lv_obj.
+              ENDIF.
             ENDIF.
           ENDIF.
         ENDIF.
       ENDIF.
       lv_i = lv_i + 1.
     ENDWHILE.
+
+    rv = lv_first.
+
+  ENDMETHOD.
+
+
+  METHOD salvage_answer.
+
+    " V1.1.5: 两次协议失败后的兜底(10.28 记录 #01)。两种可取的形态:
+    "   a) {"action":"final",...,"answer":"...  被长度上限截断 —— 取 answer 已输出的部分
+    "   b) 完全没有 JSON 的纯文字回答 —— 原样取用
+    " 想调工具的输出不是回答; 以 { 或 ```json 开头但没有 answer 的输出不当回答
+    DATA: lv_off   TYPE i,
+          lv_mlen  TYPE i,
+          lv_i     TYPE i,
+          lv_start TYPE i,
+          lv_total TYPE i,
+          lv_blen  TYPE i,
+          lv_esc   TYPE abap_bool,
+          lv_body  TYPE string.
+
+    CLEAR rv.
+    lv_total = strlen( iv_raw ).
+    IF lv_total = 0 OR lv_total > 200000.
+      RETURN.
+    ENDIF.
+
+    FIND REGEX '"action"\s*:\s*"tool"' IN iv_raw IGNORING CASE.
+    IF sy-subrc = 0.
+      RETURN.
+    ENDIF.
+
+    FIND REGEX '"answer"\s*:\s*"' IN iv_raw MATCH OFFSET lv_off MATCH LENGTH lv_mlen.
+    IF sy-subrc = 0.
+      " 从 answer 字符串开头读到第一个未转义的引号; 被截断时读到结尾
+      lv_start = lv_off + lv_mlen.
+      lv_i     = lv_start.
+      WHILE lv_i < lv_total.
+        DATA(lv_c) = iv_raw+lv_i(1).
+        IF lv_esc = abap_true.
+          lv_esc = abap_false.
+        ELSEIF lv_c = '\'.
+          lv_esc = abap_true.
+        ELSEIF lv_c = '"'.
+          EXIT.
+        ENDIF.
+        lv_i = lv_i + 1.
+      ENDWHILE.
+      lv_blen = lv_i - lv_start.
+      IF lv_blen > 0.
+        lv_body = substring( val = iv_raw off = lv_start len = lv_blen ).
+        " 截断可能停在半个转义上(单个 \ 或 \u4e2), 先去掉尾部残片
+        REPLACE REGEX '\\(u[0-9A-Fa-f]{0,3})?\z' IN lv_body WITH ``.
+        rv = json_unescape( lv_body ).
+        IF rv = lv_body AND find( val = rv sub = `\` ) >= 0.
+          REPLACE ALL OCCURRENCES OF `\n` IN rv WITH cl_abap_char_utilities=>newline.
+          REPLACE ALL OCCURRENCES OF `\t` IN rv WITH cl_abap_char_utilities=>horizontal_tab.
+          REPLACE ALL OCCURRENCES OF `\"` IN rv WITH `"`.
+        ENDIF.
+      ENDIF.
+    ELSE.
+      FIND REGEX '\A\s*(```[A-Za-z]*\s*)?\{' IN iv_raw.
+      IF sy-subrc <> 0.
+        rv = iv_raw.
+      ENDIF.
+    ENDIF.
+
+    IF strlen( condense( val = rv ) ) < 40.
+      CLEAR rv.
+    ENDIF.
 
   ENDMETHOD.
 
