@@ -89,6 +89,11 @@
 *   不受影响; ZAI_CHAT_MSG 里存的仍是全文
 *   ★ 重贴后核对标记: 常量区有 gc_hist_msg_max 与 gc_hist_total_max;
 *   get_history 内有 INSERT ls_msg INTO lt_keep INDEX 1
+* V2.6 20261029: 思考模式(无 SE11 / SEGW 改动; 需同时重贴 LLM_CLIENT V1.6 + DPC_EXT) ——
+*   analyze 取 LLM_CLIENT 的 ev_reasoning 放进出参新字段 reasoning, 由 DPC 出参时
+*   放到回答前面(<think>…</think>)给前端单独显示。落库(ZAI_CHAT_MSG)与历史上下文
+*   只用 answer —— 思考内容不存、不进下一轮。首选模型失败换模型兜底时不带思考
+*   ★ 重贴后核对标记: ty_analyze_result 有 reasoning; analyze 内有 ev_reasoning = lv_reasoning
 *         read_program_meta: TRDIRT 的程序名字段是 NAME 而非 PROGNAME
 *         (PROGNAME 是 REPOSRC 的字段, 原代码两处混用导致
 *         "Unknown column name PROGNAME", 并连带 LV_T 内联声明失败报
@@ -142,6 +147,7 @@ CLASS zcl_ai_chat_service DEFINITION
              elapsed_ms   TYPE i,
              status       TYPE string,   " OK / ERROR
              message      TYPE string,
+             reasoning    TYPE string,   " V2.6: 思考过程(只随本次出参, 不落库; DPC 拼到回答前)
            END OF ty_analyze_result.
 
     " ---- SaveModelCfg 函数导入返回结构 ----
@@ -471,6 +477,7 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
           lv_content  TYPE string,
           lv_elapsed  TYPE i,
           lv_error    TYPE string,
+          lv_reasoning TYPE string,   " V2.6: 思考过程(不落库)
           lv_prog     TYPE string.
 
     CLEAR es_result.
@@ -714,16 +721,17 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
     APPEND ls_msg TO lt_messages.
 
     zcl_ai_llm_client=>chat(
-      EXPORTING is_cfg      = ls_cfg
-                it_messages = lt_messages
-      IMPORTING ev_content  = lv_content
-                ev_elapsed  = lv_elapsed
-                ev_error    = lv_error ).
+      EXPORTING is_cfg       = ls_cfg
+                it_messages  = lt_messages
+      IMPORTING ev_content   = lv_content
+                ev_elapsed   = lv_elapsed
+                ev_error     = lv_error
+                ev_reasoning = lv_reasoning ).
 
     " ---- V2.2: 故障自动切换: 首选模型失败时尝试其他启用模型 ----
     IF lv_error IS NOT INITIAL OR lv_content IS INITIAL.
       DATA: lv_fb_model TYPE string.
-      CLEAR: lv_content, lv_error, lv_fb_model.
+      CLEAR: lv_content, lv_error, lv_fb_model, lv_reasoning.
       chat_fallback( EXPORTING it_messages = lt_messages
                                " V2.2.2: CONV 强制转 string, 规避类型兼容性报错
                                iv_failed   = CONV string( ls_cfg-model_id )
@@ -739,6 +747,7 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
 
     IF lv_error IS INITIAL AND lv_content IS NOT INITIAL.
       es_result-answer     = lv_content.
+      es_result-reasoning  = lv_reasoning.   " V2.6: 只随出参, 下面落库只用 answer
       es_result-status     = 'OK'.
       es_result-elapsed_ms = lv_elapsed.
     ELSE.

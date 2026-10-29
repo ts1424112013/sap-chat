@@ -18,6 +18,8 @@
  *      （TOOL_ID = LLM_CALL）、DATA_ANALYSIS V13.4 数据集行数写在明细前面并按整行回填
  *  11) 10.28 #02：SQL_EXECUTOR V1.3 长 SQL 安全断行、SQL_GUARD V1.2.3 写法提示、DDIC_TOOLS V1.3 前导零、
  *      DOMAIN_CARDS V1.4 与技能「生产工单进度」
+ *  12) 20261029 思考模式：LLM_CLIENT V1.6 按写法拼 chat_template_kwargs / think、思考与正文分开；
+ *      思考只随出参（DPC wrap_think），不落库、不进上下文；Agent 每轮思考挂到进度步骤
  * 只能查文本层面的约定，语法与运行时仍以 SAP 激活与现场验证为准。
  */
 const fs = require('fs');
@@ -386,8 +388,9 @@ console.log('\n[10] Agent闭环增强/02 第 0 步：用量记审计（LLM_CLIEN
 const lcChat = methodOf(lc, 'chat');
 const lcUsage = methodOf(lc, 'parse_usage');
 check('LLM_CLIENT V1.5：chat 新增出参 ev_usage TYPE ty_usage；ty_usage 声明在 chat 之前；单独 CLEAR ev_usage',
-  /^\* V1\.5 20261028/m.test(lcRaw) && /ev_finish\s+TYPE string\s+ev_usage\s+TYPE ty_usage\./.test(lc) &&
-  lc.indexOf('BEGIN OF ty_usage,') > 0 && lc.indexOf('BEGIN OF ty_usage,') < lc.indexOf('CLASS-METHODS chat') && /CLEAR ev_usage\./.test(lcChat));
+  // 20261029：V1.6 在 ev_usage 后面又加了 ev_reasoning、CLEAR 合成一句 —— 只要求 ev_usage 还在、还单独被清
+  /^\* V1\.5 20261028/m.test(lcRaw) && /ev_finish\s+TYPE string\s+ev_usage\s+TYPE ty_usage\b/.test(lc) &&
+  lc.indexOf('BEGIN OF ty_usage,') > 0 && lc.indexOf('BEGIN OF ty_usage,') < lc.indexOf('CLASS-METHODS chat') && /CLEAR:?[^.]*\bev_usage\b[^.]*\./.test(lcChat));
 check('chat：失败分支 RETURN 之后、正文解析 TRY 之前取用量（失败的调用不解析）',
   /IF lv_fail IS NOT INITIAL\.[\s\S]*?RETURN\.\s*ENDIF\.\s*ev_usage = parse_usage\( lv_resp \)\.\s*TRY\./.test(lcChat));
 check('parse_usage：PUBLIC；自己的 TRY / CATCH cx_root 清空返回，不影响正文；认 DeepSeek / OpenAI / Ollama 三种字段',
@@ -460,6 +463,75 @@ const ppOrder = skills.builtin.find((x) => x.id === 'DATA_PP_ORDER');
 check('技能「生产工单进度」：工单号补零、在制口径（标明暂定）、状态不和 SUM 同 JOIN、比率在回答里算；正文 ≤ 3000',
   !!ppOrder && /'000000131002'/.test(ppOrder.body) && /在制数量（暂定口径/.test(ppOrder.body) && /不要和数量 SUM/.test(ppOrder.body) &&
   /在回答里算/.test(ppOrder.body) && ppOrder.body.length <= 3000);
+
+// ---------------------------------------------------------------- 12) 思考模式（20261029）
+console.log('\n[12] 思考模式：LLM_CLIENT V1.6 拼参数 / 拆思考、CHAT_SERVICE V2.6、AGENT_SERVICE V15.9、PROGRESS V1.1、DPC V15.10');
+{
+  const lcThinkFrag = methodOf(lc, 'think_fragment');
+  const lcThinkCfg = methodOf(lc, 'parse_think_cfg');
+  const lcSplit = methodOf(lc, 'split_think');
+  const lcReason = methodOf(lc, 'parse_reasoning');
+  check('LLM_CLIENT V1.6：chat 新增出参 ev_reasoning（最后一个），开头一并清空',
+    /^\* V1\.6 20261029/m.test(lcRaw) && /ev_usage\s+TYPE ty_usage\s+ev_reasoning\s+TYPE string\./.test(lc) &&
+    /CLEAR:?[^.]*\bev_reasoning\b[^.]*\./.test(lcChat));
+  check('思考设置读 ZAI_CHAT_CFG-MODEL_THINK（≤ 20 字符），读不到 / 异常都返回空（= 不传参数）',
+    /cfgkey = 'MODEL_THINK'/.test(methodOf(lc, 'think_mode')) && 'MODEL_THINK'.length <= 20 &&
+    /CATCH cx_root\.\s+CLEAR rv\./.test(methodOf(lc, 'think_mode')));
+  check('写法只认 DS / QW / OL + 1 / 0；模型 ID 大小写不敏感',
+    /to_upper\( condense\( CONV string\( iv_model_id \) \) \)/.test(lcThinkCfg) && /lv_v CP 'DS\+' OR lv_v CP 'QW\+' OR lv_v CP 'OL\+'/.test(lcThinkCfg) &&
+    /lv_v CP '\+\+1' OR lv_v CP '\+\+0'/.test(lcThinkCfg));
+  check('DeepSeek 用 chat_template_kwargs.thinking，Qwen / GLM 用 chat_template_kwargs.enable_thinking，Ollama 用 think',
+    /CP 'DS\+'\.\s+rv = `"chat_template_kwargs":\{"thinking":` && lv_on && `\}`/.test(lcThinkFrag) &&
+    /CP 'QW\+'\.\s+rv = `"chat_template_kwargs":\{"enable_thinking":` && lv_on && `\}`/.test(lcThinkFrag) &&
+    /= 'OLLAMA'\.\s+rv = `"think":` && lv_on/.test(lcThinkFrag) && /THEN `true` ELSE `false`/.test(lcThinkFrag));
+  check('没配思考的模型请求体不变：片段为空不拼；拼在发送循环之前、请求体最后一个 } 之前',
+    /IF lv_frag IS NOT INITIAL\.[\s\S]*?find\( val = lv_body sub = `\}` occ = -1 \)/.test(lcChat) &&
+    lcChat.indexOf('think_fragment(') > 0 && lcChat.indexOf('think_fragment(') < lcChat.indexOf('DO 2 TIMES'));
+  check('思考字段单独解析（独立 TRY，失败返回空），在正文解析之后；不改正文解析结构 ty_choice',
+    /CATCH cx_root\.\s+CLEAR rv\.\s+RETURN\./.test(lcReason) && /reasoning_content/.test(lcReason) && /-thinking/.test(lcReason) &&
+    lcChat.indexOf('ev_reasoning = parse_reasoning( lv_resp ).') > lcChat.indexOf('响应 JSON 解析失败') &&
+    /BEGIN OF ty_choice,\s+message\s+TYPE ty_message,/.test(lc));
+  check('正文开头的 <think>…</think> 拆到思考，且在「空内容」判断之前；只有思考没有回答按失败返回',
+    lcChat.indexOf('split_think(') > 0 && lcChat.indexOf('split_think(') < lcChat.indexOf('IF ev_error IS INITIAL AND ev_content IS INITIAL.') &&
+    /CHANGING\s+cv_content = ev_content/.test(lcChat) && /IF ev_reasoning IS NOT INITIAL\.\s+ev_error = COND #\( WHEN ev_finish = 'length'/.test(lcChat));
+  check('split_think 只认开头的思考块（<think> 前只能是空白）；没有开头标签时只在思考开着才拆',
+    /regex = `\\S` \) >= 0\.\s+RETURN\./.test(lcSplit) && /ELSEIF lv_open < 0 AND iv_loose = abap_true\./.test(lcSplit) &&
+    /iv_loose\s+= lv_think_on/.test(lcChat));
+  check('trim_ws 只去首尾空白、不用正则（ABAP 正则 ^ $ 按行匹配，会吃掉回答里代码的缩进和空行）',
+    !/regex/.test(methodOf(lc, 'trim_ws')) && /shift_left\(\s+val = rv sub = \|\\n\| \)/.test(methodOf(lc, 'trim_ws')) &&
+    /shift_right\( val = rv sub = \|\\r\| \)/.test(methodOf(lc, 'trim_ws')) && /IF strlen\( rv \) = lv_len\./.test(methodOf(lc, 'trim_ws')));
+  check('wrap_think：没有思考原样返回；思考里的 </think> 改掉', /IF iv_reasoning IS INITIAL\.\s+rv = iv_answer\.\s+RETURN\./.test(methodOf(lc, 'wrap_think')) &&
+    /sub = `<\/think>` with = `<\/ think>`/.test(methodOf(lc, 'wrap_think')));
+
+  const csRaw = read('ZCL_AI_CHAT_SERVICE.abap'), cs = codeOnly(csRaw);
+  const csAnalyze = methodOf(cs, 'analyze');
+  const csAppends = csAnalyze.match(/append_msg\([\s\S]*?\)\./g) || [];
+  check('CHAT_SERVICE V2.6：取 ev_reasoning 放出参 reasoning；落库的两次 append_msg 都不带思考；兜底换模型时清掉思考',
+    /^\* V2\.6 20261029/m.test(csRaw) && /ev_reasoning = lv_reasoning/.test(csAnalyze) && /es_result-reasoning\s+= lv_reasoning\./.test(csAnalyze) &&
+    csAppends.length === 2 && csAppends.every((x) => !/reasoning/.test(x)) && /CLEAR: lv_content, lv_error, lv_fb_model, lv_reasoning\./.test(csAnalyze) &&
+    !/reasoning/.test(methodOf(cs, 'get_history')));
+
+  const agLoop = methodOf(ag, 'analyze_agent');
+  check('AGENT_SERVICE V15.9：主循环两处 chat 都取 ev_reasoning；思考交给进度 think(，按轮累计到 reasoning',
+    /^\* V15\.9 20261029/m.test(agRaw) && (agLoop.match(/ev_reasoning = lv_llm_think/g) || []).length === 2 &&
+    /zcl_ai_agent_progress=>think\( lv_llm_think \)/.test(agLoop) && /es_result-reasoning\s+= lv_think_all\./.test(agLoop));
+  check('思考不进上下文 / 不落库：lv_llm_think、lv_think_all 不写进 ls_msg / lt_messages，save_chat 不带思考；协议解析仍用 lv_content',
+    !/ls_msg-content\s*=[^.]*lv_(llm_think|think_all)/.test(agLoop) && !/APPEND[^.]*lv_(llm_think|think_all)[^.]*TO lt_messages/.test(agLoop) &&
+    (agLoop.match(/save_chat\([\s\S]*?\)\./g) || []).every((x) => !/reasoning|think/.test(x)) &&
+    /parse_model_json\(\s+EXPORTING iv_raw\s+= lv_content/.test(agLoop));
+
+  check('PROGRESS V1.1：think 挂到运行中的占位上；带思考的占位不被下一条 Trace 接替（先收口）；单步有上限',
+    /^\* V1\.1 20261029/m.test(prRaw) && /think\s+TYPE string/.test(pr) && /gs_hold-think = lv_text\./.test(prM('think')) &&
+    /IF gv_hold > 0 AND gs_hold-think IS NOT INITIAL\.\s+close_hold\( \)\./.test(prM('sync')) &&
+    /strlen\( lv_text \) > gc_think_max/.test(prM('think')) && /COMMIT CONNECTION \(gc_con\)/.test(prM('think')) &&
+    !/COMMIT WORK/.test(prM('think')));
+
+  const dpThink = dp.match(/wrap_think\(/g) || [];
+  check('DPC V15.10：只在出参时拼思考（ANALYZECODE 分支 + to_agent_odata，共 2 处）',
+    /^\* V15\.10 20261029/m.test(dpRaw) && dpThink.length === 2 &&
+    /ls_result-answer = zcl_ai_llm_client=>wrap_think\( iv_reasoning = ls_result-reasoning/.test(dp) &&
+    /rs-answer\s+= zcl_ai_llm_client=>wrap_think\( iv_reasoning = is_agent-reasoning/.test(methodOf(dp, 'to_agent_odata')));
+}
 
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);

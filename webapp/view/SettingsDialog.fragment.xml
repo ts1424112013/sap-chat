@@ -197,7 +197,7 @@
                                                                         <cells>
                                                                                 <VBox>
                                                                                         <Text text="{settings>ModelName}" tooltip="{settings>ModelName}" wrapping="false" class="modelCellName"/>
-                                                                                        <Text text="{= ${settings>ModelId} + (${settings>ModelType} ? ' · ' + ${settings>ModelType} : '') }"
+                                                                                        <Text text="{= ${settings>ModelId} + (${settings>ModelType} ? ' · ' + ${settings>ModelType} : '') + (${settings>ThinkOn} ? ' · ' + ${i18n>modelThinkTag} : '') }"
                                                                                                 wrapping="false" class="modelCellSub"/>
                                                                                 </VBox>
                                                                                 <Text text="{settings>EndpointUrl}" tooltip="{settings>EndpointUrl}" wrapping="false" class="modelCellUrl"/>

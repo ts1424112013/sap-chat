@@ -66,8 +66,46 @@ sap.ui.define([], function () {
                         });
                 },
 
+                /**
+                 * 20261029：演示用的思考过程（开了思考的演示模型才有）。
+                 * 真实后端由模型生成，这里只给一段像样的文字，看界面效果用
+                 * @param {string} sQuestion 用户问题
+                 * @param {string} sKind "chat" / "plan" / "final"
+                 */
+                _mockThinkText: function (sQuestion, sKind) {
+                        var q = String(sQuestion || "").replace(/\s+/g, " ").trim();
+                        if (q.length > 40) {
+                                q = q.substring(0, 40) + "…";
+                        }
+                        if (sKind === "plan") {
+                                return [
+                                        "用户问的是「" + q + "」。先确认口径：要的是汇总数字还是明细？问题里没说时间范围，按最近一个月处理，回答里写清楚。",
+                                        "",
+                                        "可用的工具里，数据分析查询最直接：先按条件取数，再看行数是否合理；如果结果为空，可能是工厂或物料写法不对，需要提醒用户核对。",
+                                        "",
+                                        "参数先按问题里出现的关键词填，拿不准的不要编造。"
+                                ].join("\n");
+                        }
+                        if (sKind === "final") {
+                                return [
+                                        "工具已经返回了数据，行数和预期一致。",
+                                        "",
+                                        "整理回答：第一句先给结论和关键数字，再按重要程度列 2～3 条发现；数字直接引用工具结果，不做推算。最后提示用户可以点表格下方的按钮生成图表。"
+                                ].join("\n");
+                        }
+                        return [
+                                "用户问的是「" + q + "」。",
+                                "",
+                                "现在是对话模式，不连 SAP 数据，不能假装看过系统里的程序或表。先说明这一点，再告诉用户怎么切到后端模式、在哪维护模型。",
+                                "",
+                                "回答结构：先一句话说明现状，然后分 3 步列出操作，最后给一个代码示例，方便用户确认复制按钮能用。"
+                        ].join("\n");
+                },
+
                 _mockSend: function (oPayload) {
                         var Service = this;   // 混入 ChatService 后 this 即服务对象
+                        // 20261029：开了思考的演示模型多等一会儿，并在回答前面带思考过程（与后端 DPC 出参同格式）
+                        var bThink = typeof Service.isThinkOn === "function" && Service.isThinkOn(oPayload.modelId);
                         return new Promise(function (fnResolve) {
                                 setTimeout(function () {
                                         var bHasCode = !!oPayload.programName;
@@ -145,14 +183,17 @@ sap.ui.define([], function () {
                                         Service._mockSave(oStore);
 
                                         fnResolve({
-                                                answer: sAnswer,
+                                                // 演示：历史里存的是不含思考的回答（同后端），出参才在前面带思考
+                                                answer: bThink
+                                                        ? "<think>\n" + Service._mockThinkText(oPayload.question, "chat") + "\n</think>\n\n" + sAnswer
+                                                        : sAnswer,
                                                 status: "OK",
-                                                elapsedMs: iElapsed,
+                                                elapsedMs: bThink ? iElapsed + 1600 : iElapsed,
                                                 codeLines: bHasCode ? 128 + Math.floor(Math.random() * 800) : 0,
                                                 message: "",
                                                 modelId: oPayload.modelId
                                         });
-                                }, 900);
+                                }, bThink ? 2400 : 900);
                         });
                 },
 
@@ -409,11 +450,14 @@ sap.ui.define([], function () {
                  *            elapsedMs, rows, detail(已校验 SQL), preview:{columns, rows(≤3)} }
                  *   phase：UNDERSTANDING / SKILL / PLANNING / TOOL_DECISION / NOTE(模型调工具前的一句话) / EXECUTING / COMPOSING
                  * ===================================================================== */
-                _mockLiveRun: function (sCid, pResult) {
+                _mockLiveRun: function (sCid, pResult, sModelId, sQuestion) {
                         var Service = this;
                         if (!sCid || typeof setTimeout !== "function") {
                                 return pResult;
                         }
+                        // 20261029：开了思考的演示模型 —— 规划 / 收尾两步各带一段思考（同后端 AGENT_PROGRESS V1.1 的 think 字段），
+                        // 回答前面带全部思考（同 DPC 出参）
+                        var bThink = typeof Service.isThinkOn === "function" && Service.isThinkOn(sModelId);
                         var mRuns = this._mMockLive = this._mMockLive || {};
                         Object.keys(mRuns).forEach(function (k) {
                                 if (Date.now() - mRuns[k].at > 10 * 60 * 1000) { delete mRuns[k]; }
@@ -427,12 +471,32 @@ sap.ui.define([], function () {
                         var oFirst = fnAdd({ phase: "UNDERSTANDING", label: "理解问题" });
                         return pResult.then(function (r) {
                                 var aScript = Service._mockLiveScript(r);
+                                var aThinkAll = [];
+                                if (bThink) {
+                                        var sQ = sQuestion || "";
+                                        var iPlan = -1, iLast = -1;
+                                        aScript.forEach(function (t, k) {
+                                                if (t.phase === "PLANNING" && iPlan < 0) { iPlan = k; }
+                                                if (t.phase === "COMPOSING") { iLast = k; }
+                                        });
+                                        if (iPlan >= 0) {
+                                                aScript[iPlan] = Object.assign({}, aScript[iPlan], { think: Service._mockThinkText(sQ, "plan") });
+                                                aThinkAll.push("【第 1 轮】\n" + aScript[iPlan].think);
+                                        }
+                                        if (iLast >= 0 && iLast !== iPlan) {
+                                                aScript[iLast] = Object.assign({}, aScript[iLast], { think: Service._mockThinkText(sQ, "final") });
+                                                aThinkAll.push("【第 2 轮】\n" + aScript[iLast].think);
+                                        }
+                                }
                                 return new Promise(function (fnResolve) {
                                         var i = 0;
                                         var fnNext = function () {
                                                 if (i >= aScript.length) {
                                                         oRun.status = "DONE";
                                                         r.elapsedMs = Date.now() - oRun.at;   // 演示：总耗时按实际播放时间，与步骤对得上
+                                                        if (aThinkAll.length && r && typeof r.answer === "string") {
+                                                                r.answer = "<think>\n" + aThinkAll.join("\n\n") + "\n</think>\n\n" + r.answer;
+                                                        }
                                                         fnResolve(r);
                                                         return;
                                                 }
@@ -448,6 +512,11 @@ sap.ui.define([], function () {
                                                         }
                                                         oStep = fnAdd({ phase: t.phase, label: t.liveLabel || t.label, toolLabel: t.toolLabel || "",
                                                                 tool: t.tool || "", args: t.args || [] });
+                                                }
+                                                // 演示：带思考的模型步骤多等一会儿（模型在想），想完先挂上思考再收口
+                                                if (t.think) {
+                                                        iDur += 1400;
+                                                        setTimeout(function () { oStep.think = t.think; }, Math.round(iDur * 0.6));
                                                 }
                                                 setTimeout(function () {
                                                         Object.assign(oStep, {

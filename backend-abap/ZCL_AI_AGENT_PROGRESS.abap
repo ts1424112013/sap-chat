@@ -20,6 +20,14 @@
 *         sync( trace + 预览 ) → 结束 sync( trace ) + finish( )。
 *         占位: 下一条新的 Trace 行原地接替(同一 SEQ); 没有新行就按完成收口。
 * V1.0 20261028: 新建
+* V1.1 20261029(思考模式): 模型开了思考时, AGENT_SERVICE V15.9 每轮调完模型调
+*         think( 思考过程 ), 挂到正在跑的模型步骤(规划步骤 / 根据结果决定下一步)
+*         的 think 字段上, 前端在这一步下面显示可折叠的「思考过程」。带思考的步骤
+*         不再被下一条 Trace 原地接替, 而是按完成收口、新行另起一步(否则思考会
+*         跟着被换掉)。单步最多 gc_think_max 字, 全文随最终回答返回。没开思考时
+*         不调 think, 进度与 V1.0 完全一致。思考内容只有本人能读(read 按 UNAME)
+*         ★ 重贴后核对标记: ty_step 有 think; PUBLIC 有 think 声明; sync 内有
+*           gs_hold-think IS NOT INITIAL 与 close_hold( )
 *=======================================================================
 CLASS zcl_ai_agent_progress DEFINITION
   PUBLIC
@@ -55,6 +63,7 @@ CLASS zcl_ai_agent_progress DEFINITION
              rows       TYPE i,
              detail     TYPE string,
              preview    TYPE ty_preview,
+             think      TYPE string,        " V1.1: 这一步模型调用的思考过程(没开思考为空)
            END OF ty_step.
 
     " 运行中占位(进入下一轮 / 执行工具前写)
@@ -76,6 +85,10 @@ CLASS zcl_ai_agent_progress DEFINITION
                 iv_note    TYPE string OPTIONAL
                 is_running TYPE ty_running OPTIONAL
                 it_preview TYPE tt_preview OPTIONAL.
+
+    " V1.1: 本轮模型的思考过程 → 挂到正在跑的模型步骤上(没有占位时单独记一步)
+    CLASS-METHODS think
+      IMPORTING iv_text TYPE string.
 
     " 结束: 收掉占位, 运行头置 DONE
     CLASS-METHODS finish.
@@ -112,6 +125,7 @@ CLASS zcl_ai_agent_progress DEFINITION
 
     CONSTANTS gc_con  TYPE dbcon_name VALUE 'R/3*AI_PROG'.
     CONSTANTS gc_keep_sec TYPE i VALUE 172800.   " 进度行保留 2 天
+    CONSTANTS gc_think_max TYPE i VALUE 4000.    " V1.1: 单步思考最多显示的字数(全文随最终回答返回)
 
     CLASS-DATA: gv_on       TYPE abap_bool,
                 gv_run      TYPE c LENGTH 32,
@@ -127,6 +141,9 @@ CLASS zcl_ai_agent_progress DEFINITION
 
     CLASS-METHODS put_head
       IMPORTING iv_status TYPE string.
+
+    " V1.1: 运行中占位按完成收口(写耗时, 清掉占位)
+    CLASS-METHODS close_hold.
 
     CLASS-METHODS to_json
       IMPORTING is_step   TYPE ty_step
@@ -192,6 +209,10 @@ CLASS zcl_ai_agent_progress IMPLEMENTATION.
         lv_from = gv_synced + 1.
         LOOP AT it_trace INTO DATA(ls_t) FROM lv_from.
           lv_new = lv_new + 1.
+          " V1.1: 挂了思考的模型步骤不被接替(否则思考跟着被换掉): 先收口, 新行另起一步
+          IF gv_hold > 0 AND gs_hold-think IS NOT INITIAL.
+            close_hold( ).
+          ENDIF.
           CLEAR ls_step.
           ls_step-phase      = ls_t-phase.
           ls_step-label      = ls_t-label.
@@ -270,6 +291,54 @@ CLASS zcl_ai_agent_progress IMPLEMENTATION.
       CATCH cx_root.
         CLEAR gv_on.
     ENDTRY.
+
+  ENDMETHOD.
+
+
+  METHOD think.
+
+    CHECK gv_on = abap_true.
+    CHECK iv_text IS NOT INITIAL.
+
+    TRY.
+        DATA(lv_text) = iv_text.
+        IF strlen( lv_text ) > gc_think_max.
+          lv_text = substring( val = lv_text len = gc_think_max ) &&
+                    |\n……(思考过程较长, 这里只显示前 { gc_think_max } 字, 完整内容在回答上方)|.
+        ENDIF.
+        IF gv_hold > 0.
+          " 挂到正在跑的模型步骤上(状态仍是 RUNNING, 下一次 sync 按完成收口)
+          gs_hold-think = lv_text.
+          put( is_step = gs_hold iv_update = abap_true ).
+        ELSE.
+          DATA ls_step TYPE ty_step.
+          gv_seq = gv_seq + 1.
+          ls_step-seq    = gv_seq.
+          ls_step-phase  = 'PLANNING'.
+          ls_step-label  = '模型思考'.
+          ls_step-status = 'OK'.
+          ls_step-think  = lv_text.
+          put( is_step = ls_step iv_update = abap_false ).
+        ENDIF.
+        COMMIT CONNECTION (gc_con).
+      CATCH cx_root.
+        CLEAR gv_on.
+    ENDTRY.
+
+  ENDMETHOD.
+
+
+  METHOD close_hold.
+
+    CHECK gv_hold > 0.
+    DATA: lv_t1   TYPE i,
+          ls_step TYPE ty_step.
+    GET RUN TIME FIELD lv_t1.
+    ls_step = gs_hold.
+    ls_step-status     = 'OK'.
+    ls_step-elapsed_ms = ( lv_t1 - gv_hold_t0 ) / 1000.
+    put( is_step = ls_step iv_update = abap_true ).
+    CLEAR: gv_hold, gs_hold, gv_hold_t0.
 
   ENDMETHOD.
 

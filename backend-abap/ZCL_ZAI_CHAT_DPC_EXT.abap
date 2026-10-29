@@ -138,6 +138,11 @@
 *   SEGW: Function Import AgentProgress, HTTP Method GET, Return Type
 *   GenericResult(Complex Type, Cardinality 1), 参数 ClientRequestId Edm.String 32。
 *   ★ 重贴后核对标记: 有 WHEN 'AGENTPROGRESS' 与 iv_request_id = lv_at_rid
+* V15.10 20261029(思考模式, SEGW 无需改动): AnalyzeCode / AnalyzeAgent / AnalyzeTask 出参时
+*   用 ZCL_AI_LLM_CLIENT=>wrap_think 把本轮思考过程放在 Answer 前面(<think>…</think>),
+*   前端拆开放进可折叠的「思考过程」区。只在这里拼 —— 服务层落库的回答不含思考。
+*   需先激活 LLM_CLIENT V1.6、CHAT_SERVICE V2.6、AGENT_SERVICE V15.9(出参新字段 reasoning)
+*   ★ 重贴后核对标记: 搜 wrap_think( 应有 2 处(ANALYZECODE 分支 + to_agent_odata)
 CLASS zcl_zai_chat_dpc_ext DEFINITION
   PUBLIC
   INHERITING FROM zcl_zai_chat_dpc
@@ -452,6 +457,9 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
                     iv_program_name = lv_prog
           IMPORTING es_result       = ls_result ).
 
+        " V15.10: 思考过程放在回答前面回给前端(落库的回答不含思考)
+        ls_result-answer = zcl_ai_llm_client=>wrap_think( iv_reasoning = ls_result-reasoning
+                                                          iv_answer    = ls_result-answer ).
         copy_data_to_ref( EXPORTING is_data  = ls_result
                           CHANGING  cr_data  = er_data ).
 
@@ -1155,7 +1163,9 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
     " SEGW 属性名大写精确匹配, 不容忍下划线 —— 逐字段搬运)
     CLEAR rs.
     rs-sessionid         = is_agent-session_id.
-    rs-answer            = is_agent-answer.
+    " V15.10: 思考过程放在回答前面(落库的回答不含思考)
+    rs-answer            = zcl_ai_llm_client=>wrap_think( iv_reasoning = is_agent-reasoning
+                                                          iv_answer    = is_agent-answer ).
     rs-status            = is_agent-status.
     rs-modelid           = is_agent-model_id.
     rs-rounds            = is_agent-rounds.

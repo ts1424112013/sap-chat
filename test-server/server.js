@@ -7,7 +7,7 @@
 
 const express = require('express');
 const cors = require('cors');
-const { runAgent } = require('./agent-loop');
+const { runAgent, wrapThink } = require('./agent-loop');
 const { TaskStore, shortId } = require('./task-store');
 const { ReportStore, RUN_STATUS } = require('./report-store');
 const { quickRoute } = require('./intent-route');
@@ -125,7 +125,8 @@ app.post('/AnalyzeAgent', async (req, res) => {
     res.json({
       d: {
         SessionId: session_id || `TEST_${Date.now()}`,
-        Answer: result.answer,
+        // 20261029：思考过程放在回答前面（对照 DPC V15.10 wrap_think），前端拆开显示
+        Answer: wrapThink(result.reasoning, result.answer),
         Status: result.status,
         ModelId: 'deepseek-chat',
         Rounds: String(result.rounds),
@@ -204,7 +205,7 @@ app.post('/AnalyzeTask', async (req, res) => {
     res.json({
       d: {
         SessionId: session_id || MOCK_SESSION,
-        Answer: result.answer, Status: result.status, ModelId: 'deepseek-chat',
+        Answer: wrapThink(result.reasoning, result.answer), Status: result.status, ModelId: 'deepseek-chat',
         Rounds: String(result.rounds), ElapsedMs: String(result.elapsed_ms),
         TraceJson: result.trace_json, AnalysisJson: '',
         Message: result.status === 'OK' ? '' : '超时或异常',

@@ -355,9 +355,14 @@ sap.ui.define([
                 /**
                  * 发送消息（对话或代码分析）
                  * @param {object} oPayload {sessionId, question, modelId, programName}
-                 * @returns {Promise<{answer, status, elapsedMs, codeLines, message, modelId}>}
+                 * @returns {Promise<{answer, status, elapsedMs, codeLines, message, modelId, reasoning}>}
+                 *          20261029：reasoning = 本轮思考过程（后端放在 Answer 开头的 <think> 块，这里拆开）
                  */
                 send: function (oPayload) {
+                        return this._sendRaw(oPayload).then(Service._withThink);
+                },
+
+                _sendRaw: function (oPayload) {
                         if (this._sConfig.mode === "mock") {
                                 return this._mockSend(oPayload);
                         }
@@ -408,6 +413,10 @@ sap.ui.define([
                   * @returns {Promise<{answer, status, elapsedMs, rounds, message, modelId, trace, analysis}>}
                   */
                 sendAgent: function (oPayload) {
+                        return this._sendAgentRaw(oPayload).then(Service._withThink);
+                },
+
+                _sendAgentRaw: function (oPayload) {
                         if (oPayload.skillId && oPayload.skillId !== "NONE") {
                                 return Promise.reject(new Error("技能请求必须使用 AnalyzeTask，不能降级到旧 Agent 接口"));
                         }
@@ -491,9 +500,13 @@ sap.ui.define([
                   *                   {taskId, taskModule, taskStatus, needsInput, pendingParamsJson, artifactRefsJson}
                   */
                 sendTask: function (oPayload) {
+                        return this._sendTaskRaw(oPayload).then(Service._withThink);
+                },
+
+                _sendTaskRaw: function (oPayload) {
                         if (this._sConfig.mode === "mock") {
                                 // 20261028：演示模式按过程摘要一步步放出进度（getAgentProgress 读），放完才返回回答
-                                return this._mockLiveRun(oPayload.clientRequestId, this._mockSendSkillTask(oPayload));
+                                return this._mockLiveRun(oPayload.clientRequestId, this._mockSendSkillTask(oPayload), oPayload.modelId, oPayload.question);
                         }
                         if (this._taskApiAvailable === false) {
                                 if (oPayload.skillId && oPayload.skillId !== "NONE") {
@@ -1275,6 +1288,126 @@ sap.ui.define([
                         return Promise.all(Object.keys(this.AGENT_MODEL_KEYS).map(function (k) {
                                 return that.saveConfigValue(that.AGENT_MODEL_KEYS[k], ((mRules || {})[k] || []).join(","));
                         }));
+                },
+
+                // =================================================================
+                // 20261029：思考模式 —— 每个模型单独开关，存 ZAI_CHAT_CFG-MODEL_THINK（GetConfig / SaveConfig，
+                // 不改表结构 / SEGW），后端 ZCL_AI_LLM_CLIENT V1.6 每次调模型时读。
+                // 值："模型ID=写法开关" 逗号分隔，如 "DS_V4=DS1,GLM_LOCAL=QW0"（CFGVALUE 是 CHAR 255）
+                //   写法 DS = chat_template_kwargs.thinking（DeepSeek）
+                //        QW = chat_template_kwargs.enable_thinking（Qwen / GLM）
+                //        OL = Ollama 原生 think
+                //   末位 1 = 开，0 = 关（显式传 false）；不在列表里的模型不传思考参数（原来的行为）
+                // 后端把思考过程放在 Answer 开头（<think>…</think>），_withThink 拆到 res.reasoning。
+                // =================================================================
+                THINK_KEY: "MODEL_THINK",
+                _mThink: null,
+
+                /** "A=DS1,B=QW0" → { A: "DS1", B: "QW0" }（同一模型写了两次以第一次为准，与后端一致） */
+                parseThinkCfg: function (sVal) {
+                        var m = {};
+                        String(sVal || "").split(",").forEach(function (sItem) {
+                                var a = sItem.split("=");
+                                var k = String(a[0] || "").trim().toUpperCase();
+                                var v = String(a[1] || "").trim().toUpperCase();
+                                if (k && !Object.prototype.hasOwnProperty.call(m, k) && /^(DS|QW|OL)[01]$/.test(v)) {
+                                        m[k] = v;
+                                }
+                        });
+                        return m;
+                },
+
+                formatThinkCfg: function (m) {
+                        return Object.keys(m || {}).sort().filter(function (k) {
+                                return /^(DS|QW|OL)[01]$/.test(m[k]);
+                        }).map(function (k) { return k + "=" + m[k]; }).join(",");
+                },
+
+                /** 读全部模型的思考设置（按连接缓存；bReload 强制重读）。读失败返回空表，不影响对话 */
+                getModelThinkMap: function (bReload) {
+                        var that = this;
+                        if (this._mThink && !bReload) {
+                                return Promise.resolve(Object.assign({}, this._mThink));
+                        }
+                        return this.getConfigValue(this.THINK_KEY).catch(function () { return ""; }).then(function (sVal) {
+                                // 演示模式：没维护过时默认给 DeepSeek 演示模型开思考，方便看效果
+                                if (!sVal && that._sConfig.mode === "mock") {
+                                        sVal = "MOCK_DEEPSEEK=DS1";
+                                }
+                                that._mThink = that.parseThinkCfg(sVal);
+                                return Object.assign({}, that._mThink);
+                        });
+                },
+
+                /** 某个模型的思考设置（同步读缓存）："" / "DS1" / "QW0" … */
+                thinkModeOf: function (sModelId) {
+                        return (this._mThink || {})[String(sModelId || "").trim().toUpperCase()] || "";
+                },
+
+                isThinkOn: function (sModelId) {
+                        return /1$/.test(this.thinkModeOf(sModelId));
+                },
+
+                /** 按模型类型 / 名称猜参数写法：Ollama → OL；名字里有 deepseek → DS；其他（Qwen / GLM / vLLM）→ QW */
+                suggestThinkStyle: function (oCfg) {
+                        var o = oCfg || {};
+                        if (String(o.ModelType || "").toUpperCase() === "OLLAMA") {
+                                return "OL";
+                        }
+                        return /deepseek/i.test([o.ApiModel, o.ModelName, o.ModelId].join(" ")) ? "DS" : "QW";
+                },
+
+                /**
+                 * 保存某个模型的思考设置（管理员）：先重读再改这一项，避免覆盖别人刚存的
+                 * @param {string} sModelId 模型 ID
+                 * @param {string} sMode "DS1" / "QW0" / … ；空 = 删掉这一项（不传思考参数）
+                 */
+                saveModelThink: function (sModelId, sMode) {
+                        var that = this;
+                        var sId = String(sModelId || "").trim().toUpperCase();
+                        var sNew = String(sMode || "").toUpperCase();
+                        if (!sId) {
+                                return Promise.reject(new Error("缺少模型 ID"));
+                        }
+                        return this.getModelThinkMap(true).then(function (m) {
+                                if (/^(DS|QW|OL)[01]$/.test(sNew)) {
+                                        m[sId] = sNew;
+                                } else {
+                                        delete m[sId];
+                                }
+                                var sVal = that.formatThinkCfg(m);
+                                if (sVal.length > 255) {
+                                        throw new Error("思考设置太多（超过 255 字），请先把不用的模型改回「不传参数」");
+                                }
+                                return that.saveConfigValue(that.THINK_KEY, sVal).then(function () {
+                                        that._mThink = m;
+                                        return Object.assign({}, m);
+                                });
+                        });
+                },
+
+                /** 拆开回答开头的 <think>…</think>：{ reasoning, answer }（没有思考块时原样返回） */
+                splitThink: function (sText) {
+                        var s = String(sText || "");
+                        var m = /^\s*<think>([\s\S]*?)<\/think>\s*/i.exec(s);
+                        if (!m) {
+                                return { reasoning: "", answer: s };
+                        }
+                        return { reasoning: m[1].trim(), answer: s.slice(m[0].length) };
+                },
+
+                /** 发送结果统一后处理：answer 只留正式回答，思考过程放 reasoning（重复调用无副作用） */
+                _withThink: function (res) {
+                        if (res && typeof res.answer === "string") {
+                                var o = Service.splitThink(res.answer);
+                                if (o.answer !== res.answer) {
+                                        res.answer = o.answer;
+                                        if (o.reasoning) {
+                                                res.reasoning = res.reasoning ? res.reasoning + "\n\n" + o.reasoning : o.reasoning;
+                                        }
+                                }
+                        }
+                        return res;
                 },
 
                 /**

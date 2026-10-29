@@ -1680,3 +1680,101 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .lvStep.is-done .lvDot { animation: lvPop .38s cubic-bezier(.3, 1.6, .5, 1); }
 @keyframes lvIn { from { opacity: 0; transform: translateY(5px); } }
 @keyframes lvPop { 0% { transform: scale(.6); } 60% { transform: scale(1.25); } 100% { transform: none; } }
+
+/* ==================== 20261029：思考过程（模型管理里开了思考的模型；App.controller _thinkHtml / _liveHtml）====================
+   对话：正文上方一块 —— 等回复时「正在思考 · N 秒」+ 三条骨架线；回复到达后展开放出思考过程、跟着最新一行滚动；
+   放完收起成一行「思考过程 · 约 N 字 ›」，点一下展开全文。颜色比正文弱一档，左侧细竖线，和正式回答分开。
+   Agent：边跑边看的模型步骤下面一行「思考过程 · 约 N 字 ›」，运行中最新一段展开 */
+.rsnBlock { margin: .05rem 0 .7rem; min-width: 0; }
+/* 回复所在的列按内容撑开：展开时宽度写成确定值（同边跑边看的步骤卡），否则等待态会缩成几个字宽 */
+.rsnBlock.is-open { width: min(44rem, calc(var(--content-max) - 3rem)); max-width: 100%; box-sizing: border-box; }
+.rsnHead {
+        display: inline-flex; align-items: center; gap: .42rem; max-width: 100%; box-sizing: border-box; white-space: nowrap;
+        padding: .26rem .6rem .26rem .5rem; margin-left: -.5rem;
+        border: 0; border-radius: 8px; background: transparent;
+        font: inherit; font-size: .8rem; line-height: 1.4; color: var(--sub); text-align: left;
+}
+button.rsnHead { cursor: pointer; transition: background .15s, color .15s; }
+button.rsnHead:hover { background: var(--hover); }
+button.rsnHead:hover .rsnName, button.rsnHead:hover .rsnChev { color: var(--text); }
+button.rsnHead:focus-visible { outline: none; box-shadow: var(--ring); }
+.rsnGlyph { flex: none; display: inline-flex; width: .95rem; height: .95rem; color: var(--sub); }
+.rsnGlyph svg, .rsnChev svg, .lvThinkGlyph svg, .lvThinkChev svg { width: 100%; height: 100%; display: block; }
+.rsnName { font-weight: 600; color: var(--text-2); transition: color .15s; }
+.rsnMeta { font-size: .74rem; color: var(--sub); font-variant-numeric: tabular-nums; }
+.rsnMeta:empty { display: none; }
+.rsnChev { flex: none; display: inline-flex; width: .78rem; height: .78rem; color: var(--sub); transition: transform .22s var(--ease), color .15s; }
+.rsnBlock.is-open .rsnChev { transform: rotate(90deg); }
+
+/* 进行中：灯泡呼吸、标题扫光 */
+.rsnBlock.is-wait .rsnGlyph, .rsnBlock.is-live .rsnGlyph { color: var(--accent); animation: rsnBreath 1.8s ease-in-out infinite; }
+.rsnBlock.is-wait .rsnName, .rsnBlock.is-live .rsnName {
+        background: linear-gradient(90deg, var(--text-2) 0%, var(--text-2) 38%, var(--accent) 50%, var(--text-2) 62%, var(--text-2) 100%);
+        background-size: 260% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+        animation: rsnShine 2.4s linear infinite;
+}
+
+.rsnBody {
+        margin: .32rem 0 0 .44rem; padding: .05rem .2rem .05rem .95rem;
+        border-left: 2px solid var(--line-strong);
+        max-height: 22rem; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+}
+.rsnBlock.is-live .rsnBody { max-height: 12.5rem; }
+/* 放出时内容超过高度、开始往上滚了，顶部才淡出（is-over 由 _showThink 按滚动高度切换） */
+.rsnBlock.is-live .rsnBody.is-over {
+        -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 1.8rem);
+        mask-image: linear-gradient(to bottom, transparent 0, #000 1.8rem);
+}
+.rsnText {
+        white-space: pre-wrap; overflow-wrap: anywhere;
+        font-size: .84rem; line-height: 1.78; color: var(--text-2); letter-spacing: .005em;
+}
+.rsnBlock.is-anim .rsnBody { animation: rsnOpen .26s var(--ease) both; }
+.rsnBlock.is-folding .rsnBody { animation: rsnFold .26s var(--ease) both; overflow: hidden; }
+.rsnSkel { display: flex; flex-direction: column; gap: .55rem; padding: .45rem 0 .35rem; width: min(30rem, 100%); }
+.rsnSkel i {
+        display: block; height: .5rem; border-radius: 4px;
+        background: linear-gradient(90deg, var(--hover) 0%, var(--line-strong) 50%, var(--hover) 100%);
+        background-size: 220% 100%; animation: rsnSkel 1.5s ease-in-out infinite;
+}
+.rsnSkel i:nth-child(1) { width: 82%; }
+.rsnSkel i:nth-child(2) { width: 96%; animation-delay: .12s; }
+.rsnSkel i:nth-child(3) { width: 58%; animation-delay: .24s; }
+@keyframes rsnBreath { 0%, 100% { opacity: .55; transform: scale(.94); } 50% { opacity: 1; transform: scale(1.04); } }
+@keyframes rsnShine { from { background-position: 100% 0; } to { background-position: -160% 0; } }
+@keyframes rsnSkel { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+@keyframes rsnOpen { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes rsnFold { from { opacity: 1; max-height: 12.5rem; } to { opacity: 0; max-height: 0; margin-top: 0; } }
+
+/* Agent 边跑边看：模型步骤下面的思考 */
+.lvThink { margin-top: .3rem; }
+.lvThinkHead {
+        display: inline-flex; align-items: center; gap: .32rem; padding: .1rem .42rem .1rem .3rem; margin-left: -.3rem;
+        border: 0; border-radius: 6px; background: transparent; cursor: pointer;
+        font: inherit; font-size: .72rem; line-height: 1.5; color: var(--accent); transition: background .15s;
+}
+.lvThinkHead:hover { background: var(--hover); }
+.lvThinkHead:focus-visible { outline: none; box-shadow: var(--ring); }
+.lvThinkGlyph { flex: none; display: inline-flex; width: .78rem; height: .78rem; }
+.lvThinkMeta { color: var(--sub); }
+.lvThinkChev { flex: none; display: inline-flex; width: .6rem; height: .6rem; color: var(--sub); transition: transform .18s var(--ease); }
+.lvThink.is-open .lvThinkChev { transform: rotate(90deg); }
+.lvThinkText {
+        display: none; margin: .3rem 0 .1rem; padding: .45rem .7rem; border-radius: 8px;
+        background: var(--bg); border: 1px solid var(--line);
+        font-size: .76rem; line-height: 1.68; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere;
+        max-height: 14rem; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+}
+.lvThink.is-open .lvThinkText { display: block; }
+
+/* 模型选择 / 模型编辑 */
+.mpThinkTag {
+        flex: none; margin: 0 .45rem 0 .3rem; padding: 0 .42rem; border-radius: 999px;
+        font-size: .66rem !important; line-height: 1.55 !important; font-weight: 600;
+        color: var(--accent) !important; background: var(--accent-soft);
+}
+.thinkCfgBox { gap: .25rem; }
+
+@media (prefers-reduced-motion: reduce) {
+        .rsnBlock .rsnGlyph, .rsnBlock .rsnName, .rsnSkel i, .rsnBlock .rsnBody { animation: none !important; }
+}

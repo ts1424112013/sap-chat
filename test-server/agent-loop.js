@@ -15,6 +15,10 @@ const Skills = require('../webapp/utils/SkillCatalog');
 const LLM_API_KEY = process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || 'your-key-here';
 const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
 const LLM_MODEL = process.env.LLM_MODEL || 'glm-4.6';
+// 20261029 思考模式（对照 ABAP LLM_CLIENT V1.6 / ZAI_CHAT_CFG-MODEL_THINK 的写法开关）：
+// 空 = 不传；DS1/DS0 = chat_template_kwargs.thinking（DeepSeek）；QW1/QW0 = chat_template_kwargs.enable_thinking（Qwen/GLM 私有部署）；
+// OL1/OL0 = Ollama 原生 think。智谱官方端点（bigmodel.cn）仍走下面原有的 thinking:{type/budget} 写法，不受此项影响
+const LLM_THINK = String(process.env.LLM_THINK || '').trim().toUpperCase();
 const MAX_ROUNDS = 10;
 const BUDGET_MS = 180000;
 
@@ -93,6 +97,44 @@ SELECT H~KUNNR AS CUSTOMER_ID, C~NAME1 AS CUSTOMER_NAME,
  * 注意：不传 tools 参数 —— 与 ABAP 端一致，工具靠 system prompt 描述，
  * 模型在 content 里输出协议 JSON，避免模型改用原生 tool_calls 导致解析失败
  */
+/** 思考设置 → 请求体字段（对照 ZCL_AI_LLM_CLIENT=>think_fragment）；不认识的写法返回 null */
+function thinkFields(sMode, bOllama) {
+  const m = /^(DS|QW|OL)([01])$/.exec(String(sMode || '').toUpperCase());
+  if (!m) { return null; }
+  const on = m[2] === '1';
+  if (bOllama) { return { think: on }; }
+  if (m[1] === 'DS') { return { chat_template_kwargs: { thinking: on } }; }
+  if (m[1] === 'QW') { return { chat_template_kwargs: { enable_thinking: on } }; }
+  return null;
+}
+
+/**
+ * 把正文开头的 <think>…</think> 拆出来（对照 ZCL_AI_LLM_CLIENT=>split_think）：
+ * 只认开头的思考块；loose = 思考开着时，没有开头标签只有 </think> 也拆（模板把 <think> 放进了提示词）
+ */
+function splitThink(content, loose) {
+  const s = String(content || '');
+  const iClose = s.search(/<\/think>/i);
+  if (iClose < 0) { return { think: '', content: s }; }
+  const iOpen = s.search(/<think>/i);
+  let think;
+  if (iOpen >= 0 && iOpen < iClose) {
+    if (/\S/.test(s.slice(0, iOpen))) { return { think: '', content: s }; }
+    think = s.slice(iOpen + 7, iClose);
+  } else if (iOpen < 0 && loose) {
+    think = s.slice(0, iClose);
+  } else {
+    return { think: '', content: s };
+  }
+  return { think: think.trim(), content: s.slice(iClose + 8).trim() };
+}
+
+/** 回给前端时把思考放在回答前面（对照 ZCL_AI_LLM_CLIENT=>wrap_think，DPC 出参时用） */
+function wrapThink(reasoning, answer) {
+  if (!reasoning) { return answer || ''; }
+  return '<think>\n' + String(reasoning).replace(/<\/think>/gi, '</ think>') + '\n</think>\n\n' + (answer || '');
+}
+
 async function callLLM(messages) {
   const body = {
     model: LLM_MODEL,
@@ -106,6 +148,11 @@ async function callLLM(messages) {
     body.thinking = /^glm-[5-9]/i.test(LLM_MODEL) ? { budget: 'low' } : { type: 'disabled' };
   }
   body.max_tokens = /^glm-[5-9]/i.test(LLM_MODEL) ? 4000 : 2000;  // 思考内容计入 max_tokens，新一代放宽
+  const oThink = isBigmodel ? null : thinkFields(LLM_THINK, /\/api\/chat\b/.test(LLM_BASE_URL));
+  if (oThink) {
+    Object.assign(body, oThink);
+    if (/1$/.test(LLM_THINK)) { body.max_tokens = Math.max(body.max_tokens, 4000); }
+  }
 
   const post = b => axios.post(
     LLM_BASE_URL,
@@ -134,7 +181,12 @@ async function callLLM(messages) {
   }
 
   logUsage(response.data, Date.now() - t0);
-  return response.data.choices[0].message;
+  // 20261029：思考内容和正文分开（reasoning_content / reasoning 字段 + 正文开头的 <think>），
+  // 只把正文交给协议解析；思考单独带回，不进下一轮 messages
+  const msg = (response.data.choices && response.data.choices[0] && response.data.choices[0].message) || {};
+  const sp = splitThink(msg.content, /1$/.test(LLM_THINK));
+  const reasoning = [msg.reasoning_content || msg.reasoning || '', sp.think].filter(Boolean).join('\n\n').trim();
+  return { role: 'assistant', content: sp.content, reasoning: reasoning };
 }
 
 /**
@@ -216,6 +268,7 @@ ${toolLines}
   let repaired = false;   // 协议修复重试只允许一次（对照 ABAP 计划书 P1-2 / lv_repaired）
   let badFirst = '';      // 20261028：第一次协议失败的原始输出（兜底用，对照 lv_bad_first）
   let protocolError = '';
+  let thinkAll = '';      // 20261029：各轮思考过程（只随结果返回，不进 messages）
 
   while (round < maxRounds && (Date.now() - startTime) < BUDGET_MS) {
     round++;
@@ -231,7 +284,15 @@ ${toolLines}
 
     // 调用模型
     const assistantMsg = await requestLLM(messages);
-    messages.push(assistantMsg);
+    // 20261029：只回填正文 —— 思考内容（reasoning_content / reasoning）不进下一轮上下文
+    // （DeepSeek 官方接口收到带 reasoning_content 的历史消息会直接报 400）
+    const sp = splitThink(assistantMsg.content, false);
+    assistantMsg.content = sp.content;
+    const sThink = [assistantMsg.reasoning || assistantMsg.reasoning_content || '', sp.think].filter(Boolean).join('\n\n').trim();
+    if (sThink) {
+      thinkAll += (thinkAll ? '\n\n' : '') + `【第 ${round} 轮】\n` + sThink;
+    }
+    messages.push({ role: 'assistant', content: assistantMsg.content || '' });
 
     // 协议解析（宽松提取，对照 ZCL_AI_AGENT_GUARD::parse_model_json）
     let parsed = null;
@@ -341,6 +402,7 @@ ${toolLines}
 
   return {
     answer: finalAnswer,
+    reasoning: thinkAll,
     status: status,
     rounds: round,
     elapsed_ms: Date.now() - startTime,
@@ -421,4 +483,4 @@ function salvageAnswer(raw) {
   return out.replace(/\s+/g, ' ').trim().length < 40 ? '' : out;
 }
 
-module.exports = { runAgent, extractJsonObject, inferAction, salvageAnswer };
+module.exports = { runAgent, extractJsonObject, inferAction, salvageAnswer, splitThink, thinkFields, wrapThink };

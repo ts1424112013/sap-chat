@@ -137,6 +137,33 @@ test('本地 Agent 把做法放在协议之前，仍可正常收口', async () =
   }});
   assert.equal(r.status,'OK'); assert.ok(prompt.indexOf('【技能：')<prompt.indexOf('【协议要求】'));
 });
+test('本地 Agent 思考模式（20261029）：思考和协议 JSON 分开，思考不进下一轮上下文，随结果返回', async () => {
+  const seen=[];
+  let n=0;
+  const r=await runAgent('统计物料', {scene:'DATA',callLLM:async messages=>{
+    seen.push(JSON.parse(JSON.stringify(messages)));
+    n++;
+    if(n===1){
+      // 第 1 轮：reasoning_content 字段 + 正文开头还带一段 <think>（两种来源都要拆掉）
+      return {content:'<think>\n先查物料表\n</think>\n'+JSON.stringify({action:'tool',tool:'search_tables',summary:'找表',args:{keyword:'物料'}}),
+        reasoning_content:'用户要统计物料'};
+    }
+    return {content:JSON.stringify({action:'final',summary:'完成',answer:'共 3 个物料'}),reasoning:'工具已返回，整理回答'};
+  }, executeTool:async()=>({status:'OK',data:{tables:[]}})});
+  assert.equal(r.status,'OK'); assert.equal(r.answer,'共 3 个物料');
+  assert.ok(/【第 1 轮】\n用户要统计物料\n\n先查物料表/.test(r.reasoning), r.reasoning);
+  assert.ok(/【第 2 轮】\n工具已返回，整理回答/.test(r.reasoning), r.reasoning);
+  const hist=JSON.stringify(seen[1]);
+  assert.ok(!/reasoning|先查物料表|用户要统计物料/.test(hist), '第 2 轮上下文里不能有第 1 轮的思考');
+  assert.ok(hist.includes('search_tables'), '第 2 轮上下文里有第 1 轮的协议正文');
+  const { wrapThink, thinkFields } = require('./agent-loop');
+  assert.equal(wrapThink('', 'a'), 'a');
+  assert.ok(wrapThink('x</think>y', 'a').startsWith('<think>\nx</ think>y\n</think>\n\na'));
+  assert.deepEqual(thinkFields('DS1', false), {chat_template_kwargs:{thinking:true}});
+  assert.deepEqual(thinkFields('QW0', false), {chat_template_kwargs:{enable_thinking:false}});
+  assert.deepEqual(thinkFields('OL1', true), {think:true});
+  assert.equal(thinkFields('', false), null);
+});
 test('SAP 源码：所有工具分支之前检查交集，参数和审计接线齐全', () => {
   const src=fs.readFileSync(path.join(__dirname,'../backend-abap/ZCL_AI_AGENT_SERVICE.abap'),'utf8');
   const guard=src.indexOf('AND NOT line_exists( lt_allowed_tools');

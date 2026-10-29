@@ -30,6 +30,17 @@
 *         eval_count; 没有字段或解析失败时返回空, 不影响正文解析。老调用方不用改
 *         ★ 重贴后核对标记: chat 声明有 ev_usage TYPE ty_usage; 有 ev_usage = parse_usage( lv_resp );
 *           PUBLIC 有 parse_usage 声明
+* V1.6 20261029(思考模式): 每个模型可单独开关思考。设置存 ZAI_CHAT_CFG-MODEL_THINK
+*         (前端 设置 → 模型管理 维护, 不改表结构 / SEGW), 值 = "模型ID=写法开关" 逗号分隔,
+*         例 DS_V4=DS1,GLM_LOCAL=QW0。写法: DS = chat_template_kwargs.thinking(DeepSeek),
+*         QW = chat_template_kwargs.enable_thinking(Qwen / GLM), OL = Ollama 原生 think;
+*         末位 1 = 开 0 = 关(显式传 false)。没配的模型不传任何思考参数, 与原来完全一致。
+*         新增可选出参 ev_reasoning = 思考过程(reasoning_content / reasoning / Ollama thinking
+*         字段 + 正文开头的 <think>…</think>), ev_content 只留正式回答 —— 调用方拿到的正文
+*         永远不含思考内容, Agent 的 JSON 协议解析不受影响; 思考内容不落库、不进下一轮上下文。
+*         只有思考没有回答时按失败返回(提示调大 MAX_TOKENS 或关闭思考)。老调用方不用改
+*         ★ 重贴后核对标记: chat 声明有 ev_reasoning; 有 think_fragment( 与 split_think(;
+*           有 ev_reasoning = parse_reasoning( lv_resp ); PUBLIC 有 wrap_think 声明(DPC 用)
 *=======================================================================
 CLASS zcl_ai_llm_client DEFINITION
   PUBLIC
@@ -68,12 +79,52 @@ CLASS zcl_ai_llm_client DEFINITION
                 ev_error     TYPE string
                 ev_attempts  TYPE i                    " V1.3: 实际请求次数(1 或 2)
                 ev_finish    TYPE string               " V1.4: 结束原因(length = 被 MAX_TOKENS 截断)
-                ev_usage     TYPE ty_usage.            " V1.5: 用量(输入 / 输出 token、缓存命中)
+                ev_usage     TYPE ty_usage             " V1.5: 用量(输入 / 输出 token、缓存命中)
+                ev_reasoning TYPE string.              " V1.6: 思考过程(没开思考 / 模型没返回时为空)
 
     " V1.5: 从响应 JSON 取用量。单独解析, 没有字段或解析失败返回空, 不抛异常
     CLASS-METHODS parse_usage
       IMPORTING iv_json      TYPE string
       RETURNING VALUE(rs)    TYPE ty_usage.
+
+    " V1.6: 从响应 JSON 取思考过程(OpenAI 兼容 choices[1].message.reasoning_content /
+    "       reasoning, Ollama message.thinking)。单独解析, 失败返回空, 不影响正文
+    CLASS-METHODS parse_reasoning
+      IMPORTING iv_json      TYPE string
+      RETURNING VALUE(rv)    TYPE string.
+
+    " V1.6: 本模型的思考设置(读 ZAI_CHAT_CFG-MODEL_THINK): 空 = 不传思考参数(原来的行为);
+    "       DS1 / DS0、QW1 / QW0、OL1 / OL0(见文件头)
+    CLASS-METHODS think_mode
+      IMPORTING iv_model_id  TYPE csequence
+      RETURNING VALUE(rv)    TYPE string.
+
+    " V1.6: 从配置值里取某个模型的思考设置(纯函数); 写法不认识时返回空
+    CLASS-METHODS parse_think_cfg
+      IMPORTING iv_cfg       TYPE csequence
+                iv_model_id  TYPE csequence
+      RETURNING VALUE(rv)    TYPE string.
+
+    " V1.6: 思考设置 → 拼进请求体的 JSON 片段(不含前导逗号); 空 = 不拼。
+    "       OLLAMA 一律用原生 "think"; OpenAI 兼容按写法用 chat_template_kwargs
+    CLASS-METHODS think_fragment
+      IMPORTING iv_mode       TYPE csequence
+                iv_model_type TYPE csequence
+      RETURNING VALUE(rv)     TYPE string.
+
+    " V1.6: 把正文开头的 <think>…</think> 拆到 ev_think, cv_content 只留回答。
+    "       iv_loose = X(思考开着)时, 没有开头标签只有 </think> 也拆(模板把 <think> 放进了提示词)
+    CLASS-METHODS split_think
+      IMPORTING iv_loose     TYPE abap_bool OPTIONAL
+      EXPORTING ev_think     TYPE string
+      CHANGING  cv_content   TYPE string.
+
+    " V1.6: 回给前端时把思考过程放在回答前面(<think>…</think> 空一行接回答),
+    "       前端拆开单独显示; 思考为空时原样返回回答。只在 DPC 出参时用, 不能拿去落库
+    CLASS-METHODS wrap_think
+      IMPORTING iv_reasoning TYPE string
+                iv_answer    TYPE string
+      RETURNING VALUE(rv)    TYPE string.
 
     " V1.3: 一次失败是否值得重试(网络层失败 / 429 / 5xx; 读超时与 4xx 不重试)
     " @parameter iv_code       | HTTP 状态码(网络层失败时为 0)
@@ -150,6 +201,26 @@ CLASS zcl_ai_llm_client DEFINITION
              eval_count        TYPE i,     " Ollama 输出 token
            END OF ty_usage_resp.
 
+    " ---- V1.6 思考过程解析结构(单独反序列化, 不动正文解析) ----
+    TYPES: BEGIN OF ty_rs_msg,
+             reasoning_content TYPE string,   " vLLM / DeepSeek
+             reasoning         TYPE string,   " 新版 vLLM / 部分网关
+             thinking          TYPE string,   " Ollama
+           END OF ty_rs_msg.
+    TYPES: BEGIN OF ty_rs_choice,
+             message TYPE ty_rs_msg,
+           END OF ty_rs_choice.
+    TYPES tt_rs_choice TYPE STANDARD TABLE OF ty_rs_choice WITH DEFAULT KEY.
+    TYPES: BEGIN OF ty_rs_resp,
+             choices TYPE tt_rs_choice,      " OpenAI 兼容
+             message TYPE ty_rs_msg,         " Ollama
+           END OF ty_rs_resp.
+
+    " V1.6: 去掉首尾空白(空格 / 制表 / 换行 / 回车); 不动中间的空格、缩进和空行
+    CLASS-METHODS trim_ws
+      IMPORTING iv_text     TYPE string
+      RETURNING VALUE(rv)   TYPE string.
+
 ENDCLASS.
 
 
@@ -168,7 +239,7 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
           lx        TYPE REF TO cx_root.
 
     CLEAR: ev_content, ev_elapsed, ev_error, ev_attempts, ev_finish.
-    CLEAR ev_usage.
+    CLEAR: ev_usage, ev_reasoning.
 
     " ---------------- 0. 配置校验 ----------------
     IF is_cfg-endpoint_url IS INITIAL AND is_cfg-destination IS INITIAL.
@@ -236,6 +307,18 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
                                            ( abap = 'MAX_TOKENS'  json = 'max_tokens' )
                                            ( abap = 'ROLE'        json = 'role' )
                                            ( abap = 'CONTENT'     json = 'content' ) ) ).
+    ENDIF.
+
+    " V1.6: 思考参数(按模型配置; 没配 = 不传, 与原来一致)。拼在请求体最后一个 } 之前
+    DATA(lv_think)    = think_mode( is_cfg-model_id ).
+    DATA(lv_think_on) = xsdbool( lv_think CP '++1' ).
+    DATA(lv_frag)     = think_fragment( iv_mode = lv_think iv_model_type = is_cfg-model_type ).
+    IF lv_frag IS NOT INITIAL.
+      DATA(lv_brace) = find( val = lv_body sub = `}` occ = -1 ).
+      IF lv_brace > 0.
+        lv_body = substring( val = lv_body len = lv_brace ) && `,` && lv_frag &&
+                  substring( val = lv_body off = lv_brace ).
+      ENDIF.
     ENDIF.
 
     DATA(lv_timeout) = is_cfg-timeout_sec.
@@ -406,9 +489,207 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
         RETURN.
     ENDTRY.
 
-    IF ev_error IS INITIAL AND ev_content IS INITIAL.
-      ev_error = '模型返回了空内容, 请检查 API_MODEL 名称是否正确'.
+    " V1.6: 思考过程与正式回答分开 —— 专用字段单独解析(失败为空), 再拆正文开头的
+    " <think>…</think>; 之后 ev_content 只剩回答(没开思考时也拆, 去掉空的思考块)
+    ev_reasoning = parse_reasoning( lv_resp ).
+    DATA lv_tag_think TYPE string.
+    split_think( EXPORTING iv_loose   = lv_think_on
+                 IMPORTING ev_think   = lv_tag_think
+                 CHANGING  cv_content = ev_content ).
+    IF lv_tag_think IS NOT INITIAL.
+      ev_reasoning = COND #( WHEN ev_reasoning IS INITIAL THEN lv_tag_think
+                             ELSE ev_reasoning && cl_abap_char_utilities=>newline &&
+                                  cl_abap_char_utilities=>newline && lv_tag_think ).
     ENDIF.
+    ev_reasoning = trim_ws( ev_reasoning ).
+
+    IF ev_error IS INITIAL AND ev_content IS INITIAL.
+      IF ev_reasoning IS NOT INITIAL.
+        " 思考把 MAX_TOKENS 用完了 / 模型只想不答: 按失败返回, 调用方照常走失败处理
+        ev_error = COND #( WHEN ev_finish = 'length'
+                           THEN '模型只写了思考过程, 还没给出回答就达到 MAX_TOKENS 上限; 请调大该模型的 MAX_TOKENS, 或在模型管理里关闭思考'
+                           ELSE '模型只返回了思考过程, 没有给出回答; 可重试, 或在模型管理里关闭思考' ).
+      ELSE.
+        ev_error = '模型返回了空内容, 请检查 API_MODEL 名称是否正确'.
+      ENDIF.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD parse_reasoning.
+
+    " V1.6: 只读思考字段, 任何异常都返回空 —— 不能因为思考字段格式不同把正常回答判成失败
+    CLEAR rv.
+    IF iv_json IS INITIAL
+       OR ( iv_json NS '"reasoning' AND iv_json NS '"thinking"' ).
+      RETURN.
+    ENDIF.
+
+    DATA ls_r TYPE ty_rs_resp.
+    TRY.
+        /ui2/cl_json=>deserialize(
+          EXPORTING json = iv_json
+                    name_mappings = VALUE #( ( abap = 'CHOICES'           json = 'choices' )
+                                             ( abap = 'MESSAGE'           json = 'message' )
+                                             ( abap = 'REASONING_CONTENT' json = 'reasoning_content' )
+                                             ( abap = 'REASONING'         json = 'reasoning' )
+                                             ( abap = 'THINKING'          json = 'thinking' ) )
+          CHANGING  data = ls_r ).
+      CATCH cx_root.
+        CLEAR rv.
+        RETURN.
+    ENDTRY.
+
+    READ TABLE ls_r-choices INTO DATA(ls_c) INDEX 1.
+    IF sy-subrc = 0.
+      rv = COND #( WHEN ls_c-message-reasoning_content IS NOT INITIAL
+                   THEN ls_c-message-reasoning_content
+                   ELSE ls_c-message-reasoning ).
+    ENDIF.
+    IF rv IS INITIAL.
+      rv = ls_r-message-thinking.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD think_mode.
+
+    " V1.6: 每次调用读一次配置(单行主键读, 很快); 读不到 = 不传思考参数
+    CLEAR rv.
+    TRY.
+        SELECT SINGLE cfgvalue FROM zai_chat_cfg
+          WHERE cfgkey = 'MODEL_THINK'
+          INTO @DATA(lv_cfg).
+        IF sy-subrc = 0.
+          rv = parse_think_cfg( iv_cfg = lv_cfg iv_model_id = iv_model_id ).
+        ENDIF.
+      CATCH cx_root.
+        CLEAR rv.
+    ENDTRY.
+
+  ENDMETHOD.
+
+
+  METHOD parse_think_cfg.
+
+    " 值: 模型ID=写法开关, 逗号分隔(大小写不敏感); 写法只认 DS / QW / OL + 1 / 0
+    CLEAR rv.
+    DATA(lv_id)  = to_upper( condense( CONV string( iv_model_id ) ) ).
+    DATA(lv_cfg) = to_upper( CONV string( iv_cfg ) ).
+    IF lv_id IS INITIAL OR lv_cfg IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    DATA: lt_items TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
+          lv_k     TYPE string,
+          lv_v     TYPE string.
+    SPLIT lv_cfg AT ',' INTO TABLE lt_items.
+    LOOP AT lt_items INTO DATA(lv_item).
+      CLEAR: lv_k, lv_v.
+      SPLIT lv_item AT '=' INTO lv_k lv_v.
+      lv_k = condense( lv_k ).
+      lv_v = condense( lv_v ).
+      IF lv_k <> lv_id.
+        CONTINUE.
+      ENDIF.
+      IF strlen( lv_v ) = 3 AND ( lv_v CP 'DS+' OR lv_v CP 'QW+' OR lv_v CP 'OL+' )
+         AND ( lv_v CP '++1' OR lv_v CP '++0' ).
+        rv = lv_v.
+      ENDIF.
+      RETURN.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+  METHOD think_fragment.
+
+    CLEAR rv.
+    DATA(lv_mode) = to_upper( CONV string( iv_mode ) ).
+    IF strlen( lv_mode ) <> 3.
+      RETURN.
+    ENDIF.
+    DATA(lv_on) = COND string( WHEN lv_mode CP '++1' THEN `true` ELSE `false` ).
+
+    IF to_upper( CONV string( iv_model_type ) ) = 'OLLAMA'.
+      rv = `"think":` && lv_on.                                     " Ollama 原生开关
+    ELSEIF lv_mode CP 'DS+'.
+      rv = `"chat_template_kwargs":{"thinking":` && lv_on && `}`.          " DeepSeek
+    ELSEIF lv_mode CP 'QW+'.
+      rv = `"chat_template_kwargs":{"enable_thinking":` && lv_on && `}`.   " Qwen / GLM
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD split_think.
+
+    CLEAR ev_think.
+    IF cv_content IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    DATA(lv_close) = find( val = cv_content sub = `</think>` case = abap_false ).
+    IF lv_close < 0.
+      RETURN.
+    ENDIF.
+    DATA(lv_open) = find( val = cv_content sub = `<think>` case = abap_false ).
+
+    IF lv_open >= 0 AND lv_open < lv_close.
+      " 只认开头的思考块: <think> 前面只能是空白(回答中间提到标签的不动)
+      IF lv_open > 0 AND find( val = substring( val = cv_content len = lv_open ) regex = `\S` ) >= 0.
+        RETURN.
+      ENDIF.
+      ev_think = substring( val = cv_content off = lv_open + 7 len = lv_close - lv_open - 7 ).
+    ELSEIF lv_open < 0 AND iv_loose = abap_true.
+      " 思考开着、模板已把 <think> 放进提示词: 正文从思考开始, 到 </think> 结束
+      ev_think = substring( val = cv_content len = lv_close ).
+    ELSE.
+      RETURN.
+    ENDIF.
+
+    cv_content = trim_ws( substring( val = cv_content off = lv_close + 8 ) ).
+    ev_think   = trim_ws( ev_think ).
+
+  ENDMETHOD.
+
+
+  METHOD wrap_think.
+
+    IF iv_reasoning IS INITIAL.
+      rv = iv_answer.
+      RETURN.
+    ENDIF.
+    " 思考里万一出现 </think> 字样, 改掉免得前端提前截断
+    DATA(lv_r) = replace( val = iv_reasoning sub = `</think>` with = `</ think>` occ = 0 case = abap_false ).
+    rv = `<think>` && cl_abap_char_utilities=>newline && lv_r && cl_abap_char_utilities=>newline &&
+         `</think>` && cl_abap_char_utilities=>newline && cl_abap_char_utilities=>newline && iv_answer.
+
+  ENDMETHOD.
+
+
+  METHOD trim_ws.
+
+    " 逐个去掉首尾的空格 / 制表 / 换行 / 回车。不用正则: ABAP 正则的 ^ 和 $ 按行匹配,
+    " 会把回答中间每一行的缩进和空行都吃掉(代码块会乱)
+    DATA lv_len TYPE i.
+    rv = iv_text.
+    DO.
+      lv_len = strlen( rv ).
+      rv = shift_left(  val = rv sub = ` ` ).
+      rv = shift_left(  val = rv sub = |\t| ).
+      rv = shift_left(  val = rv sub = |\n| ).
+      rv = shift_left(  val = rv sub = |\r| ).
+      rv = shift_right( val = rv sub = ` ` ).
+      rv = shift_right( val = rv sub = |\t| ).
+      rv = shift_right( val = rv sub = |\n| ).
+      rv = shift_right( val = rv sub = |\r| ).
+      IF strlen( rv ) = lv_len.
+        EXIT.
+      ENDIF.
+    ENDDO.
 
   ENDMETHOD.
 

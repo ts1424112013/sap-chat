@@ -896,12 +896,16 @@ sap.ui.define([
                         var that = this;
                         var oChatModel = this.getView().getModel("chat");
 
-                        ChatService.getModels().then(function (aModels) {
+                        // 20261029：同时读各模型的思考设置（读不到按都没开，不影响对话）
+                        Promise.all([ChatService.getModels(),
+                                ChatService.getModelThinkMap(true).catch(function () { return {}; })]).then(function (aRes) {
+                                var aModels = aRes[0];
                                 // 只使用管理员配置并启用的模型，不再注入 AUTO 虚拟项。
                                 var aList = (aModels || []).filter(function (m) {
                                         return m.ModelId && m.ModelId.toUpperCase() !== "AUTO" && m.IsActive === "X";
                                 }).map(function (m) {
                                         m.pickDesc = m.ModelDesc || m.ModelType || "";
+                                        m.thinkOn = ChatService.isThinkOn(m.ModelId);   // 模型选择里显示「思考」标记
                                         return m;
                                 });
                                 oChatModel.setProperty("/models", aList);
@@ -1117,6 +1121,11 @@ sap.ui.define([
                                 oPending.agentThinking = true;
                                 oPending.requestPending = true;
                                 oPending.thinkingLabel = oRB.getText("agentPhaseUnderstand");
+                        } else if (ChatService.isThinkOn && ChatService.isThinkOn(sModelId)) {
+                                // 20261029：该模型开了思考 —— 正文上方先放「正在思考」区（同步接口拿不到中间过程，
+                                // 回复到达后在这里放出思考过程，放完收起，见 _showThink）
+                                oPending.thinkState = "wait";
+                                oPending.thinkHtml = this._thinkHtml(oPending);
                         }
                         var iAssistantIdx = oChatModel.getProperty("/messages").length;
                         oChatModel.getProperty("/messages").push(oPending);
@@ -1250,7 +1259,12 @@ sap.ui.define([
                                                 that._updateTaskState(oRes, sSessionId, iAssistantIdx);
                                         }
                                         var sAnswer = oRes.answer || oRes.message || oRB.getText("emptyAnswer");
-                                        return that._streamAnswer(iAssistantIdx, sAnswer, sDoneMeta, sSendToken)
+                                        // 20261029：先放思考过程（对话：在思考区里打出来，打完收起；Agent：边跑边看已逐轮
+                                        // 显示过，直接收起放在回答上方），再打正文。思考只在 reasoning 里，sAnswer 不含
+                                        return that._showThink(iAssistantIdx, oRes.reasoning || "", sSendToken, !bAgent)
+                                                .then(function () {
+                                                        return that._streamAnswer(iAssistantIdx, sAnswer, sDoneMeta, sSendToken);
+                                                })
                                                 .then(function () {
                                                         fnFinish();
                                                         // V16：参数卡 / 意图澄清卡（流式完成后出现，与回答联动）
@@ -1314,6 +1328,10 @@ sap.ui.define([
                                 var sPath = "/messages/" + iIndex;
                                 oChatModel.setProperty(sPath + "/elapsedText",
                                         that._rb().getText("waitElapsed", [Math.round((Date.now() - iStart) / 1000)]));
+                                // 20261029：思考区标题行的计时直接改 DOM（重绘会让骨架动画从头播）
+                                if (oE.thinkState === "wait") {
+                                        that._setThinkMeta(oE.uid, oE.elapsedText || "");
+                                }
                                 // 20261028：拿到真实步骤后不再轮换固定文案（标题跟着当前步骤走，见 _applyLive）
                                 if (bAgent && ++iTick % 3 === 0 && !(oE.liveSteps && oE.liveSteps.length)) {
                                         iPos = (iPos + 1) % aPhases.length;
@@ -1490,7 +1508,7 @@ sap.ui.define([
                         if (!aShow.length) {
                                 return;
                         }
-                        var sHtml = this._liveHtml(sUid, aShow, oLive.seen);
+                        var sHtml = this._liveHtml(sUid, aShow, oLive.seen, bFinal);
                         aShow.forEach(function (st) { oLive.seen[String(st.seq)] = String(st.status || "RUNNING").toUpperCase(); });
                         var oRun = null;
                         aShow.forEach(function (st) {
@@ -1519,10 +1537,18 @@ sap.ui.define([
                         }
                 },
 
-                /** 步骤列表 HTML（所有文字先转义，标签由这里构造） */
-                _liveHtml: function (sUid, aSteps, mSeen) {
+                /** 步骤列表 HTML（所有文字先转义，标签由这里构造）
+                  * 20261029：步骤带 think（模型开了思考，后端 AGENT_PROGRESS V1.1）时在这一步下面画「思考过程」：
+                  * 运行中最新的一段默认展开，其余收起；整轮结束（bFinal）全部收起；用户点过的按用户的来 */
+                _liveHtml: function (sUid, aSteps, mSeen, bFinal) {
                         var esc = Formatter.escapeHtml;
                         var mOpen = this._mLiveOpen || {};
+                        var oRB = this._rb();
+                        var sTkGlyph = this._THINK_GLYPH, sTkChev = this._THINK_CHEV;
+                        var sLastThink = "";
+                        aSteps.forEach(function (st) {
+                                if (st && st.think) { sLastThink = String(st.seq); }
+                        });
                         var sCheck = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.4l3 3 6-6.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
                         var sNote = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M3 8h10M3 11.5h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
                         var mBad = { REJECTED: "被拒，已自动调整", ERROR: "失败", DENIED: "无权限", STOPPED: "已停止" };
@@ -1582,6 +1608,18 @@ sap.ui.define([
                                                                 return "<td" + (fnNum(v) ? ' class="num"' : "") + ">" + esc(v === null || v === undefined ? "" : v) + "</td>";
                                                         }).join("") + "</tr>";
                                                 }).join("") + "</tbody></table>";
+                                }
+                                if (st.think) {
+                                        var sTk = sUid + ":" + sSeq + ":t";
+                                        var bTkOpen = mOpen[sTk] !== undefined ? !!mOpen[sTk] : (!bFinal && sSeq === sLastThink);
+                                        var iTkLen = String(st.think).replace(/\s+/g, "").length;
+                                        s += '<div class="lvThink' + (bTkOpen ? " is-open" : "") + '">' +
+                                                '<button type="button" class="lvThinkHead" data-lvthink="' + esc(sTk) + '" aria-expanded="' + bTkOpen + '">' +
+                                                '<span class="lvThinkGlyph">' + sTkGlyph + "</span>" +
+                                                esc(oRB.getText("thinkTitle")) + '<span class="lvThinkMeta">' +
+                                                esc(oRB.getText("thinkChars", [iTkLen.toLocaleString("zh-CN")])) + "</span>" +
+                                                '<span class="lvThinkChev">' + sTkChev + "</span></button>" +
+                                                '<div class="lvThinkText">' + esc(st.think) + "</div></div>";
                                 }
                                 if (!bRun && st.detail) {
                                         // 20261028：只有 SQL 才叫「查看 SQL」；模型切换、协议重写等步骤的说明叫「查看详情」
@@ -1853,6 +1891,7 @@ sap.ui.define([
                                 if (!oLast.raw) {
                                         oLast.html = "";
                                 }
+                                this._settleThink(oLast);   // 20261029：还在「正在思考」的收掉；已放出的思考保留、收起
                                 oLast.meta = this.getView().getModel("i18n").getResourceBundle().getText("stopped");
                                 oLast.time = Formatter.formatTime("");
                         }
@@ -2364,6 +2403,221 @@ sap.ui.define([
                         });
                 },
 
+                /* =========================================================
+                 * 20261029：思考过程（模型管理里开了思考的模型）
+                 * 后端 LLM_CLIENT V1.6 把思考与回答分开，DPC 出参时放在 Answer 开头，
+                 * ChatService._withThink 拆到 oRes.reasoning。条目字段：
+                 *   thinkState  wait（等回复）/ live（正在放出）/ done（已收起，可点开）
+                 *   reasoning   思考全文（只在界面上，不回填上下文；后端也不落库，刷新后不再显示）
+                 *   thinkOpen   done 时是否展开；thinkHtml 渲染结果（绑定到正文上方的 HTML 控件）
+                 * 同步 OData 拿不到模型的中间输出：对话模式在回复到达后把思考过程在思考区里放一遍，
+                 * 放完自动收起再打正文；Agent 模式每轮的思考已在边跑边看的步骤里出现，最后直接收起放在回答上方。
+                 * ========================================================= */
+
+                _THINK_GLYPH: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.9a4.3 4.3 0 0 0-2.55 7.77c.47.35.76.86.76 1.43v.4h3.58v-.4c0-.57.29-1.08.76-1.43A4.3 4.3 0 0 0 8 1.9z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M6.45 13.75h3.1" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>',
+                _THINK_CHEV: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.8L10.2 8 6 12.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+
+                /** 思考区 HTML（文字全部转义；done 态标题行是按钮，点击展开 / 收起） */
+                _thinkHtml: function (o) {
+                        if (!o || !o.thinkState) {
+                                return "";
+                        }
+                        var esc = Formatter.escapeHtml;
+                        var oRB = this._rb();
+                        var sSt = o.thinkState;
+                        var bDone = sSt === "done";
+                        var bOpen = !bDone || !!o.thinkOpen;
+                        var sText = o.reasoning || "";
+                        var iLen = sText.replace(/\s+/g, "").length;
+                        var sShow = sSt === "live" ? (o.thinkShown || "") : sText;   // live：只画已放出的部分
+                        var sMeta = bDone ? oRB.getText("thinkChars", [iLen.toLocaleString("zh-CN")])
+                                : sSt === "wait" ? (o.elapsedText || "") : "";
+                        var sUid = esc(o.uid || "");
+                        var s = '<div class="rsnBlock is-' + sSt + (bOpen ? " is-open" : "") + (o.thinkAnim ? " is-anim" : "") +
+                                '" data-think-uid="' + sUid + '">';
+                        s += bDone
+                                ? '<button type="button" class="rsnHead" data-think-toggle="' + sUid + '" aria-expanded="' + bOpen +
+                                        '" title="' + esc(oRB.getText(bOpen ? "thinkFold" : "thinkUnfold")) + '">'
+                                : '<div class="rsnHead">';
+                        s += '<span class="rsnGlyph">' + this._THINK_GLYPH + "</span>" +
+                                '<span class="rsnName">' + esc(oRB.getText(bDone ? "thinkTitle" : "thinkLive")) + "</span>" +
+                                '<span class="rsnMeta">' + esc(sMeta) + "</span>";
+                        s += bDone ? '<span class="rsnChev">' + this._THINK_CHEV + "</span></button>" : "</div>";
+                        if (bOpen) {
+                                s += '<div class="rsnBody">' + (sSt === "wait"
+                                        ? '<div class="rsnSkel" aria-hidden="true"><i></i><i></i><i></i></div>'
+                                        : '<div class="rsnText">' + esc(sShow) + "</div>") + "</div>";
+                        }
+                        return s + "</div>";
+                },
+
+                /** 等待期计时：只改标题行文字，不重绘思考区 */
+                _setThinkMeta: function (sUid, sText) {
+                        if (typeof document === "undefined" || !sUid) {
+                                return;
+                        }
+                        var oMeta = document.querySelector('[data-think-uid="' + sUid + '"] .rsnMeta');
+                        if (oMeta && oMeta.textContent !== sText) {
+                                oMeta.textContent = sText;
+                        }
+                },
+
+                /** 写一个条目的思考字段并重算 thinkHtml（当前列表里的条目走模型绑定） */
+                _setThink: function (iIndex, mSet) {
+                        var oChat = this.getView().getModel("chat");
+                        var sPath = "/messages/" + iIndex;
+                        var oE = oChat.getProperty(sPath);
+                        if (!oE) {
+                                return null;
+                        }
+                        Object.keys(mSet).forEach(function (k) {
+                                oE[k] = mSet[k];
+                        });
+                        oChat.setProperty(sPath + "/thinkHtml", this._thinkHtml(oE));
+                        return oE;
+                },
+
+                /**
+                 * 回复到达后放出思考过程。
+                 * @param {int} iIndex 消息下标
+                 * @param {string} sText 思考全文（空 = 没有思考：去掉等待区）
+                 * @param {string} sToken 本轮令牌（停止 / 切会话即失效）
+                 * @param {boolean} bPlay true = 在思考区里打出来，打完收起；false = 直接收起
+                 * @returns {Promise}
+                 */
+                _showThink: function (iIndex, sText, sToken, bPlay) {
+                        var that = this;
+                        var oChat = this.getView().getModel("chat");
+                        var oE = oChat.getProperty("/messages/" + iIndex);
+                        if (!oE) {
+                                return Promise.resolve();
+                        }
+                        if (!sText) {
+                                if (oE.thinkState) {
+                                        this._setThink(iIndex, { thinkState: "", reasoning: "", thinkShown: "", thinkOpen: false });
+                                }
+                                return Promise.resolve();
+                        }
+                        if (!bPlay || this._sStreamToken !== sToken || typeof document === "undefined") {
+                                this._setThink(iIndex, { thinkState: "done", reasoning: sText, thinkOpen: false });
+                                return Promise.resolve();
+                        }
+                        this._setThink(iIndex, { thinkState: "live", reasoning: sText, thinkShown: "", thinkOpen: true });
+                        var sUid = oE.uid;
+                        return new Promise(function (fnResolve) {
+                                var iPos = 0;
+                                var iLen = sText.length;
+                                // 约 90 帧放完（长思考自动加速），比正文快，不让用户等太久
+                                var iChunk = Math.max(3, Math.ceil(iLen / 90));
+                                var fnDone = function () {
+                                        var oNow = oChat.getProperty("/messages/" + iIndex);
+                                        if (!oNow || oNow.uid !== sUid) {
+                                                fnResolve();
+                                                return;
+                                        }
+                                        var oDom = document.querySelector('[data-think-uid="' + sUid + '"]');
+                                        if (oDom && that._sStreamToken === sToken) {
+                                                // 先播收起动效，再换成收起态
+                                                oDom.classList.add("is-folding");
+                                                setTimeout(function () {
+                                                        that._setThink(iIndex, { thinkState: "done", reasoning: sText, thinkOpen: false });
+                                                        fnResolve();
+                                                }, 260);
+                                                return;
+                                        }
+                                        that._setThink(iIndex, { thinkState: "done", reasoning: sText, thinkOpen: false });
+                                        fnResolve();
+                                };
+                                var fnTick = function () {
+                                        if (that._sStreamToken !== sToken) {
+                                                fnDone();
+                                                return;
+                                        }
+                                        iPos = that._sStreamSkip === sToken ? iLen : Math.min(iLen, iPos + iChunk);
+                                        oE.thinkShown = sText.substring(0, iPos);   // 列表中途重绘时接着画
+                                        var oText = document.querySelector('[data-think-uid="' + sUid + '"] .rsnText');
+                                        if (oText) {
+                                                oText.textContent = oE.thinkShown;
+                                                var oBody = oText.parentNode;
+                                                if (oBody) {
+                                                        oBody.scrollTop = oBody.scrollHeight;   // 跟着最新一行
+                                                        oBody.classList.toggle("is-over", oBody.scrollHeight > oBody.clientHeight + 2);
+                                                }
+                                        }
+                                        if (that._isNearBottom()) {
+                                                that._scrollToBottom(true);
+                                        }
+                                        if (iPos >= iLen) {
+                                                // 放完停一下再收起，让最后几行看得清
+                                                setTimeout(fnDone, that._sStreamSkip === sToken ? 0 : 650);
+                                        } else {
+                                                setTimeout(fnTick, 24);
+                                        }
+                                };
+                                setTimeout(fnTick, 80);
+                        });
+                },
+
+                /** 停止生成：等待中的思考区去掉；已经放出的保留全文、收起 */
+                _settleThink: function (oEntry) {
+                        if (!oEntry || !oEntry.thinkState || oEntry.thinkState === "done") {
+                                return;
+                        }
+                        if (oEntry.thinkState === "live" && oEntry.reasoning) {
+                                oEntry.thinkState = "done";
+                                oEntry.thinkOpen = false;
+                        } else {
+                                oEntry.thinkState = "";
+                                oEntry.reasoning = "";
+                        }
+                        oEntry.thinkHtml = this._thinkHtml(oEntry);
+                },
+
+                /** 思考区标题行点击 = 展开 / 收起（内容是 innerHTML，事件委托；捕获阶段处理，不触发「跳过打字」） */
+                _bindThinkToggle: function () {
+                        if (this._bThinkToggle || typeof document === "undefined") {
+                                return;
+                        }
+                        this._bThinkToggle = true;
+                        var that = this;
+                        document.addEventListener("click", function (e) {
+                                // Agent 步骤里的思考：直接切 DOM 上的展开态并记住（下次重绘按用户的来）
+                                var oLv = e.target && e.target.closest ? e.target.closest("[data-lvthink]") : null;
+                                if (oLv) {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        var oBox = oLv.parentNode;
+                                        var bNow = !oBox.classList.contains("is-open");
+                                        oBox.classList.toggle("is-open", bNow);
+                                        oLv.setAttribute("aria-expanded", String(bNow));
+                                        that._mLiveOpen = that._mLiveOpen || {};
+                                        that._mLiveOpen[oLv.getAttribute("data-lvthink")] = bNow;
+                                        return;
+                                }
+                                var oBtn = e.target && e.target.closest ? e.target.closest("[data-think-toggle]") : null;
+                                if (!oBtn) {
+                                        return;
+                                }
+                                e.preventDefault();
+                                e.stopPropagation();
+                                that._toggleThink(oBtn.getAttribute("data-think-toggle"));
+                        }, true);
+                },
+
+                _toggleThink: function (sUid) {
+                        var aMsgs = this.getView().getModel("chat").getProperty("/messages") || [];
+                        for (var i = 0; i < aMsgs.length; i++) {
+                                if (aMsgs[i].uid === sUid && aMsgs[i].thinkState === "done") {
+                                        var bOpen = !aMsgs[i].thinkOpen;
+                                        var oE = this._setThink(i, { thinkOpen: bOpen, thinkAnim: bOpen });
+                                        if (oE) {
+                                                oE.thinkAnim = false;   // 展开动效只播这一次，之后重绘不再播
+                                        }
+                                        return;
+                                }
+                        }
+                },
+
                 /** 按消息下标定位该条目的 HTML 正文控件（msgBody=1 标记；V16：行内新增了
                   * thinkBar/stepBar 等原生 HTML 控件，“第一个 HTML”不再可靠） */
                 /**
@@ -2500,7 +2754,8 @@ sap.ui.define([
                                         // 正文仍为空，原来只看 raw 会一直挂着「思考中…」，和「已停止生成」并排
                                         oHeadLeft.addItem(new Text({
                                                 text: "{= ${i18n>thinkingWait} + (${chat>elapsedText} ? ' · ' + ${chat>elapsedText} : '…') }",
-                                                visible: "{= !!${chat>streaming} && ${chat>raw} === '' }"
+                                                // 20261029：有思考区时由思考区显示「正在思考 · N 秒」，标题行不再重复
+                                                visible: "{= !!${chat>streaming} && ${chat>raw} === '' && !${chat>thinkHtml} }"
                                         }).addStyleClass("headThinking"));
                                 }
                                 oHeadLeft.addItem(new Text({ text: "{chat>time}" }).addStyleClass("bubbleTime aiHeadTime"));
@@ -2619,6 +2874,15 @@ sap.ui.define([
                                         oDoneCard.addItem(oStepsWrap);
                                         oCol.addItem(oDoneCard);
                                 }
+
+                                // 20261029：思考过程（模型开了思考才有）—— 正文上方，可折叠；内容先转义，标签由 _thinkHtml 构造
+                                this._bindThinkToggle();
+                                oCol.addItem(new HTML({
+                                        content: "{chat>thinkHtml}",
+                                        visible: "{= !!${chat>thinkHtml} }",
+                                        preferDOM: false,
+                                        sanitizeContent: false
+                                }));
 
                                 oCol.addItem(oBody);
 

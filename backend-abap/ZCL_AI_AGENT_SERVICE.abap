@@ -161,6 +161,17 @@
 *   依赖: ZCL_AI_LLM_CLIENT V1.5(ev_usage) / ZCL_AI_DATA_ANALYSIS_SERVICE V13.4
 *   ★ 重贴后核对标记: 三处 zcl_ai_llm_client=>chat 都有 ev_usage; log_llm_call( 调用 3 处;
 *     save_audit 声明有 it_calls; 两处 build_datasets_json 回填带 iv_max_chars
+* V15.9 20261029(思考模式, 无 SE11 / SEGW 改动):
+*   ① 主循环两处调模型(主调用 / 换模型重试)取 LLM_CLIENT V1.6 的 ev_reasoning:
+*     有思考时立刻交给 ZCL_AI_AGENT_PROGRESS=>think(V1.1)挂到本轮的模型步骤上,
+*     前端边跑边看能逐轮看到; 同时按「第 N 轮」累计, 结束时放进出参新字段
+*     reasoning, 由 DPC 拼到回答前面显示;
+*   ② 协议解析、修复轮、落库(save_chat)、审计、下一轮的 lt_messages 都只用正文
+*     lv_content / lv_answer —— LLM_CLIENT 已把思考拆出去, 思考内容不进上下文、不落库;
+*     结构化分析那次调用不取思考(只是格式化 JSON)
+*   依赖: ZCL_AI_LLM_CLIENT V1.6 / ZCL_AI_AGENT_PROGRESS V1.1
+*   ★ 重贴后核对标记: 两处主循环 chat 有 ev_reasoning = lv_llm_think; 有 zcl_ai_agent_progress=>think(;
+*     有 es_result-reasoning = lv_think_all; ty_agent_result 有 reasoning
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -191,6 +202,8 @@ CLASS zcl_ai_agent_service DEFINITION
              needs_input  TYPE string,      " 'X' = 等待用户补参数
              pending_params_json TYPE string,
              artifact_refs_json  TYPE string,
+             " V15.9: 本次运行各轮的思考过程(只随出参, 不落库; DPC 拼到回答前)
+             reasoning    TYPE string,
            END OF ty_agent_result.
 
     " ---- 过程 Trace(V13 阶段事件): 阶段摘要, 不含内部推理 ----
@@ -971,6 +984,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     DATA lv_plan_ms TYPE i VALUE 0.
     DATA lv_switched TYPE abap_bool VALUE abap_false.   " V15.3: 本次运行是否已切换过备选模型
     DATA lt_llm_calls TYPE tt_llm_call.                 " V15.8: 每次模型调用的用量(只进审计)
+    DATA lv_think_all TYPE string.                      " V15.9: 各轮思考过程(只随出参)
     lv_round    = 0.
     lv_repaired = abap_false.
     CLEAR: lv_answer, lv_bad_first, lv_cut_first.
@@ -1016,8 +1030,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
             lv_llm_ms  TYPE i,
             lv_llm_err TYPE string,
             lv_llm_fin TYPE string,   " V15.7: 结束原因(length = 被 MAX_TOKENS 截断)
-            ls_llm_use TYPE zcl_ai_llm_client=>ty_usage.   " V15.8: 本次调用用量
-      CLEAR: lv_content, lv_llm_ms, lv_llm_err, lv_llm_fin, ls_llm_use.
+            ls_llm_use TYPE zcl_ai_llm_client=>ty_usage,   " V15.8: 本次调用用量
+            lv_llm_think TYPE string.  " V15.9: 本轮思考过程(不进 lt_messages)
+      CLEAR: lv_content, lv_llm_ms, lv_llm_err, lv_llm_fin, ls_llm_use, lv_llm_think.
 
       zcl_ai_llm_client=>chat(
         EXPORTING is_cfg      = ls_call
@@ -1026,7 +1041,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                   ev_elapsed  = lv_llm_ms
                   ev_error    = lv_llm_err
                   ev_finish   = lv_llm_fin
-                  ev_usage    = ls_llm_use ).
+                  ev_usage    = ls_llm_use
+                  ev_reasoning = lv_llm_think ).
       log_llm_call( EXPORTING iv_round    = lv_round
                               iv_kind     = '主调用'
                               iv_model_id = CONV string( ls_call-model_id )
@@ -1060,7 +1076,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           ENDIF.
           ls_call = ls_cfg.
           ls_call-timeout_sec = lv_rest_s.
-          CLEAR: lv_content, lv_llm_ms, lv_llm_err, lv_llm_fin, ls_llm_use.
+          CLEAR: lv_content, lv_llm_ms, lv_llm_err, lv_llm_fin, ls_llm_use, lv_llm_think.
           zcl_ai_llm_client=>chat(
             EXPORTING is_cfg      = ls_call
                       it_messages = lt_messages
@@ -1068,7 +1084,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                       ev_elapsed  = lv_llm_ms
                       ev_error    = lv_llm_err
                       ev_finish   = lv_llm_fin
-                      ev_usage    = ls_llm_use ).
+                      ev_usage    = ls_llm_use
+                      ev_reasoning = lv_llm_think ).
           log_llm_call( EXPORTING iv_round    = lv_round
                                   iv_kind     = '换模型重试'
                                   iv_model_id = CONV string( ls_call-model_id )
@@ -1080,6 +1097,15 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                                                         WHEN lv_content IS INITIAL THEN `模型返回了空内容` )
                         CHANGING  ct_calls    = lt_llm_calls ).
         ENDIF.
+      ENDIF.
+
+      " ---- V15.9 思考模式: 本轮思考挂到进度的模型步骤上(边跑边看), 并按轮累计给出参 ----
+      " 只用于展示: 下面的协议解析与 lt_messages 只用 lv_content(已不含思考)
+      IF lv_llm_think IS NOT INITIAL.
+        zcl_ai_agent_progress=>think( lv_llm_think ).
+        lv_think_all = COND #( WHEN lv_think_all IS INITIAL
+                               THEN |【第 { lv_round } 轮】\n{ lv_llm_think }|
+                               ELSE |{ lv_think_all }\n\n【第 { lv_round } 轮】\n{ lv_llm_think }| ).
       ENDIF.
 
       IF lv_llm_err IS NOT INITIAL OR lv_content IS INITIAL.
@@ -1650,6 +1676,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     DATA(lv_total_ms) = ( lv_t1 - lv_t0 ) / 1000.
 
     es_result-answer     = lv_answer.
+    es_result-reasoning  = lv_think_all.   " V15.9: 只随出参(DPC 拼到回答前), 不落库
     es_result-rounds     = |{ lv_round }|.
     es_result-elapsed_ms = |{ lv_total_ms }|.
     " V15.6 边跑边看: 最后几步写完, 运行头置 DONE(前端随回复一起收口)

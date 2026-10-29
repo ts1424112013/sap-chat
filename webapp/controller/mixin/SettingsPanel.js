@@ -241,6 +241,7 @@ sap.ui.define([
                 /** 填充模型表格 */
                 _fillModelTable: function (aModels) {
                         var oRB = this.getView().getModel("i18n").getResourceBundle();
+                        var oSettings = this.getView().getModel("settings");
                         var aRows = (aModels || []).map(function (m) {
                                 return {
                                         ModelId: m.ModelId,
@@ -250,10 +251,41 @@ sap.ui.define([
                                         IsActive: m.IsActive === "X" ? oRB.getText("activeYes") : oRB.getText("activeNo"),
                                         ActiveState: m.IsActive === "X" ? "Success" : "None",
                                         SkipSource: m.SkipSource || "",       // V10：保留源码分析开关状态供编辑回填
-                                        UserHideSrc: m.UserHideSrc || ""      // V10：保留 USER 禁看开关状态供编辑回填
+                                        UserHideSrc: m.UserHideSrc || "",     // V10：保留 USER 禁看开关状态供编辑回填
+                                        ThinkOn: ChatService.isThinkOn(m.ModelId)   // 20261029：表格里标「思考」
                                 };
                         });
-                        this.getView().getModel("settings").setProperty("/modelList", aRows);
+                        oSettings.setProperty("/modelList", aRows);
+                        if (aRows.length) {
+                                // 思考设置在 ZAI_CHAT_CFG，单独读；读到后补上标记
+                                ChatService.getModelThinkMap(true).then(function () {
+                                        oSettings.setProperty("/modelList", aRows.map(function (r) {
+                                                return Object.assign({}, r, { ThinkOn: ChatService.isThinkOn(r.ModelId) });
+                                        }));
+                                }).catch(function () { /* 读不到不标 */ });
+                        }
+                },
+
+                /** 20261029：思考设置 "DS1" → { on: true, style: "DS" } */
+                _thinkCfgOf: function (sModelId) {
+                        var sMode = ChatService.thinkModeOf(sModelId);
+                        return { on: /1$/.test(sMode), style: sMode ? sMode.substring(0, 2) : "" };
+                },
+
+                /** 20261029：勾选思考时还没选参数写法 → 按模型类型 / 名称猜一个（可再改） */
+                onThinkToggle: function (oEvent) {
+                        var oMe = this.getView().getModel("me");
+                        if (oEvent.getParameter("selected") && !oMe.getProperty("/ThinkStyle")) {
+                                oMe.setProperty("/ThinkStyle", ChatService.suggestThinkStyle(oMe.getData()));
+                        }
+                },
+
+                /** 20261029：参数写法改成「不传」= 关掉思考（不传参数就没法开） */
+                onThinkStyleChange: function () {
+                        var oMe = this.getView().getModel("me");
+                        if (!oMe.getProperty("/ThinkStyle")) {
+                                oMe.setProperty("/ThinkOn", false);
+                        }
                 },
 
                 /** 新增模型：打开编辑对话框（空表单） */
@@ -265,7 +297,10 @@ sap.ui.define([
                                 AuthType: "NONE", Temperature: "0.3", MaxTokens: "4096",
                                 TimeoutSec: "300", ActiveBool: true,
                                 SkipSourceBool: false,   // V10：默认参与源码分析
-                                UserHideSrcBool: false   // V10：默认 USER 也可看源码分析
+                                UserHideSrcBool: false,  // V10：默认 USER 也可看源码分析
+                                ThinkOn: false,          // 20261029：默认不思考、不传思考参数（原来的行为）
+                                ThinkStyle: "",
+                                _thinkWas: ""
                         });
                         this.getView().setModel(oMe, "me");
                         this._openModelDialog();
@@ -282,8 +317,10 @@ sap.ui.define([
                         }
                         // 从服务取完整配置（后端模式）
                         if (ChatService.getMode() === "backend") {
-                                ChatService.getModels().then(function (aModels) {
-                                        var oFull = aModels.filter(function (m) { return m.ModelId === sModelId; })[0];
+                                // 20261029：思考设置在 ZAI_CHAT_CFG，与模型配置一起读（读不到按没开）
+                                Promise.all([ChatService.getModels(),
+                                        ChatService.getModelThinkMap(true).catch(function () { return {}; })]).then(function (aRes) {
+                                        var oFull = aRes[0].filter(function (m) { return m.ModelId === sModelId; })[0];
                                         that._openModelEdit(oFull || oSrc, sModelId);
                                 });
                         } else {
@@ -310,7 +347,11 @@ sap.ui.define([
                                 // V10：源码分析开关（X = 跳过源码提取，对所有人生效）
                                 SkipSourceBool: (oFull.SkipSource !== "X"),
                                 // V10：USER 禁看源码（X = USER 用此模型仅见程式用途说明）
-                                UserHideSrcBool: (oFull.UserHideSrc === "X")
+                                UserHideSrcBool: (oFull.UserHideSrc === "X"),
+                                // 20261029：思考模式（开关 + 参数写法）
+                                ThinkOn: this._thinkCfgOf(sModelId).on,
+                                ThinkStyle: this._thinkCfgOf(sModelId).style,
+                                _thinkWas: ChatService.thinkModeOf(sModelId)
                         });
                         this.getView().setModel(oMe, "me");
                         this._openModelDialog();
@@ -361,8 +402,24 @@ sap.ui.define([
                                 // V10：USER 禁看源码（勾选 = USER 用此模型不下发源码）
                                 UserHideSrc: oMe.getProperty("/UserHideSrcBool") ? "X" : ""
                         }).then(function () {
+                                // 20261029：思考设置单独存 ZAI_CHAT_CFG-MODEL_THINK（没变就不写）
+                                var sStyle = oMe.getProperty("/ThinkStyle") || "";
+                                var bOn = !!oMe.getProperty("/ThinkOn");
+                                if (bOn && !sStyle) {
+                                        sStyle = ChatService.suggestThinkStyle(oMe.getData());
+                                }
+                                var sMode = sStyle ? sStyle + (bOn ? "1" : "0") : "";
+                                if (sMode === (oMe.getProperty("/_thinkWas") || "")) {
+                                        return null;
+                                }
+                                return ChatService.saveModelThink(sModelId, sMode).then(function () {
+                                        return null;
+                                }, function (oErr) {
+                                        return (oErr && oErr.message) || String(oErr);
+                                });
+                        }).then(function (sThinkErr) {
                                 that._oModelDialog.close();
-                                MessageToast.show(oRB.getText("toastModelSaved"));
+                                MessageToast.show(sThinkErr ? oRB.getText("toastThinkSaveFail", [sThinkErr]) : oRB.getText("toastModelSaved"));
                                 // 刷新下拉框与表格
                                 that._applySettings();
                                 ChatService.getModels().then(function (aModels) {
