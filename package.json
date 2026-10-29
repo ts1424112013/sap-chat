@@ -7,7 +7,8 @@
     "start": "ui5 serve --port 8080 --open index.html",
     "start:no-open": "ui5 serve --port 8080",
     "prebuild": "node scripts/build-lingxi-assets.js",
-    "build": "ui5 build --all --clean-dest"
+    "build": "ui5 build --all --clean-dest",
+    "build:deploy": "node scripts/build-deploy-slim.js --zip"
   },
   "engines": {
     "node": ">=18"

@@ -36,7 +36,9 @@ window.ZAI_CONFIG = {
          *      运行时打进 dist —— 不依赖公网、不依赖服务器版本；
          *      本地开发 ui5 serve 亦从本地框架缓存提供 /resources，同样离线可用）
          * ui5Theme：服务器只有旧主题库时改 "sap_fiori_3"；
-         *           随包自带方案已同时打包 horizon/fiori_3 两套主题库 */
+         *           npm run build 的完整 dist 同时打包 horizon/fiori_3 两套主题库；
+         *           部署精简包（npm run build:deploy）只保留这里写的主题，
+         *           改主题后要重新生成精简包 */
         ui5Src: "./resources/sap-ui-core.js",
         ui5Theme: "sap_horizon"
 };
