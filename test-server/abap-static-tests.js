@@ -526,6 +526,15 @@ console.log('\n[12] 思考模式：LLM_CLIENT V1.6 拼参数 / 拆思考、CHAT_
     /strlen\( lv_text \) > gc_think_max/.test(prM('think')) && /COMMIT CONNECTION \(gc_con\)/.test(prM('think')) &&
     !/COMMIT WORK/.test(prM('think')));
 
+  check('输入框按钮 iv_think：只在模型配了写法时换开关位（X → 1，N → 0），写法不变；空 = 按模型配置',
+    /iv_think\s+TYPE string OPTIONAL/.test(lc) &&
+    /IF lv_think IS NOT INITIAL AND \( iv_think = 'X' OR iv_think = 'N' \)\.\s+lv_think = substring\( val = lv_think len = 2 \) && COND string\( WHEN iv_think = 'X' THEN `1` ELSE `0` \)\./.test(lcChat) &&
+    lcChat.indexOf("iv_think = 'X'") < lcChat.indexOf('lv_think_on'));
+  check('iv_think 一路透传：DPC 公共参数读 THINK → analyze / analyze_agent → 三处 Agent 调模型 + 对话调模型',
+    /WHEN 'THINK'\.\s+lv_think\s+= to_upper\( ls_param-value \)\./.test(dp) &&
+    (dp.match(/iv_think\s+= lv_think/g) || []).length === 2 &&
+    /iv_think\s+TYPE string OPTIONAL/.test(cs) && /it_messages\s+= lt_messages\s+iv_think\s+= iv_think/.test(csAnalyze) &&
+    /iv_think\s+TYPE string OPTIONAL/.test(ag) && (agLoop.match(/it_messages = lt_messages\s+iv_think\s+= iv_think/g) || []).length === 3);
   const dpThink = dp.match(/wrap_think\(/g) || [];
   check('DPC V15.10：只在出参时拼思考（ANALYZECODE 分支 + to_agent_odata，共 2 处）',
     /^\* V15\.10 20261029/m.test(dpRaw) && dpThink.length === 2 &&

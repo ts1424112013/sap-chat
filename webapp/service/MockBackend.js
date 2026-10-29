@@ -102,10 +102,19 @@ sap.ui.define([], function () {
                         ].join("\n");
                 },
 
+                /** 演示：本次是否思考 —— 模型配了写法时按按钮（X / N），没传按模型配置；没配写法不思考 */
+                _mockThinkFor: function (sModelId, sThink) {
+                        if (typeof this.thinkModeOf !== "function" || !this.thinkModeOf(sModelId)) {
+                                return false;
+                        }
+                        return sThink === "X" || sThink === "N" ? sThink === "X" : this.isThinkOn(sModelId);
+                },
+
                 _mockSend: function (oPayload) {
                         var Service = this;   // 混入 ChatService 后 this 即服务对象
-                        // 20261029：开了思考的演示模型多等一会儿，并在回答前面带思考过程（与后端 DPC 出参同格式）
-                        var bThink = typeof Service.isThinkOn === "function" && Service.isThinkOn(oPayload.modelId);
+                        // 20261029：开了思考的演示模型多等一会儿，并在回答前面带思考过程（与后端 DPC 出参同格式）；
+                        // 输入框「深度思考」按钮传了 X / N 时按按钮来（只对支持思考的模型）
+                        var bThink = Service._mockThinkFor(oPayload.modelId, oPayload.think);
                         return new Promise(function (fnResolve) {
                                 setTimeout(function () {
                                         var bHasCode = !!oPayload.programName;
@@ -450,14 +459,14 @@ sap.ui.define([], function () {
                  *            elapsedMs, rows, detail(已校验 SQL), preview:{columns, rows(≤3)} }
                  *   phase：UNDERSTANDING / SKILL / PLANNING / TOOL_DECISION / NOTE(模型调工具前的一句话) / EXECUTING / COMPOSING
                  * ===================================================================== */
-                _mockLiveRun: function (sCid, pResult, sModelId, sQuestion) {
+                _mockLiveRun: function (sCid, pResult, sModelId, sQuestion, sThink) {
                         var Service = this;
                         if (!sCid || typeof setTimeout !== "function") {
                                 return pResult;
                         }
                         // 20261029：开了思考的演示模型 —— 规划 / 收尾两步各带一段思考（同后端 AGENT_PROGRESS V1.1 的 think 字段），
                         // 回答前面带全部思考（同 DPC 出参）
-                        var bThink = typeof Service.isThinkOn === "function" && Service.isThinkOn(sModelId);
+                        var bThink = Service._mockThinkFor(sModelId, sThink);
                         var mRuns = this._mMockLive = this._mMockLive || {};
                         Object.keys(mRuns).forEach(function (k) {
                                 if (Date.now() - mRuns[k].at > 10 * 60 * 1000) { delete mRuns[k]; }

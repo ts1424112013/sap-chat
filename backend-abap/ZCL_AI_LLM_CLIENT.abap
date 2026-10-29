@@ -39,7 +39,9 @@
 *         字段 + 正文开头的 <think>…</think>), ev_content 只留正式回答 —— 调用方拿到的正文
 *         永远不含思考内容, Agent 的 JSON 协议解析不受影响; 思考内容不落库、不进下一轮上下文。
 *         只有思考没有回答时按失败返回(提示调大 MAX_TOKENS 或关闭思考)。老调用方不用改
-*         ★ 重贴后核对标记: chat 声明有 ev_reasoning; 有 think_fragment( 与 split_think(;
+*         新增可选入参 iv_think = 本次调用的临时开关(输入框「深度思考」按钮): X = 开, N = 关,
+*         空 = 按模型配置; 只对配了写法的模型生效(没配写法不知道参数名, 照旧不传)
+*         ★ 重贴后核对标记: chat 声明有 iv_think 与 ev_reasoning; 有 think_fragment( 与 split_think(;
 *           有 ev_reasoning = parse_reasoning( lv_resp ); PUBLIC 有 wrap_think 声明(DPC 用)
 *=======================================================================
 CLASS zcl_ai_llm_client DEFINITION
@@ -74,6 +76,7 @@ CLASS zcl_ai_llm_client DEFINITION
       IMPORTING is_cfg       TYPE zai_model_cfg
                 it_messages  TYPE tt_messages
                 iv_no_retry  TYPE abap_bool OPTIONAL   " V1.3: X = 不重试
+                iv_think     TYPE string OPTIONAL      " V1.6: 本次临时开关 X = 开 / N = 关 / 空 = 按模型配置
       EXPORTING ev_content   TYPE string
                 ev_elapsed   TYPE i
                 ev_error     TYPE string
@@ -311,6 +314,10 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
 
     " V1.6: 思考参数(按模型配置; 没配 = 不传, 与原来一致)。拼在请求体最后一个 } 之前
     DATA(lv_think)    = think_mode( is_cfg-model_id ).
+    " 输入框「深度思考」按钮: 只换开关位, 写法仍按模型配置(没配写法 = 不支持, 不处理)
+    IF lv_think IS NOT INITIAL AND ( iv_think = 'X' OR iv_think = 'N' ).
+      lv_think = substring( val = lv_think len = 2 ) && COND string( WHEN iv_think = 'X' THEN `1` ELSE `0` ).
+    ENDIF.
     DATA(lv_think_on) = xsdbool( lv_think CP '++1' ).
     DATA(lv_frag)     = think_fragment( iv_mode = lv_think iv_model_type = is_cfg-model_type ).
     IF lv_frag IS NOT INITIAL.

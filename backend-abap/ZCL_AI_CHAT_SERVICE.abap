@@ -92,8 +92,10 @@
 * V2.6 20261029: 思考模式(无 SE11 / SEGW 改动; 需同时重贴 LLM_CLIENT V1.6 + DPC_EXT) ——
 *   analyze 取 LLM_CLIENT 的 ev_reasoning 放进出参新字段 reasoning, 由 DPC 出参时
 *   放到回答前面(<think>…</think>)给前端单独显示。落库(ZAI_CHAT_MSG)与历史上下文
-*   只用 answer —— 思考内容不存、不进下一轮。首选模型失败换模型兜底时不带思考
-*   ★ 重贴后核对标记: ty_analyze_result 有 reasoning; analyze 内有 ev_reasoning = lv_reasoning
+*   只用 answer —— 思考内容不存、不进下一轮。首选模型失败换模型兜底时不带思考。
+*   analyze 新增可选入参 iv_think(输入框「深度思考」按钮, X / N / 空), 原样传给 LLM_CLIENT
+*   ★ 重贴后核对标记: ty_analyze_result 有 reasoning; analyze 声明有 iv_think;
+*   analyze 内有 ev_reasoning = lv_reasoning 与 iv_think = iv_think
 *         read_program_meta: TRDIRT 的程序名字段是 NAME 而非 PROGNAME
 *         (PROGNAME 是 REPOSRC 的字段, 原代码两处混用导致
 *         "Unknown column name PROGNAME", 并连带 LV_T 内联声明失败报
@@ -208,6 +210,7 @@ CLASS zcl_ai_chat_service DEFINITION
                 iv_question     TYPE string
                 iv_model_id     TYPE string
                 iv_program_name TYPE string
+                iv_think        TYPE string OPTIONAL   " V2.6: 本次思考开关 X / N / 空 = 按模型配置
       EXPORTING es_result       TYPE ty_analyze_result.
 
     " 维护模型配置(存在则更新, 不存在则创建)
@@ -723,6 +726,7 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
     zcl_ai_llm_client=>chat(
       EXPORTING is_cfg       = ls_cfg
                 it_messages  = lt_messages
+                iv_think     = iv_think
       IMPORTING ev_content   = lv_content
                 ev_elapsed   = lv_elapsed
                 ev_error     = lv_error

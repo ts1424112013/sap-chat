@@ -908,6 +908,7 @@ sap.ui.define([
                                         m.thinkOn = ChatService.isThinkOn(m.ModelId);   // 模型选择里显示「思考」标记
                                         return m;
                                 });
+                                that._bumpThink();   // 思考设置读到了：刷新输入框的「深度思考」按钮
                                 oChatModel.setProperty("/models", aList);
                                 that._applySessionModel();
                                 that._loadAgentModelRules();
@@ -1084,6 +1085,10 @@ sap.ui.define([
 
                         var sText = oCfg.displayText;
                         this._rememberSessionModel(sSessionId, sModelId);   // 20261020：这个会话以后打开还用这个模型
+                        // 20261029：本次是否思考 —— 输入框有「深度思考」按钮时按按钮（发 X / N），
+                        // 没有按钮（模型没配思考参数 / SEGW 还没加 Think 参数）时按模型管理里的开关（不发）
+                        var bThinkBtn = this.fmtThinkAvail(sModelId, oCfg.mode);
+                        var bThinkNow = bThinkBtn ? ChatService.effectiveThink(sModelId) : ChatService.isThinkOn(sModelId);
 
                         // 确保左侧历史列表出现当前会话（Agent 任务置进行中）
                         this._ensureSessionEntry(sSessionId, sText, oCfg.mode,
@@ -1121,8 +1126,8 @@ sap.ui.define([
                                 oPending.agentThinking = true;
                                 oPending.requestPending = true;
                                 oPending.thinkingLabel = oRB.getText("agentPhaseUnderstand");
-                        } else if (ChatService.isThinkOn && ChatService.isThinkOn(sModelId)) {
-                                // 20261029：该模型开了思考 —— 正文上方先放「正在思考」区（同步接口拿不到中间过程，
+                        } else if (bThinkNow) {
+                                // 20261029：本次会思考 —— 正文上方先放「正在思考」区（同步接口拿不到中间过程，
                                 // 回复到达后在这里放出思考过程，放完收起，见 _showThink）
                                 oPending.thinkState = "wait";
                                 oPending.thinkHtml = this._thinkHtml(oPending);
@@ -1225,7 +1230,8 @@ sap.ui.define([
                                 focusedArtifactId: bAgent ? ((this._mFocusArt || {})[sSessionId] || "") : "",
                                 // 20261011：会话场景（新会话首条消息写入后端，之后以后端为准）
                                 scene: bAgent ? this._normScene(oCfg.agentType) : "",
-                                skillId: bAgent ? this._skillRequestId() : ""
+                                skillId: bAgent ? this._skillRequestId() : "",
+                                think: bThinkBtn ? (bThinkNow ? "X" : "N") : ""
                         });
                         if (bAgent) {
                                 this._startLive(oPending, sCid, sSessionId);
@@ -2413,6 +2419,41 @@ sap.ui.define([
                  * 同步 OData 拿不到模型的中间输出：对话模式在回复到达后把思考过程在思考区里放一遍，
                  * 放完自动收起再打正文；Agent 模式每轮的思考已在边跑边看的步骤里出现，最后直接收起放在回答上方。
                  * ========================================================= */
+
+                /* ---------- 输入框「深度思考」按钮（App.view 的 thinkBtnHero / thinkBtnDock） ----------
+                 * 显示条件：当前模型在模型管理里配了思考参数写法，且后端能按次开关（SEGW 有 Think 参数）。
+                 * 开关默认跟模型管理里的设置；用户点过就按用户的，按模型记在本浏览器（ChatService.setThinkPref）。
+                 * 绑定 parts 带 /thinkRev，思考设置或用户选择变了就加 1，让按钮重算 */
+                fmtThinkAvail: function (sModel, sMode) {
+                        return !!sModel && ChatService.thinkCapable(sModel) &&
+                                ChatService.supportsThinkToggle(sMode === "AGENT" ? "AGENT" : "CHAT");
+                },
+
+                fmtThinkOn: function (sModel, sMode) {
+                        return ChatService.thinkCapable(sModel) &&
+                                ChatService.supportsThinkToggle(sMode === "AGENT" ? "AGENT" : "CHAT") &&
+                                ChatService.effectiveThink(sModel);
+                },
+
+                fmtThinkTip: function (sModel, sMode) {
+                        var oRB = this && this._rb ? this._rb() : null;
+                        var bOn = ChatService.thinkCapable(sModel) && ChatService.effectiveThink(sModel);
+                        return oRB ? oRB.getText(bOn ? "thinkToggleOnTip" : "thinkToggleOffTip") : "";
+                },
+
+                onToggleThink: function (oEvent) {
+                        var sId = this.getView().getModel("chat").getProperty("/currentModel");
+                        if (!sId) {
+                                return;
+                        }
+                        ChatService.setThinkPref(sId, !!oEvent.getParameter("pressed"));
+                        this._bumpThink();
+                },
+
+                _bumpThink: function () {
+                        var oChat = this.getView().getModel("chat");
+                        oChat.setProperty("/thinkRev", (oChat.getProperty("/thinkRev") || 0) + 1);
+                },
 
                 _THINK_GLYPH: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.9a4.3 4.3 0 0 0-2.55 7.77c.47.35.76.86.76 1.43v.4h3.58v-.4c0-.57.29-1.08.76-1.43A4.3 4.3 0 0 0 8 1.9z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M6.45 13.75h3.1" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>',
                 _THINK_CHEV: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.8L10.2 8 6 12.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',

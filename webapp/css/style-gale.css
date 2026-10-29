@@ -1775,6 +1775,29 @@ button.rsnHead:focus-visible { outline: none; box-shadow: var(--ring); }
 }
 .thinkCfgBox { gap: .25rem; }
 
+/* 输入框「深度思考」按钮：和模型胶囊同一套外形；开启时浅蓝底、蓝字、灯泡点亮 */
+.thinkPill { margin-left: .3rem; flex: none; }
+.thinkPill .sapMBtnInner {
+        display: inline-flex !important; align-items: center; height: 1.95rem !important; min-height: 1.95rem !important;
+        padding: 0 .72rem 0 .58rem !important; border-radius: 999px !important; border: 1px solid var(--line) !important;
+        background: transparent !important; box-shadow: none !important; text-shadow: none !important;
+        transition: background .15s, border-color .15s, color .15s;
+}
+.thinkPill .sapMBtnIcon { font-size: .8rem !important; color: var(--sub) !important; margin: 0 .32rem 0 0 !important; width: auto !important; transition: color .15s, transform .25s var(--ease); }
+.thinkPill .sapMBtnContent { display: inline-flex !important; align-items: center; padding: 0 !important; }
+.thinkPill .sapMBtnText, .thinkPill .sapMBtnContent bdi { font-size: .78rem !important; font-weight: 500; color: var(--text-2) !important; white-space: nowrap; }
+.thinkPill:hover .sapMBtnInner { background: var(--hover) !important; border-color: var(--line-strong) !important; }
+.thinkPill:hover .sapMBtnContent bdi { color: var(--text) !important; }
+.thinkPill .sapMBtnInner.sapMToggleBtnPressed,
+.thinkPill:hover .sapMBtnInner.sapMToggleBtnPressed {
+        background: var(--accent-soft) !important; border-color: color-mix(in srgb, var(--accent) 45%, transparent) !important;
+}
+.thinkPill .sapMToggleBtnPressed .sapMBtnIcon { color: var(--accent) !important; transform: scale(1.08); }
+.thinkPill .sapMToggleBtnPressed .sapMBtnText, .thinkPill .sapMToggleBtnPressed .sapMBtnContent bdi { color: var(--accent) !important; font-weight: 600; }
+.thinkPill.sapMBtnDisabled, .thinkPill .sapMBtnDisabled { opacity: .55; }
+.thinkPill:focus-visible .sapMBtnInner, .thinkPill .sapMFocusable:focus-visible { box-shadow: var(--ring) !important; }
+@media (max-width: 599px) { .thinkPill .sapMBtnContent { display: none !important; } .thinkPill .sapMBtnIcon { margin: 0 !important; } }
+
 @media (prefers-reduced-motion: reduce) {
         .rsnBlock .rsnGlyph, .rsnBlock .rsnName, .rsnSkel i, .rsnBlock .rsnBody { animation: none !important; }
 }

@@ -142,7 +142,11 @@
 *   用 ZCL_AI_LLM_CLIENT=>wrap_think 把本轮思考过程放在 Answer 前面(<think>…</think>),
 *   前端拆开放进可折叠的「思考过程」区。只在这里拼 —— 服务层落库的回答不含思考。
 *   需先激活 LLM_CLIENT V1.6、CHAT_SERVICE V2.6、AGENT_SERVICE V15.9(出参新字段 reasoning)
-*   ★ 重贴后核对标记: 搜 wrap_think( 应有 2 处(ANALYZECODE 分支 + to_agent_odata)
+*   另: 公共参数循环多读 Think(输入框「深度思考」按钮, X = 开 / N = 关), 传给 analyze /
+*   analyze_agent。SEGW: 给函数导入 AnalyzeCode 与 AnalyzeTask 各加参数 Think(Edm.String,
+*   Nullable, 长度 1)并重新生成; 未加之前前端不显示按钮、不发送(按 metadata 探测)
+*   ★ 重贴后核对标记: 搜 wrap_think( 应有 2 处(ANALYZECODE 分支 + to_agent_odata);
+*   公共参数循环有 WHEN 'THINK'; ANALYZECODE 与 ANALYZETASK 分支都有 iv_think = lv_think
 CLASS zcl_zai_chat_dpc_ext DEFINITION
   PUBLIC
   INHERITING FROM zcl_zai_chat_dpc
@@ -277,6 +281,7 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
           lv_question TYPE string,
           lv_model    TYPE string,
           lv_prog     TYPE string,
+          lv_think    TYPE string,      " V15.10: 输入框「深度思考」按钮 X / N(SEGW 没加参数时为空)
           ls_param    LIKE LINE OF it_parameter.
 
     LOOP AT it_parameter INTO ls_param.
@@ -285,6 +290,7 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
         WHEN 'QUESTION'.     lv_question = ls_param-value.
         WHEN 'MODELID'.      lv_model    = ls_param-value.
         WHEN 'PROGRAMNAME'.  lv_prog     = ls_param-value.
+        WHEN 'THINK'.        lv_think    = to_upper( ls_param-value ).
       ENDCASE.
     ENDLOOP.
 
@@ -455,6 +461,7 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
                     iv_question     = lv_question
                     iv_model_id     = lv_model
                     iv_program_name = lv_prog
+                    iv_think        = lv_think   " V15.10
           IMPORTING es_result       = ls_result ).
 
         " V15.10: 思考过程放在回答前面回给前端(落库的回答不含思考)
@@ -632,6 +639,7 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
                     iv_task_id           = lv_at_tid
                     iv_skill_id          = lv_at_skill
                     iv_request_id        = lv_at_rid   " V15.9: 运行进度键(边跑边看)
+                    iv_think             = lv_think    " V15.10: 输入框「深度思考」按钮
           IMPORTING es_result            = ls_atask ).
 
         IF ls_atask-status <> 'DENIED' AND ls_atask-status <> 'ERROR'.

@@ -169,9 +169,11 @@
 *   ② 协议解析、修复轮、落库(save_chat)、审计、下一轮的 lt_messages 都只用正文
 *     lv_content / lv_answer —— LLM_CLIENT 已把思考拆出去, 思考内容不进上下文、不落库;
 *     结构化分析那次调用不取思考(只是格式化 JSON)
+*   ③ analyze_agent 新增可选入参 iv_think(输入框「深度思考」按钮, X / N / 空 = 按模型配置),
+*     三处调模型(主调用 / 换模型重试 / 结构化分析)都原样传给 LLM_CLIENT
 *   依赖: ZCL_AI_LLM_CLIENT V1.6 / ZCL_AI_AGENT_PROGRESS V1.1
 *   ★ 重贴后核对标记: 两处主循环 chat 有 ev_reasoning = lv_llm_think; 有 zcl_ai_agent_progress=>think(;
-*     有 es_result-reasoning = lv_think_all; ty_agent_result 有 reasoning
+*     有 es_result-reasoning = lv_think_all; ty_agent_result 有 reasoning; 三处 chat 有 iv_think = iv_think
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -252,6 +254,7 @@ CLASS zcl_ai_agent_service DEFINITION
                 iv_skill_id   TYPE string OPTIONAL  " 空=沿用, NONE=取消
                 iv_task_id    TYPE string OPTIONAL  " 技能上下文候选, 必须校验归属
                 iv_request_id TYPE string OPTIONAL  " V15.6: 前端 ClientRequestId = 运行进度键(边跑边看)
+                iv_think      TYPE string OPTIONAL  " V15.9: 本次思考开关 X / N / 空 = 按模型配置
       EXPORTING es_result     TYPE ty_agent_result.
 
   PRIVATE SECTION.
@@ -1037,6 +1040,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       zcl_ai_llm_client=>chat(
         EXPORTING is_cfg      = ls_call
                   it_messages = lt_messages
+                  iv_think    = iv_think
         IMPORTING ev_content  = lv_content
                   ev_elapsed  = lv_llm_ms
                   ev_error    = lv_llm_err
@@ -1080,6 +1084,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           zcl_ai_llm_client=>chat(
             EXPORTING is_cfg      = ls_call
                       it_messages = lt_messages
+                      iv_think    = iv_think
             IMPORTING ev_content  = lv_content
                       ev_elapsed  = lv_llm_ms
                       ev_error    = lv_llm_err
@@ -1599,6 +1604,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       zcl_ai_llm_client=>chat(
         EXPORTING is_cfg      = ls_call_ana
                   it_messages = lt_messages
+                  iv_think    = iv_think
         IMPORTING ev_content  = lv_ana_out
                   ev_elapsed  = lv_ana_ms
                   ev_error    = lv_ana_err
