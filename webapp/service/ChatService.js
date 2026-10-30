@@ -1364,23 +1364,36 @@ sap.ui.define([
                         });
                 },
 
-                /** V8.1：CSRF token 获取（同凭据 GET $metadata，x-csrf-token: fetch） */
+                /**
+                  * V8.1：CSRF token 获取（同凭据 GET $metadata，x-csrf-token: fetch）
+                  * V8.3csrf-xhr（20261030，QAS demo7 登录 403 排障）：fetch 改 XMLHttpRequest。
+                  *  · 页面加载时 ODataModel 已缓存过 $metadata，换牌请求走 304 协商，自定义头被丢、
+                  *    304 里的令牌也不交给 JS → 拿到空令牌，Login 403 "X-Csrf-Token: Required"
+                  *  · 同环境 fetch 的 headers.get 读不到令牌，XHR 的 getResponseHeader 能读到（现场对照实验）
+                  *  对策：URL 加时间戳 + If-Modified-Since 1970，强制不走缓存；Promise 与错误文案（"bad" / "HTTP xxx"）不变
+                  */
                 _fetchCsrf: function (sBasic) {
-                        var sUrl = this._sConfig.host + this._sConfig.path + "$metadata";
-                        var oHeaders = {};
-                        if (sBasic) {
-                                oHeaders.Authorization = sBasic;
-                        }
-                        oHeaders["x-csrf-token"] = "fetch";
-                        return fetch(sUrl, {
-                                method: "GET",
-                                headers: oHeaders,
-                                credentials: "same-origin"
-                        }).then(function (oResp) {
-                                if (!oResp.ok) {
-                                        throw new Error(oResp.status === 401 ? "bad" : "HTTP " + oResp.status);
+                        var sUrl = this._sConfig.host + this._sConfig.path + "$metadata?_=" + Date.now();
+                        return new Promise(function (fnResolve, fnReject) {
+                                var x = new XMLHttpRequest();
+                                x.open("GET", sUrl, true);
+                                if (sBasic) {
+                                        x.setRequestHeader("Authorization", sBasic);
                                 }
-                                return oResp.headers.get("x-csrf-token") || "";
+                                x.setRequestHeader("x-csrf-token", "fetch");
+                                x.setRequestHeader("If-Modified-Since", "Thu, 01 Jan 1970 00:00:00 GMT");
+                                x.onreadystatechange = function () {
+                                        if (x.readyState !== 4) {
+                                                return;
+                                        }
+                                        if (x.status < 200 || x.status >= 300) {
+                                                // status 0 = 网络不通 / 请求被中止
+                                                fnReject(new Error(x.status === 401 ? "bad" : "HTTP " + x.status));
+                                                return;
+                                        }
+                                        fnResolve(x.getResponseHeader("x-csrf-token") || "");
+                                };
+                                x.send();
                         });
                 },
 
@@ -1511,8 +1524,10 @@ sap.ui.define([
                                 });
                         }).then(function (oResp) {
                                 if (!oResp.ok) {
-                                        throw new Error(oResp.status === 401 || oResp.status === 403
-                                                ? "bad" : "noService");
+                                        // 20261030：403 不再报「密码不正确」—— 能走到 Login 说明账号密码已过网关，
+                                        // 403 是安全令牌（CSRF）没通过，提示要分开（QAS demo7 排障被这句误导过）
+                                        throw new Error(oResp.status === 401 ? "bad"
+                                                : oResp.status === 403 ? "csrf" : "noService");
                                 }
                                 return oResp.json();
                         }).then(function (oJson) {
@@ -1541,8 +1556,8 @@ sap.ui.define([
                                 if (e.message && e.message.indexOf("srv:") === 0) {
                                         throw e;
                                 }
-                                throw new Error(e.message === "bad" ? "bad"
-                                        : e.message === "initGone" ? "initGone" : "noService");
+                                throw new Error(["bad", "csrf", "initGone"].indexOf(e.message) >= 0
+                                        ? e.message : "noService");
                         });
                 },
 

@@ -55,6 +55,23 @@ function fakeFetch(url, init) {
 }
 function resetFetch(queue) { fetchLog = []; fetchQueue = queue.slice(); }
 
+// 20261030：_fetchCsrf 改用 XMLHttpRequest（V8.3csrf-xhr），共用上面的回放队列与调用记录
+function FakeXHR() { this.readyState = 0; this.status = 0; this._h = {}; this._rh = {}; }
+FakeXHR.prototype.open = function (m, u) { this._m = m; this._u = u; this.readyState = 1; };
+FakeXHR.prototype.setRequestHeader = function (k, v) { this._h[k] = v; };
+FakeXHR.prototype.getResponseHeader = function (k) { return this._rh[k.toLowerCase()] || null; };
+FakeXHR.prototype.send = function () {
+  const that = this;
+  fetchLog.push({ url: this._u, init: { method: this._m, headers: this._h }, xhr: true });
+  const r = fetchQueue.shift() || { status: 0 };
+  setTimeout(function () {
+    that.status = r.status;
+    that._rh = r.headers || {};
+    that.readyState = 4;
+    if (that.onreadystatechange) { that.onreadystatechange(); }
+  }, 0);
+};
+
 const registry = {
   'sap/base/Log': { error() {}, warning() {}, info() {}, debug() {} },
   'sap/ui/model/odata/v2/ODataModel': function () {},
@@ -77,7 +94,8 @@ function load(name) {
     btoa: (s) => Buffer.from(s, 'binary').toString('base64'),
     jQuery: { extend: extend },
     window: fakeWindow,
-    fetch: function (u, i) { return fakeFetch(u, i); }
+    fetch: function (u, i) { return fakeFetch(u, i); },
+    XMLHttpRequest: FakeXHR
   };
   vm.runInNewContext(fs.readFileSync(file, 'utf8'), sandbox, { filename: file });
   registry[name] = out;
@@ -238,6 +256,46 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   await ChatService._v8Call('SaveConfig', { ConfigKey: 'K', ConfigValue: 'V' }, true);
   const cfgCalls = fetchLog.filter((c) => /SaveConfig/.test(c.url));
   check('V8 POST 403 重试后 URL 只有一个 ?', cfgCalls.length === 2 && countOf(cfgCalls[1].url, '?') === 1, cfgCalls.map((c) => c.url).join(' | '));
+
+  // 20261030（QAS demo7 登录 403）：换牌走 XHR、强制不走缓存；登录 401 / 403 分开提示
+  console.log('\n━━ ChatService · 换牌 XHR 与登录提示（10-30 QAS demo7）');
+  resetFetch([{ status: 200, headers: { 'x-csrf-token': 'TOK1' } }]);
+  let tok = await ChatService._fetchCsrf('Basic QUJDOjEyMw==');
+  const cs = fetchLog[0] || { url: '', init: { headers: {} } };
+  check('换牌用 XHR 并读到响应头里的令牌', tok === 'TOK1' && cs.xhr === true, JSON.stringify(cs));
+  check('换牌 URL 带时间戳（不命中浏览器缓存）', /\/p\/\$metadata\?_=\d+$/.test(cs.url), cs.url);
+  check('换牌带 If-Modified-Since 1970（不走 304 协商）', /1970/.test(cs.init.headers['If-Modified-Since'] || ''));
+  check('换牌带 x-csrf-token: fetch 与 Basic 头', cs.init.headers['x-csrf-token'] === 'fetch' && cs.init.headers.Authorization === 'Basic QUJDOjEyMw==');
+  resetFetch([{ status: 401 }]);
+  err = null;
+  try { await ChatService._fetchCsrf('Basic x'); } catch (e) { err = e; }
+  check('换牌 401 仍报 "bad"', err && err.message === 'bad', err && err.message);
+  resetFetch([{ status: 0 }]);
+  err = null;
+  try { await ChatService._fetchCsrf(''); } catch (e) { err = e; }
+  check('换牌网络不通报 "HTTP 0"', err && err.message === 'HTTP 0', err && err.message);
+
+  resetFetch([
+    { status: 200, headers: { 'x-csrf-token': 'TOK2' } },
+    { status: 403, headers: { 'x-csrf-token': 'Required' }, text: 'CSRF token validation failed' }
+  ]);
+  err = null;
+  try { await ChatService.appLogin('u1', 'p1'); } catch (e) { err = e; }
+  check('登录 Login 403 报 "csrf"（不再说密码不正确）', err && err.message === 'csrf', err && err.message);
+  const lg = fetchLog.filter((c) => /Login$/.test(c.url))[0];
+  check('登录 POST 带上换来的令牌', lg && lg.init.headers['x-csrf-token'] === 'TOK2', JSON.stringify(lg));
+  resetFetch([{ status: 401 }]);
+  err = null;
+  try { await ChatService.appLogin('u1', 'wrong'); } catch (e) { err = e; }
+  check('登录密码错（换牌 401）报 "bad"', err && err.message === 'bad', err && err.message);
+  resetFetch([{ status: 200, headers: { 'x-csrf-token': 'TOK3' } }, { status: 401 }]);
+  err = null;
+  try { await ChatService.appLogin('u1', 'p1'); } catch (e) { err = e; }
+  check('登录 Login 401 报 "bad"', err && err.message === 'bad', err && err.message);
+  resetFetch([{ status: 404 }]);
+  err = null;
+  try { await ChatService.appLogin('u1', 'p1'); } catch (e) { err = e; }
+  check('服务没发布（换牌 404）报 "noService"', err && err.message === 'noService', err && err.message);
 
   // 20261021：长文本通道（AnalyzeCode 414）—— 假 OData 模型记录 create / callFunction
   console.log('\n━━ ChatService · 长文本通道（414）');

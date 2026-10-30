@@ -521,10 +521,19 @@ sap.ui.define([
                  * V9：后端可达性探测
                  * $metadata 的状态码语义：200=可用；401/403=服务在、待认证；
                  * 其余（网络异常/404/5xx）=不可达或未就绪 → 降级演示模式
+                 * 20261030：页面本身由 SAP 提供（/sap/bc/ui5_ui5/、/sap/bc/bsp/，同源）时不再探测 ——
+                 * 页面能打开就说明系统可达；这条不带凭据的请求在 QAS 上收到 401，是登录前弹认证框的
+                 * 来源之一（demo7 排障实录 3.3）。服务没发布时由登录给出「登录服务暂不可用」
                  * ========================================================= */
                 _probeBackend: function (fnDone) {
                         var oCfg = window.ZAI_CONFIG || {};
                         var oSettings = this.getView().getModel("settings");
+                        var bSapHosted = /^\/sap\/bc\/(ui5_ui5|bsp)\//i.test(window.location.pathname) &&
+                                !(oCfg.host || oSettings.getProperty("/host"));
+                        if (bSapHosted) {
+                                Promise.resolve().then(function () { fnDone(true); });
+                                return;
+                        }
                         var sUrl = (oCfg.host || oSettings.getProperty("/host") || "") +
                                 (oCfg.path || oSettings.getProperty("/path") || "/sap/opu/odata/sap/ZAI_CHAT_SRV/") +
                                 "$metadata";
@@ -638,13 +647,17 @@ sap.ui.define([
                                         }
                                         that._afterAppLogin();
                                 }).catch(function (e) {
-                                        that._iLoginFails++;
+                                        // 20261030：只有密码错才计入失败锁定；403 令牌失败、服务不可用时账号密码是对的
+                                        if (e.message === "bad") {
+                                                that._iLoginFails++;
+                                        }
                                         if (that._iLoginFails >= 5) {
                                                 window.localStorage.setItem("zaiChat.loginLockTs", String(Date.now() + 60000));
                                                 oErr.setText(oRB.getText("loginErrLocked"));
                                                 return;
                                         }
                                         var sMsg = e.message === "bad" ? oRB.getText("loginErrBad")
+                                                : e.message === "csrf" ? oRB.getText("loginErrCsrf")
                                                 : e.message === "initGone" ? oRB.getText("loginErrInitGone")
                                                 : (e.message && e.message.indexOf("srv:") === 0)
                                                         ? e.message.substring(4)
