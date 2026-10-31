@@ -461,5 +461,39 @@ check('技能「生产工单进度」：工单号补零、在制口径（标明�
   !!ppOrder && /'000000131002'/.test(ppOrder.body) && /在制数量（暂定口径/.test(ppOrder.body) && /不要和数量 SUM/.test(ppOrder.body) &&
   /在回答里算/.test(ppOrder.body) && ppOrder.body.length <= 3000);
 
+// ---------------------------------------------------------------- 12) 组合分析二期（20261031）
+console.log('\n[12] 组合分析二期：ZCL_AI_COMBO_SERVICE V1.0 / AGENT_SERVICE V15.10 / DPC V15.11');
+const cbRaw = read('ZCL_AI_COMBO_SERVICE.abap'), cb = codeOnly(cbRaw);
+const cbWrites = (cb.match(/\b(?:INSERT|UPDATE|MODIFY|DELETE FROM)\s+(zai_\w+)/gi) || []).map((x) => x.replace(/.*\s(zai_\w+)$/i, '$1').toLowerCase());
+check('COMBO 类只写自己的两张表（ZAI_COMBO_RUN / ZAI_COMBO_DATA），结果登记走 TASK_SERVICE',
+  cbWrites.length > 0 && cbWrites.every((t) => t === 'zai_combo_run' || t === 'zai_combo_data') &&
+  /zcl_ai_task_service=>register_artifact\(/.test(cb), cbWrites.join(','));
+check('来源核对：本人 + AVAILABLE + 运行 READY + 报表登记 ANALYZE_ENABLED（报表执行 / Fiori 两种都查）',
+  /owner = @sy-uname/.test(methodOf(cb, 'read_source')) && /ls_art-status <> 'AVAILABLE'/.test(methodOf(cb, 'read_source')) &&
+  /FROM zai_rpt_def/.test(methodOf(cb, 'read_report_src')) && /lv_sts <> 'READY'/.test(methodOf(cb, 'read_report_src')) &&
+  /FROM zai_frpt_def/.test(methodOf(cb, 'read_fiori_src')) && /run_status <> 'READY'/.test(methodOf(cb, 'read_fiori_src')));
+check('来源类型以后端登记为准（不信前端声明）', /cs_src-type = ls_art-artifact_type\./.test(methodOf(cb, 'read_source')));
+check('报表执行来源走 ad_read_result（真实 / Mock 两种适配器都能读），Fiori 读 ZAI_FRPT_DATA',
+  /zcl_ai_report_service=>ad_read_result\(/.test(methodOf(cb, 'read_report_src')) && /FROM zai_frpt_data/.test(methodOf(cb, 'read_fiori_src')));
+check('分析上下文校验会话归属（session_id = 本会话）', /session_id = @lv_sess/.test(methodOf(cb, 'analysis_context')));
+check('幂等：同一请求号返回已建结果', /WHERE request_id = @lv_req AND owner = @sy-uname/.test(methodOf(cb, 'create')));
+check('不用 DDIC 保留字字段 MODE / LABEL（用 CMODE / LABEL_TEXT）', !/ls_run-mode\b/.test(cb) && !/ls_run-label\b/.test(cb) && /ls_run-cmode/.test(cb));
+check('不对方法调用结果直接 LOOP AT（7.50 兼容写法：先存局部表）', !/LOOP AT \w+->\w+\(/.test(cb));
+const agRaw12 = read('ZCL_AI_AGENT_SERVICE.abap'), ag12 = codeOnly(agRaw12);
+check('AGENT_SERVICE V15.10：组合结果分流在意图路由之前，路由入口加 lv_art_mode = abap_false',
+  /^\* V15\.10 20261031/m.test(agRaw12) && ag12.indexOf('zcl_ai_combo_service=>is_combo(') > 0 &&
+  ag12.indexOf('zcl_ai_combo_service=>is_combo(') < ag12.indexOf('IF lv_task_on = abap_true AND lv_art_mode = abap_false.') &&
+  ag12.indexOf('IF lv_task_on = abap_true AND lv_art_mode = abap_false.') < ag12.indexOf('zcl_ai_intent_router=>quick_route('));
+const dpRaw12 = read('ZCL_ZAI_CHAT_DPC_EXT.abap'), dp12 = codeOnly(dpRaw12);
+const cbDpBranch = (dp12.match(/WHEN 'COMBOCREATE'\.[\s\S]*?WHEN 'COMBORESULT'\./) || [''])[0];
+const cbCsSrc = fs.readFileSync(path.join(__dirname, '../webapp/service/ChatService.js'), 'utf8');
+const cbFeCombo = (cbCsSrc.match(/comboCreate: function[\s\S]*?getComboResult: function[\s\S]*?\n                \},/) || [''])[0];
+const cbDpParams = (cbDpBranch.match(/iv_name = '(\w+)'/g) || []).map((x) => x.replace(/.*'(\w+)'/, '$1')).sort();
+const cbFeParams = ['SessionId', 'SpecJson', 'ClientRequestId'].filter((k) => cbFeCombo.indexOf(k + ':') >= 0).sort();
+check('DPC V15.11：COMBOCREATE 读的参数 = 前端恒发的参数（SessionId / SpecJson / ClientRequestId）',
+  /^\* V15\.11 20261031/m.test(dpRaw12) && cbDpParams.join(',') === cbFeParams.join(',') && cbFeParams.length === 3, cbDpParams.join(',') + ' vs ' + cbFeParams.join(','));
+check('DPC：SpecJson 支持长文本通道（resolve_text）；COMBORESULT 读 ArtifactId',
+  /resolve_text\( lv_cb_spec \)/.test(cbDpBranch) && /WHEN 'COMBORESULT'\.[\s\S]*?iv_name = 'ArtifactId'/.test(dp12) && /ArtifactId: sArtifactId/.test(cbFeCombo));
+
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);

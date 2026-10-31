@@ -21,9 +21,17 @@ sap.ui.define(["zai/chat/utils/ChartRenderer"], function (ChartRenderer) {
                 return String(s || "").replace(/\s+/g, "").toUpperCase();
         }
 
-        /** 关联值归一：去空格；纯数字去前导零（订单号 004541152 与 4541152 视为同一个） */
+        /**
+         * 关联值归一：去空格；纯数字去前导零（订单号 004541152 与 4541152 视为同一个）；
+         * 日期统一成 YYYYMMDD（2026-10-31 / 2026.10.31 / 2026/10/31 / 20261031 是同一天）；其余转大写。
+         * 20261031（二期）：与 ZCL_AI_COMBO_SERVICE=>norm_key 同口径
+         */
         function normKey(v) {
                 var s = String(v === null || v === undefined ? "" : v).trim();
+                var m = /^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/.exec(s);
+                if (m) {
+                        return m[1] + ("0" + m[2]).slice(-2) + ("0" + m[3]).slice(-2);
+                }
                 return /^\d+$/.test(s) ? (s.replace(/^0+(?=\d)/, "")) : s.toUpperCase();
         }
 
@@ -42,10 +50,16 @@ sap.ui.define(["zai/chat/utils/ChartRenderer"], function (ChartRenderer) {
         function suggestKeys(oBase, oOther) {
                 var mNumA = numericCols(oBase), mNumB = numericCols(oOther);
                 var aOut = [];
+                var mUsedB = {};
                 (oBase.columns || []).forEach(function (ca, ia) {
                         if (mNumA[ia]) { return; }
                         (oOther.columns || []).forEach(function (cb, ib) {
-                                if (!mNumB[ib] && normLabel(lab(ca, ia)) === normLabel(lab(cb, ib))) {
+                                if (mNumB[ib] || mUsedB[ib]) { return; }
+                                // 20261031（二期）：标签相同，或列名相同（老报表程序的标题就是字段名 MATNR，Fiori 是中文）
+                                var bLab = normLabel(lab(ca, ia)) === normLabel(lab(cb, ib));
+                                var bName = !!ca.name && normLabel(ca.name) === normLabel(cb.name);
+                                if (bLab || bName) {
+                                        mUsedB[ib] = true;
                                         aOut.push({ a: ia, b: ib });
                                 }
                         });
@@ -230,6 +244,149 @@ sap.ui.define(["zai/chat/utils/ChartRenderer"], function (ChartRenderer) {
                 return aOut;
         }
 
+        /* ---------- 20261031（二期）：发给模型的汇总 —— 与 ZCL_AI_COMBO_SERVICE 同口径 ---------- */
+
+        /** 数值单元格 → 数（空 / 非数 → NaN） */
+        function num(v) {
+                return ChartRenderer.normNum(v);
+        }
+
+        /**
+         * 自动选汇总维度：取值个数 2～50 的文字列，优先关联列（aPrefer 里的下标），最多 2 列。
+         * @returns {number[]} 列下标
+         */
+        function autoGroup(oDs, aPrefer) {
+                var mNum = numericCols(oDs);
+                var aCand = [];
+                (oDs.columns || []).forEach(function (c, i) {
+                        if (mNum[i]) { return; }
+                        var m = {}, n = 0;
+                        (oDs.rows || []).some(function (r) {
+                                var k = String(r[i] === null || r[i] === undefined ? "" : r[i]).trim();
+                                if (k && !m[k]) { m[k] = true; n++; }
+                                return n > 50;
+                        });
+                        if (n >= 2 && n <= 50) {
+                                aCand.push({ i: i, pref: (aPrefer || []).indexOf(i) >= 0 ? 0 : 1, n: n });
+                        }
+                });
+                aCand.sort(function (x, y) { return x.pref - y.pref || x.i - y.i; });
+                return aCand.slice(0, 2).map(function (x) { return x.i; });
+        }
+
+        /**
+         * 分组汇总（全量）：按 aBy 列分组，算每组行数与各数值列合计；按第一个数值列从大到小排，
+         * 取前 iMax 组，其余合成「其他」。aSkip：不当度量的列（关联列）。
+         * @returns {{by: string[], measures: string[], groups: {key: string[], n: number, sums: number[]}[], other: object|null, groupCount: number}}
+         */
+        function groupSummary(oDs, aBy, iMax, aSkip) {
+                var mNum = numericCols(oDs);
+                var aM = [];
+                // 关联列（aSkip）即使是数字（如工厂 1000）也不当度量求和
+                (oDs.columns || []).forEach(function (c, i) {
+                        if (mNum[i] && (aBy || []).indexOf(i) < 0 && (aSkip || []).indexOf(i) < 0) { aM.push(i); }
+                });
+                // 排序用的度量放第一位：取值最多的数值列（金额、数量；工厂 1000 / 2000 这类代码取值很少）
+                var fnDistinct = function (ci) {
+                        var m = {}, n = 0;
+                        (oDs.rows || []).some(function (r) {
+                                var k = String(r[ci]);
+                                if (!m[k]) { m[k] = true; n++; }
+                                return n > 1000;
+                        });
+                        return n;
+                };
+                if (aM.length > 1) {
+                        var iBest = 0, nBest = -1;
+                        aM.forEach(function (ci, t) {
+                                var n = fnDistinct(ci);
+                                if (n > nBest) { nBest = n; iBest = t; }
+                        });
+                        aM.unshift(aM.splice(iBest, 1)[0]);
+                }
+                var mG = {}, aG = [];
+                (oDs.rows || []).forEach(function (r) {
+                        var aKey = (aBy || []).map(function (i) { return String(r[i] === null || r[i] === undefined ? "" : r[i]).trim(); });
+                        var sK = aKey.join("\u0001");
+                        var g = mG[sK];
+                        if (!g) {
+                                g = mG[sK] = { key: aKey, n: 0, sums: aM.map(function () { return 0; }) };
+                                aG.push(g);
+                        }
+                        g.n++;
+                        aM.forEach(function (ci, t) {
+                                var v = num(r[ci]);
+                                if (!isNaN(v)) { g.sums[t] += v; }
+                        });
+                });
+                aG.forEach(function (g) { g.sums = g.sums.map(function (v) { return Math.round(v * 100) / 100; }); });
+                aG.sort(function (x, y) { return (aM.length ? y.sums[0] - x.sums[0] : y.n - x.n) || 0; });
+                var iCap = Math.max(1, iMax || 50);
+                var oOther = null;
+                if (aG.length > iCap) {
+                        oOther = { key: ["其他"], n: 0, sums: aM.map(function () { return 0; }), groups: aG.length - iCap };
+                        aG.slice(iCap).forEach(function (g) {
+                                oOther.n += g.n;
+                                g.sums.forEach(function (v, t) { oOther.sums[t] += v; });
+                        });
+                        oOther.sums = oOther.sums.map(function (v) { return Math.round(v * 100) / 100; });
+                }
+                return {
+                        by: (aBy || []).map(function (i) { return lab(oDs.columns[i], i); }),
+                        measures: aM.map(function (i) { return lab(oDs.columns[i], i); }),
+                        groups: aG.slice(0, iCap), other: oOther, groupCount: aG.length
+                };
+        }
+
+        /**
+         * 代表性明细：按第一个数值列取最大、最小各 iEdge 行；总行数 ≤ iAll 时直接给全部。
+         * @returns {{all: boolean, by: string, top: Array[], bottom: Array[], rows: Array[]}}
+         */
+        function edgeRows(oDs, iEdge, iAll) {
+                var aRows = oDs.rows || [];
+                if (aRows.length <= (iAll || 200)) {
+                        return { all: true, by: "", top: [], bottom: [], rows: aRows.slice() };
+                }
+                var mNum = numericCols(oDs);
+                var ci = -1;
+                (oDs.columns || []).some(function (c, i) { if (mNum[i]) { ci = i; return true; } return false; });
+                if (ci < 0) {
+                        return { all: false, by: "", top: aRows.slice(0, iEdge * 2), bottom: [], rows: [] };
+                }
+                var aIdx = aRows.map(function (r, i) { return i; }).filter(function (i) { return !isNaN(num(aRows[i][ci])); });
+                aIdx.sort(function (x, y) { return num(aRows[y][ci]) - num(aRows[x][ci]); });
+                return {
+                        all: false, by: lab(oDs.columns[ci], ci),
+                        top: aIdx.slice(0, iEdge).map(function (i) { return aRows[i]; }),
+                        bottom: aIdx.slice(-iEdge).reverse().map(function (i) { return aRows[i]; }),
+                        rows: []
+                };
+        }
+
+        /**
+         * 二期提交的组合说明（关联列、汇总列都用列名）→ 按说明组合。演示后端与单测用；
+         * 真实系统由 ZCL_AI_COMBO_SERVICE 在全量存储行上做同样的事。
+         * @param {object} oSpec {mode, inner, keys: [null, [{a: 列名, b: 列名}]...]}
+         */
+        function combineBySpec(aDs, aNames, oSpec) {
+                var idx = function (oDs, sName) {
+                        var n = normLabel(sName);
+                        for (var i = 0; i < (oDs.columns || []).length; i++) {
+                                if (normLabel(oDs.columns[i].name) === n) { return i; }
+                        }
+                        return -1;
+                };
+                if (oSpec.mode === "append") {
+                        return append(aDs, aNames);
+                }
+                var aKeys = (oSpec.keys || []).map(function (aK, k) {
+                        return k === 0 ? [] : (aK || []).map(function (p) {
+                                return { a: idx(aDs[0], p.a), b: idx(aDs[k], p.b) };
+                        }).filter(function (p) { return p.a >= 0 && p.b >= 0; });
+                });
+                return join(aDs, aNames, aKeys, !!oSpec.inner);
+        }
+
         /** 并排模式导出：各表依次写进一个 CSV，表与表之间空一行、前面写表名 */
         function sideCsv(aDs, aNames) {
                 return aDs.map(function (d, k) {
@@ -248,6 +405,10 @@ sap.ui.define(["zai/chat/utils/ChartRenderer"], function (ChartRenderer) {
                 sideCsv: sideCsv,
                 truncInfo: truncInfo,
                 truncNotes: truncNotes,
+                autoGroup: autoGroup,
+                groupSummary: groupSummary,
+                edgeRows: edgeRows,
+                combineBySpec: combineBySpec,
                 label: lab
         };
 });

@@ -161,6 +161,14 @@
 *   依赖: ZCL_AI_LLM_CLIENT V1.5(ev_usage) / ZCL_AI_DATA_ANALYSIS_SERVICE V13.4
 *   ★ 重贴后核对标记: 三处 zcl_ai_llm_client=>chat 都有 ev_usage; log_llm_call( 调用 3 处;
 *     save_audit 声明有 it_calls; 两处 build_datasets_json 回填带 iv_max_chars
+* V15.10 20261031(组合分析二期, 设计: 功能计划书/组合分析/01-二期方案 V1.1; 版本号跳过
+*   V15.9, 思考模式分支 feat/thinking-mode 在用): 聚焦结果是组合结果(ZAI_ARTIFACT 类型
+*   COMBO_RESULT)时, 不走意图路由、不加载工具, 由 ZCL_AI_COMBO_SERVICE=>analysis_context
+*   给出组合上下文(统计 + 分组汇总 + 明细举例, 会话归属在里面校验)直接进模型;
+*   不可读取时确定性说明原因. 意图路由块的条件加 lv_art_mode = abap_false. 其余不变
+*   依赖: ZCL_AI_COMBO_SERVICE V1.0(先激活)
+*   ★ 重贴后核对标记: 有 zcl_ai_combo_service=>is_combo( 与 zcl_ai_combo_service=>analysis_context(;
+*     意图路由入口是 IF lv_task_on = abap_true AND lv_art_mode = abap_false.
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -559,7 +567,49 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    IF lv_task_on = abap_true.
+    " ---- V15.10(组合分析二期): 聚焦结果是组合结果 → 不走意图路由 / 不加载工具,
+    "      组合上下文(统计 + 分组汇总 + 明细举例)直接进模型; 会话归属在 analysis_context 校验 ----
+    IF iv_focus_artifact_id IS NOT INITIAL
+       AND zcl_ai_combo_service=>is_combo( iv_focus_artifact_id ) = abap_true.
+      zcl_ai_combo_service=>analysis_context(
+        EXPORTING iv_artifact_id = iv_focus_artifact_id
+                  iv_session_id  = iv_session_id
+        IMPORTING ev_ctx         = lv_art_ctx
+                  ev_task_id     = lv_art_task
+                  ev_label       = lv_art_lbl
+                  ev_error       = lv_art_err ).
+      IF lv_art_ctx IS INITIAL.
+        finish_det(
+          EXPORTING iv_session_id = iv_session_id
+                    iv_question   = iv_question
+                    iv_answer     = |要分析的组合结果当前不可读取: { lv_art_err }。| &&
+                                    |可以回到右侧「组合分析」面板重新交给模型。|
+                    iv_model_id   = CONV string( ls_cfg-model_id )
+                    iv_task_id    = ''
+                    iv_module     = zcl_ai_combo_service=>gc_module
+                    iv_task_sts   = ''
+                    iv_summary    = '组合结果不可读取'
+                    iv_label      = '定位组合结果'
+          IMPORTING es_result     = es_result ).
+        RETURN.
+      ENDIF.
+      lv_art_mode = abap_true.
+      lv_domain   = zcl_ai_domain_cards=>gc_dom_general.
+      IF lv_task_on = abap_true AND lv_art_task IS NOT INITIAL.
+        ls_task = zcl_ai_task_service=>get_task_owned(
+                    iv_task_id = lv_art_task iv_session_id = iv_session_id ).
+        IF ls_task-task_id IS NOT INITIAL.
+          zcl_ai_task_service=>update_status(
+            iv_task_id = ls_task-task_id
+            iv_version = ls_task-current_version
+            iv_status  = zcl_ai_task_service=>gc_st_analyzing ).
+          ls_task = zcl_ai_task_service=>get_task_owned(
+                      iv_task_id = ls_task-task_id iv_session_id = iv_session_id ).
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+    IF lv_task_on = abap_true AND lv_art_mode = abap_false.   " V15.10: 已定位到组合结果则跳过路由
       ls_route = zcl_ai_intent_router=>quick_route(
                      iv_question   = iv_question
                      iv_session_id = iv_session_id

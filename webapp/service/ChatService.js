@@ -8,8 +8,9 @@ sap.ui.define([
         "zai/chat/service/MockBackend",
         "zai/chat/service/AuthMockBackend",
         "zai/chat/service/FioriMockBackend",
+        "zai/chat/service/ComboMockBackend",
         "zai/chat/service/SkillService"
-], function (Log, ODataModel, Filter, FilterOperator, Sorter, TraceService, MockBackend, AuthMockBackend, FioriMockBackend, SkillService) {
+], function (Log, ODataModel, Filter, FilterOperator, Sorter, TraceService, MockBackend, AuthMockBackend, FioriMockBackend, ComboMockBackend, SkillService) {
         "use strict";
 
         /**
@@ -817,7 +818,8 @@ sap.ui.define([
                         if (this._sConfig.mode === "mock") {
                                 return Promise.resolve({
                                         tasks: [],
-                                        artifacts: this._mockFioriArtifacts ? this._mockFioriArtifacts(sSessionId) : []
+                                        artifacts: (this._mockFioriArtifacts ? this._mockFioriArtifacts(sSessionId) : [])
+                                                .concat(this._mockComboArtifacts ? this._mockComboArtifacts(sSessionId) : [])
                                 });
                         }
                         var that = this;
@@ -852,7 +854,7 @@ sap.ui.define([
                                                 var sId = String(a.artifact_id || "");
                                                 var sType = String(a.artifact_type || "");
                                                 if (!sId || oSeen[sId] || (a.status && a.status !== "AVAILABLE") ||
-                                                        (sType !== "REPORT_RESULT" && sType !== "FIORI_RESULT")) {
+                                                        (sType !== "REPORT_RESULT" && sType !== "FIORI_RESULT" && sType !== "COMBO_RESULT")) {
                                                         return;
                                                 }
                                                 oSeen[sId] = true;
@@ -949,6 +951,60 @@ sap.ui.define([
                 /** 重新读取历史结果（结构同 runFioriReport） */
                 getFioriReportResult: function (sArtifactId) {
                         return this._fioriCall("FioriReportResult", { ArtifactId: sArtifactId }, false);
+                },
+
+                /* =================================================================
+                 * 20261031：组合分析二期（设计：功能计划书/组合分析/01-二期方案 V1.1）。
+                 * 两个 FI 都返回 GenericResult（ResultJson camelCase）；失败抛后端原话。
+                 * 演示模式走 ComboMockBackend（语义与 ZCL_AI_COMBO_SERVICE 对应）。
+                 * ================================================================= */
+
+                /** 后端有没有部署组合分析（SEGW 的 ComboCreate）→ Promise<boolean>；演示模式恒为 true */
+                comboAvailable: function () {
+                        if (this._sConfig.mode === "mock") {
+                                return Promise.resolve(true);
+                        }
+                        var that = this;
+                        var oModel = this._getModel();
+                        return Promise.resolve(oModel.metadataLoaded ? oModel.metadataLoaded(true) : null).then(function () {
+                                return that._fiHasParam("ComboCreate", "SpecJson");
+                        }).catch(function () { return false; });
+                },
+
+                _comboCall: function (sAction, oParams, bPost) {
+                        if (this._sConfig.mode === "mock") {
+                                return this._mockComboCall(sAction, oParams || {});
+                        }
+                        return this._taskCall(sAction, oParams || {}, bPost).then(function (o) {
+                                if (!o.success) {
+                                        throw new Error(o.message || "组合分析服务调用失败");
+                                }
+                                return o.result || {};
+                        });
+                },
+
+                /**
+                  * 组合并登记（幂等：同一 ClientRequestId 返回同一结果）。组合说明太长时先走长文本通道。
+                  * @param {object} o {sessionId, spec (对象), clientRequestId}
+                  * @returns {Promise<{artifactId, comboId, label, mode, schemaJson, rowsJson, rowCount, truncated,
+                  *          summaryJson, sourcesJson, specJson, elapsedMs, createdAt, message}>}
+                  */
+                comboCreate: function (o) {
+                        var that = this;
+                        var sSpec = JSON.stringify(o.spec || {});
+                        var p = this._sConfig.mode === "mock" ? Promise.resolve(sSpec) : this._prepareQuestion(sSpec);
+                        return p.then(function (sArg) {
+                                return that._comboCall("ComboCreate", {
+                                        SessionId: o.sessionId,
+                                        SpecJson: sArg,
+                                        ClientRequestId: o.clientRequestId || ""
+                                }, true);
+                        });
+                },
+
+                /** 重新读取组合结果（结构同 comboCreate） */
+                getComboResult: function (sArtifactId) {
+                        return this._comboCall("ComboResult", { ArtifactId: sArtifactId }, false);
                 },
 
                 /**
@@ -1759,7 +1815,7 @@ sap.ui.define([
         };
 
         // 20261011（FE-09）：演示模式实现在 service/MockBackend（mixin，_mock* 等方法）
-        Object.assign(Service, MockBackend, AuthMockBackend, FioriMockBackend, SkillService);
+        Object.assign(Service, MockBackend, AuthMockBackend, FioriMockBackend, ComboMockBackend, SkillService);
 
         return Service;
 });

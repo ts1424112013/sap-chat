@@ -138,6 +138,14 @@
 *   SEGW: Function Import AgentProgress, HTTP Method GET, Return Type
 *   GenericResult(Complex Type, Cardinality 1), 参数 ClientRequestId Edm.String 32。
 *   ★ 重贴后核对标记: 有 WHEN 'AGENTPROGRESS' 与 iv_request_id = lv_at_rid
+* V15.11 20261031(组合分析二期, 设计: 功能计划书/组合分析/01-二期方案 V1.1; 版本号跳过
+*   V15.10, 思考模式分支在用): 新增 2 个函数导入, 返回 GenericResult(经 auth_reply):
+*   - COMBOCREATE(POST; SessionId / SpecJson / ClientRequestId): 组合并登记 ——
+*     ZCL_AI_COMBO_SERVICE=>create. SpecJson 以 "@@ZAI_TEXT:" 开头时经 resolve_text 换回原文
+*   - COMBORESULT(GET; ArtifactId): ZCL_AI_COMBO_SERVICE=>get_result
+*   SEGW: 两个 Function Import, Return Type GenericResult(Complex Type, Cardinality 1),
+*   参数全部 Edm.String; ComboCreate 的 HTTP Method 为 POST. 先激活 ZCL_AI_COMBO_SERVICE
+*   ★ 重贴后核对标记: 有 WHEN 'COMBOCREATE' 与 WHEN 'COMBORESULT'; 搜 auth_reply 调用多 2 处
 CLASS zcl_zai_chat_dpc_ext DEFINITION
   PUBLIC
   INHERITING FROM zcl_zai_chat_dpc
@@ -440,6 +448,29 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
                           iv_artifact_id = v8_param( it_parameter = it_parameter iv_name = 'ArtifactId' ) ).
         copy_data_to_ref( EXPORTING is_data = to_generic_odata(
                             auth_reply( iv_error = ls_fres-error iv_message = ls_fres-message iv_data = ls_fres ) )
+                          CHANGING cr_data = er_data ).
+
+      " ===============================================================
+      " V15.11: 组合分析二期(2 个 FI; 开关 / 用户 / 来源归属在服务内校验)
+      " ===============================================================
+      WHEN 'COMBOCREATE'.
+        DATA(lv_cb_spec) = v8_param( it_parameter = it_parameter iv_name = 'SpecJson' ).
+        IF find( val = lv_cb_spec sub = gc_text_prefix ) = 0.
+          lv_cb_spec = resolve_text( lv_cb_spec ).
+        ENDIF.
+        DATA(ls_cbc) = zcl_ai_combo_service=>create(
+                         iv_session_id = v8_param( it_parameter = it_parameter iv_name = 'SessionId' )
+                         iv_spec_json  = lv_cb_spec
+                         iv_request_id = v8_param( it_parameter = it_parameter iv_name = 'ClientRequestId' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_cbc-error iv_message = ls_cbc-message iv_data = ls_cbc ) )
+                          CHANGING cr_data = er_data ).
+
+      WHEN 'COMBORESULT'.
+        DATA(ls_cbr) = zcl_ai_combo_service=>get_result(
+                         iv_artifact_id = v8_param( it_parameter = it_parameter iv_name = 'ArtifactId' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_cbr-error iv_message = ls_cbr-message iv_data = ls_cbr ) )
                           CHANGING cr_data = er_data ).
 
       WHEN 'ANALYZECODE'.

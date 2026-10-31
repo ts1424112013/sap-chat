@@ -4753,6 +4753,10 @@ sap.ui.define([
                                 this._fioriAnalyze(oEntry);   // 20261020：Fiori 结果的分析闸门（FioriPanel）
                                 return;
                         }
+                        if (sAct === "combo-goto") {
+                                this._cbxGoto(oBtn.getAttribute("data-sid"));   // 20261031：组合结果卡上点来源 → 打开来源会话（ComboPanel）
+                                return;
+                        }
                         if (sAct === "run-refresh" || sAct === "run-stop") {
                                 var oRun = this._runByUid(sUid);
                                 if (!oRun) {

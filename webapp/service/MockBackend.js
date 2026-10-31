@@ -173,6 +173,11 @@ sap.ui.define([], function () {
                   */
                 _mockSendAgent: function (oPayload) {
                         var Service = this;   // 混入 ChatService 后 this 即服务对象
+                        // 20261031：聚焦的是本会话的组合结果 → 组合分析的演示回答（ComboMockBackend）
+                        var oComboRun = Service._mockComboFocused ? Service._mockComboFocused(oPayload) : null;
+                        if (oComboRun) {
+                                return Service._mockComboAgent(oPayload, oComboRun);
+                        }
                         // 20261020：「Fiori 报表」会话走 FioriMockBackend（选报表 → 参数卡 → 分析闸门）
                         var oKnown = Service._mockStore().sessions.filter(function (s) { return s.SessionId === oPayload.sessionId; })[0];
                         var sSceneNow = String((oKnown && oKnown.AgentType) || oPayload.scene || "").toUpperCase();

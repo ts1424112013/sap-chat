@@ -19,7 +19,10 @@ sap.ui.define([
          *  · 组合结果可以生成图表、查看全部、复制、导出 CSV（复用结果卡的同一套图表面板与查看器）
          *  · 本机只记结果号与图表配置（不存数据，同 ResultRestore 的口径）；刷新后按结果号重新取明细。
          *    没有结果号的表（数据分析 SQL 结果、回答里的表格）刷新后不保留数据
-         *  · 不发给模型 —— 「交给模型分析」是二期（要改 ABAP / SEGW）
+         *  · 20261031 二期「交给模型分析」（设计：功能计划书/组合分析/01-二期方案 V1.1）：确认卡 → 新开
+         *    「组合分析」会话 → ComboCreate（只提交组合方式 / 关联列 / 来源结果号 / 汇总列，后端在全量
+         *    存储行上重新组合并登记成 COMBO_RESULT）→ 插入组合结果卡 → 以它为聚焦结果自动发分析问题。
+         *    后端没部署（SEGW 没有 ComboCreate）时不显示按钮，一期功能照旧
          * 方法名统一 _cbx 前缀。
          * =====================================================================
          */
@@ -103,6 +106,13 @@ sap.ui.define([
                         c.items.filter(function (it) { return it.st === "loading"; }).forEach(function (it) {
                                 that._cbxFetch(it);
                         });
+                        // 20261031 二期：后端有没有部署「交给模型分析」（没有就不显示按钮）
+                        Promise.resolve(ChatService.comboAvailable ? ChatService.comboAvailable() : false).then(function (b) {
+                                that._bCbxModel = !!b;
+                                if (that._oCombo === c) {
+                                        that._cbxRender();
+                                }
+                        });
                 },
 
                 _cbxFetch: function (it) {
@@ -110,7 +120,7 @@ sap.ui.define([
                         var c = this._cbx();
                         var p = it.type === "FIORI_RESULT"
                                 ? ChatService.getFioriReportResult(it.art)
-                                : ChatService.getReportResult(it.art);
+                                : (it.type === "COMBO_RESULT" ? ChatService.getComboResult(it.art) : ChatService.getReportResult(it.art));
                         Promise.resolve(p).then(function (oRes) {
                                 if (!oRes || (!oRes.rowsJson && !oRes.schemaJson && !oRes.rowCount)) {
                                         throw new Error((oRes && oRes.message) || "结果已失效");
@@ -173,7 +183,7 @@ sap.ui.define([
                                 sess: this._stripRolePrefix ? this._stripRolePrefix(this.getView().getModel("session").getProperty("/title") || "") : "",
                                 at: Formatter.formatTime(""),
                                 art: sArt,
-                                type: sArt ? (oEntry.fiori ? "FIORI_RESULT" : "REPORT_RESULT") : "",
+                                type: sArt ? (oEntry.combo ? "COMBO_RESULT" : (oEntry.fiori ? "FIORI_RESULT" : "REPORT_RESULT")) : "",
                                 run: sArt ? String(oEntry.runId || "") : "",
                                 src: sSrc,
                                 ds: oDs,
@@ -395,7 +405,7 @@ sap.ui.define([
                         }
                         s += this._cbxChartsHtml(oRes);
                         if (n) {
-                                s += '<div class="cbxFoot">组合只在本页计算，数据不会发给模型。</div>';
+                                s += this._cbxSendHtml(oRes);
                         }
                         s += "</div>";
                         return s;
@@ -677,6 +687,19 @@ sap.ui.define([
                                 (c.keys[sId] || []).splice(parseInt(oBtn.getAttribute("data-j"), 10), 1);
                                 this._cbxChanged(true);
                                 return;
+                        case "ask":
+                                c.confirm = true;
+                                c.sendErr = "";
+                                this._cbxRender();
+                                return;
+                        case "askno":
+                                c.confirm = false;
+                                c.sendErr = "";
+                                this._cbxRender();
+                                return;
+                        case "send":
+                                this._cbxSend();
+                                return;
                         }
                         oRes = this._cbxResult();
                         var sSrc = oBtn.getAttribute("data-src") || "combo";
@@ -729,6 +752,12 @@ sap.ui.define([
                 _cbxChange: function (oEl) {
                         var c = this._cbx();
                         var sKind = oEl.getAttribute("data-cch");
+                        if (sKind === "grp") {
+                                c.groupBy = c.groupBy || ["", ""];
+                                c.groupBy[parseInt(oEl.getAttribute("data-j"), 10) || 0] = oEl.value || "";
+                                this._cbxRender();
+                                return;
+                        }
                         if (sKind === "inner") {
                                 c.inner = !!oEl.checked;
                         } else if (sKind === "key") {
@@ -738,6 +767,236 @@ sap.ui.define([
                                 }
                         }
                         this._cbxChanged(true);
+                },
+
+                /* ---------------------------------------------------------
+                 * 20261031 二期：交给模型分析
+                 * --------------------------------------------------------- */
+
+                /** 不能发的原因（能发返回 ""） */
+                _cbxSendBlock: function (oRes) {
+                        var c = this._cbx();
+                        if (c.items.some(function (it) { return it.st === "loading"; })) {
+                                return "还有结果在取回中，稍等一下";
+                        }
+                        var aBad = [];
+                        c.items.forEach(function (it) {
+                                if (it.st !== "ok") {
+                                        aBad.push("「" + it.name + "」数据不可用");
+                                } else if (!it.art) {
+                                        aBad.push("「" + it.name + "」没有结果号（数据分析的表、回答里的表格不能交给模型）");
+                                } else if (it.type === "COMBO_RESULT") {
+                                        aBad.push("「" + it.name + "」本身是组合结果，不能再组合交给模型");
+                                }
+                        });
+                        if (aBad.length) {
+                                return aBad.join("；");
+                        }
+                        if (oRes.items.length < 2) {
+                                return "至少要两份结果";
+                        }
+                        if (oRes.mode === "join" && c.items.slice(1).some(function (it) { return !(c.keys[it.id] || []).length; })) {
+                                return "关联模式下每份都要选关联列";
+                        }
+                        return "";
+                },
+
+                /** 汇总列候选：组合预览里的文字列（并排时「来源」固定在第一位） */
+                _cbxGroupCols: function (oRes) {
+                        var oDs = oRes.mode === "side"
+                                ? ComboData.append(oRes.items.map(function (it) { return it.ds; }), oRes.items.map(function (it) { return it.name; }))
+                                : oRes.ds;
+                        if (!oDs) {
+                                return [];
+                        }
+                        var mNum = {};
+                        ChartRenderer.analyze(oDs).numeric.forEach(function (i) { mNum[i] = true; });
+                        return (oDs.columns || []).map(function (col, i) {
+                                return { name: col.name, label: ComboData.label(col, i), i: i };
+                        }).filter(function (x) { return !mNum[x.i] && x.name !== "_SRC"; });
+                },
+
+                _cbxSendHtml: function (oRes) {
+                        var c = this._cbx();
+                        if (!this._bCbxModel) {
+                                return '<div class="cbxFoot">组合只在本页计算，数据不会发给模型。</div>';
+                        }
+                        if (c.sending) {
+                                return '<div class="cbxSend"><button type="button" class="dtBtn dtPrimary cbxSendBtn" disabled>' +
+                                        '<span class="cbxSpin"></span>正在组合…</button>' +
+                                        '<div class="cbxNote">后端正在读取全部存储数据重新组合，数据多时要几秒到十几秒。</div></div>';
+                        }
+                        var sBlock = this._cbxSendBlock(oRes);
+                        if (!c.confirm) {
+                                return '<div class="cbxSend"><button type="button" class="dtBtn dtPrimary cbxSendBtn" data-cact="ask"' +
+                                        (sBlock ? " disabled" : "") + ">交给模型分析</button>" +
+                                        '<div class="cbxNote' + (sBlock ? " cbxWarn" : "") + '">' +
+                                        esc(sBlock || "会新开一个「组合分析」会话：后端在全部存储数据上重新组合，再把统计、汇总和部分明细发给模型。") +
+                                        "</div></div>";
+                        }
+                        return this._cbxConfirmHtml(oRes, sBlock);
+                },
+
+                _cbxConfirmHtml: function (oRes, sBlock) {
+                        var c = this._cbx();
+                        var aG = this._cbxGroupCols(oRes);
+                        var aSel = c.groupBy || ["", ""];
+                        var fnOpts = function (sSel, bOptional) {
+                                return '<option value="">' + (bOptional ? "（不用）" : "自动选") + "</option>" +
+                                        aG.map(function (g) {
+                                                return '<option value="' + esc(g.name) + '"' + (g.name === sSel ? " selected" : "") + ">" + esc(g.label) + "</option>";
+                                        }).join("");
+                        };
+                        var sMode = { append: "追加（上下拼）", join: "关联（以第一份为主表）", side: "并排（不合并，按「来源」分开汇总）" }[oRes.mode] || "";
+                        var s = '<div class="cbxConfirm"><div class="cbxSecTitle">确认交给模型分析</div>' +
+                                '<div class="cbxCfRow"><span class="cbxCfK">组合方式</span><span>' + esc(sMode) + "</span></div>" +
+                                '<div class="cbxCfRow"><span class="cbxCfK">来源</span><span class="cbxCfList">' +
+                                oRes.items.map(function (it, i) {
+                                        var oTr = ComboData.truncInfo(it.ds, it.type);
+                                        return "<span>" + (i + 1) + ". " + esc(it.name) + "：" +
+                                                (oTr ? esc(oTr.total ? "页面 " + oTr.rows + " 行 / 后端共 " + oTr.total + " 行" : "页面 " + oTr.rows + " 行，不是全部") : it.ds.rows.length + " 行") +
+                                                "</span>";
+                                }).join("") + "</span></div>" +
+                                '<div class="cbxCfRow"><span class="cbxCfK">汇总维度</span><span class="cbxCfSel">' +
+                                '<select class="cbxSel" data-cch="grp" data-j="0" title="按哪一列分组汇总">' + fnOpts(aSel[0], false) + "</select>" +
+                                '<select class="cbxSel" data-cch="grp" data-j="1" title="第二个分组列（可选）">' + fnOpts(aSel[1], true) + "</select></span></div>" +
+                                '<div class="cbxNote">发给模型：后端统计 + 按所选列的分组汇总（最多 50 组）+ 第一个数值列最大、最小各 10 行；' +
+                                "组合后不超过 200 行时直接发全部明细。数字都由后端在全部存储数据上算，页面预览只用了已取回的行。</div>";
+                        if (c.sendErr) {
+                                s += '<div class="cbxTrunc"><div>' + esc(c.sendErr) + "</div></div>";
+                        }
+                        s += '<div class="cbxActs"><button type="button" class="dtBtn dtPrimary" data-cact="send"' + (sBlock ? " disabled" : "") + ">发送</button>" +
+                                '<button type="button" class="dtBtn" data-cact="askno">取消</button></div>';
+                        if (sBlock) {
+                                s += '<div class="cbxNote cbxWarn">' + esc(sBlock) + "</div>";
+                        }
+                        return s + "</div>";
+                },
+
+                /** 组合说明（只有说明，没有数据；关联列、汇总列都用列名） */
+                _cbxSpec: function (oRes) {
+                        var c = this._cbx();
+                        var aIt = oRes.items;
+                        var sJoin = oRes.mode === "join" ? " × " : " + ";
+                        return {
+                                mode: String(oRes.mode || "side").toUpperCase(),
+                                inner: oRes.mode === "join" && !!c.inner,
+                                title: ("组合分析：" + aIt.map(function (it) { return it.name; }).join(sJoin)).substring(0, 120),
+                                sources: aIt.map(function (it) { return { artifactId: it.art, type: it.type, name: it.name }; }),
+                                keys: aIt.map(function (it, k) {
+                                        if (k === 0 || oRes.mode !== "join") {
+                                                return null;
+                                        }
+                                        return (c.keys[it.id] || []).map(function (p) {
+                                                var ca = aIt[0].ds.columns[p.a], cb = it.ds.columns[p.b];
+                                                return ca && cb ? { a: ca.name, b: cb.name } : null;
+                                        }).filter(Boolean);
+                                }),
+                                groupBy: (c.groupBy || []).filter(Boolean),
+                                // 只给提问文字用（后端不读）：关联列的标题
+                                keyLabels: oRes.mode !== "join" ? [] : (c.keys[(aIt[1] || {}).id] || []).map(function (p) {
+                                        return ComboData.label(aIt[0].ds.columns[p.a], p.a);
+                                })
+                        };
+                },
+
+                /** 发送：后端组合并登记 → 切到新的「组合分析」会话 → 插入组合结果卡 → 自动提问 */
+                _cbxSend: function () {
+                        var that = this;
+                        var c = this._cbx();
+                        var oChat = this.getView().getModel("chat");
+                        var oRes = this._cbxResult();
+                        if (c.sending || this._cbxSendBlock(oRes)) {
+                                return;
+                        }
+                        if (oChat.getProperty("/busy")) {
+                                MessageToast.show(this._rb().getText("busyWait"));
+                                return;
+                        }
+                        var oSpec = this._cbxSpec(oRes);
+                        var sNew = this._newSessionId();
+                        c.sending = true;
+                        c.sendErr = "";
+                        this._cbxRender();
+                        ChatService.comboCreate({ sessionId: sNew, spec: oSpec, clientRequestId: this._newSessionId() }).then(function (oCr) {
+                                c.sending = false;
+                                c.confirm = false;
+                                that._cbxRender();
+                                that._cbxOpenSession(sNew, oCr, oSpec);
+                        }).catch(function (e) {
+                                c.sending = false;
+                                c.sendErr = (e && e.message) || String(e);
+                                that._cbxRender();
+                        });
+                },
+
+                _cbxOpenSession: function (sNew, oCr, oSpec) {
+                        var oChat = this.getView().getModel("chat");
+                        this._sStreamToken = "";
+                        oChat.setProperty("/workspaceMode", "AGENT");
+                        this._setSessionContext({ id: sNew, mode: "AGENT", agentType: "AUTO", status: "IDLE" });
+                        this.getView().getModel("session").setProperty("/currentId", sNew);
+                        this.getView().getModel("session").setProperty("/title", "");
+                        oChat.setProperty("/messages", []);
+                        this._setViewLayout(true);
+                        this._applyWorkspaceChrome();
+                        if (this._applySessionFilter) {
+                                this._applySessionFilter();
+                        }
+                        oCr.artifactId = oCr.artifactId || "";
+                        this._cbxPushResult(oCr, sNew);
+                        this._mFocusArt = this._mFocusArt || {};
+                        this._mFocusArt[sNew] = oCr.artifactId;
+                        var sKeys = (oSpec.keyLabels || []).length ? "，按 " + oSpec.keyLabels.join("、") + " 对上" : "";
+                        var sMode = { APPEND: "追加", JOIN: "关联", SIDE: "并排" }[oSpec.mode] || "";
+                        var sQ = "请分析这份组合数据（" + oSpec.sources.length + " 份结果" + sMode + sKeys + "），说说主要发现和值得注意的地方。";
+                        this._executeSend({
+                                mode: "AGENT", agentType: "AUTO", displayText: sQ,
+                                meta: "", question: sQ, keepInput: true
+                        });
+                },
+
+                /**
+                  * 组合结果 → 结果卡（复用 _pushReportResult 的表格 / 图表 / 导出）；卡下方写来源与组合方式。
+                  * oMore {noAppend, time} —— 刷新后恢复时只造条目（ResultRestore 插入）
+                  */
+                _cbxPushResult: function (oCr, sSid, oMore) {
+                        var that = this;
+                        var aSrc = [], oSum = {};
+                        try { aSrc = JSON.parse(oCr.sourcesJson || "[]") || []; } catch (e) { aSrc = []; }
+                        try { oSum = JSON.parse(oCr.summaryJson || "{}") || {}; } catch (e) { oSum = {}; }
+                        var sMode = { APPEND: "追加", JOIN: "关联", SIDE: "并排" }[oCr.mode] || "";
+                        return this._pushReportResult(oCr, oCr.comboId || oCr.artifactId, {
+                                sessionId: sSid,
+                                noAppend: !!(oMore && oMore.noAppend),
+                                time: oMore && oMore.time,
+                                artType: "COMBO_RESULT",
+                                text: function (iTotal, oDs) {
+                                        return "组合结果「" + (oCr.label || "") + "」：" + aSrc.length + " 份结果" + sMode + "，共 " + iTotal + " 行" +
+                                                (oDs.truncated ? "（这里显示前 " + oDs.rows.length + " 行）" : "") + "。由后端在全部存储数据上计算" +
+                                                (oCr.truncated === "X" ? "；有来源已截断，结论只代表已取到的部分" : "") + "。";
+                                },
+                                decorate: function (oE) {
+                                        oE.combo = { sources: aSrc, mode: oCr.mode, note: oSum.note || "" };
+                                        oE.runHtml = that._cbxCardHtml(oE);
+                                }
+                        });
+                },
+
+                /** 组合结果卡下方：来源（可点开原会话）+ 组合说明 */
+                _cbxCardHtml: function (oEntry) {
+                        var o = oEntry.combo || {};
+                        var s = '<div class="cbxCard" data-uid="' + esc(oEntry.uid) + '"><div class="cbxCardHead">' +
+                                '<span class="cbxIco cbxIcoAcc">' + ICON.stack + "</span>来源</div><div class=\"cbxCardList\">";
+                        (o.sources || []).forEach(function (src, i) {
+                                var sRows = src.truncated ? "存储 " + src.stored + " 行 / 共 " + src.total + " 行（已截断）" : src.stored + " 行";
+                                s += '<div class="cbxCardSrc"><span class="cbxCardNo">' + (i + 1) + "</span>" +
+                                        (src.sessionId ? '<button type="button" class="cbxLink" data-act="combo-goto" data-sid="' + esc(src.sessionId) + '" title="打开来源会话">' + esc(src.name) + "</button>"
+                                                : "<span>" + esc(src.name) + "</span>") +
+                                        '<span class="cbxMeta">' + esc((src.type === "FIORI_RESULT" ? "Fiori" : "报表执行") + " · " + sRows) + "</span></div>";
+                        });
+                        s += "</div>" + (o.note ? '<div class="cbxNote">' + esc(o.note) + "</div>" : "") + "</div>";
+                        return s;
                 },
 
                 /** 点来源：打开那个会话（面板保持不动） */

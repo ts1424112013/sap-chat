@@ -370,6 +370,14 @@ sap.ui.define([
                                 }
                                 return oEntry;
                         };
+                        if (oArt.type === "COMBO_RESULT") {
+                                // 20261031：组合分析二期的组合结果（ComboPanel._cbxPushResult 造卡）
+                                return ChatService.getComboResult(oArt.artifactId).then(function (oRes) {
+                                        oRes = oRes || {};
+                                        oRes.artifactId = oRes.artifactId || oArt.artifactId;
+                                        return fnMark(that._cbxPushResult(oRes, sSid, { noAppend: true, time: oArt.createdAt }));
+                                });
+                        }
                         if (oArt.type === "FIORI_RESULT") {
                                 return ChatService.getFioriReportResult(oArt.artifactId).then(function (oRes) {
                                         oRes = oRes || {};

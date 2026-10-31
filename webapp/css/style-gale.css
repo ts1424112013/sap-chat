@@ -1814,3 +1814,30 @@ body, body.sapUiBody { background: var(--bg) !important; }
 .comboToggle.sapMBtn .sapMBtnText { font-size: .7rem; font-weight: 700; color: var(--accent) !important; padding-left: .1rem; }
 .comboToggleOn.sapMBtn .sapMBtnInner { background: var(--accent-soft) !important; }
 .comboToggleOn.sapMBtn .sapMBtnIcon { color: var(--accent) !important; }
+
+/* =====================================================================
+ * 20261031 组合分析二期：交给模型分析（按钮 / 确认卡 / 组合结果卡的来源）
+ * ===================================================================== */
+.cbxSend { display: flex; flex-direction: column; gap: .4rem; padding-top: .75rem; border-top: 1px solid var(--line); }
+.cbxSendBtn { align-self: flex-start; display: inline-flex; align-items: center; gap: .45rem; }
+.cbxSendBtn[disabled], .cbxConfirm .dtBtn[disabled] { opacity: .5; cursor: not-allowed; }
+.cbxSpin { width: .8rem; height: .8rem; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: cbxSpin .8s linear infinite; }
+@keyframes cbxSpin { to { transform: rotate(360deg); } }
+.cbxConfirm { display: flex; flex-direction: column; gap: .55rem; padding: .75rem; border: 1px solid var(--accent); border-radius: 12px; background: var(--accent-soft); }
+.cbxCfRow { display: flex; gap: .6rem; font-size: .74rem; line-height: 1.5; color: var(--text); align-items: baseline; }
+.cbxCfK { flex: 0 0 3.6rem; color: var(--sub); font-weight: 600; }
+.cbxCfList { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.cbxCfList > span { overflow: hidden; text-overflow: ellipsis; }
+.cbxCfSel { display: flex; gap: .35rem; flex-wrap: wrap; min-width: 0; }
+.cbxCfSel .cbxSel { max-width: 8.5rem; }
+
+/* 组合结果卡下方的来源清单（消息区） */
+.cbxCard { margin: .5rem 0 .25rem; padding: .6rem .8rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); display: flex; flex-direction: column; gap: .35rem; }
+.cbxCardHead { display: flex; align-items: center; gap: .4rem; font-size: .76rem; font-weight: 700; color: var(--text-2); }
+.cbxCard .cbxIco { width: 1rem; height: 1rem; display: inline-flex; }
+.cbxCard .cbxIco svg { width: 100%; height: 100%; }
+.cbxCardList { display: flex; flex-direction: column; gap: .2rem; }
+.cbxCardSrc { display: flex; align-items: baseline; gap: .45rem; font-size: .76rem; min-width: 0; }
+.cbxCardSrc .cbxLink { font-size: .76rem; }
+.cbxCardSrc .cbxMeta { margin-left: 0; }
+.cbxCardNo { flex: 0 0 auto; width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--hover); color: var(--sub); font-size: .66rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }

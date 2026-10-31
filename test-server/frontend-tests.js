@@ -494,6 +494,54 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   check('关联：只列被截断的那份 + 说明关联和合计不完整', tn.length === 2 && /「ZM001」/.test(tn[0]) && /关联和合计都不完整/.test(tn[1]), JSON.stringify(tn));
   check('追加的后果说明换措辞', /合计和行数都不完整/.test(ComboData.truncNotes([dsR], ['ZM001'], ['REPORT_RESULT'], 'append')[1]));
 
+  // 20261031：组合分析二期（与 ZCL_AI_COMBO_SERVICE 同口径）
+  console.log('\n━━ 组合分析二期（ComboData 汇总 / ComboMockBackend，20261031）');
+  check('关联值归一：日期统一成 YYYYMMDD', ComboData.normKey('2026-1-5') === '20260105' && ComboData.normKey('2026.01.05') === ComboData.normKey('20260105'));
+  const dsF = { name: 'F', columns: [{ name: 'MATNR', label: '物料', numeric: false }, { name: 'AMT', label: '金额' }], rows: [['M1', '5'], ['M2', '7']] };
+  const dsR2 = { name: 'R', columns: [{ name: 'MATNR', label: 'MATNR', numeric: false }, { name: 'QTY', label: 'QTY' }], rows: [['M1', '1']] };
+  const kn = ComboData.suggestKeys(dsF, dsR2);
+  check('标题不同、列名相同（老报表 MATNR vs Fiori「物料」）也推荐为关联列', kn.length === 1 && kn[0].a === 0 && kn[0].b === 0, JSON.stringify(kn));
+  const jb = ComboData.combineBySpec([dsA, dsB], ['未交', '库存'], { mode: 'join', keys: [null, [{ a: 'WERKS', b: 'W' }, { a: 'MATNR', b: 'M' }]] });
+  check('按列名提交的关联说明 = 按下标关联的结果', JSON.stringify(jb.rows) === JSON.stringify(j.rows));
+  const dsG = { name: 'G', columns: [{ name: 'WERKS', label: '工厂' }, { name: 'MAT', label: '物料', numeric: false }, { name: 'AMT', label: '金额' }],
+    rows: [['1000', 'A', '10.5'], ['1000', 'B', '3'], ['2000', 'A', '20'], ['2000', 'C', '1'], ['1000', 'A', '4']] };
+  const gs = ComboData.groupSummary(dsG, [1], 2, [0]);
+  check('分组汇总：关联列（工厂）不当度量；按金额从大到小，超出的并成「其他」',
+    gs.measures.join() === '金额' && gs.groups[0].key[0] === 'A' && gs.groups[0].sums[0] === 34.5 && gs.groups[0].n === 3 &&
+    gs.other && gs.other.n === 1 && gs.groupCount === 3, JSON.stringify(gs));
+  const gs2 = ComboData.groupSummary(dsG, [1], 50, []);
+  check('排序用的度量取取值最多的数值列（金额，不是工厂代码）', gs2.measures[0] === '金额', gs2.measures.join());
+  check('自动汇总维度：取值 2～50 的文字列，优先关联列', JSON.stringify(ComboData.autoGroup(dsG, [1])) === '[1]');
+  const big = { name: 'big', columns: [{ name: 'K', label: 'K', numeric: false }, { name: 'V', label: 'V' }], rows: [] };
+  for (let i = 0; i < 300; i++) { big.rows.push(['k' + i, String(i)]); }
+  const ed = ComboData.edgeRows(big, 3, 200);
+  check('明细举例：超过 200 行取最大 / 最小各 N 行；不超过就给全部',
+    !ed.all && ed.top[0][1] === '299' && ed.bottom[0][1] === '0' && ed.top.length === 3 && ComboData.edgeRows(dsG, 3, 200).all === true);
+  const CM = load('zai/chat/service/ComboMockBackend');
+  const fakeSvc = Object.assign({}, CM, {
+    _mockTime: () => '2026-10-31 20:00',
+    _fioriStats: () => ({ rowCount: 0, numeric: [] }),
+    _mockFioriState: () => ({ runs: {
+      FA1: { def: { reportId: 'SO', analyzeEnabled: 'X' }, sessionId: 'S1', ds: { columns: dsA.columns.map((c) => ({ name: c.name, label: c.label, numeric: c.name === 'Q' })), rows: dsA.rows.map((r) => ({ WERKS: r[0], MATNR: r[1], Q: Number(r[2]) })) } },
+      FA2: { def: { reportId: 'INV', analyzeEnabled: 'X' }, sessionId: 'S2', ds: { columns: dsB.columns.map((c) => ({ name: c.name, label: c.label, numeric: c.name === 'S' })), rows: dsB.rows.map((r) => ({ W: r[0], M: r[1], S: Number(r[2]) })) } },
+      FA3: { def: { reportId: 'PO', analyzeEnabled: '' }, sessionId: 'S2', ds: { columns: [], rows: [] } }
+    } })
+  });
+  const spec = { mode: 'JOIN', sources: [{ artifactId: 'FA1', type: 'FIORI_RESULT', name: '未交' }, { artifactId: 'FA2', type: 'FIORI_RESULT', name: '库存' }],
+    keys: [null, [{ a: 'WERKS', b: 'W' }, { a: 'MATNR', b: 'M' }]] };
+  const cr = fakeSvc._mockComboCreate({ SessionId: 'S9', SpecJson: JSON.stringify(spec), ClientRequestId: 'R1' });
+  const crRows = JSON.parse(cr.rowsJson), crSrc = JSON.parse(cr.sourcesJson), crSum = JSON.parse(cr.summaryJson);
+  check('演示后端：跨会话来源组合成 COMBO 结果，行是按列名作键的对象，来源清单带原会话',
+    cr.artifactId.indexOf('CART') === 0 && cr.rowCount === 3 && crRows[0].S_1 === 410 && crSrc[1].sessionId === 'S2' && crSrc[1].aggregated === true,
+    cr.rowsJson);
+  check('演示后端：汇总不把关联列（工厂）当度量', crSum.group.measures.indexOf('工厂') < 0, JSON.stringify(crSum.group));
+  check('演示后端：同一请求号返回同一结果（幂等）', fakeSvc._mockComboCreate({ SessionId: 'S9', SpecJson: JSON.stringify(spec), ClientRequestId: 'R1' }).artifactId === cr.artifactId);
+  let rej = '';
+  try { fakeSvc._mockComboCreate({ SessionId: 'S9', SpecJson: JSON.stringify({ mode: 'APPEND', sources: [spec.sources[0], { artifactId: 'FA3', type: 'FIORI_RESULT', name: '采购' }] }) }); } catch (e) { rej = e.message; }
+  check('演示后端：未开放模型分析的报表整体拒绝，并说明是哪一份', /第 2 份「采购」/.test(rej) && /未开放模型分析/.test(rej), rej);
+  check('演示后端：聚焦本会话的组合结果才走组合回答', !!fakeSvc._mockComboFocused({ sessionId: 'S9', focusedArtifactId: cr.artifactId }) &&
+    !fakeSvc._mockComboFocused({ sessionId: 'S1', focusedArtifactId: cr.artifactId }));
+
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });
