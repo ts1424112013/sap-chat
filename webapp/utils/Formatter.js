@@ -269,6 +269,7 @@ sap.ui.define([], function () {
                                 '<button type="button" class="dtBtn' + (sAllText ? "" : " dtPrimary") + '" data-act="chart">生成图表</button>' +
                                 '<button type="button" class="dtBtn" data-act="copy">复制表格</button>' +
                                 '<button type="button" class="dtBtn" data-act="csv">导出 CSV</button>' +
+                                '<button type="button" class="dtBtn dtCombo" data-act="combo-add" title="放进右侧组合分析，和别的结果一起看">加入组合</button>' +
                                 (sHint ? '<span class="dtHint">' + this.escapeHtml(sHint) + "</span>" : "") +
                                 "</div>";
                 },

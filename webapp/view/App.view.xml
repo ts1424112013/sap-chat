@@ -115,6 +115,8 @@
                                                                         <Button id="agentInfoBtn" icon="sap-icon://information" type="Transparent"
                                                                                 tooltip="{i18n>agentInfoBtn}" press=".onAgentTaskInfo"
                                                                                 visible="{chat>/agentInfoVisible}" class="topBtn"/>
+                                                                        <!-- 20261031：右侧组合分析面板开关（数字 = 组合里几份结果） -->
+                                                                        <Button id="comboToggle" icon="sap-icon://combine" type="Transparent" press=".onToggleCombo" tooltip="{i18n>comboToggle}" class="topBtn comboToggle"/>
                                                                         <!-- V6.0：明暗主题切换（持久化见 App.controller onToggleTheme） -->
                                                                         <Button id="themeToggle" icon="sap-icon://night-mode" type="Transparent" press=".onToggleTheme" tooltip="{i18n>themeToggle}" class="topBtn themeToggle"/>
                                                                         <!-- V16：导出合并为一个菜单（设置入口统一在侧栏底部） -->
@@ -317,6 +319,9 @@
                                                                 </VBox>
                                                         </HBox>
                                                 </VBox>
+
+                                                <!-- ==================== 右侧：组合分析（20261031，ComboPanel 自绘） ==================== -->
+                                                <core:HTML id="comboHost" content="&lt;div class=&quot;cbx cbxHidden&quot;&gt;&lt;/div&gt;" preferDOM="true" sanitizeContent="false"/>
                                         </HBox>
                                 </content>
                         </Page>

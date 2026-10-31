@@ -459,6 +459,30 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   check('没有过程摘要时也从「理解问题」开始', MockBackend._mockLiveScript({}).map((t) => t.phase).join() === 'UNDERSTANDING');
   check('不认识的运行编号：进度为 NONE', MockBackend._mockAgentProgress.call({}, 'X').status === 'NONE');
 
+  console.log('\n━━ 组合分析（ComboData，20261031）');
+  const ComboData = load('zai/chat/utils/ComboData');
+  const dsA = { name: '未交', columns: [{ name: 'WERKS', label: '工厂', numeric: false }, { name: 'MATNR', label: '物料', numeric: false }, { name: 'Q', label: '未交数量' }],
+    rows: [['1000', 'M852', '662'], ['1000', 'M870', '480'], ['2000', 'M428', '538']] };
+  const dsB = { name: '库存', columns: [{ name: 'W', label: '工厂', numeric: false }, { name: 'M', label: '物料', numeric: false }, { name: 'S', label: '库存' }],
+    rows: [['1000', 'M852', '400'], ['1000', 'M852', '10'], ['2000', 'M428', '900']] };
+  const keys = ComboData.suggestKeys(dsA, dsB);
+  check('关联列按同名维度列推荐（工厂、物料）', keys.length === 2 && keys[0].a === 0 && keys[1].a === 1, JSON.stringify(keys));
+  check('有共同维度列 → 默认关联', ComboData.suggestMode([dsA, dsB]) === 'join');
+  const j = ComboData.join([dsA, dsB], ['未交', '库存'], [[], keys], false);
+  check('左连接：主表行数不变，同一关联值多行先求和', j.rows.length === 3 && j.rows[0][3] === 410 && j.rows[1][3] === '' && j.matched === 2,
+    JSON.stringify(j.rows));
+  check('只保留都对上的行', ComboData.join([dsA, dsB], ['未交', '库存'], [[], keys], true).rows.length === 2);
+  check('订单号前导零视为同一个', ComboData.normKey('004541152') === ComboData.normKey('4541152'));
+  const dsA2 = { name: '未交9月', columns: dsA.columns, rows: [['3000', 'M1', '5']] };
+  check('结构相同 → 默认追加', ComboData.suggestMode([dsA, dsA2]) === 'append');
+  const ap = ComboData.append([dsA, dsA2], ['10月', '9月']);
+  check('追加：加「来源」列，行数相加', ap.columns[0].label === '来源' && ap.rows.length === 4 && ap.rows[3][0] === '9月' && ap.rows[3][1] === '3000');
+  const dsC = { name: 'ship', columns: [{ name: 'MODE', label: 'Ship Mode' }, { name: 'V', label: '2026-10' }], rows: [['D', '32592'], ['C', '3308']] };
+  check('没有共同列 → 并排', ComboData.suggestMode([dsA, dsC]) === 'side');
+  check('并排导出 CSV 含两张表名', /未交/.test(ComboData.sideCsv([dsA, dsC], ['未交', 'ship'])) && /ship/.test(ComboData.sideCsv([dsA, dsC], ['未交', 'ship'])));
+  const jc = ComboData.join([dsA, dsB], ['未交', '库存'], [[], []], false);
+  check('没选关联列的表不参与，并说明', jc.columns.length === 3 && /没选关联列/.test(jc.note));
+
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

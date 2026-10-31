@@ -456,6 +456,7 @@ sap.ui.define(["zai/chat/utils/Formatter"], function (Formatter) {
                 fromTable: fromTable,
                 toDelimited: toDelimited,
                 colLabel: colLabel,
+                normNum: normNum,
                 typeText: function (sKey) {
                         var o = TYPES.filter(function (t) { return t.key === sKey; })[0];
                         return o ? o.text : sKey;

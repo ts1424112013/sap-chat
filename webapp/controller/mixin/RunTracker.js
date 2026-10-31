@@ -247,23 +247,9 @@ sap.ui.define([
                         }
                 },
 
-                /** READY 结果 → 新一条回复（数据表 + 工具条；用户可自行生成图表）
-                  * 20261020：可选 oOpt（Fiori 报表结果复用同一套表格逻辑）——
-                  * oOpt.text(iTotal, oDs) 换正文；oOpt.decorate(oEntry, oDs, iTotal) 推入前补字段（如分析闸门 runHtml）
-                  * 20261025（DATA-01）：条目带 artifactId（刷新后认出同一份结果、同一份结果不重复插入）；
-                  * oOpt.noAppend 只造条目不插入、oOpt.time 显示时间（刷新后恢复用登记时间）
-                  * 20261031：oOpt.artType 结果类型（缺省 REPORT_RESULT；Fiori 传 FIORI_RESULT），插入时记进本机
-                  * @returns {object} 推入（或造出）的消息条目 */
-                _pushReportResult: function (oRes, sRunId, oOpt) {
+                /** 结果接口返回 → 数据集 {name, columns, rows, total, truncated}（结果卡与组合分析共用） */
+                _rptDataset: function (oRes, sRunId) {
                         var oRB = this._rb();
-                        var sSid = (oOpt && oOpt.sessionId) || this._sMessagesSession;
-                        var oState = this._sessionMessageState(sSid);
-                        if (!oState) { return null; }
-                        var sArt = (oRes && oRes.artifactId && oRes.artifactId !== "undefined") ? String(oRes.artifactId) : "";
-                        if (sArt && !(oOpt && oOpt.noAppend)) {
-                                var oSame = (oState.messages || []).filter(function (m) { return m.artifactId === sArt; })[0];
-                                if (oSame) { return oSame; }   // 刷新后已恢复过这份结果（续跟的运行随后就绪）
-                        }
                         var aCols = [], aRaw = [];
                         try {
                                 // 20261011：兼容 {"columns":[…]}（MOCK/EXEC_SAP V1.0e）与旧版纯数组 […]（EXEC_SAP V1.0d）
@@ -289,6 +275,29 @@ sap.ui.define([
                         var iTotal = parseInt(oRes.rowCount, 10) || oDs.rows.length;
                         oDs.truncated = iTotal > oDs.rows.length;
                         oDs.total = iTotal;   // 20261024：分页查看器标明「后端共 N 行，这里是已取回的部分」
+                        return oDs;
+                },
+
+                /** READY 结果 → 新一条回复（数据表 + 工具条；用户可自行生成图表）
+                  * 20261020：可选 oOpt（Fiori 报表结果复用同一套表格逻辑）——
+                  * oOpt.text(iTotal, oDs) 换正文；oOpt.decorate(oEntry, oDs, iTotal) 推入前补字段（如分析闸门 runHtml）
+                  * 20261025（DATA-01）：条目带 artifactId（刷新后认出同一份结果、同一份结果不重复插入）；
+                  * oOpt.noAppend 只造条目不插入、oOpt.time 显示时间（刷新后恢复用登记时间）
+                  * 20261031：oOpt.artType 结果类型（缺省 REPORT_RESULT；Fiori 传 FIORI_RESULT），插入时记进本机
+                  * @returns {object} 推入（或造出）的消息条目 */
+                _pushReportResult: function (oRes, sRunId, oOpt) {
+                        var oRB = this._rb();
+                        var sSid = (oOpt && oOpt.sessionId) || this._sMessagesSession;
+                        var oState = this._sessionMessageState(sSid);
+                        if (!oState) { return null; }
+                        var sArt = (oRes && oRes.artifactId && oRes.artifactId !== "undefined") ? String(oRes.artifactId) : "";
+                        if (sArt && !(oOpt && oOpt.noAppend)) {
+                                var oSame = (oState.messages || []).filter(function (m) { return m.artifactId === sArt; })[0];
+                                if (oSame) { return oSame; }   // 刷新后已恢复过这份结果（续跟的运行随后就绪）
+                        }
+                        var oDs = this._rptDataset(oRes, sRunId);
+                        var aCols = oDs.columns;
+                        var iTotal = oDs.total;
                         var sText = (oOpt && oOpt.text) ? oOpt.text(iTotal, oDs) :
                                 oRB.getText("runResultText", [String(sRunId || "").substring(0, 8), iTotal,
                                         oDs.truncated ? oRB.getText("runResultSample", [oDs.rows.length]) : ""]) +

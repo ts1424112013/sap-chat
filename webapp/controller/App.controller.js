@@ -39,8 +39,9 @@ sap.ui.define([
         "zai/chat/controller/mixin/FioriPanel",
         "zai/chat/controller/mixin/SessionMessages",
         "zai/chat/controller/mixin/SkillPanel",
-        "zai/chat/controller/mixin/ResultRestore"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore) {
+        "zai/chat/controller/mixin/ResultRestore",
+        "zai/chat/controller/mixin/ComboPanel"
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel) {
         "use strict";
 
         /**
@@ -576,6 +577,8 @@ sap.ui.define([
                         this._syncAdminUi();
                         // 20261020：会话级模型按账号记在本地 —— 登录后按这个账号重新取当前会话的模型
                         this._applySessionModel();
+                        // 20261031：组合分析面板按账号记在本地 —— 登录后读回（有结果号的重新取明细）
+                        this._cbxLoad();
                         // 20261020：侧栏「权限审批」待审批角标（仅 ADMIN 实际查询）
                         this._authWatchStart();
                         var oUser = ChatService.getAppUser();
@@ -779,6 +782,7 @@ sap.ui.define([
                         this._bindCodeCopy();
                         this._bindImageActions();
                         this._bindDataActions();
+                        this._cbxRender();   // 20261031：右侧组合分析面板（ComboPanel）
                 },
 
                 /**
@@ -1735,7 +1739,9 @@ sap.ui.define([
                                         if (oDs.elapsedMs) {
                                                 aMeta.push(oDs.elapsedMs + "ms");
                                         }
-                                        s += '<div class="analysisDsHead"><span class="dsName">' + esc(oDs.name) +
+                                        // 20261031：有数据的表头可拖进右侧「组合分析」（ComboPanel）
+                                        s += '<div class="analysisDsHead"' + (oEntry && oDs.rows.length ? ' draggable="true" data-ds="' + iDs + '" title="' +
+                                                esc(oRB.getText("comboDragTip")) + '"' : "") + '><span class="dsGrip" aria-hidden="true"></span><span class="dsName">' + esc(oDs.name) +
                                                 '</span><span class="dsMeta">' + esc(aMeta.join(" · ")) + "</span></div>";
                                         if (!oDs.rows.length) {
                                                 s += '<div class="analysisDsEmpty">' + esc(oRB.getText("analysisEmpty")) + "</div>";
@@ -4815,7 +4821,9 @@ sap.ui.define([
                         if (!oDs) {
                                 return;
                         }
-                        if (sAct === "all") {
+                        if (sAct === "combo-add") {
+                                this._cbxAddFromEntry(oEntry, oDs, sDs !== null && oEntry.analysis ? parseInt(sDs, 10) : null);   // 20261031
+                        } else if (sAct === "all") {
                                 this._openDataGrid(oDs);
                         } else if (sAct === "copy") {
                                 this._copyText(ChartRenderer.toDelimited(oDs, "\t"), this._rb().getText("copiedForExcel"));
@@ -4963,5 +4971,5 @@ sap.ui.define([
                 hasText: function (s) {
                         return !!(s && s.length);
                 }
-        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore));
+        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel));
 });
