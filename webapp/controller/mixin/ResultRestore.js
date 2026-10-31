@@ -16,6 +16,10 @@ sap.ui.define([
          *  ② 用户生成的图表：本机 localStorage 只记"哪张表画了什么图"（图表配置，不存数据），套回恢复的表格；
          *  ③ 刷新前还在跑的报表：本机记下运行号，继续轮询；结果就绪后照常插入；
          *  ④ 还没提交的参数卡（任务 WAITING_INPUT 的待填参数），以及最后一条回复里的选项追问。
+         * 20261031（10.31 记录 #01：切换 / 刷新后报表结果丢失）：
+         *  ⑤ 结果在本页显示过一次，就在本机记下结果号；服务器索引（Tasks / TaskContext）查不到时，
+         *     同一浏览器仍按结果号走 ReportResult / FioriReportResult 取回（这两个接口执行时就在用）；
+         *  ⑥ 取不回的结果在原位置留一行说明（原因写明），不再静默消失。
          * 不恢复：数据分析（SQL）的数据集 —— 后端只登记行数、不存明细，刷新后只剩文字回答。
          * 不需要改 ABAP / SE11 / SEGW；任务接口不可用时什么都不补，历史照常显示。
          * 以 mixin 方式并入 zai.chat.controller.App（方法里的 this 就是控制器）；
@@ -30,6 +34,10 @@ sap.ui.define([
         var RUN_MAX_AGE_MS = 24 * 3600 * 1000;
         /** 一个会话最多恢复最近几份报表结果（每份都要单独取一次明细） */
         var MAX_RESULTS = 10;
+        /** 本机每个会话最多记几个结果号（只记编号与标题，不存数据） */
+        var KEEP_ARTS = 20;
+        /** 后端明确说结果已没了（不存在 / 失效 / 过期）：本机记下原因，以后直接显示说明、不再去取 */
+        var RE_GONE = /不存在|不属于|结果当前状态为|失效|过期|不是报表运行产物/;
         /** 参数卡挂到哪条回复：任务最后修改时间前后的容差（毫秒） */
         var ASK_AFTER_MS = 5000, ASK_BEFORE_MS = 10 * 60 * 1000;
 
@@ -40,6 +48,13 @@ sap.ui.define([
                         return NaN;
                 }
                 return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime();
+        }
+
+        /** 当前本地时间 → YYYYMMDDhhmmss（与历史消息 CreatedAt 同格式，用来排回原位置） */
+        function now14() {
+                var d = new Date();
+                var p = function (n) { return (n < 10 ? "0" : "") + n; };
+                return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
         }
 
         /** 正文短哈希（FNV-1a），只用来认出"同一条回复"，不需要防碰撞 */
@@ -177,6 +192,79 @@ sap.ui.define([
                         }
                 },
 
+                /** 20261031：结果在本页显示了，记下结果号（服务器索引查不到时按它取回） */
+                _rrRememberResult: function (sSid, oInfo) {
+                        if (!sSid || !oInfo || !oInfo.artifactId) {
+                                return;
+                        }
+                        var o = this._rrRead();
+                        var oS = this._rrSession(o, sSid, true);
+                        var mArts = oS.arts = oS.arts || {};
+                        mArts[oInfo.artifactId] = {
+                                type: oInfo.type || "REPORT_RESULT",
+                                run: String(oInfo.runId || ""),
+                                label: String(oInfo.label || "").substring(0, 120),
+                                rows: parseInt(oInfo.rowCount, 10) || 0,
+                                at: now14()
+                        };
+                        Object.keys(mArts).sort(function (a, b) {
+                                return String(mArts[b].at).localeCompare(String(mArts[a].at));
+                        }).slice(KEEP_ARTS).forEach(function (k) { delete mArts[k]; });
+                        this._rrWrite(o);
+                },
+
+                /** 结果在后端已没了：记下原因（说明行每次照留，不再重复去取） */
+                _rrMarkGone: function (sSid, sArt, sWhy) {
+                        var o = this._rrRead();
+                        var oS = o.s[sSid];
+                        if (oS && oS.arts && oS.arts[sArt]) {
+                                oS.arts[sArt].gone = String(sWhy || "").substring(0, 200) || "?";
+                                this._rrWrite(o);
+                        }
+                },
+
+                /** 服务器索引 + 本机记录合并（同一结果号以服务器为准），按登记时间升序 */
+                _rrMergeArts: function (aRemote, mLocal) {
+                        var mSeen = {};
+                        var aOut = (aRemote || []).filter(function (a) {
+                                if (!a || !a.artifactId || mSeen[a.artifactId]) {
+                                        return false;
+                                }
+                                mSeen[a.artifactId] = true;
+                                return true;
+                        });
+                        Object.keys(mLocal || {}).forEach(function (sId) {
+                                if (mSeen[sId]) {
+                                        return;
+                                }
+                                var l = mLocal[sId] || {};
+                                aOut.push({
+                                        artifactId: sId, type: l.type || "REPORT_RESULT", runId: l.run || "",
+                                        label: l.label || "", rowCount: l.rows || 0, createdAt: l.at || "", local: true,
+                                        gone: l.gone || ""
+                                });
+                        });
+                        return aOut.sort(function (x, y) { return String(x.createdAt).localeCompare(String(y.createdAt)); });
+                },
+
+                /** 取不回的结果：在它原来的位置留一行说明 */
+                _rrFailNote: function (oArt, sWhy, sSid) {
+                        var sName = oArt.label || this._rb().getText("runTitle", [String(oArt.runId || oArt.artifactId || "").substring(0, 8)]);
+                        var sReason = String(sWhy || "").replace(/\s+/g, " ").trim();
+                        if (sReason.length > 160) {
+                                sReason = sReason.substring(0, 160) + "…";
+                        }
+                        var oEntry = this._buildEntry("assistant", this._rb().getText("restoreResultFail", [sName, sReason]), oArt.createdAt || "", "");
+                        oEntry.ts = oArt.createdAt || "";
+                        oEntry.localResult = true;
+                        oEntry.restoreNote = oArt.artifactId;
+                        var oState = this._sessionMessageState(sSid);
+                        if (oState && oState.mode === "AGENT") {
+                                oEntry.sender = this._rb().getText("agentSender");
+                        }
+                        return oEntry;
+                },
+
                 /** 用户取消了参数卡：刷新后不再把它恢复成待填 */
                 _rrDismissAsk: function (sSid, sTaskId) {
                         if (!sSid || !sTaskId) {
@@ -216,18 +304,31 @@ sap.ui.define([
                         var pRemote = bAgent
                                 ? Promise.resolve().then(function () { return ChatService.getSessionResults(sSid); })
                                 : Promise.resolve(null);
-                        return pRemote.then(function (oRes) {
-                                if (!oRes || !that._rrLive(sSid, oState)) {
+                        return pRemote.catch(function (e) {
+                                return { tasks: [], artifacts: [], error: (e && e.message) || String(e) };
+                        }).then(function (oRes) {
+                                if (!that._rrLive(sSid, oState)) {
                                         return null;   // 注意别返回 []：数组自带 entries 方法，下面会被当成条目列表
                                 }
-                                var aArts = (oRes.artifacts || []).slice(-MAX_RESULTS);
+                                if (oRes && oRes.error) {
+                                        console.warn("[DATA-01] 会话结果索引读取失败: " + oRes.error);
+                                }
+                                // 20261031：服务器索引查不到时，同一浏览器还有本机记下的结果号
+                                var aArts = that._rrMergeArts((oRes && oRes.artifacts) || [], oLocal.arts).slice(-MAX_RESULTS);
                                 return Promise.all(aArts.map(function (a) {
+                                        if (a.gone) {
+                                                return that._rrFailNote(a, a.gone, sSid);   // 上次已确认没了
+                                        }
                                         return that._rrFetchResult(a, sSid).catch(function (e) {
-                                                console.warn("[DATA-01] 结果 " + a.artifactId + " 恢复失败: " + ((e && e.message) || e));
-                                                return null;
+                                                var sWhy = (e && e.message) || String(e);
+                                                console.warn("[DATA-01] 结果 " + a.artifactId + " 恢复失败: " + sWhy);
+                                                if (a.local && RE_GONE.test(sWhy)) {
+                                                        that._rrMarkGone(sSid, a.artifactId, sWhy);
+                                                }
+                                                return that._rrFailNote(a, sWhy, sSid);
                                         });
                                 })).then(function (aEntries) {
-                                        return { entries: aEntries.filter(Boolean), tasks: oRes.tasks || [] };
+                                        return { entries: aEntries.filter(Boolean), tasks: (oRes && oRes.tasks) || [] };
                                 });
                         }).catch(function (e) {
                                 console.warn("[DATA-01] 会话结果索引读取失败: " + ((e && e.message) || e));
@@ -246,10 +347,11 @@ sap.ui.define([
                                         if (!bAsk) {
                                                 that._rrChoiceAsk(oState);
                                         }
-                                        if (aNew.length) {
+                                        var aGot = aNew.filter(function (e) { return !!e.artifactId; });
+                                        if (aGot.length) {
                                                 that._mFocusArt = that._mFocusArt || {};
                                                 if (!that._mFocusArt[sSid]) {
-                                                        that._mFocusArt[sSid] = aNew[aNew.length - 1].artifactId;
+                                                        that._mFocusArt[sSid] = aGot[aGot.length - 1].artifactId;
                                                 }
                                         }
                                         return aNew.length > 0 || aRuns.length > 0 || bMd || bAsk;

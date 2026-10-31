@@ -76,6 +76,7 @@ sap.ui.define([
                         var oEntry = this._pushReportResult(oRes, oRes.runId, {
                                 sessionId: sSessionId,
                                 noAppend: bNoAppend,
+                                artType: "FIORI_RESULT",
                                 time: oMore && oMore.time,
                                 text: function (iTotal, oDs) {
                                         return oRB.getText("fioriResultText", [oRes.label || oRes.reportId || "", iTotal,

@@ -733,6 +733,11 @@ sap.ui.define([
                 authTableDescribe: function (o) { return this._authCall("AuthTableDescribe", o, false); },
                 authConfig: function () { return this._authCall("AuthConfig", {}, false); },
 
+                /** 20261031：网关按 HTTP 方法拒绝函数导入（405 / 501 / "not allowed"）的报错 */
+                _isMethodRejected: function (sMsg) {
+                        return /HTTP 40[05]\b.*method|HTTP 405|HTTP 501|not allowed|nicht (erlaubt|zulässig)|不允许|方法/i.test(String(sMsg || ""));
+                },
+
                 /**
                   * 任务接口的 ResultJson 序列化时没设 pretty_name，键是 ABAP 原名（大写，如 TASK_ID）；
                   * 补一份小写键（task_id），界面代码一律按小写读，大小写两种都认。
@@ -759,7 +764,7 @@ sap.ui.define([
                         if (this._sConfig.mode === "mock") {
                                 return Promise.resolve([]);
                         }
-                        return this._taskCall("Tasks", { SessionId: sSessionId }, false)
+                        return this._taskRead("Tasks", { SessionId: sSessionId })
                                 .then(function (o) {
                                         return o.success && Array.isArray(o.result) ? o.result.map(Service._lowerKeys) : [];
                                 });
@@ -767,8 +772,32 @@ sap.ui.define([
 
                 /** 任务上下文（摘要/待办/结果索引）→ Promise<object|null> */
                 getTaskContext: function (sSessionId, sTaskId) {
-                        return this._taskCall("TaskContext", { SessionId: sSessionId, TaskId: sTaskId }, false)
+                        return this._taskRead("TaskContext", { SessionId: sSessionId, TaskId: sTaskId })
                                 .then(function (o) { return o.result; });
+                },
+
+                /**
+                  * 20261031（10.31 记录 #01）：只读的任务接口（Tasks / TaskContext）先用 GET；网关按 HTTP 方法拒绝时
+                  * 改用 POST 再试一次，并记住这个接口在本页用 POST。SEGW 清单写这批函数导入"全部 POST"，
+                  * 前端一直用 GET，而 TaskContext 在刷新恢复（DATA-01）之前从没被调用过，现场方法没核实过。
+                  * 两种都失败时返回 GET 的原因。只读接口，重发没有副作用。
+                  */
+                _taskRead: function (sAction, oParams) {
+                        var that = this;
+                        this._mReadPost = this._mReadPost || {};
+                        var bPost = !!this._mReadPost[sAction];
+                        return this._taskCall(sAction, oParams, bPost).then(function (o) {
+                                if (o.success || bPost || !Service._isMethodRejected(o.message)) {
+                                        return o;
+                                }
+                                return that._taskCall(sAction, oParams, true).then(function (o2) {
+                                        if (o2.success) {
+                                                that._mReadPost[sAction] = true;
+                                                return o2;
+                                        }
+                                        return o;
+                                });
+                        });
                 },
 
                 /** 刷新后恢复结果时最多看最近几个任务（Tasks 按修改时间倒序） */
@@ -780,8 +809,9 @@ sap.ui.define([
                   * 明细再由界面按类型走 ReportResult / FioriReportResult 取回。只看最近 RESTORE_MAX_TASKS 个任务；
                   * 任何一步失败都按"没有可恢复的结果"处理，不影响历史消息显示。
                   * SQL 数据集（TABLE_DATA / INVENTORY_RESULT）后端只登记行数、不存明细，这里不返回。
-                  * @returns {Promise<{tasks: object[], artifacts: object[]}>} artifacts 按登记时间升序：
-                  *   {artifactId, type, taskId, label, rowCount, createdAt, runId}
+                  * @returns {Promise<{tasks: object[], artifacts: object[], error: string}>} artifacts 按登记时间升序：
+                  *   {artifactId, type, taskId, label, rowCount, createdAt, runId}；
+                  *   error = 查索引时出的错（20261031：原来静默吞掉，现场看不出是哪一步没通），没出错为 ""
                   */
                 getSessionResults: function (sSessionId) {
                         if (this._sConfig.mode === "mock") {
@@ -791,13 +821,27 @@ sap.ui.define([
                                 });
                         }
                         var that = this;
-                        var aTasks = [];
-                        return this.getTasks(sSessionId).then(function (a) {
-                                aTasks = a || [];
+                        var aTasks = [], aErr = [];
+                        var fnErr = function (sAction, sMsg) {
+                                var s = sAction + ": " + (sMsg || "?");
+                                if (aErr.indexOf(s) < 0) {
+                                        aErr.push(s);
+                                }
+                        };
+                        return this._taskRead("Tasks", { SessionId: sSessionId }).then(function (o) {
+                                if (!o.success) {
+                                        fnErr("Tasks", o.message);
+                                }
+                                aTasks = o.success && Array.isArray(o.result) ? o.result.map(Service._lowerKeys) : [];
                                 var aIds = aTasks.map(function (t) { return String(t.task_id || ""); })
                                         .filter(Boolean).slice(0, that.RESTORE_MAX_TASKS);
                                 return Promise.all(aIds.map(function (sTid) {
-                                        return that.getTaskContext(sSessionId, sTid).catch(function () { return null; });
+                                        return that._taskRead("TaskContext", { SessionId: sSessionId, TaskId: sTid }).then(function (oc) {
+                                                if (!oc.success) {
+                                                        fnErr("TaskContext", oc.message);
+                                                }
+                                                return oc.result;
+                                        }).catch(function () { return null; });
                                 }));
                         }).then(function (aCtx) {
                                 var aArt = [], oSeen = {};
@@ -824,9 +868,10 @@ sap.ui.define([
                                         });
                                 });
                                 aArt.sort(function (x, y) { return x.createdAt.localeCompare(y.createdAt); });
-                                return { tasks: aTasks, artifacts: aArt };
-                        }).catch(function () {
-                                return { tasks: aTasks, artifacts: [] };
+                                return { tasks: aTasks, artifacts: aArt, error: aErr.join("；") };
+                        }).catch(function (e) {
+                                fnErr("getSessionResults", (e && e.message) || String(e));
+                                return { tasks: aTasks, artifacts: [], error: aErr.join("；") };
                         });
                 },
 

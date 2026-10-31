@@ -154,7 +154,7 @@ async function test(name, fn) { reset(); await fn(); passed++; console.log('  �
     assert.equal(msgs(c2).length, 1);
   });
 
-  await test('单份结果取明细失败（过期 / 无权）只跳过那一份', async () => {
+  await test('单份结果取明细失败（过期 / 无权）：其余照常恢复，失败那份在原位置留一行说明（20261031）', async () => {
     const c = controller(); activate(c, 'S1b');
     service.getHistory = hist([['assistant', '回答', '20261025090001']]);
     service.getSessionResults = () => Promise.resolve({ tasks: [], artifacts: [
@@ -162,7 +162,97 @@ async function test(name, fn) { reset(); await fn(); passed++; console.log('  �
       { artifactId: 'OK', type: 'REPORT_RESULT', createdAt: '20261025090003' }] });
     service.getReportResult = (id) => Promise.resolve(id === 'GONE' ? { message: '结果已过期' } : { ...result });
     await c._loadHistoryFor('S1b', true);
-    assert.equal(JSON.stringify(msgs(c).map((e) => e.artifactId || e.raw)), '["回答","OK"]');
+    const m = msgs(c);
+    assert.equal(JSON.stringify(m.map((e) => e.artifactId || e.restoreNote && 'NOTE:' + e.restoreNote || e.raw)), '["回答","NOTE:GONE","OK"]');
+    assert.ok(m[1].raw.startsWith('restoreResultFail:') && m[1].raw.includes('结果已过期'), m[1].raw);
+    assert.equal(m[1].sender, 'agentSender');
+    assert.equal(m[1].time, '10-25 09:00');
+    assert.equal(c._mFocusArt.S1b, 'OK', '说明行不当聚焦结果');
+  });
+
+  await test('10.31 #01：结果显示时本机记下结果号；服务器索引查不到时，刷新后按本机记录取回并插回原位', async () => {
+    const c = controller(); activate(c, 'S20');
+    add(c, '执行 ZDPMM003E', 'user');
+    c._pushReportResult({ ...result, artifactId: 'ART-L', label: 'ZDPMM003E 运行结果' }, 'RUN0050569CXYZ', { sessionId: 'S20' });
+    const rec = stored().s.S20.arts['ART-L'];
+    assert.equal(rec.type, 'REPORT_RESULT'); assert.equal(rec.run, 'RUN0050569CXYZ');
+    assert.equal(rec.label, 'ZDPMM003E 运行结果'); assert.equal(rec.rows, 2);
+    assert.ok(/^\d{14}$/.test(rec.at));
+    assert.ok(!JSON.stringify(stored()).includes('"A"'), '本机只记编号与标题，不存数据');
+    // 模拟刷新：新控制器、内存缓存没了，只剩本机记录；服务器索引报错
+    const c2 = controller(); activate(c2, 'S20');
+    service.getHistory = hist([['user', '执行 ZDPMM003E', '20000101000000'], ['assistant', '请确认参数', '20000101000001'],
+      ['user', '分析这个报表的结果', '29991231000000'], ['assistant', '分析如下', '29991231000001']]);
+    service.getSessionResults = () => Promise.resolve({ tasks: [], artifacts: [], error: 'TaskContext: HTTP 405 - Method not allowed' });
+    const asked = [];
+    service.getReportResult = (id) => { asked.push(id); return Promise.resolve({ ...result, label: 'ZDPMM003E 运行结果' }); };
+    await c2._loadHistoryFor('S20', true);
+    assert.equal(asked.join(), 'ART-L');
+    assert.equal(JSON.stringify(msgs(c2).map((e) => e.artifactId || e.raw)), '["执行 ZDPMM003E","请确认参数","ART-L","分析这个报表的结果","分析如下"]');
+    assert.ok(msgs(c2)[2].extraHtml.includes('data-act='), '恢复的结果表带工具条');
+    assert.equal(c2._mFocusArt.S20, 'ART-L');
+  });
+
+  await test('本机记录与服务器索引是同一份结果：只取一次、只插一次，以服务器登记时间为准', async () => {
+    const c = controller(); activate(c, 'S21');
+    c._pushReportResult({ ...result, artifactId: 'ART-D' }, 'RUN-D', { sessionId: 'S21' });
+    const c2 = controller(); activate(c2, 'S21');
+    service.getHistory = hist([['assistant', 'a', '20261031110000'], ['assistant', 'b', '20261031112000']]);
+    service.getSessionResults = () => Promise.resolve({ tasks: [], artifacts: [{ artifactId: 'ART-D', type: 'REPORT_RESULT', createdAt: '20261031111000' }] });
+    let n = 0; service.getReportResult = () => { n++; return Promise.resolve({ ...result }); };
+    await c2._loadHistoryFor('S21', true);
+    assert.equal(n, 1);
+    assert.equal(JSON.stringify(msgs(c2).map((e) => e.artifactId || e.raw)), '["a","ART-D","b"]');
+  });
+
+  await test('本机记下的结果后端说已没了：留说明并记下原因，下次直接留说明不再去取；网络错误时下次照常重试', async () => {
+    const c = controller(); activate(c, 'S22');
+    c._pushReportResult({ ...result, artifactId: 'ART-X', label: 'ZDPSD021 运行结果' }, 'RUN-X', { sessionId: 'S22' });
+    c._pushReportResult({ ...result, artifactId: 'ART-N' }, 'RUN-N', { sessionId: 'S22' });
+    const c2 = controller(); activate(c2, 'S22');
+    service.getHistory = hist([['assistant', 'a', '20000101000000']]);
+    service.getSessionResults = () => Promise.resolve({ tasks: [], artifacts: [] });
+    service.getReportResult = (id) => id === 'ART-X'
+      ? Promise.resolve({ message: '结果不存在或不属于当前用户' })
+      : Promise.reject(new Error('HTTP 500 - boom'));
+    await c2._loadHistoryFor('S22', true);
+    const notes = msgs(c2).filter((e) => e.restoreNote);
+    assert.equal(notes.length, 2);
+    assert.ok(notes.some((e) => e.raw.includes('ZDPSD021 运行结果') && e.raw.includes('结果不存在')));
+    assert.ok(notes.some((e) => e.raw.includes('runTitle:RUN-N') && e.raw.includes('HTTP 500')));
+    assert.ok(stored().s.S22.arts['ART-X'].gone.includes('结果不存在'));
+    assert.equal(stored().s.S22.arts['ART-N'].gone, undefined);
+    // 再刷新一次：已没了的那份不再去取，说明照留；网络错误那份再试一次
+    const c3 = controller(); activate(c3, 'S22');
+    const asked = [];
+    service.getReportResult = (id) => { asked.push(id); return Promise.resolve({ ...result }); };
+    await c3._loadHistoryFor('S22', true);
+    assert.equal(asked.join(), 'ART-N');
+    assert.ok(msgs(c3).some((e) => e.restoreNote === 'ART-X' && e.raw.includes('结果不存在')));
+    assert.ok(msgs(c3).some((e) => e.artifactId === 'ART-N'));
+  });
+
+  await test('Fiori 取数结果也记进本机（类型 FIORI_RESULT），恢复时走 FioriReportResult', async () => {
+    const c = controller(); activate(c, 'S23');
+    c._fioriPushResult({ ...result, artifactId: 'F-L', runId: 'FR9', label: 'shipment', analyzeEnabled: 'X' }, 'S23');
+    assert.equal(stored().s.S23.arts['F-L'].type, 'FIORI_RESULT');
+    const c2 = controller(); activate(c2, 'S23');
+    service.getHistory = hist([['assistant', 'a', '20000101000000']]);
+    service.getSessionResults = () => Promise.resolve({ tasks: [], artifacts: [] });
+    service.getReportResult = () => { throw new Error('Fiori 结果不该走 ReportResult'); };
+    service.getFioriReportResult = (id) => Promise.resolve({ ...result, artifactId: id, runId: 'FR9', label: 'shipment' });
+    await c2._loadHistoryFor('S23', true);
+    assert.ok(msgs(c2).some((e) => e.artifactId === 'F-L' && e.fiori));
+  });
+
+  await test('本机每个会话最多记 20 个结果号，超出的丢最早的', async () => {
+    const c = controller(); activate(c, 'S24');
+    const o = stored(); o.s.S24 = { t: Date.now(), arts: {} };
+    for (let i = 0; i < 20; i++) { o.s.S24.arts['OLD' + i] = { type: 'REPORT_RESULT', at: '2026010100' + String(i).padStart(4, '0') }; }
+    storage.setItem('zaiChat.extras.v1.U1', JSON.stringify(o));
+    c._pushReportResult({ ...result, artifactId: 'NEW' }, 'RUN-NEW', { sessionId: 'S24' });
+    const a = stored().s.S24.arts;
+    assert.equal(Object.keys(a).length, 20); assert.ok(a.NEW); assert.equal(a.OLD0, undefined);
   });
 
   await test('图表只记配置不记数据；刷新后套回恢复的结果表与正文表格；数据分析数据集上的图不记', async () => {
@@ -433,13 +523,38 @@ async function test(name, fn) { reset(); await fn(); passed++; console.log('  �
     assert.equal(r.artifacts[1].label, 'shipment'); assert.equal(r.artifacts[1].rowCount, 3);
   });
 
-  await test('任务层未开启 / TaskContext 失败：返回空结果，不抛错', async () => {
+  await test('任务层未开启 / TaskContext 失败：返回空结果，不抛错；原因带回 error（20261031）', async () => {
     fetchLog = []; fetchQueue = [fi('Tasks', false, undefined, '任务上下文能力未开启')];
     let r = await svc.getSessionResults('S1');
     assert.equal(r.artifacts.length, 0); assert.equal(fetchLog.length, 1);
+    assert.equal(r.error, 'Tasks: 任务上下文能力未开启');
     fetchLog = []; fetchQueue = [fi('Tasks', true, [{ TASK_ID: 'T1' }]), { status: 500, text: 'boom' }];
     r = await svc.getSessionResults('S1');
     assert.equal(r.artifacts.length, 0); assert.equal(r.tasks.length, 1);
+    assert.ok(/^TaskContext: HTTP 500/.test(r.error), r.error);
+    assert.equal(fetchLog.length, 2, '500 不是方法问题，不改 POST 重试');
+  });
+
+  await test('10.31 #01：TaskContext 用 GET 被网关拒绝（405）时改用 POST 重试并记住；两种都失败时报 GET 的原因', async () => {
+    svc._mReadPost = {};
+    const deny = { status: 405, text: JSON.stringify({ error: { message: { value: 'Method not allowed' } } }) };
+    fetchLog = []; fetchQueue = [fi('Tasks', true, [{ TASK_ID: 'T1' }]), deny,
+      fi('TaskContext', true, ctx([{ ARTIFACT_ID: 'R1', ARTIFACT_TYPE: 'REPORT_RESULT', STATUS: 'AVAILABLE', CREATED_AT: '20261031112800', REPORT_RUN_ID: 'RUN1' }]))];
+    let r = await svc.getSessionResults('S1');
+    assert.equal(JSON.stringify(fetchLog.map((f) => f.init.method)), '["GET","GET","POST"]');
+    assert.ok(/\/p\/TaskContext\?SessionId='S1'&TaskId='T1'$/.test(fetchLog[2].url), fetchLog[2].url);
+    assert.equal(r.artifacts[0].artifactId, 'R1'); assert.equal(r.error, '');
+    // 本页之后直接用 POST
+    fetchLog = []; fetchQueue = [fi('Tasks', true, [{ TASK_ID: 'T1' }]), fi('TaskContext', true, ctx([]))];
+    await svc.getSessionResults('S1');
+    assert.equal(JSON.stringify(fetchLog.map((f) => f.init.method)), '["GET","POST"]');
+    // 两种都失败：报 GET 的原因
+    svc._mReadPost = {};
+    fetchLog = []; fetchQueue = [fi('Tasks', true, [{ TASK_ID: 'T1' }]), deny, { status: 500, text: 'post boom' }];
+    r = await svc.getSessionResults('S1');
+    assert.ok(/^TaskContext: HTTP 405/.test(r.error), r.error);
+    assert.ok(!svc._mReadPost.TaskContext);
+    svc._mReadPost = {};
   });
 
   await test('最多看最近 RESTORE_MAX_TASKS 个任务', async () => {

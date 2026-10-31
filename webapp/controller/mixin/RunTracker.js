@@ -252,6 +252,7 @@ sap.ui.define([
                   * oOpt.text(iTotal, oDs) 换正文；oOpt.decorate(oEntry, oDs, iTotal) 推入前补字段（如分析闸门 runHtml）
                   * 20261025（DATA-01）：条目带 artifactId（刷新后认出同一份结果、同一份结果不重复插入）；
                   * oOpt.noAppend 只造条目不插入、oOpt.time 显示时间（刷新后恢复用登记时间）
+                  * 20261031：oOpt.artType 结果类型（缺省 REPORT_RESULT；Fiori 传 FIORI_RESULT），插入时记进本机
                   * @returns {object} 推入（或造出）的消息条目 */
                 _pushReportResult: function (oRes, sRunId, oOpt) {
                         var oRB = this._rb();
@@ -307,6 +308,11 @@ sap.ui.define([
                         }
                         if (!(oOpt && oOpt.noAppend)) {
                                 this._appendSessionEntry(sSid, oEntry);
+                                // 20261031（10.31 #01）：本机记下结果号，服务器索引查不到时刷新后也能取回
+                                this._rrRememberResult(sSid, {
+                                        artifactId: sArt, type: (oOpt && oOpt.artType) || "REPORT_RESULT",
+                                        runId: sRunId, label: oRes.label, rowCount: iTotal
+                                });
                         }
                         return oEntry;
                 }
