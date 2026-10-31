@@ -357,9 +357,9 @@ sap.ui.define([
                                         var aMeta = [];
                                         if (it.sess) { aMeta.push(esc(it.sess)); }
                                         if (it.at) { aMeta.push(esc(it.at)); }
+                                        var oTr = bOk ? ComboData.truncInfo(it.ds, it.type) : null;
                                         if (bOk) {
                                                 aMeta.push(it.ds.rows.length + "×" + it.ds.columns.length);
-                                                if (it.ds.truncated) { aMeta.push("共 " + it.ds.total + " 行，只取回一部分"); }
                                         }
                                         var bBase = bJoin && bOk && i === iBase;
                                         s += '<div class="cbxItem' + (bOk ? "" : " cbxItemDim") + '" data-id="' + esc(it.id) + '">' +
@@ -370,6 +370,7 @@ sap.ui.define([
                                                 '<div class="cbxItemMeta">' +
                                                 (it.sid ? '<button type="button" class="cbxLink cbxGoto" data-cact="goto" data-sid="' + esc(it.sid) + '" title="打开来源会话">' + (aMeta.shift() || "来源会话") + "</button>" : "") +
                                                 (aMeta.length ? "<span>" + aMeta.join(" · ") + "</span>" : "") + "</div>" +
+                                                (oTr ? '<div class="cbxItemNote cbxWarn">' + esc(oTr.text) + "</div>" : "") +
                                                 (it.st === "loading" ? '<div class="cbxItemNote">正在取回数据…</div>' : "") +
                                                 (it.st === "lost" ? '<div class="cbxItemNote cbxWarn">' + esc(it.why || "数据不可用") + "</div>" : "") +
                                                 "</div>";
@@ -429,10 +430,23 @@ sap.ui.define([
                         return s;
                 },
 
+                /** 20261031（二期方案 §7.1）：来源被截断时写明哪一份、取回多少、后端共多少，以及对组合结果的影响 */
+                _cbxTruncHtml: function (oRes) {
+                        var aIt = oRes.items || [];
+                        var aNotes = ComboData.truncNotes(aIt.map(function (it) { return it.ds; }),
+                                aIt.map(function (it) { return it.name; }),
+                                aIt.map(function (it) { return it.type; }), oRes.mode);
+                        if (!aNotes.length) { return ""; }
+                        var sTail = aNotes.pop();
+                        return '<div class="cbxTrunc">' + aNotes.map(function (t) { return "<div>" + esc(t) + "</div>"; }).join("") +
+                                '<div class="cbxTruncTail">' + esc(sTail) + "</div></div>";
+                },
+
                 _cbxPreviewHtml: function (oRes) {
                         var s = '<div class="cbxSec">';
+                        var sTrunc = this._cbxTruncHtml(oRes);
                         if (oRes.mode === "side") {
-                                s += '<div class="cbxSecTitle">并排查看</div>';
+                                s += '<div class="cbxSecTitle">并排查看</div>' + sTrunc;
                                 oRes.items.forEach(function (it) {
                                         s += '<div class="cbxSide"><div class="cbxSideHead"><span class="cbxItemName">' + esc(it.name) + "</span>" +
                                                 '<span class="cbxMeta">' + it.ds.rows.length + " 行</span></div>" +
@@ -450,9 +464,7 @@ sap.ui.define([
                         if (oDs.note) {
                                 s += '<div class="cbxNote">' + esc(oDs.note) + "</div>";
                         }
-                        if (oDs.truncated) {
-                                s += '<div class="cbxNote cbxWarn">有的来源只取回了部分行，组合结果也是部分数据。</div>';
-                        }
+                        s += sTrunc;
                         if (oRes.mode === "single") {
                                 s += '<div class="cbxNote">再加一份结果就能组合。</div>';
                         }

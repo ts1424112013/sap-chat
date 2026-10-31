@@ -483,6 +483,17 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   const jc = ComboData.join([dsA, dsB], ['未交', '库存'], [[], []], false);
   check('没选关联列的表不参与，并说明', jc.columns.length === 3 && /没选关联列/.test(jc.note));
 
+  // 20261031（二期方案 §7.1）：截断提示
+  check('完整数据不提示', ComboData.truncInfo(dsA, 'REPORT_RESULT') === null && ComboData.truncNotes([dsA, dsB], ['未交', '库存'], [], 'join').length === 0);
+  const dsR = Object.assign({}, dsA, { total: 23415, truncated: true });
+  const tr = ComboData.truncInfo(dsR, 'REPORT_RESULT');
+  check('报表执行：写明样例行数和后端总数', tr && /3 行样例/.test(tr.text) && /23,415/.test(tr.text), tr && tr.text);
+  check('Fiori：写"前 N 行"', /只取回前 3 行（共 23,415 行）/.test(ComboData.truncInfo(dsR, 'FIORI_RESULT').text));
+  check('只有截断标记、不知道总数', /不是全部/.test(ComboData.truncInfo(Object.assign({}, dsA, { truncated: true }), '').text));
+  const tn = ComboData.truncNotes([dsA, dsR], ['未交', 'ZM001'], ['FIORI_RESULT', 'REPORT_RESULT'], 'join');
+  check('关联：只列被截断的那份 + 说明关联和合计不完整', tn.length === 2 && /「ZM001」/.test(tn[0]) && /关联和合计都不完整/.test(tn[1]), JSON.stringify(tn));
+  check('追加的后果说明换措辞', /合计和行数都不完整/.test(ComboData.truncNotes([dsR], ['ZM001'], ['REPORT_RESULT'], 'append')[1]));
+
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

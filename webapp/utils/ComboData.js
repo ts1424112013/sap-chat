@@ -182,6 +182,54 @@ sap.ui.define(["zai/chat/utils/ChartRenderer"], function (ChartRenderer) {
                 };
         }
 
+        function fmtN(n) {
+                return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        }
+
+        /**
+         * 20261031（二期方案 §7.1）：单份数据是否只是部分。
+         * total > rows → 有确切总数；只有 truncated 标记 → 不知道总数。
+         * 报表执行（REPORT_RESULT）页面里只有登记 MAX_ROWS 条样例，措辞单独说"样例"。
+         * @returns {null|{rows, total, text}} 完整时为 null
+         */
+        function truncInfo(oDs, sType) {
+                if (!oDs) { return null; }
+                var iRows = (oDs.rows || []).length;
+                var iTotal = parseInt(oDs.total, 10) || 0;
+                if (iTotal > iRows) {
+                        return {
+                                rows: iRows, total: iTotal,
+                                text: sType === "REPORT_RESULT"
+                                        ? "只取回 " + fmtN(iRows) + " 行样例（后端共 " + fmtN(iTotal) + " 行）"
+                                        : "只取回前 " + fmtN(iRows) + " 行（共 " + fmtN(iTotal) + " 行）"
+                        };
+                }
+                if (oDs.truncated) {
+                        return { rows: iRows, total: 0, text: "只取回 " + fmtN(iRows) + " 行，不是全部" };
+                }
+                return null;
+        }
+
+        /**
+         * 组合预览上的截断提示：每份被截断的来源一行 + 一行后果说明（按组合方式措辞）。
+         * @param {string} sMode append / join / side / single
+         * @returns {string[]} 都完整时为空数组
+         */
+        function truncNotes(aDs, aNames, aTypes, sMode) {
+                var aOut = [];
+                aDs.forEach(function (d, k) {
+                        var o = truncInfo(d, aTypes && aTypes[k]);
+                        if (o) { aOut.push("「" + (aNames[k] || d.name || "") + "」" + o.text); }
+                });
+                if (!aOut.length) { return aOut; }
+                aOut.push(sMode === "join"
+                        ? "关联和合计都不完整：没对上的行可能只是没取到，合计会偏小。"
+                        : (sMode === "append"
+                                ? "合计和行数都不完整，只代表已取回的部分。"
+                                : "统计和图表只代表已取回的部分。"));
+                return aOut;
+        }
+
         /** 并排模式导出：各表依次写进一个 CSV，表与表之间空一行、前面写表名 */
         function sideCsv(aDs, aNames) {
                 return aDs.map(function (d, k) {
@@ -198,6 +246,8 @@ sap.ui.define(["zai/chat/utils/ChartRenderer"], function (ChartRenderer) {
                 append: append,
                 join: join,
                 sideCsv: sideCsv,
+                truncInfo: truncInfo,
+                truncNotes: truncNotes,
                 label: lab
         };
 });
