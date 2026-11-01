@@ -548,8 +548,8 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   check('场景串规范化：固定顺序、去重、去非法、认中文逗号', UA.normScenes('code，report,REPORT,auto, fiori').join() === 'REPORT,FIORI,CODE');
   check('空 = 四个全开；管理员永远全开', UA.effectiveScenes('USER', '').length === 4 && UA.effectiveScenes('ADMIN', 'DATA').length === 4 &&
     UA.effectiveScenes('USER', 'DATA').join() === 'DATA');
-  check('「自动」只在四个全开时可用', UA.sceneOk(UA.SCENES, 'AUTO') && !UA.sceneOk(['REPORT', 'FIORI'], 'AUTO') &&
-    !UA.sceneOk(['REPORT', 'FIORI'], 'INVENTORY') && UA.sceneOk(['REPORT', 'FIORI'], 'fiori') && !UA.sceneOk(['REPORT', 'FIORI'], 'DATA'));
+  check('「自动」所有人可用；旧库存场景按数据分析判断', UA.sceneOk(UA.SCENES, 'AUTO') && UA.sceneOk(['REPORT', 'FIORI'], 'AUTO') && UA.sceneOk(['CODE'], '') &&
+    !UA.sceneOk(['REPORT', 'FIORI'], 'INVENTORY') && UA.sceneOk(['DATA'], 'INVENTORY') && UA.sceneOk(['REPORT', 'FIORI'], 'fiori') && !UA.sceneOk(['REPORT', 'FIORI'], 'DATA'));
   check('报表串规范化：只认 REPORT / FIORI，去掉引号、逗号等会破坏参数的写法',
     UA.normReports('report:zdpmm702, FIORI:shipment ,BAD:x,REPORT:,REPORT:ZDPMM702,FIORI:a"b').join() === 'REPORT:ZDPMM702,FIORI:SHIPMENT');
   const g1 = { aclOn: true, admin: false, grants: ['REPORT:A', 'REPORT:B', 'FIORI:X'] };
@@ -570,7 +570,8 @@ const countOf = (s, sub) => s.split(sub).length - 1;
     isAdmin: () => role === 'ADMIN',
     allowedScenes: function () { return UA.effectiveScenes(role, this.getAppUser().scenes); },
     _mockUsers: () => uaRows,
-    _mockPublicReports: () => 'REPORT:ZDPSD012'
+    _mockPublicReports: () => 'REPORT:ZDPSD012',
+    _sanitizeAnalysis: (a) => a
   });
   fakeWindow.localStorage.setItem('zaiChat.cfg.RPT_ACL_ENABLED', 'X');
   const ids = async (svc) => (await svc._mockReportDefs()).defs.map((d) => d.REPORT_ID).sort().join();
@@ -586,11 +587,24 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   fakeWindow.localStorage.removeItem('zaiChat.cfg.RPT_ACL_ENABLED');
   check('演示后端：开关关掉 → 1 用户也看全部', (await s1._mockReportDefs()).defs.length >= 5);
   fakeWindow.localStorage.setItem('zaiChat.cfg.RPT_ACL_ENABLED', 'X');
-  const s1Store = Object.assign(s1, { _mockStore: () => ({ sessions: [], messages: {} }), _mockComboFocused: () => null });
+  const uaStore = { sessions: [], messages: {} };
+  const s1Store = Object.assign(s1, { _mockStore: () => uaStore, _mockSave: () => {}, _mockComboFocused: () => null });
   const dn = await s1Store._mockSendAgent({ sessionId: 'ua-s', question: '统计物料', scene: 'DATA' });
   check('演示后端：没开放的场景直接拒绝（DENIED）', dn.status === 'DENIED' && /数据分析/.test(dn.answer), dn.answer);
   const da = await s1Store._mockSendAgent({ sessionId: 'ua-s2', question: '你好', scene: 'AUTO' });
-  check('演示后端：没四个全开时「自动」也拒绝', da.status === 'DENIED' && /自动/.test(da.answer));
+  check('演示后端：没四个全开也能用「自动」', da.status !== 'DENIED' && !/没有「自动」/.test(da.answer || ''), da.answer);
+  const dt = await s1Store._mockSendAgent({ sessionId: 'ua-s3', question: '分析表 MARA 的物料类型分布', scene: 'AUTO' });
+  check('演示后端：「自动」里点名查表，但没开数据分析 → 说明能力未开放，并记进会话历史', /「数据分析」.*没有开放给你/.test(dt.answer) && !dt.analysis &&
+    (uaStore.messages['ua-s3'] || []).length === 2 && uaStore.sessions.some((x) => x.SessionId === 'ua-s3' && x.AgentType === 'AUTO'), dt.answer);
+  const dq = await s1Store._mockSendAgent({ sessionId: 'ua-s4', question: '统计一下物料类型分布', scene: 'AUTO' });
+  check('演示后端：「自动」里没点名的数据类问题 → 普通回答，不带数据集', dq.status !== 'DENIED' && !(dq.analysis && dq.analysis.datasets));
+  const dr = await s1Store._mockSendAgent({ sessionId: 'ua-s5', question: '执行 ZDPSD010', scene: 'AUTO' });
+  check('演示后端：「自动」里执行报表照样核报表授权（1 用户没有 C），会话仍记为「自动」', /没有报表「.*」的使用权限/.test(dr.answer) &&
+    uaStore.sessions.some((x) => x.SessionId === 'ua-s5' && x.AgentType === 'AUTO'), dr.answer);
+  const s3 = Object.assign(mkSvc('USER3', 'USER'), { getAppUser: () => ({ userId: 'USER3', role: 'USER', scenes: 'DATA' }),
+    allowedScenes: () => ['DATA'], _mockStore: () => uaStore, _mockSave: () => {}, _mockComboFocused: () => null });
+  const dr3 = await s3._mockSendAgent({ sessionId: 'ua-s6', question: '执行 ZDPMM702', scene: 'AUTO' });
+  check('演示后端：没开报表执行 → 「自动」里执行报表说明能力未开放', /「报表执行」.*没有开放给你/.test(dr3.answer), dr3.answer);
   fakeWindow.localStorage.removeItem('zaiChat.cfg.RPT_ACL_ENABLED');
 
   const csSrcUA = fs.readFileSync(path.join(WEBAPP, 'service/ChatService.js'), 'utf8');

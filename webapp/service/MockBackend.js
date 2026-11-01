@@ -181,7 +181,7 @@ sap.ui.define(["zai/chat/utils/UserAccess"], function (UserAccess) {
                         // 20261020：「Fiori 报表」会话走 FioriMockBackend（选报表 → 参数卡 → 分析闸门）
                         var oKnown = Service._mockStore().sessions.filter(function (s) { return s.SessionId === oPayload.sessionId; })[0];
                         var sSceneNow = String((oKnown && oKnown.AgentType) || oPayload.scene || "").toUpperCase();
-                        // 20261101：场景按用户开放（与 AGENT_SERVICE V15.11 同口径；组合结果已在上面放行）
+                        // 20261101：场景按用户开放（与 AGENT_SERVICE V15.12 同口径；「自动」所有人可用）
                         if (!UserAccess.sceneOk(Service.allowedScenes(), sSceneNow)) {
                                 var mLbl = { REPORT: "报表执行", FIORI: "Fiori 报表", DATA: "数据分析", CODE: "代码分析" };
                                 var sDeny = "你没有「" + (mLbl[sSceneNow] || "自动") + "」场景的使用权限, 请新建任务时选择已开放的场景, 或联系管理员开通。";
@@ -192,7 +192,34 @@ sap.ui.define(["zai/chat/utils/UserAccess"], function (UserAccess) {
                                 return Service._mockFioriAgent(oPayload);
                         }
                         // 20261024：「报表执行」会话里的「执行 <TCode>」→ 演示参数卡（其余问题照旧走通用演示）
-                        var pReport = sSceneNow === "REPORT" && Service._mockReportAgent ? Service._mockReportAgent(oPayload) : null;
+                        var bAuto = !sSceneNow || sSceneNow === "AUTO" || sSceneNow === "GENERAL";
+                        var aAllowSc = Service.allowedScenes();
+                        var bRptOn = UserAccess.sceneOk(aAllowSc, "REPORT"), bDataOn = UserAccess.sceneOk(aAllowSc, "DATA");
+                        var sQ0 = String(oPayload.question || "");
+                        // 20261101：「自动」只用开放的能力 —— 点名报表 / 表而对应场景没开放 → 说明（与 V15.12 同口径）
+                        var sAutoDeny = "";
+                        if (bAuto && !bRptOn && /执行\s*[A-Za-z0-9_]{3,20}/.test(sQ0)) { sAutoDeny = "报表执行"; }
+                        if (bAuto && !bDataOn && /表[\s:：]*[A-Za-z][A-Za-z0-9_]{2,29}|[A-Za-z][A-Za-z0-9_]{2,29}\s*表/.test(sQ0.replace(/报表|图表|列表|表格|表单/g, "#"))) { sAutoDeny = "数据分析"; }
+                        if (sAutoDeny) {
+                                var sDenyAns = "这个问题需要用到「" + sAutoDeny + "」, 这个能力没有开放给你, 「自动」里也不能用。如需使用请联系管理员开通。";
+                                // 与后端 finish_det 一样记进会话历史
+                                var oSt = Service._mockStore(), sNw = Service._mockTime();
+                                var aH = oSt.messages[oPayload.sessionId] = oSt.messages[oPayload.sessionId] || [];
+                                aH.push({ SessionId: oPayload.sessionId, MsgSeq: "", Role: "user", Content: sQ0, ProgramName: "AGENT", CreatedAt: sNw, Status: "OK" });
+                                aH.push({ SessionId: oPayload.sessionId, MsgSeq: "", Role: "assistant", Content: sDenyAns, ProgramName: "AGENT", CreatedAt: sNw, Status: "OK" });
+                                if (!oKnown) {
+                                        oSt.sessions.unshift({ SessionId: oPayload.sessionId, Title: sQ0.substring(0, 24), ModelId: oPayload.modelId || "",
+                                                MsgCount: "2", CreatedAt: sNw, ChangedAt: sNw, Mode: "AGENT", AgentType: "AUTO", Status: "COMPLETED" });
+                                } else {
+                                        oKnown.ChangedAt = sNw;
+                                        oKnown.MsgCount = String((parseInt(oKnown.MsgCount || "0", 10) || 0) + 2);
+                                }
+                                Service._mockSave(oSt);
+                                return Promise.resolve({ answer: sDenyAns,
+                                        status: "OK", elapsedMs: 0, rounds: 0, message: "", modelId: oPayload.modelId || "AUTO",
+                                        trace: [{ phase: "COMPOSING", label: "能力未开放", status: "OK", elapsedMs: 0 }], analysis: null });
+                        }
+                        var pReport = (sSceneNow === "REPORT" || bAuto) && Service._mockReportAgent ? Service._mockReportAgent(oPayload) : null;
                         if (pReport) {
                                 return pReport;
                         }
@@ -204,6 +231,7 @@ sap.ui.define(["zai/chat/utils/UserAccess"], function (UserAccess) {
                                         var bData = /统计|汇总|趋势|分布|占比|分析|多少|排名|mara|主档/.test(sQ)
                                                 && !/库存|收发|收货|发料|盘点|库位|批次/.test(sQ);
                                         var bInv = !bData && /库存|在库|收发|收货|发料|盘点|库位|批次|料号|物料/.test(sQ);
+                                        if (bAuto && !bDataOn) { bData = false; bInv = false; }   // 20261101：没开数据分析 → 「自动」不带查数工具
                                         var iElapsed = 2100 + Math.floor(Math.random() * 900);
                                         var aTrace = [
                                                 { phase: "UNDERSTANDING", label: "理解问题", status: "OK", elapsedMs: 420 },

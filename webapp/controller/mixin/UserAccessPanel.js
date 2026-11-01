@@ -219,7 +219,7 @@ sap.ui.define([
                                         h += '</div><div class="uaNote">' + ICON.info + '<span>管理员不受限制，四个场景和全部报表都能用。</span></div></div>';
                                 } else {
                                         var bFull = ua.scenes.length === UserAccess.SCENES.length;
-                                        h += '<span class="uaSecMeta">' + (bFull ? "全部开放 · 含「自动」" : "已开放 " + ua.scenes.length + " / 4 · 不含「自动」") + '</span></div>';
+                                        h += '<span class="uaSecMeta">' + (bFull ? "全部开放" : "已开放 " + ua.scenes.length + " / 4") + '</span></div>';
                                         h += '<div class="uaScenes">' + UserAccess.SCENES.map(function (k) {
                                                 var on = ua.scenes.indexOf(k) >= 0;
                                                 return '<button type="button" class="uaScene' + (on ? " on" : "") + '" data-ua="scene" data-k="' + k + '" aria-pressed="' + on + '">' +
@@ -227,7 +227,7 @@ sap.ui.define([
                                                         '<span class="uaSceneTxt"><b>' + SCENE_TXT[k][0] + '</b><i>' + SCENE_TXT[k][1] + '</i></span>' +
                                                         '<span class="uaTick">' + ICON.check + '</span></button>';
                                         }).join("") + '</div>';
-                                        h += '<div class="uaHint">「自动」会在几个场景之间自动选，只有四个都开放时才显示。至少保留一个场景。</div></div>';
+                                        h += '<div class="uaHint">「自动」所有人都能用，但里面只用这里开放的能力（例如没开数据分析，「自动」里也不能查表）。至少保留一个场景。</div></div>';
                                 }
                         }
 

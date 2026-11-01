@@ -495,15 +495,18 @@ check('DPC V15.11：COMBOCREATE 读的参数 = 前端恒发的参数（SessionId
 check('DPC：SpecJson 支持长文本通道（resolve_text）；COMBORESULT 读 ArtifactId',
   /resolve_text\( lv_cb_spec \)/.test(cbDpBranch) && /WHEN 'COMBORESULT'\.[\s\S]*?iv_name = 'ArtifactId'/.test(dp12) && /ArtifactId: sArtifactId/.test(cbFeCombo));
 
-console.log('\n[13] 按用户开放场景 + 报表授权：ZCL_AI_ACCESS V1.0 / AGENT V15.11 / DPC V15.12 / CHAT V2.6');
+console.log('\n[13] 按用户开放场景 + 报表授权：ZCL_AI_ACCESS V1.1 / AGENT V15.12 / DPC V15.12 / CHAT V2.6');
 const acRaw = read('ZCL_AI_ACCESS.abap'), ac = codeOnly(acRaw);
 const acWrites = (ac.match(/\b(?:INSERT|UPDATE|MODIFY|DELETE FROM)\s+(zai_\w+)/gi) || []).map((x) => x.replace(/.*\s(zai_\w+)$/i, '$1').toLowerCase());
 check('ACCESS 只写 ZAI_RPT_ACL 与 ZAI_CHAT_USER（只改 AGENT_SCENES）',
   acWrites.length > 0 && acWrites.every((t) => t === 'zai_rpt_acl' || t === 'zai_chat_user') &&
   /UPDATE zai_chat_user SET agent_scenes = @lv_sc WHERE userid = @iv_user\./.test(ac), acWrites.join(','));
-check('场景：管理员 / 空 = 四个全开；AUTO 不在列表里 → 只有四个全开才放行',
+check('场景：管理员 / 空 = 四个全开；V1.1 AUTO 所有开通的用户可用，INVENTORY 按 DATA',
   /lv_role = 'ADMIN'/.test(methodOf(ac, 'user_scenes')) && /rv = gc_scenes\./.test(methodOf(ac, 'user_scenes')) &&
-  /lv_have = gc_scenes/.test(methodOf(ac, 'scene_ok')) && /gc_scenes\s+TYPE string VALUE 'REPORT,FIORI,DATA,CODE'/.test(ac));
+  /WHEN 'AUTO' OR 'GENERAL' OR ''\.\s+rv = abap_true\./.test(methodOf(ac, 'scene_ok')) &&
+  /WHEN 'INVENTORY'\.\s+lv_sc = 'DATA'\./.test(methodOf(ac, 'scene_ok')) &&
+  methodOf(ac, 'scene_ok').indexOf('IF lv_have IS INITIAL.') < methodOf(ac, 'scene_ok').indexOf("WHEN 'AUTO'") &&
+  /gc_scenes\s+TYPE string VALUE 'REPORT,FIORI,DATA,CODE'/.test(ac));
 check('报表：开关不开 / 管理员 → 放行；本人或 * 的授权行；REPORT_ID = * 表示这一类全部',
   /acl_on\( \) = abap_false OR is_admin\( \) = abap_true/.test(methodOf(ac, 'load_acl')) && /gv_free = abap_true/.test(methodOf(ac, 'report_ok')) &&
   /userid = @sy-uname OR userid = '\*'/.test(methodOf(ac, 'load_acl')) && /report_id = gc_all/.test(methodOf(ac, 'report_ok')));
@@ -513,9 +516,18 @@ check('保存授权：先删后插（整体覆盖），去重后插入，"*" 不
   /IF iv_user <> gc_all\./.test(methodOf(ac, 'save_user_access')));
 const ag13Raw = read('ZCL_AI_AGENT_SERVICE.abap'), ag13 = codeOnly(ag13Raw);
 const iOwner = ag13.indexOf("es_result-message = '会话归属校验失败'."), iScene = ag13.indexOf('zcl_ai_access=>scene_ok( lv_scene )'), iSkill = ag13.indexOf('zcl_ai_skill_service=>resolve(');
-check('AGENT V15.11：场景校验在会话归属之后、技能与模型之前；组合结果会话放行',
-  /^\* V15\.11 20261101/m.test(ag13Raw) && iOwner > 0 && iScene > iOwner && iScene < iSkill &&
-  /lv_scene = zcl_ai_intent_router=>gc_scene_auto\s+AND iv_focus_artifact_id IS NOT INITIAL\s+AND zcl_ai_combo_service=>is_combo\( iv_focus_artifact_id \) = abap_true/.test(ag13));
+check('AGENT V15.11：场景校验在会话归属之后、技能与模型之前',
+  /^\* V15\.11 20261101/m.test(ag13Raw) && iOwner > 0 && iScene > iOwner && iScene < iSkill);
+const iAutoDom = ag13.indexOf('AND zcl_ai_access=>scene_ok( zcl_ai_intent_router=>gc_scene_data ) = abap_false.'),
+  iRoute = ag13.indexOf('ls_route = zcl_ai_intent_router=>quick_route('), iOos = ag13.indexOf("iv_label      = '场景边界'"),
+  iAutoDeny = ag13.indexOf('IF lv_auto_deny IS NOT INITIAL.'), iRptBranch = ag13.indexOf("AND ls_route-object_kind = 'TCODE'\n         AND lv_art_mode = abap_false.");
+check('AGENT V15.12：「自动」只用开放的能力 —— 没开数据分析去掉 SQL / 库存工具；点名报表 / 表 / 物料而场景没开放 → 说明',
+  /^\* V15\.12 20261101/m.test(ag13Raw) && iAutoDom > 0 && iAutoDom < iRoute &&
+  /lv_domain = zcl_ai_domain_cards=>gc_dom_general\./.test(ag13.substr(iAutoDom, 200)) &&
+  iAutoDeny > iOos && iAutoDeny < iRptBranch &&
+  /zcl_ai_access=>scene_ok\( zcl_ai_intent_router=>gc_scene_report \) = abap_false/.test(ag13) &&
+  /ls_route-object_kind = 'TABLE' OR ls_route-object_kind = 'MATERIAL'/.test(ag13) &&
+  !/zcl_ai_combo_service=>is_combo\( iv_focus_artifact_id \) = abap_true \)\./.test(ag13), [iAutoDom, iRoute, iOos, iAutoDeny, iRptBranch].join());
 check('AGENT：报表执行按 TCode 出报表卡前核报表授权', ag13.indexOf('zcl_ai_access=>report_ok( iv_src_type  = zcl_ai_access=>gc_src_report') > 0 &&
   ag13.indexOf('zcl_ai_access=>report_ok( iv_src_type  = zcl_ai_access=>gc_src_report') < ag13.indexOf('ev_found = abap_true.'));
 const rs13 = codeOnly(read('ZCL_AI_REPORT_SERVICE.abap'));

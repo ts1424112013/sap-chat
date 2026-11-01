@@ -176,6 +176,13 @@
 *   报表目录(build_scene_help)走 list_defs, 已在 REPORT_SERVICE 里按授权过滤
 *   依赖: ZCL_AI_ACCESS V1.0(先激活)
 *   ★ 重贴后核对标记: 有 zcl_ai_access=>scene_ok( 与 zcl_ai_access=>report_ok(
+* V15.12 20261101: 「自动」所有开通的用户都能用, 只用他开放的能力:
+*   ① 会话场景校验去掉组合分析例外(AUTO 本身已放行);
+*   ② AUTO 下领域是 DATA / INVENTORY 而用户没开数据分析 → 改成 GENERAL(不带 SQL / 库存工具);
+*   ③ AUTO 下意图路由到 报表执行(TCode) / 点名的表或物料, 而对应场景没开放 → 确定性说明;
+*     没点名对象的数据类诉求改按普通问题回答
+*   依赖: ZCL_AI_ACCESS V1.1(先激活)
+*   ★ 重贴后核对标记: 有 lv_auto_deny 与 "V15.12: 「自动」只用开放的能力"
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -472,11 +479,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    " V15.11: 场景按用户开放(组合分析会话聚焦组合结果时放行, 来源授权在组合时已核过)
-    IF zcl_ai_access=>scene_ok( lv_scene ) = abap_false
-       AND NOT ( lv_scene = zcl_ai_intent_router=>gc_scene_auto
-                 AND iv_focus_artifact_id IS NOT INITIAL
-                 AND zcl_ai_combo_service=>is_combo( iv_focus_artifact_id ) = abap_true ).
+    " V15.11: 场景按用户开放; V15.12: 「自动」所有人可用(组合分析会话也是 AUTO), 能力在下面收窄
+    IF zcl_ai_access=>scene_ok( lv_scene ) = abap_false.
       es_result-status  = 'DENIED'.
       es_result-answer  = zcl_ai_access=>scene_deny_text( lv_scene ).
       es_result-message = '场景未开放'.
@@ -516,6 +520,12 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       WHEN zcl_ai_intent_router=>gc_scene_fiori.
         lv_domain = zcl_ai_domain_cards=>gc_dom_general.   " V15.4: Fiori 报表走确定性流程, 分析不用工具
     ENDCASE.
+    " V15.12: 「自动」只用开放的能力 —— 没开数据分析就不带 SQL / 库存工具
+    IF lv_scene = zcl_ai_intent_router=>gc_scene_auto
+       AND ( lv_domain = zcl_ai_domain_cards=>gc_dom_data OR lv_domain = zcl_ai_domain_cards=>gc_dom_inventory )
+       AND zcl_ai_access=>scene_ok( zcl_ai_intent_router=>gc_scene_data ) = abap_false.
+      lv_domain = zcl_ai_domain_cards=>gc_dom_general.
+    ENDIF.
 
     " V15.2: 模型按场景白名单选取(手动选了不允许的模型 → 明确拒绝)
     DATA lv_model_err TYPE string.
@@ -652,6 +662,43 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                     iv_label      = '场景边界'
           IMPORTING es_result     = es_result ).
         RETURN.
+      ENDIF.
+
+      " ---- V15.12: 「自动」只用开放的能力 ----
+      " 点名报表 / 表 / 物料而对应场景没开放 → 确定性说明; 没点名对象的数据类诉求按普通问题回答
+      IF lv_scene = zcl_ai_intent_router=>gc_scene_auto.
+        DATA lv_auto_deny TYPE string.
+        CLEAR lv_auto_deny.
+        IF ls_route-module_id = zcl_ai_task_service=>gc_mod_report
+           AND ls_route-object_kind = 'TCODE'
+           AND zcl_ai_access=>scene_ok( zcl_ai_intent_router=>gc_scene_report ) = abap_false.
+          lv_auto_deny = zcl_ai_intent_router=>gc_scene_report.
+        ELSEIF ( ls_route-module_id = zcl_ai_task_service=>gc_mod_data
+                 OR ls_route-module_id = zcl_ai_task_service=>gc_mod_inventory )
+           AND zcl_ai_access=>scene_ok( zcl_ai_intent_router=>gc_scene_data ) = abap_false.
+          IF ls_route-object_kind = 'TABLE' OR ls_route-object_kind = 'MATERIAL'.
+            lv_auto_deny = zcl_ai_intent_router=>gc_scene_data.
+          ELSE.
+            ls_route-module_id   = zcl_ai_task_service=>gc_mod_general.
+            ls_route-intent_code = zcl_ai_intent_router=>gc_int_general.
+            CLEAR: ls_route-object_kind, ls_route-object_value, ls_route-task_id.
+          ENDIF.
+        ENDIF.
+        IF lv_auto_deny IS NOT INITIAL.
+          finish_det(
+            EXPORTING iv_session_id = iv_session_id
+                      iv_question   = iv_question
+                      iv_answer     = |这个问题需要用到「{ zcl_ai_intent_router=>scene_label( lv_auto_deny ) }」, | &&
+                                      |这个能力没有开放给你, 「自动」里也不能用。如需使用请联系管理员开通。|
+                      iv_model_id   = CONV string( ls_cfg-model_id )
+                      iv_task_id    = ''
+                      iv_module     = ls_route-module_id
+                      iv_task_sts   = ''
+                      iv_summary    = |能力未开放: { lv_auto_deny }|
+                      iv_label      = '能力未开放'
+            IMPORTING es_result     = es_result ).
+          RETURN.
+        ENDIF.
       ENDIF.
 
       " ---- V15.4: Fiori 报表场景(确定性处理; 只有用户同意后结果数据才进模型) ----

@@ -71,7 +71,7 @@ sap.ui.define([
 
                 /**
                   * 20261101：当前用户能看到的场景按钮（设计：功能计划书/用户权限/01-方案）。
-                  * 后端按 ZAI_CHAT_USER-AGENT_SCENES 开放；「自动」只在四个全开时显示。后端同口径强制拦截。
+                  * 后端按 ZAI_CHAT_USER-AGENT_SCENES 开放；「自动」所有人都显示，里面只用开放的能力（后端收窄）。后端同口径强制拦截。
                   */
                 _visibleScenes: function () {
                         var aAllow = ChatService.allowedScenes();

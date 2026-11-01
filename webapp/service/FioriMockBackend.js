@@ -516,7 +516,8 @@ sap.ui.define([], function () {
                                         if (!oSess) {
                                                 oStore.sessions.unshift({
                                                         SessionId: oPayload.sessionId, Title: oPayload.question.substring(0, 24), ModelId: oPayload.modelId || "",
-                                                        MsgCount: "2", CreatedAt: sNow, ChangedAt: sNow, Mode: "AGENT", AgentType: "REPORT", Status: "COMPLETED"
+                                                        MsgCount: "2", CreatedAt: sNow, ChangedAt: sNow, Mode: "AGENT", Status: "COMPLETED",
+                                                        AgentType: String(oPayload.scene || "").toUpperCase() === "REPORT" ? "REPORT" : "AUTO"   // 20261101：「自动」里也会走到这里
                                                 });
                                         } else {
                                                 oSess.ChangedAt = sNow;

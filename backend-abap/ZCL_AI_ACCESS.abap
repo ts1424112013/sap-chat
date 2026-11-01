@@ -3,7 +3,8 @@
 * 用途:   按用户开放 Agent 场景 + 报表授权(设计: 功能计划书/用户权限/01-方案)
 *         - 场景: ZAI_CHAT_USER-AGENT_SCENES(逗号分隔 REPORT,FIORI,DATA,CODE)
 *           空 = 四个场景全开(老用户不受影响); ADMIN 永远全开;
-*           「自动」(AUTO / 旧 INVENTORY)会在场景间自动选, 只对四个全开的用户开放
+*           「自动」(AUTO)所有开通的用户都能用, 但只用该用户开放的能力(V1.1:
+*           由 AGENT 用 scene_ok( 'REPORT' / 'DATA' ) 收窄); 旧 INVENTORY 跟数据分析走
 *         - 报表: ZAI_RPT_ACL(USERID, SRC_TYPE, REPORT_ID) 一行 = 一张报表给一个用户;
 *           USERID = '*' 表示所有人(公共报表); 开关 RPT_ACL_ENABLED 不开 = 所有人看全部;
 *           开了 = 普通用户只看到分配给自己的 + 公共的; ADMIN 照旧全部
@@ -15,8 +16,10 @@
 * 数据:   ZAI_CHAT_USER(加字段 AGENT_SCENES CHAR 40) / ZAI_RPT_ACL(新表)
 * 安装:   SE24 -> 创建类 -> 源代码粘帖 (ABAP 7.50 语法, 755 适用); 先改表 / 建表
 * V1.0    20261101: 首版
+* V1.1    20261101: 「自动」不再要求四个全开 —— 所有开通的用户都能用;
+*         「自动」里能不能执行报表 / 查数据由 AGENT 按 REPORT / DATA 是否开放收窄
 * ★ 重贴后核对标记: 有 METHOD scene_ok / user_scenes / report_ok / acl_on /
-*   save_user_access / user_reports_csv; scene_ok 里 AUTO 要求四个全开
+*   save_user_access / user_reports_csv; scene_ok 里有 WHEN 'AUTO' OR 'GENERAL' OR ''
 *=======================================================================
 CLASS zcl_ai_access DEFINITION
   PUBLIC
@@ -40,7 +43,8 @@ CLASS zcl_ai_access DEFINITION
       IMPORTING iv_user   TYPE syuname DEFAULT sy-uname
       RETURNING VALUE(rv) TYPE string.
 
-    " 场景能不能用; AUTO / INVENTORY / 空 = 自动, 要求四个全开
+    " 场景能不能用; AUTO / GENERAL / 空 = 自动, 开通的用户都能用(V1.1);
+    " INVENTORY(旧库存场景)按 DATA 判断
     CLASS-METHODS scene_ok
       IMPORTING iv_scene  TYPE string
       RETURNING VALUE(rv) TYPE abap_bool.
@@ -166,15 +170,26 @@ CLASS zcl_ai_access IMPLEMENTATION.
           lv_have TYPE string.
 
     lv_have = user_scenes( ).
-    IF lv_have = gc_scenes.
-      rv = abap_true.
+    IF lv_have IS INITIAL.
+      rv = abap_false.   " 未开通
       RETURN.
     ENDIF.
     lv_sc = to_upper( iv_scene ).
     CONDENSE lv_sc NO-GAPS.
+    CASE lv_sc.
+      WHEN 'AUTO' OR 'GENERAL' OR ''.
+        rv = abap_true.   " V1.1: 「自动」所有人可用, 能力由 AGENT 收窄
+        RETURN.
+      WHEN 'INVENTORY'.
+        lv_sc = 'DATA'.
+    ENDCASE.
+    IF lv_have = gc_scenes.
+      rv = abap_true.
+      RETURN.
+    ENDIF.
     SPLIT lv_have AT ',' INTO TABLE lt_have.
     READ TABLE lt_have TRANSPORTING NO FIELDS WITH KEY table_line = lv_sc.
-    rv = xsdbool( sy-subrc = 0 ).   " AUTO / INVENTORY / 空 不在列表里 → 不开放
+    rv = xsdbool( sy-subrc = 0 ).
 
   ENDMETHOD.
 

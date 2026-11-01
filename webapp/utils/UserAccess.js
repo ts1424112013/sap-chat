@@ -5,7 +5,8 @@ sap.ui.define([], function () {
          * 20261101：按用户开放 Agent 场景 + 报表授权（设计：功能计划书/用户权限/01-方案）。
          * 与后端 ZCL_AI_ACCESS 同口径：
          *  · 场景串：REPORT,FIORI,DATA,CODE 的子集；空 = 四个全开；管理员永远全开
-         *  · 「自动」会在场景之间自动选，只在四个全开时可用
+         *  · 「自动」所有人可用（20261101 下午改），但只用该用户开放的能力：
+         *    没开报表执行就不能在「自动」里执行报表，没开数据分析就不带查数工具（由后端收窄）
          *  · 报表串：REPORT:<编号>,FIORI:<编号>；USERID = "*"（所有人）那一行是公共报表
          *  · 开关 RPT_ACL_ENABLED 不开 = 所有人看全部；开了 = 普通用户只看分配给自己的 + 公共的
          * 不访问网络、不碰 DOM，便于 node 测试。真正的拦截在后端，前端只是按结果显示。
@@ -46,9 +47,11 @@ sap.ui.define([], function () {
                 return sRole === "ADMIN" || !a.length ? SCENES.slice() : a;
         }
 
-        /** 场景能不能用；AUTO / INVENTORY / 空 要求四个全开 */
+        /** 场景能不能用；AUTO / GENERAL / 空 = 自动，所有人可用；INVENTORY（旧库存场景）按 DATA 判断 */
         function sceneOk(aAllowed, sScene) {
                 var k = String(sScene || "").toUpperCase();
+                if (!k || k === "AUTO" || k === "GENERAL") { return true; }
+                if (k === "INVENTORY") { k = "DATA"; }
                 if (aAllowed.length === SCENES.length) { return true; }
                 return SCENES.indexOf(k) >= 0 && aAllowed.indexOf(k) >= 0;
         }
