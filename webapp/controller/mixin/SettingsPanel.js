@@ -51,6 +51,7 @@ sap.ui.define([
                         // V8：刷新用户管理页签（仅管理员）
                         if (ChatService.isAdmin()) {
                                 this._refreshUserTable();
+                                this._uaRefresh();   // 20261101：可用范围（UserAccessPanel）
                         }
 
                         // V10：读取超长源码分块分析全局开关（LONG_SRC_CHUNK）
@@ -83,18 +84,27 @@ sap.ui.define([
                         var oRB = this._rb();
                         var sMe = String((ChatService.getAppUser() || {}).userId || "").toUpperCase();
                         oSettings.setProperty("/userListError", "");
+                        var that = this;
                         ChatService.getUsersData().then(function (aUsers) {
                                 oSettings.setProperty("/userList", aUsers.map(function (u) {
                                         var bActive = u.Active === "X";
+                                        var bPublic = u.UserId === "*";
                                         return {
+                                                // 20261101：可用范围（场景 / 报表），「所有人」一行只维护公共报表
+                                                IsPublic: bPublic,
+                                                UserNameRaw: u.UserName || "",
+                                                ActiveRaw: u.Active,
+                                                AgentScenesRaw: u.AgentScenes || "",
+                                                ReportsRaw: u.Reports || "",
+                                                AccessText: that._uaSummary(u),
                                                 UserId: u.UserId,
                                                 UserName: u.BuiltIn ? (u.UserName || "") + " · " + oRB.getText("userBuiltInTag") : (u.UserName || ""),
-                                                Role: oRB.getText(u.Role === "ADMIN" ? "userRoleAdminLabel" : "userRoleUserLabel"),
+                                                Role: bPublic ? oRB.getText("userRolePublic") : oRB.getText(u.Role === "ADMIN" ? "userRoleAdminLabel" : "userRoleUserLabel"),
                                                 RoleRaw: u.Role,
                                                 ActiveState: bActive ? "Success" : "Error",
                                                 IsActive: oRB.getText(bActive ? "userActive" : "userInactive"),
                                                 // 20261021：内置管理员（演示模式写死）、自己（停用会把自己锁在门外）、已停用的不给停用按钮
-                                                CanDisable: bActive && !u.BuiltIn && String(u.UserId || "").toUpperCase() !== sMe
+                                                CanDisable: bActive && !bPublic && !u.BuiltIn && String(u.UserId || "").toUpperCase() !== sMe
                                         };
                                 }));
                         }).catch(function (oErr) {

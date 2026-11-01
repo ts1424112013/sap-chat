@@ -169,6 +169,13 @@
 *   依赖: ZCL_AI_COMBO_SERVICE V1.0(先激活)
 *   ★ 重贴后核对标记: 有 zcl_ai_combo_service=>is_combo( 与 zcl_ai_combo_service=>analysis_context(;
 *     意图路由入口是 IF lv_task_on = abap_true AND lv_art_mode = abap_false.
+* V15.11 20261101(按用户开放场景 + 报表授权, 设计: 功能计划书/用户权限/01-方案):
+*   ① 会话归属校验后加场景校验 ZCL_AI_ACCESS=>scene_ok(会话场景); 没开放 → DENIED 并说明.
+*     例外: 「组合分析」会话(AUTO)聚焦的是组合结果时放行 —— 组合来源已逐份核过报表授权;
+*   ② 报表执行按 TCode 出报表卡前加 ZCL_AI_ACCESS=>report_ok('REPORT', 报表编号);
+*   报表目录(build_scene_help)走 list_defs, 已在 REPORT_SERVICE 里按授权过滤
+*   依赖: ZCL_AI_ACCESS V1.0(先激活)
+*   ★ 重贴后核对标记: 有 zcl_ai_access=>scene_ok( 与 zcl_ai_access=>report_ok(
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -459,6 +466,20 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       es_result-status  = 'DENIED'.
       es_result-answer  = '该会话不属于当前用户，无法读取或写入其中的分析记录。请新建会话后重试。'.
       es_result-message = '会话归属校验失败'.
+      es_result-rounds  = '0'.
+      es_result-elapsed_ms = '0'.
+      es_result-trace_json = '[]'.
+      RETURN.
+    ENDIF.
+
+    " V15.11: 场景按用户开放(组合分析会话聚焦组合结果时放行, 来源授权在组合时已核过)
+    IF zcl_ai_access=>scene_ok( lv_scene ) = abap_false
+       AND NOT ( lv_scene = zcl_ai_intent_router=>gc_scene_auto
+                 AND iv_focus_artifact_id IS NOT INITIAL
+                 AND zcl_ai_combo_service=>is_combo( iv_focus_artifact_id ) = abap_true ).
+      es_result-status  = 'DENIED'.
+      es_result-answer  = zcl_ai_access=>scene_deny_text( lv_scene ).
+      es_result-message = '场景未开放'.
       es_result-rounds  = '0'.
       es_result-elapsed_ms = '0'.
       es_result-trace_json = '[]'.
@@ -2554,6 +2575,13 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         |【报表未登记】事务代码 { iv_tcode } 未在系统报表登记表中, | &&
         |或已被停用。为避免误执行, 系统不会尝试运行未登记的报表。\n| &&
         |请先由管理员在报表登记中维护该报表(TCode/程序/参数/结果来源核验后启用)。|.
+      RETURN.
+    ENDIF.
+
+    " V15.11: 报表授权(RPT_ACL_ENABLED 开时, 普通用户只能用分配给自己的 / 公共的)
+    IF zcl_ai_access=>report_ok( iv_src_type  = zcl_ai_access=>gc_src_report
+                                 iv_report_id = CONV string( ls_def-report_id ) ) = abap_false.
+      ev_answer = zcl_ai_access=>report_deny_text( |{ ls_def-report_name }({ ls_def-tcode })| ).
       RETURN.
     ENDIF.
 

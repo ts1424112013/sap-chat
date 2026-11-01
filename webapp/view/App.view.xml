@@ -86,7 +86,11 @@
                                                                         <Text text="{settings>/userName}" class="sideUserName" wrapping="false"/>
                                                                         <ObjectStatus id="modeBadge" class="modeBadge"/>
                                                                 </VBox>
-                                                                <Button icon="sap-icon://action-settings" type="Transparent" press=".onOpenSettings" tooltip="{i18n>settings}" class="sideSetBtn"/>
+                                                                <!-- 20261101：设置只给管理员；普通用户这里只有「退出登录」（原来要进设置才能退出） -->
+                                                                <Button icon="sap-icon://action-settings" type="Transparent" press=".onOpenSettings" tooltip="{i18n>settings}" class="sideSetBtn"
+                                                                        visible="{settings>/isAdmin}"/>
+                                                                <Button icon="sap-icon://log" type="Transparent" press=".onSideLogout" tooltip="{i18n>logoutBtn}" class="sideSetBtn"
+                                                                        visible="{= !${settings>/isAdmin} }"/>
                                                         </HBox>
                                                 </VBox>
 

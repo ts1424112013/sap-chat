@@ -9,8 +9,9 @@ sap.ui.define([
         "zai/chat/service/AuthMockBackend",
         "zai/chat/service/FioriMockBackend",
         "zai/chat/service/ComboMockBackend",
-        "zai/chat/service/SkillService"
-], function (Log, ODataModel, Filter, FilterOperator, Sorter, TraceService, MockBackend, AuthMockBackend, FioriMockBackend, ComboMockBackend, SkillService) {
+        "zai/chat/service/SkillService",
+        "zai/chat/utils/UserAccess"
+], function (Log, ODataModel, Filter, FilterOperator, Sorter, TraceService, MockBackend, AuthMockBackend, FioriMockBackend, ComboMockBackend, SkillService, UserAccess) {
         "use strict";
 
         /**
@@ -1455,6 +1456,56 @@ sap.ui.define([
                         return !!oUser && oUser.role === "ADMIN";
                 },
 
+                /**
+                  * 20261101：当前用户开放的 Agent 场景（设计：功能计划书/用户权限/01-方案）。
+                  * 管理员 / 没限制（空）= 四个全开；「自动」只在四个全开时可用（后端同口径强制）。
+                  * @returns {string[]} REPORT / FIORI / DATA / CODE 的子集，固定顺序
+                  */
+                allowedScenes: function () {
+                        var oUser = this.getAppUser() || {};
+                        var a = UserAccess.normScenes(oUser.scenes);
+                        return oUser.role === "ADMIN" || !a.length ? UserAccess.SCENES.slice() : a;
+                },
+
+                /** 后端 SaveUser 能不能收授权（SEGW 加了 Scenes 参数才有）；演示模式恒为 true */
+                userAccessAvailable: function () {
+                        if (this._sConfig.mode === "mock") {
+                                return Promise.resolve(true);
+                        }
+                        var that = this;
+                        var oModel = this._getModel();
+                        return Promise.resolve(oModel.metadataLoaded ? oModel.metadataLoaded(true) : null).then(function () {
+                                return that._fiHasParam("SaveUser", "Scenes");
+                        }).catch(function () { return false; });
+                },
+
+                /**
+                  * 保存某用户的场景与报表（整体覆盖）。oUser 是用户列表里的一行（UserId / UserName / RoleRaw / Active）；
+                  * UserId = "*" 是「所有人」，只存公共报表。报表串太长时走长文本通道。
+                  * @param {object} oUser
+                  * @param {string[]} aScenes  REPORT / FIORI / DATA / CODE
+                  * @param {string[]} aReports 形如 REPORT:A、FIORI:X
+                  */
+                saveUserAccess: function (oUser, aScenes, aReports) {
+                        var sScenes = UserAccess.normScenes(aScenes).join(",");
+                        var sReports = UserAccess.normReports(aReports).join(",");
+                        if (this._sConfig.mode === "mock") {
+                                return this._mockSaveUserAccess(oUser.UserId, sScenes, sReports);
+                        }
+                        var that = this;
+                        return this._prepareQuestion(sReports).then(function (sArg) {
+                                return that._v8Call("SaveUser", {
+                                        UserId: oUser.UserId || "",
+                                        UserName: oUser.UserId === "*" ? "" : (oUser.UserNameRaw || ""),
+                                        Role: oUser.UserId === "*" ? "" : (oUser.RoleRaw || "USER"),
+                                        Active: oUser.UserId === "*" ? "X" : (oUser.ActiveRaw === undefined ? "X" : oUser.ActiveRaw),
+                                        Scenes: sScenes,
+                                        Reports: sArg,
+                                        AccessSet: "X"
+                                }, true);
+                        }).then(function () { return true; });
+                },
+
                 /** SHA-256 摘要（本地初始管理员改密用，十六进制小写） */
                 _sha256: function (sText) {
                         var enc = new TextEncoder();
@@ -1649,6 +1700,8 @@ sap.ui.define([
                                         userId: oInfo.UserId || sUser,
                                         userName: oInfo.UserName || sUser,
                                         role: oInfo.Role || "USER",
+                                        // 20261101：开放的 Agent 场景（老后端不返回 → 空 = 全开）
+                                        scenes: oInfo.Scenes || "",
                                         mustChangePwd: false
                                 };
                                 that._setAppUser(oUser);
@@ -1703,6 +1756,8 @@ sap.ui.define([
                                 if (!bHasAdmin) {
                                         a.unshift({ UserId: "ADMIN", UserName: "管理员", Role: "ADMIN", Active: "X", BuiltIn: true });
                                 }
+                                // 20261101：与后端一致，末尾一行「所有人」只用来维护公共报表
+                                a.push({ UserId: "*", UserName: "所有人(公共报表)", Role: "PUBLIC", Active: "X", Reports: this._mockPublicReports() });
                                 return Promise.resolve(a);
                         }
                         return this._v8Call("UsersList", null, false).then(function (sJson) {
@@ -1715,7 +1770,10 @@ sap.ui.define([
                                                 UserId: u.UserId || u.USERID || "",
                                                 UserName: u.UserName || u.USERNAME || "",
                                                 Role: u.Role || u.ROLE || "USER",
-                                                Active: u.Active !== undefined ? u.Active : (u.ACTIVE || "")
+                                                Active: u.Active !== undefined ? u.Active : (u.ACTIVE || ""),
+                                                // 20261101：开放场景 / 单独分配的报表（老后端没有这两个键 → 空）
+                                                AgentScenes: u.AgentScenes || u.AGENT_SCENES || "",
+                                                Reports: u.Reports || u.REPORTS || ""
                                         };
                                 });
                         });
@@ -1729,7 +1787,10 @@ sap.ui.define([
                                 for (var k = 0; k < a.length; k++) { if (a[k].UserId.toUpperCase() === oUser.UserId.toUpperCase()) { i = k; break; } }
                                 var oRow = {
                                         UserId: oUser.UserId, UserName: oUser.UserName || "", Role: oUser.Role || "USER",
-                                        Active: oUser.Active === undefined ? "X" : oUser.Active, PwdHash: this._sha256Sync("zai#" + (oUser.Password || "123456"))
+                                        Active: oUser.Active === undefined ? "X" : oUser.Active, PwdHash: this._sha256Sync("zai#" + (oUser.Password || "123456")),
+                                        // 20261101：改别的字段时不丢授权
+                                        AgentScenes: i >= 0 ? (a[i].AgentScenes || "") : "",
+                                        Reports: i >= 0 ? (a[i].Reports || "") : ""
                                 };
                                 if (i >= 0) { a[i] = oRow; } else { a.push(oRow); }
                                 this._mockSaveUsers();

@@ -2,8 +2,9 @@ sap.ui.define([
         "zai/chat/utils/Toast",
         "sap/m/Button",
         "zai/chat/service/ChatService",
-        "zai/chat/utils/Formatter"
-], function (MessageToast, Button, ChatService, Formatter) {
+        "zai/chat/utils/Formatter",
+        "zai/chat/utils/UserAccess"
+], function (MessageToast, Button, ChatService, Formatter, UserAccess) {
         "use strict";
 
         /**
@@ -68,11 +69,25 @@ sap.ui.define([
                         return oCtx.mode === "AGENT" ? this._normScene(oCtx.agentType) : "AUTO";
                 },
 
-                /** 新建 Agent 会话默认用上次选择的场景（首次 = 报表执行） */
+                /**
+                  * 20261101：当前用户能看到的场景按钮（设计：功能计划书/用户权限/01-方案）。
+                  * 后端按 ZAI_CHAT_USER-AGENT_SCENES 开放；「自动」只在四个全开时显示。后端同口径强制拦截。
+                  */
+                _visibleScenes: function () {
+                        var aAllow = ChatService.allowedScenes();
+                        return this.SCENES.filter(function (o) {
+                                return UserAccess.sceneOk(aAllow, o.key);
+                        });
+                },
+
+                /** 新建 Agent 会话默认用上次选择的场景（首次 = 报表执行）；上次的场景没开放 → 第一个开放的 */
                 _lastScene: function () {
                         var s = "";
                         try { s = window.localStorage.getItem("zaiChat.lastScene") || ""; } catch (e) { s = ""; }
-                        return s ? this._normScene(s) : "REPORT";
+                        var k = s ? this._normScene(s) : "REPORT";
+                        var aVis = this._visibleScenes();
+                        var bOk = aVis.some(function (o) { return o.key === k; });
+                        return bOk || !aVis.length ? k : aVis[0].key;
                 },
 
                 _setLastScene: function (sKey) {
@@ -93,7 +108,14 @@ sap.ui.define([
                                 return;
                         }
                         var sCur = this._curScene();
-                        this.SCENES.map(function (o) { return that._sceneDef(o.key); }).forEach(function (d) {
+                        var aVis = this._visibleScenes();
+                        // 20261101：空会话停在没开放的场景上（例如管理员刚收回权限）→ 换成第一个开放的
+                        var oChat0 = this.getView().getModel("chat");
+                        if (aVis.length && !aVis.some(function (o) { return o.key === sCur; }) && !(oChat0.getProperty("/messages") || []).length) {
+                                sCur = aVis[0].key;
+                                oChat0.setProperty("/currentSession/agentType", sCur);
+                        }
+                        aVis.map(function (o) { return that._sceneDef(o.key); }).forEach(function (d) {
                                 oBox.addItem(new Button({
                                         text: d.text,
                                         icon: d.icon,
@@ -106,6 +128,9 @@ sap.ui.define([
 
                 _onScenePick: function (sKey) {
                         var oChat = this.getView().getModel("chat");
+                        if (!UserAccess.sceneOk(ChatService.allowedScenes(), sKey)) {
+                                return;
+                        }
                         if ((oChat.getProperty("/messages") || []).length) {
                                 MessageToast.show(this._rb().getText("sceneLocked"));
                                 return;

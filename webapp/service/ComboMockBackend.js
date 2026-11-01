@@ -89,6 +89,10 @@ sap.ui.define(["zai/chat/utils/ComboData"], function (ComboData) {
                                 throw new Error("第 " + (k + 1) + " 份「" + sName + "」不能使用：Fiori 报表 " + oRun.def.reportId +
                                         " 未开放模型分析（登记 ANALYZE_ENABLED 为空）");
                         }
+                        // 20261101：报表授权（与 ZCL_AI_COMBO_SERVICE V1.0.1 同口径）
+                        if (this._mockReportOk && !this._mockReportOk("FIORI", oRun.def.reportId)) {
+                                throw new Error("第 " + (k + 1) + " 份「" + sName + "」不能使用：没有 Fiori 报表 " + oRun.def.reportId + " 的使用权限");
+                        }
                         // 演示状态里的行是按列名作键的对象（同后端 ZAI_FRPT_DATA 的 row_json），这里转成按列顺序的数组
                         var aCols = oRun.ds.columns.map(function (c) {
                                 return { name: c.name, label: c.label || c.name, numeric: c.numeric === true };

@@ -29,6 +29,8 @@
 *         ZAI_ARTIFACT / ZAI_RPT_RUN / ZAI_RPT_DEF / ZAI_FRPT_RUN / ZAI_FRPT_DATA / ZAI_FRPT_DEF
 * 安装:   SE24 -> 创建类 -> 源代码粘帖 (ABAP 7.50 语法, 755 适用); 先建两张表
 * V1.0    20261031: 首版
+* V1.0.1  20261101: 来源核对加报表授权 ZCL_AI_ACCESS=>report_ok(按用户, 开关 RPT_ACL_ENABLED);
+*         没授权的来源整体拒绝并说明是哪一份. 依赖 ZCL_AI_ACCESS V1.0
 * ★ 重贴后核对标记: 有 METHOD create / get_result / is_combo / analysis_context /
 *   norm_key / read_report_src / read_fiori_src / combine_join; create 内有
 *   zcl_ai_task_service=>register_artifact( 与 INSERT zai_combo_data FROM TABLE
@@ -585,6 +587,11 @@ CLASS zcl_ai_combo_service IMPLEMENTATION.
       ev_error = |报表 { lv_rid } 未开放模型分析(登记 ANALYZE_ENABLED 为空)|.
       RETURN.
     ENDIF.
+    IF zcl_ai_access=>report_ok( iv_src_type  = zcl_ai_access=>gc_src_report
+                                 iv_report_id = CONV string( lv_rid ) ) = abap_false.
+      ev_error = |没有报表 { lv_rid } 的使用权限|.
+      RETURN.
+    ENDIF.
     cs_src-report_id = lv_rid.
 
     " 真实适配器读 ZAI_RPT_RESULT(跳过 __meta__ 行, ev_row_count 是元数据里的真实总行数),
@@ -642,6 +649,11 @@ CLASS zcl_ai_combo_service IMPLEMENTATION.
       INTO @DATA(lv_an).
     IF lv_an <> 'X'.
       ev_error = |Fiori 报表 { ls_run-report_id } 未开放模型分析(登记 ANALYZE_ENABLED 为空)|.
+      RETURN.
+    ENDIF.
+    IF zcl_ai_access=>report_ok( iv_src_type  = zcl_ai_access=>gc_src_fiori
+                                 iv_report_id = CONV string( ls_run-report_id ) ) = abap_false.
+      ev_error = |没有 Fiori 报表 { ls_run-report_id } 的使用权限|.
       RETURN.
     ENDIF.
     cs_src-report_id = ls_run-report_id.

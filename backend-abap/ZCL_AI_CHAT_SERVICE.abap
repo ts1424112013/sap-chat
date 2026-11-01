@@ -89,6 +89,14 @@
 *   不受影响; ZAI_CHAT_MSG 里存的仍是全文
 *   ★ 重贴后核对标记: 常量区有 gc_hist_msg_max 与 gc_hist_total_max;
 *   get_history 内有 INSERT ls_msg INTO lt_keep INDEX 1
+* V2.6 20261101: 按用户开放场景 + 报表授权(ZCL_AI_ACCESS V1.0; SE11 ZAI_CHAT_USER 加
+*   AGENT_SCENES CHAR 40, 新表 ZAI_RPT_ACL; SEGW 不改) ——
+*   v8_login 多返回 Scenes(当前用户开放的场景); v8_get_users 每个用户多带
+*   AGENT_SCENES / REPORTS(REPORT:A,FIORI:X); v8_save_user 收到 AccessSet = X 时
+*   一起保存场景与报表(整体覆盖), 老前端不带 AccessSet 时不动授权;
+*   用户列表末尾多一行 USERID = '*'(所有人, ROLE = PUBLIC), 保存它时只存公共报表
+*   ★ 重贴后核对标记: v8_login 的 JSON 有 "Scenes"; v8_get_users 有
+*   zcl_ai_access=>user_reports_csv(; v8_save_user 有 zcl_ai_access=>save_user_access(
 *         read_program_meta: TRDIRT 的程序名字段是 NAME 而非 PROGNAME
 *         (PROGNAME 是 REPOSRC 的字段, 原代码两处混用导致
 *         "Unknown column name PROGNAME", 并连带 LV_T 内联声明失败报
@@ -1923,12 +1931,35 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
         rs-message = '该操作仅管理员可执行'.
         RETURN.
     ENDTRY.
-    SELECT userid, username, role, active
+    " V2.6: 每个用户多带开放场景与单独分配的报表(REPORT:A,FIORI:X)
+    TYPES: BEGIN OF ty_uo, userid TYPE string, username TYPE string, role TYPE string,
+             active TYPE string, agent_scenes TYPE string, reports TYPE string, END OF ty_uo.
+    DATA: lt_out TYPE STANDARD TABLE OF ty_uo WITH DEFAULT KEY,
+          ls_out TYPE ty_uo.
+    SELECT userid, username, role, active, agent_scenes
       FROM zai_chat_user
       ORDER BY userid
       INTO TABLE @DATA(lt_u).
+    LOOP AT lt_u INTO DATA(ls_u).
+      CLEAR ls_out.
+      ls_out-userid       = ls_u-userid.
+      ls_out-username     = ls_u-username.
+      ls_out-role         = ls_u-role.
+      ls_out-active       = ls_u-active.
+      ls_out-agent_scenes = ls_u-agent_scenes.
+      ls_out-reports      = zcl_ai_access=>user_reports_csv( ls_u-userid ).
+      APPEND ls_out TO lt_out.
+    ENDLOOP.
+    " V2.6: 末尾一行 USERID = '*' 表示「所有人」, 只用来维护公共报表
+    CLEAR ls_out.
+    ls_out-userid   = '*'.
+    ls_out-username = '所有人(公共报表)'.
+    ls_out-role     = 'PUBLIC'.
+    ls_out-active   = 'X'.
+    ls_out-reports  = zcl_ai_access=>user_reports_csv( '*' ).
+    APPEND ls_out TO lt_out.
     rs-success = 'X'.
-    rs-json    = /ui2/cl_json=>serialize( lt_u ).
+    rs-json    = /ui2/cl_json=>serialize( lt_out ).
   ENDMETHOD.
 
 
@@ -1943,9 +1974,11 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
       RETURN.
     ENDIF.
     rs-success = 'X'.
+    " V2.6: Scenes = 当前用户开放的场景(ADMIN / 未限制 = 四个全开)
     rs-json    = |\{ "UserId": "{ ls_user-userid }", | &&
                  |"UserName": "{ ls_user-username }", | &&
-                 |"Role": "{ ls_user-role }" \}|.
+                 |"Role": "{ ls_user-role }", | &&
+                 |"Scenes": "{ zcl_ai_access=>user_scenes( ) }" \}|.
   ENDMETHOD.
 
 
@@ -2132,11 +2165,31 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
         rs-message = '该操作仅管理员可执行'.
         RETURN.
     ENDTRY.
+    " V2.6: accessset(JSON AccessSet) = X 时一起保存 scenes(REPORT,FIORI...) 与 reports(REPORT:A,FIORI:X)
     TYPES: BEGIN OF ty_u, userid TYPE string, username TYPE string,
-             role TYPE string, active TYPE string, password TYPE string, END OF ty_u.
+             role TYPE string, active TYPE string, password TYPE string,
+             scenes TYPE string, reports TYPE string, accessset TYPE string, END OF ty_u.
     DATA ls_in TYPE ty_u.
     /ui2/cl_json=>deserialize( EXPORTING json = iv_json CHANGING data = ls_in ).
     DATA(lv_id) = to_upper( ls_in-userid ).
+    " V2.6: '*' = 所有人, 只保存公共报表(不是 SU01 用户, 不写 ZAI_CHAT_USER)
+    IF lv_id = '*'.
+      DATA lv_pub_err TYPE string.
+      IF ls_in-accessset <> 'X'.
+        rs-message = '「所有人」只能维护公共报表'.
+        RETURN.
+      ENDIF.
+      zcl_ai_access=>save_user_access( EXPORTING iv_user    = '*'
+                                                 iv_scenes  = ``
+                                                 iv_reports = ls_in-reports
+                                       IMPORTING ev_error   = lv_pub_err ).
+      IF lv_pub_err IS NOT INITIAL.
+        rs-message = lv_pub_err.
+        RETURN.
+      ENDIF.
+      rs-success = 'X'. rs-message = '公共报表已保存'.
+      RETURN.
+    ENDIF.
     SELECT SINGLE bname FROM usr02 WHERE bname = @lv_id INTO @DATA(lv_bname).
     IF sy-subrc <> 0.
       rs-message = |SU01 中不存在用户 { lv_id }，请先在 SAP 创建|.
@@ -2155,6 +2208,17 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
                  active = 'X' createdat = v8_now( ) ) ).
     ENDIF.
     COMMIT WORK.
+    IF ls_in-accessset = 'X'.
+      DATA lv_acc_err TYPE string.
+      zcl_ai_access=>save_user_access( EXPORTING iv_user    = CONV syuname( lv_id )
+                                                 iv_scenes  = ls_in-scenes
+                                                 iv_reports = ls_in-reports
+                                       IMPORTING ev_error   = lv_acc_err ).
+      IF lv_acc_err IS NOT INITIAL.
+        rs-message = |用户已保存, 但授权保存失败: { lv_acc_err }|.
+        RETURN.
+      ENDIF.
+    ENDIF.
     rs-success = 'X'. rs-message = '已开通'.
   ENDMETHOD.
 ENDCLASS.

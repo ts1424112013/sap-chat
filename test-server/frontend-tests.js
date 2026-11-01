@@ -542,6 +542,63 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   check('演示后端：聚焦本会话的组合结果才走组合回答', !!fakeSvc._mockComboFocused({ sessionId: 'S9', focusedArtifactId: cr.artifactId }) &&
     !fakeSvc._mockComboFocused({ sessionId: 'S1', focusedArtifactId: cr.artifactId }));
 
+  // 20261101：按用户开放场景 + 报表授权（与 ZCL_AI_ACCESS 同口径）
+  console.log('\n━━ 用户权限（UserAccess / 演示后端，20261101）');
+  const UA = load('zai/chat/utils/UserAccess');
+  check('场景串规范化：固定顺序、去重、去非法、认中文逗号', UA.normScenes('code，report,REPORT,auto, fiori').join() === 'REPORT,FIORI,CODE');
+  check('空 = 四个全开；管理员永远全开', UA.effectiveScenes('USER', '').length === 4 && UA.effectiveScenes('ADMIN', 'DATA').length === 4 &&
+    UA.effectiveScenes('USER', 'DATA').join() === 'DATA');
+  check('「自动」只在四个全开时可用', UA.sceneOk(UA.SCENES, 'AUTO') && !UA.sceneOk(['REPORT', 'FIORI'], 'AUTO') &&
+    !UA.sceneOk(['REPORT', 'FIORI'], 'INVENTORY') && UA.sceneOk(['REPORT', 'FIORI'], 'fiori') && !UA.sceneOk(['REPORT', 'FIORI'], 'DATA'));
+  check('报表串规范化：只认 REPORT / FIORI，去掉引号、逗号等会破坏参数的写法',
+    UA.normReports('report:zdpmm702, FIORI:shipment ,BAD:x,REPORT:,REPORT:ZDPMM702,FIORI:a"b').join() === 'REPORT:ZDPMM702,FIORI:SHIPMENT');
+  const g1 = { aclOn: true, admin: false, grants: ['REPORT:A', 'REPORT:B', 'FIORI:X'] };
+  check('1 用户 A、B：A 可用、C 不可用；Fiori 与报表执行互不影响',
+    UA.reportOk(g1, 'REPORT', 'a') && !UA.reportOk(g1, 'REPORT', 'C') && !UA.reportOk(g1, 'FIORI', 'A') && UA.reportOk(g1, 'FIORI', 'X'));
+  check('开关不开 / 管理员 → 全部可用', UA.reportOk({ aclOn: false, grants: [] }, 'REPORT', 'C') && UA.reportOk({ aclOn: true, admin: true, grants: [] }, 'FIORI', 'Z'));
+  check('「REPORT:*」= 这一类全部', UA.reportOk({ aclOn: true, grants: ['REPORT:*'] }, 'REPORT', 'ANY') && !UA.reportOk({ aclOn: true, grants: ['REPORT:*'] }, 'FIORI', 'ANY'));
+  check('用户管理简述', UA.summary('USER', 'REPORT,FIORI', 'REPORT:A,REPORT:B,FIORI:X') === '场景 2/4 · 报表执行 2 · Fiori 1' &&
+    UA.summary('USER', '', '') === '全部场景 · 未分配报表' && UA.summary('ADMIN', '', '') === '管理员 · 全部' && UA.summary('PUBLIC', '', '') === '暂无公共报表',
+    UA.summary('USER', 'REPORT,FIORI', 'REPORT:A,REPORT:B,FIORI:X'));
+
+  const MB2 = load('zai/chat/service/MockBackend');
+  const FMB = load('zai/chat/service/FioriMockBackend');
+  const uaRows = [{ UserId: 'USER1', Role: 'USER', Active: 'X', AgentScenes: 'REPORT,FIORI', Reports: 'REPORT:ZDPMM702,REPORT:ZDPMM455,FIORI:SHIPMENT' },
+    { UserId: 'USER2', Role: 'USER', Active: 'X', AgentScenes: '', Reports: 'REPORT:ZDPMM702,REPORT:ZDPSD010' }];
+  const mkSvc = (who, role) => Object.assign({}, MB2, FMB, {
+    getAppUser: () => ({ userId: who, role: role, scenes: (uaRows.filter((u) => u.UserId === who)[0] || {}).AgentScenes || '' }),
+    isAdmin: () => role === 'ADMIN',
+    allowedScenes: function () { return UA.effectiveScenes(role, this.getAppUser().scenes); },
+    _mockUsers: () => uaRows,
+    _mockPublicReports: () => 'REPORT:ZDPSD012'
+  });
+  fakeWindow.localStorage.setItem('zaiChat.cfg.RPT_ACL_ENABLED', 'X');
+  const ids = async (svc) => (await svc._mockReportDefs()).defs.map((d) => d.REPORT_ID).sort().join();
+  const s1 = mkSvc('USER1', 'USER'), s2 = mkSvc('USER2', 'USER'), sa = mkSvc('ADMIN', 'ADMIN');
+  check('演示后端：1 用户目录 = A、B + 公共', await ids(s1) === 'ZDPMM455,ZDPMM702,ZDPSD012', await ids(s1));
+  check('演示后端：2 用户目录 = A、C + 公共', await ids(s2) === 'ZDPMM702,ZDPSD010,ZDPSD012', await ids(s2));
+  check('演示后端：管理员看全部', (await sa._mockReportDefs()).defs.length >= 5);
+  check('演示后端：Fiori 目录只给授权的', s1._mockFioriDefsList().map((d) => d.reportId).join() === 'SHIPMENT' && s2._mockFioriDefsList().length === 0);
+  let fe = '';
+  try { s1._mockFioriRun({ ReportId: 'PO_OPEN', ParamsJson: '{}', ClientRequestId: 'ua-1', SessionId: 's' }); } catch (e) { fe = e.message; }
+  check('演示后端：没授权的 Fiori 报表取数被拒', /没有报表「.*」的使用权限/.test(fe), fe);
+  check('演示后端：一句话找报表不出没授权的', s1._fioriCandidates('采购未清').length === 0);
+  fakeWindow.localStorage.removeItem('zaiChat.cfg.RPT_ACL_ENABLED');
+  check('演示后端：开关关掉 → 1 用户也看全部', (await s1._mockReportDefs()).defs.length >= 5);
+  fakeWindow.localStorage.setItem('zaiChat.cfg.RPT_ACL_ENABLED', 'X');
+  const s1Store = Object.assign(s1, { _mockStore: () => ({ sessions: [], messages: {} }), _mockComboFocused: () => null });
+  const dn = await s1Store._mockSendAgent({ sessionId: 'ua-s', question: '统计物料', scene: 'DATA' });
+  check('演示后端：没开放的场景直接拒绝（DENIED）', dn.status === 'DENIED' && /数据分析/.test(dn.answer), dn.answer);
+  const da = await s1Store._mockSendAgent({ sessionId: 'ua-s2', question: '你好', scene: 'AUTO' });
+  check('演示后端：没四个全开时「自动」也拒绝', da.status === 'DENIED' && /自动/.test(da.answer));
+  fakeWindow.localStorage.removeItem('zaiChat.cfg.RPT_ACL_ENABLED');
+
+  const csSrcUA = fs.readFileSync(path.join(WEBAPP, 'service/ChatService.js'), 'utf8');
+  const saveUA = (csSrcUA.match(/saveUserAccess: function[\s\S]*?\n                \},/) || [''])[0];
+  check('保存授权：发 Scenes / Reports / AccessSet，报表串走长文本通道', /Scenes: sScenes/.test(saveUA) && /Reports: sArg/.test(saveUA) &&
+    /AccessSet: "X"/.test(saveUA) && /_prepareQuestion\(sReports\)/.test(saveUA));
+  check('SEGW 没加参数时不显示授权维护（看 $metadata 有没有 SaveUser.Scenes）', /_fiHasParam\("SaveUser", "Scenes"\)/.test(csSrcUA));
+
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

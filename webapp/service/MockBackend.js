@@ -1,4 +1,4 @@
-sap.ui.define([], function () {
+sap.ui.define(["zai/chat/utils/UserAccess"], function (UserAccess) {
         "use strict";
 
         /**
@@ -181,6 +181,13 @@ sap.ui.define([], function () {
                         // 20261020：「Fiori 报表」会话走 FioriMockBackend（选报表 → 参数卡 → 分析闸门）
                         var oKnown = Service._mockStore().sessions.filter(function (s) { return s.SessionId === oPayload.sessionId; })[0];
                         var sSceneNow = String((oKnown && oKnown.AgentType) || oPayload.scene || "").toUpperCase();
+                        // 20261101：场景按用户开放（与 AGENT_SERVICE V15.11 同口径；组合结果已在上面放行）
+                        if (!UserAccess.sceneOk(Service.allowedScenes(), sSceneNow)) {
+                                var mLbl = { REPORT: "报表执行", FIORI: "Fiori 报表", DATA: "数据分析", CODE: "代码分析" };
+                                var sDeny = "你没有「" + (mLbl[sSceneNow] || "自动") + "」场景的使用权限, 请新建任务时选择已开放的场景, 或联系管理员开通。";
+                                return Promise.resolve({ answer: sDeny, status: "DENIED", elapsedMs: 0, rounds: 0, message: "场景未开放",
+                                        modelId: oPayload.modelId || "AUTO", trace: [], analysis: null });
+                        }
                         if (sSceneNow === "FIORI" && Service._mockFioriAgent) {
                                 return Service._mockFioriAgent(oPayload);
                         }
@@ -378,7 +385,8 @@ sap.ui.define([], function () {
                                 if (!oHit || oHit.Active !== "X" || oHit.PwdHash !== that._sha256Sync("zai#" + sPass)) {
                                         throw new Error("bad");
                                 }
-                                return { userId: oHit.UserId, userName: oHit.UserName || oHit.UserId, role: oHit.Role, mustChangePwd: false };
+                                return { userId: oHit.UserId, userName: oHit.UserName || oHit.UserId, role: oHit.Role,
+                                        scenes: oHit.AgentScenes || "", mustChangePwd: false };
                         });
                 },
 
@@ -402,6 +410,49 @@ sap.ui.define([], function () {
 
                 _mockSaveUsers: function () {
                         try { window.localStorage.setItem("zaiChat.mockUsers", JSON.stringify(this._oMockUsers || [])); } catch (e) { /* 忽略 */ }
+                },
+
+                /* =====================================================================
+                 * 20261101：按用户开放场景 + 报表授权的演示后端（与 ZCL_AI_ACCESS 同口径）
+                 * 场景 / 报表存在 mock 用户表的 AgentScenes / Reports；公共报表单独存；
+                 * 开关 RPT_ACL_ENABLED 与后端一样存配置（演示模式落 zaiChat.cfg.*）
+                 * ===================================================================== */
+                _mockPublicReports: function () {
+                        try { return window.localStorage.getItem("zaiChat.mockPublicReports") || ""; } catch (e) { return ""; }
+                },
+
+                _mockSaveUserAccess: function (sUserId, sScenes, sReports) {
+                        if (sUserId === "*") {
+                                try { window.localStorage.setItem("zaiChat.mockPublicReports", sReports || ""); } catch (e) { /* 忽略 */ }
+                                return Promise.resolve(true);
+                        }
+                        var a = this._mockUsers();
+                        var oRow = a.filter(function (u) { return String(u.UserId).toUpperCase() === String(sUserId).toUpperCase(); })[0];
+                        if (!oRow) {
+                                // 内置管理员不在 mock 用户表里，管理员本来就全开
+                                return Promise.reject(new Error(String(sUserId).toUpperCase() === "ADMIN" ? "管理员不受场景与报表限制，不用分配" : "用户不存在"));
+                        }
+                        oRow.AgentScenes = UserAccess.normScenes(sScenes).length === UserAccess.SCENES.length ? "" : sScenes;
+                        oRow.Reports = sReports || "";
+                        this._mockSaveUsers();
+                        return Promise.resolve(true);
+                },
+
+                /** 当前用户的报表授权上下文 {aclOn, admin, grants} */
+                _mockAccess: function () {
+                        var aclOn = false;
+                        try { aclOn = window.localStorage.getItem("zaiChat.cfg.RPT_ACL_ENABLED") === "X"; } catch (e) { aclOn = false; }
+                        var oMe = this.getAppUser() || {};
+                        var oRow = this._mockUsers().filter(function (u) { return String(u.UserId).toUpperCase() === String(oMe.userId || "").toUpperCase(); })[0] || {};
+                        return {
+                                aclOn: aclOn,
+                                admin: this.isAdmin(),
+                                grants: UserAccess.normReports(oRow.Reports).concat(UserAccess.normReports(this._mockPublicReports()))
+                        };
+                },
+
+                _mockReportOk: function (sSrc, sId) {
+                        return UserAccess.reportOk(this._mockAccess(), sSrc, sId);
                 },
 
                 /* =====================================================================

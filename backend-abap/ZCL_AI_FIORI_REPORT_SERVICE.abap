@@ -32,6 +32,12 @@
 *   agent_turn 内有 UPDATE zai_frpt_run SET analyzed = 'X';
 *   run 内有 zcl_ai_odata_client=>get( 与 zcl_ai_odata_shaper=>shape(;
 *   save_def_json 内有 lv_txt = ls_def-report_id.
+* V1.0.2  20261101(按用户开放场景 + 报表授权, 设计: 功能计划书/用户权限/01-方案):
+*         报表授权 ZCL_AI_ACCESS=>report_ok('FIORI', 编号): load_def 没授权返回错误(run /
+*         参数卡 / 重取都经过它); list_defs 与 find_candidates 跳过没授权的报表;
+*         agent_turn 目录点选那一步补上 load_def 错误判断. 开关 RPT_ACL_ENABLED 不开 /
+*         管理员 → 全部. 依赖: ZCL_AI_ACCESS V1.0(先激活)
+*         ★ 重贴后核对标记: 搜 zcl_ai_access=>report_ok( 有 3 处
 *=======================================================================
 CLASS zcl_ai_fiori_report_service DEFINITION
   PUBLIC
@@ -457,6 +463,13 @@ CLASS zcl_ai_fiori_report_service IMPLEMENTATION.
       ev_error = |报表 { iv_report_id } 未登记或已停用|.
       RETURN.
     ENDIF.
+    " V1.0.2: 报表授权(按用户)
+    IF zcl_ai_access=>report_ok( iv_src_type  = zcl_ai_access=>gc_src_fiori
+                                 iv_report_id = CONV string( lv_id ) ) = abap_false.
+      ev_error = zcl_ai_access=>report_deny_text( CONV string( es_def-report_name ) ).
+      CLEAR es_def.
+      RETURN.
+    ENDIF.
     SELECT * FROM zai_frpt_param
       WHERE report_id = @lv_id AND active = 'X'
       ORDER BY sort_no, param_id
@@ -490,6 +503,11 @@ CLASS zcl_ai_fiori_report_service IMPLEMENTATION.
       INTO TABLE @DATA(lt_par).
 
     LOOP AT lt_def INTO DATA(ls_d).
+      " V1.0.2: 只给有授权的报表
+      IF zcl_ai_access=>report_ok( iv_src_type  = zcl_ai_access=>gc_src_fiori
+                                   iv_report_id = CONV string( ls_d-report_id ) ) = abap_false.
+        CONTINUE.
+      ENDIF.
       CLEAR ls_out.
       ls_out-report_id       = ls_d-report_id.
       ls_out-report_name     = ls_d-report_name.
@@ -1357,6 +1375,11 @@ CLASS zcl_ai_fiori_report_service IMPLEMENTATION.
       WHERE active = 'X'
       INTO TABLE @DATA(lt_def).
     LOOP AT lt_def INTO DATA(ls_d).
+      " V1.0.2: 没授权的报表不进候选
+      IF zcl_ai_access=>report_ok( iv_src_type  = zcl_ai_access=>gc_src_fiori
+                                   iv_report_id = CONV string( ls_d-report_id ) ) = abap_false.
+        CONTINUE.
+      ENDIF.
       lv_score = 0.
       lv_name = to_lower( CONV string( ls_d-report_name ) ).
       REPLACE ALL OCCURRENCES OF ` ` IN lv_name WITH ``.
@@ -1481,6 +1504,11 @@ CLASS zcl_ai_fiori_report_service IMPLEMENTATION.
       ENDIF.
       load_def( EXPORTING iv_report_id = CONV string( ls_def-report_id )
                 IMPORTING es_def = ls_def et_params = lt_params ev_error = lv_err ).
+      IF lv_err IS NOT INITIAL.   " V1.0.2: 没授权等
+        rs-answer  = lv_err.
+        rs-summary = '报表不可用'.
+        RETURN.
+      ENDIF.
       lt_values = default_values( lt_params ).
       rs = card_turn( is_def = ls_def it_params = lt_params it_values = lt_values iv_lead = `` ).
       RETURN.

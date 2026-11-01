@@ -143,6 +143,12 @@
 *   get_params 主 SELECT 不变, 块标题另用动态列名读(没加这列 / 读失败只是不分组, 不影响激活);
 *   ReportDefinitions 随 tt_param 自动带出 GROUP_LABEL, 前端参数卡按它给复选框分组
 * ★ 重贴后核对标记: get_params 里有 lv_gcols = `PARAM_ID, GROUP_LABEL` 与 CATCH cx_sy_dynamic_osql_error
+* V1.0.16 20261101(按用户开放场景 + 报表授权, 设计: 功能计划书/用户权限/01-方案):
+*   list_defs 只返回当前用户有授权的报表(ZCL_AI_ACCESS=>report_ok('REPORT', 编号));
+*   start_run 定义核验后加授权核验, 没授权 → rejected. 开关 RPT_ACL_ENABLED 不开 /
+*   管理员 → 全部. get_def / get_def_by_tcode 不过滤(结果读取、组合来源按本人归属)
+*   依赖: ZCL_AI_ACCESS V1.0(先激活)
+*   ★ 重贴后核对标记: list_defs 与 start_run 里各有一处 zcl_ai_access=>report_ok(
 *=======================================================================
 CLASS zcl_ai_report_service DEFINITION
   PUBLIC
@@ -1105,6 +1111,11 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
       ORDER BY PRIMARY KEY
       INTO TABLE @DATA(lt).
     LOOP AT lt INTO DATA(ls_row).
+      " V1.0.16: 只给有授权的报表
+      IF zcl_ai_access=>report_ok( iv_src_type  = zcl_ai_access=>gc_src_report
+                                   iv_report_id = CONV string( ls_row-report_id ) ) = abap_false.
+        CONTINUE.
+      ENDIF.
       APPEND row_to_def( ls_row ) TO rt.
     ENDLOOP.
 
@@ -1331,6 +1342,13 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
     IF ls_def-exec_enabled = abap_false.
       rs-rejected = abap_true.
       rs-message  = |报表 { ls_def-report_name } 未开放执行权限|.
+      RETURN.
+    ENDIF.
+    " V1.0.16: 报表授权(按用户)
+    IF zcl_ai_access=>report_ok( iv_src_type  = zcl_ai_access=>gc_src_report
+                                 iv_report_id = ls_def-report_id ) = abap_false.
+      rs-rejected = abap_true.
+      rs-message  = zcl_ai_access=>report_deny_text( ls_def-report_name ).
       RETURN.
     ENDIF.
 

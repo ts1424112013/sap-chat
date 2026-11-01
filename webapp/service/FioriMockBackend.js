@@ -448,7 +448,9 @@ sap.ui.define([], function () {
 
                 /** 目录：报表 + 参数（字段名与后端 ty_def 序列化后的 camelCase 一致） */
                 _mockFioriDefsList: function () {
-                        return DEFS.map(function (d) {
+                        var Service = this;
+                        // 20261101：只给有授权的报表（与后端 list_defs 同口径）
+                        return DEFS.filter(function (d) { return Service._mockReportOk("FIORI", d.reportId); }).map(function (d) {
                                 return {
                                         reportId: d.reportId, reportName: d.reportName, category: d.category, keywords: d.keywords,
                                         description: d.description, analyzeEnabled: d.analyzeEnabled, sortNo: d.sortNo,
@@ -461,7 +463,10 @@ sap.ui.define([], function () {
                 },
 
                 _mockReportDefs: function () {
-                        return Promise.resolve({ defs: JSON.parse(JSON.stringify(TCODE_DEFS)), message: "" });
+                        var Service = this;
+                        // 20261101：只给有授权的报表（与后端 list_defs 同口径）
+                        var a = TCODE_DEFS.filter(function (d) { return Service._mockReportOk("REPORT", d.REPORT_ID); });
+                        return Promise.resolve({ defs: JSON.parse(JSON.stringify(a)), message: "" });
                 },
 
                 /**
@@ -482,6 +487,9 @@ sap.ui.define([], function () {
                         var sAnswer;
                         if (!oDef) {
                                 sAnswer = "【报表未登记】事务代码 " + sTc + " 未在系统报表登记表中，或已被停用。（演示模式）";
+                        } else if (!Service._mockReportOk("REPORT", oDef.REPORT_ID)) {
+                                sAnswer = "你没有报表「" + oDef.NAME + "(" + oDef.TCODE + ")」的使用权限, 请联系管理员在用户管理里分配。";
+                                bCard = false;
                         } else {
                                 sAnswer = "【报表 " + oDef.NAME + "】(" + oDef.TCODE + " / " + oDef.REPORT_ID + ")\n" + (oDef.DESCRIPTION || "") + "\n\n" +
                                         "【需要填写参数】(在任务卡表单中填写后提交执行; 聊天内不会直接提交作业, 参数由服务端二次校验)\n" +
@@ -615,6 +623,7 @@ sap.ui.define([], function () {
                         }
                         var oDef = this._mockFioriDef(o.ReportId);
                         if (!oDef) { throw new Error("报表 " + (o.ReportId || "") + " 未登记或已停用"); }
+                        if (!this._mockReportOk("FIORI", oDef.reportId)) { throw new Error("你没有报表「" + oDef.reportName + "」的使用权限, 请联系管理员在用户管理里分配。"); }
                         var mVals = {};
                         try { mVals = JSON.parse(o.ParamsJson || "{}") || {}; } catch (e) { throw new Error("参数格式不正确"); }
                         var oF = this._fioriBuildFilter(oDef, mVals);
@@ -677,7 +686,8 @@ sap.ui.define([], function () {
                 _fioriCandidates: function (sQ) {
                         var q = String(sQ || "").toLowerCase().replace(/\s+/g, "");
                         if (!q) { return []; }
-                        return DEFS.map(function (d) {
+                        var Service = this;
+                        return DEFS.filter(function (d) { return Service._mockReportOk("FIORI", d.reportId); }).map(function (d) {
                                 var n = d.reportName.toLowerCase().replace(/\s+/g, "");
                                 var iScore = 0;
                                 if (q.indexOf(n) >= 0) { iScore += 100; } else if (q.length >= 2 && n.indexOf(q) >= 0) { iScore += 60; }
@@ -708,6 +718,9 @@ sap.ui.define([], function () {
                                 var oHit = DEFS.filter(function (d) { return d.reportName === sName; })[0];
                                 if (!oHit) {
                                         return { kind: "ANSWER", answer: "没有找到名为「" + sName + "」的 Fiori 报表（可能已停用）。请在目录里重新选择。" };
+                                }
+                                if (!Service._mockReportOk("FIORI", oHit.reportId)) {
+                                        return { kind: "ANSWER", answer: "你没有报表「" + oHit.reportName + "」的使用权限, 请联系管理员在用户管理里分配。" };
                                 }
                                 return Service._fioriCardTurn(oHit, Service._fioriDefaults(oHit), "");
                         }

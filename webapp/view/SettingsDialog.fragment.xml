@@ -230,6 +230,15 @@
                                         <!-- ========== 用户管理（V8，仅管理员可见） ========== -->
                                         <VBox renderType="Bare" class="apvPane setGap" visible="{= ${settings>/setTab} === 'users' }">
                                                 <Text text="{i18n>usersHint}" class="hintText" wrapping="true"/>
+                                                <!-- 20261101：按用户限制报表（ZAI_CHAT_CFG RPT_ACL_ENABLED）；SEGW 没给 SaveUser 加授权参数时整块不显示 -->
+                                                <HBox class="uaAclCard" alignItems="Center" visible="{= !!${settings>/uaAvail} }">
+                                                        <VBox class="uaAclTxt">
+                                                                <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                                                <Title level="H5" text="{i18n>uaAclTitle}" class="codeAclTitle"/>
+                                                                <Text text="{= ${settings>/aclOn} ? ${i18n>uaAclOnHint} : ${i18n>uaAclOffHint} }" class="codeAclHint" wrapping="true"/>
+                                                        </VBox>
+                                                        <Switch state="{settings>/aclOn}" change=".onAclSwitch" tooltip="{i18n>uaAclTitle}"/>
+                                                </HBox>
                                                 <!-- 20261021：加载失败时空表显示失败原因，不再一律"暂无用户" -->
                                                 <Table id="userTable"
                                                         items="{settings>/userList}"
@@ -237,11 +246,12 @@
                                                         growing="true"
                                                         class="setTable">
                                                         <columns>
-                                                                <Column width="9rem"><Text text="{i18n>colUserId}"/></Column>
-                                                                <Column width="9rem"><Text text="{i18n>colUserName}"/></Column>
-                                                                <Column width="9rem"><Text text="{i18n>colUserRole}"/></Column>
-                                                                <Column width="5rem"><Text text="{i18n>colUserActive}"/></Column>
-                                                                <Column width="4.5rem"><Text text="{i18n>colUserDel}"/></Column>
+                                                                <Column width="6.5rem"><Text text="{i18n>colUserId}"/></Column>
+                                                                <Column width="7.5rem"><Text text="{i18n>colUserName}"/></Column>
+                                                                <Column width="7rem"><Text text="{i18n>colUserRole}"/></Column>
+                                                                <Column width="4rem"><Text text="{i18n>colUserActive}"/></Column>
+                                                                <Column visible="{= !!${settings>/uaAvail} }"><Text text="{i18n>colUserAccess}"/></Column>
+                                                                <Column width="3.5rem"><Text text="{i18n>colUserDel}"/></Column>
                                                         </columns>
                                                         <items>
                                                                 <ColumnListItem>
@@ -249,7 +259,12 @@
                                                                                 <Text text="{settings>UserId}"/>
                                                                                 <Text text="{settings>UserName}"/>
                                                                                 <Text text="{settings>Role}"/>
-                                                                                <ObjectStatus state="{settings>ActiveState}" text="{settings>IsActive}"/>
+                                                                                <ObjectStatus state="{settings>ActiveState}" text="{settings>IsActive}" visible="{= !${settings>IsPublic} }"/>
+                                                                                <Link text="{settings>AccessText}" press=".onEditUserAccess" class="uaCellLink" wrapping="true">
+                                                                                        <customData>
+                                                                                                <core:CustomData key="userId" value="{settings>UserId}"/>
+                                                                                        </customData>
+                                                                                </Link>
                                                                                 <!-- 20261021：内置管理员、自己、已停用的行不给停用按钮 -->
                                                                                 <Button icon="sap-icon://decline" type="Transparent" press=".onDeleteUser" tooltip="{i18n>userDisableTip}"
                                                                                         visible="{settings>CanDisable}">

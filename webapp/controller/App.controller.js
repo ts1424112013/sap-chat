@@ -40,8 +40,9 @@ sap.ui.define([
         "zai/chat/controller/mixin/SessionMessages",
         "zai/chat/controller/mixin/SkillPanel",
         "zai/chat/controller/mixin/ResultRestore",
-        "zai/chat/controller/mixin/ComboPanel"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel) {
+        "zai/chat/controller/mixin/ComboPanel",
+        "zai/chat/controller/mixin/UserAccessPanel"
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel) {
         "use strict";
 
         /**
@@ -603,7 +604,17 @@ sap.ui.define([
                         // 角色管理入口仅管理员可见；泡泡的「＋新增」仅管理员可加
                         this.byId("roleMngHero").setVisible(bAdmin);
                         this.byId("roleMngDock").setVisible(bAdmin);
+                        // 20261101：换了登录用户 → 报表目录按新用户的授权重读（目录在 _renderHeroBubbles 末尾画）
+                        if (this._mCat) {
+                                Object.keys(this._mCat).forEach(function (k) {
+                                        this._mCat[k].loaded = false;
+                                }, this);
+                        }
                         this._renderHeroBubbles();
+                        // 20261101：换了登录用户 → 场景按钮按新用户的开放范围重画
+                        if (this._renderScenePicker) {
+                                this._renderScenePicker();
+                        }
                 },
 
                 /** 应用层登录框（丝滑版）：品牌徽标 + 账密 + 错误条 + 演示入口 */
@@ -4523,6 +4534,10 @@ sap.ui.define([
                         var oCtxNow = this.getView().getModel("chat").getProperty("/currentSession") || {};
                         if (oCtxNow.mode !== "AGENT") {
                                 var sHint = this._sapSceneHint(this._prevUserText(iIndex));
+                                // 20261101：建议的场景没开放给当前用户 → 不建议
+                                if (sHint && !this._visibleScenes().some(function (o) { return o.key === sHint; })) {
+                                        sHint = "";
+                                }
                                 var oHintScene = sHint ? this._sceneDef(sHint) : null;
                                 if (oHintScene) {
                                         oEntry.ask = {
@@ -4975,5 +4990,5 @@ sap.ui.define([
                 hasText: function (s) {
                         return !!(s && s.length);
                 }
-        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel));
+        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel));
 });

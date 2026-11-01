@@ -146,6 +146,11 @@
 *   SEGW: 两个 Function Import, Return Type GenericResult(Complex Type, Cardinality 1),
 *   参数全部 Edm.String; ComboCreate 的 HTTP Method 为 POST. 先激活 ZCL_AI_COMBO_SERVICE
 *   ★ 重贴后核对标记: 有 WHEN 'COMBOCREATE' 与 WHEN 'COMBORESULT'; 搜 auth_reply 调用多 2 处
+* V15.12 20261101(按用户开放场景 + 报表授权, 设计: 功能计划书/用户权限/01-方案):
+*   SAVEUSER 多收 3 个参数 Scenes / Reports / AccessSet(SEGW 给 SaveUser 加 3 个 Edm.String
+*   参数), 拼进 v8_save_user 的 JSON; Reports 以 "@@ZAI_TEXT:" 开头时经 resolve_text 换回原文;
+*   两个值去掉双引号与反斜杠, 不让它们改动 JSON 里别的字段. 前端看 $metadata 有 Scenes 才发
+*   ★ 重贴后核对标记: WHEN 'SAVEUSER' 里有 "AccessSet" 与 lv_su_rep
 CLASS zcl_zai_chat_dpc_ext DEFINITION
   PUBLIC
   INHERITING FROM zcl_zai_chat_dpc
@@ -595,11 +600,27 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
                           CHANGING  cr_data  = er_data ).
 
       WHEN 'SAVEUSER'.
+        " V15.12: 场景 / 报表授权(老前端不带这 3 个参数时 AccessSet 为空, 服务不动授权)
+        DATA(lv_su_sc)  = v8_param( it_parameter = it_parameter iv_name = 'Scenes' ).
+        DATA(lv_su_rep) = v8_param( it_parameter = it_parameter iv_name = 'Reports' ).
+        DATA(lv_su_set) = v8_param( it_parameter = it_parameter iv_name = 'AccessSet' ).
+        IF find( val = lv_su_rep sub = gc_text_prefix ) = 0.
+          lv_su_rep = resolve_text( lv_su_rep ).
+        ENDIF.
+        REPLACE ALL OCCURRENCES OF `"` IN lv_su_sc WITH ``.
+        REPLACE ALL OCCURRENCES OF `"` IN lv_su_rep WITH ``.
+        REPLACE ALL OCCURRENCES OF `"` IN lv_su_set WITH ``.
+        REPLACE ALL OCCURRENCES OF `\` IN lv_su_sc WITH ``.
+        REPLACE ALL OCCURRENCES OF `\` IN lv_su_rep WITH ``.
+        REPLACE ALL OCCURRENCES OF `\` IN lv_su_set WITH ``.
         copy_data_to_ref( EXPORTING is_data  = zcl_ai_chat_service=>v8_save_user(
                                              iv_json = '{ "UserId": "'    && v8_param( it_parameter = it_parameter iv_name = 'UserId' ) &&
                                                        '", "UserName": "' && v8_param( it_parameter = it_parameter iv_name = 'UserName' ) &&
                                                        '", "Role": "'     && v8_param( it_parameter = it_parameter iv_name = 'Role' ) &&
-                                                       '", "Active": "'   && v8_param( it_parameter = it_parameter iv_name = 'Active' ) && '" }' )
+                                                       '", "Active": "'   && v8_param( it_parameter = it_parameter iv_name = 'Active' ) &&
+                                                       '", "Scenes": "'   && lv_su_sc &&
+                                                       '", "Reports": "'  && lv_su_rep &&
+                                                       '", "AccessSet": "' && lv_su_set && '" }' )
                           CHANGING  cr_data  = er_data ).
 
       WHEN 'GETCONFIG'.
