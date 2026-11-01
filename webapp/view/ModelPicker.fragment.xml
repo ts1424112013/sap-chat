@@ -18,6 +18,8 @@
                                                                 <Text text="{chat>ModelName}" class="mpName" wrapping="false"/>
                                                                 <Text text="{chat>pickDesc}" visible="{= !!${chat>pickDesc} }" class="mpDesc" wrapping="false"/>
                                                         </VBox>
+                                                        <!-- 20261029：开了思考的模型带一个小标记 -->
+                                                        <Text text="{i18n>modelThinkTag}" visible="{= !!${chat>thinkOn} }" class="mpThinkTag" wrapping="false"/>
                                                         <core:Icon src="sap-icon://accept" visible="{= ${chat>ModelId} === ${chat>/currentModel} }" class="mpCheck"/>
                                                 </HBox>
                                         </CustomListItem>

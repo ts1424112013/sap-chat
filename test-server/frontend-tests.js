@@ -6,7 +6,8 @@
  * fetch 换成按调用顺序回放的假实现，覆盖：
  *   Formatter（转义 / 白名单清洗 / Markdown）、TraceService.normalizeResult、
  *   ChartRenderer.analyze、ChatService 的 FI 通道（CSRF 重试 FE-01、V8 失败判断 FE-02、
- *   POST 参数位置 FE-08、OData 字符串字面量转义）、长文本通道（20261021，AnalyzeCode 414）。
+ *   POST 参数位置 FE-08、OData 字符串字面量转义）、长文本通道（20261021，AnalyzeCode 414）、
+ *   思考模式（20261029：思考设置解析 / 保存、回答开头 <think> 块拆分、演示对话带思考）。
  */
 const fs = require('fs');
 const path = require('path');
@@ -612,6 +613,103 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   check('保存授权：发 Scenes / Reports / AccessSet，报表串走长文本通道', /Scenes: sScenes/.test(saveUA) && /Reports: sArg/.test(saveUA) &&
     /AccessSet: "X"/.test(saveUA) && /_prepareQuestion\(sReports\)/.test(saveUA));
   check('SEGW 没加参数时不显示授权维护（看 $metadata 有没有 SaveUser.Scenes）', /_fiHasParam\("SaveUser", "Scenes"\)/.test(csSrcUA));
+
+  console.log('\n━━ 思考模式（20261029）');
+  check('思考设置解析：大小写不敏感、写法只认 DS/QW/OL + 1/0、同一模型以第一次为准（与后端 parse_think_cfg 一致）',
+    JSON.stringify(ChatService.parseThinkCfg(' ds_v4 = ds1 ,GLM=QW0,BAD=XX1,DS_V4=QW1,OLL=ol1,,=DS1')) ===
+      JSON.stringify({ DS_V4: 'DS1', GLM: 'QW0', OLL: 'OL1' }));
+  check('思考设置写回：按模型 ID 排序、丢掉无效项', ChatService.formatThinkCfg({ B: 'QW0', A: 'DS1', C: 'ZZ1' }) === 'A=DS1,B=QW0');
+  const sp1 = ChatService.splitThink('\n<think>\n先确认口径\n再查表\n</think>\n\n**结论**：3 行');
+  check('拆开回答开头的 <think> 块：思考去掉首尾空白，回答只留正文', sp1.reasoning === '先确认口径\n再查表' && sp1.answer === '**结论**：3 行');
+  check('没有思考块 / 思考块不在开头：原样返回',
+    ChatService.splitThink('普通回答').answer === '普通回答' && ChatService.splitThink('普通回答').reasoning === '' &&
+    ChatService.splitThink('标签 <think>x</think> 在中间').answer === '标签 <think>x</think> 在中间');
+  const wr = ChatService._withThink({ answer: '<think>\n想\n</think>\n\n答' });
+  const wr2 = ChatService._withThink(wr);
+  check('发送结果后处理：answer 只留回答、思考放 reasoning；重复处理不变', wr.answer === '答' && wr.reasoning === '想' && wr2.answer === '答' && wr2.reasoning === '想');
+  check('空思考块（模型关思考时的 <think></think>）去掉，不生成 reasoning',
+    (function () { const r = ChatService._withThink({ answer: '<think>\n\n</think>\n\n答' }); return r.answer === '答' && !r.reasoning; })());
+  check('参数写法推荐：Ollama → OL；名字带 deepseek → DS；其他 → QW',
+    ChatService.suggestThinkStyle({ ModelType: 'OLLAMA', ApiModel: 'deepseek-r1' }) === 'OL' &&
+    ChatService.suggestThinkStyle({ ModelType: 'OPENAI', ApiModel: 'DeepSeek-V4-Flash' }) === 'DS' &&
+    ChatService.suggestThinkStyle({ ModelType: 'OPENAI', ApiModel: 'glm-4.6' }) === 'QW');
+  ChatService.setConfig({ mode: 'mock' });
+  await ChatService.getModelThinkMap(true);
+  check('演示模式默认给 DeepSeek 演示模型开思考，其他模型不开',
+    ChatService.isThinkOn('mock_deepseek') && !ChatService.isThinkOn('MOCK_OLLAMA_QWEN') && ChatService.thinkModeOf('MOCK_DEEPSEEK') === 'DS1');
+  await ChatService.saveModelThink('mock_vllm', 'QW0');
+  const mAfter = await ChatService.getModelThinkMap(true);
+  check('保存一个模型的思考设置：先重读再改这一项，其他模型保留', mAfter.MOCK_VLLM === 'QW0' && mAfter.MOCK_DEEPSEEK === 'DS1' && !ChatService.isThinkOn('MOCK_VLLM'));
+  await ChatService.saveModelThink('MOCK_VLLM', '');
+  check('改回「不传」= 删掉这一项', !('MOCK_VLLM' in (await ChatService.getModelThinkMap(true))));
+  let tooLong = '';
+  try {
+    const mBig = {};
+    for (let i = 0; i < 20; i++) { mBig['MODEL_LONG_ID_' + String(i).padStart(4, '0')] = 'DS1'; }
+    ChatService._mThink = mBig;
+    const fnGet = ChatService.getModelThinkMap;
+    ChatService.getModelThinkMap = () => Promise.resolve(Object.assign({}, mBig));
+    try { await ChatService.saveModelThink('ONE_MORE', 'QW1'); } catch (e) { tooLong = e.message; }
+    ChatService.getModelThinkMap = fnGet;
+  } finally { await ChatService.getModelThinkMap(true); }
+  check('超过 CFGVALUE 255 字时拒绝保存并说明原因', /255/.test(tooLong), tooLong);
+  const sidT = 'S_THINK_' + Date.now();
+  const rThink = await ChatService.send({ sessionId: sidT, question: '怎么连接后端？', modelId: 'MOCK_DEEPSEEK' });
+  const histT = (ChatService._mockStore().messages[sidT] || []).filter((m) => m.Role === 'assistant');
+  check('演示对话（开思考的模型）：回答不含 <think>，思考在 reasoning；历史里存的回答不含思考',
+    !/<think>/i.test(rThink.answer) && /对话模式/.test(rThink.reasoning || '') && histT.length === 1 && !/<think>/i.test(histT[0].Content));
+  const rNo = await ChatService.send({ sessionId: sidT + 'B', question: '你好', modelId: 'MOCK_OLLAMA_QWEN' });
+  check('演示对话（没开思考的模型）：没有 reasoning，回答与原来一致', !rNo.reasoning && /演示模式/.test(rNo.answer));
+
+  console.log('\n━━ 输入框「深度思考」按钮（20261029）');
+  ChatService.setConfig({ mode: 'mock' });
+  await ChatService.getModelThinkMap(true);
+  fakeWindow.localStorage.removeItem(ChatService.THINK_PREF_KEY);
+  check('配了参数写法的模型才算支持思考', ChatService.thinkCapable('MOCK_DEEPSEEK') && !ChatService.thinkCapable('MOCK_VLLM'));
+  check('没点过按钮：按模型管理里的开关', ChatService.getThinkPref('MOCK_DEEPSEEK') === undefined && ChatService.effectiveThink('MOCK_DEEPSEEK') === true);
+  ChatService.setThinkPref('mock_deepseek', false);
+  check('点过按钮：按用户的（按模型记，大小写不敏感）', ChatService.getThinkPref('MOCK_DEEPSEEK') === false && ChatService.effectiveThink('MOCK_DEEPSEEK') === false);
+  ChatService.setThinkPref('MOCK_VLLM', true);
+  check('不支持思考的模型：点过也不思考', ChatService.effectiveThink('MOCK_VLLM') === false);
+  const rOff = await ChatService.send({ sessionId: 'S_TB_' + Date.now(), question: '你好', modelId: 'MOCK_DEEPSEEK', think: 'N' });
+  check('演示：按钮关掉时（Think=N）开了思考的模型也不思考', !rOff.reasoning);
+  fakeWindow.localStorage.removeItem(ChatService.THINK_PREF_KEY);
+
+  function thinkModel(bParam) {
+    const calls = [];
+    const fi = (n) => ({ name: n, parameter: [{ name: 'SessionId' }, { name: 'Question' }].concat(bParam ? [{ name: 'Think' }] : []) });
+    return {
+      calls,
+      metadataLoaded: () => Promise.resolve(),
+      getServiceMetadata: () => ({ dataServices: { schema: [{ entityContainer: [{ entitySet: [{ name: 'Sessions' }],
+        functionImport: [fi('AnalyzeCode'), fi('AnalyzeTask')] }] }] } }),
+      callFunction: (sFi, mp) => {
+        calls.push({ fi: sFi, params: mp.urlParameters });
+        mp.success({ Answer: '<think>\n先想一下\n</think>\n\n回答', Status: 'OK' });
+      }
+    };
+  }
+  ChatService.setConfig({ mode: 'backend', host: '', path: '/p/' });
+  let tm = thinkModel(true);
+  ChatService._getModel = () => tm;
+  ChatService._taskApiAvailable = null;
+  check('后端声明了 Think 参数：两种模式都能按次开关', ChatService.supportsThinkToggle('CHAT') && ChatService.supportsThinkToggle('AGENT'));
+  const rB = await ChatService.send({ sessionId: 'S1', question: '问', modelId: 'M1', think: 'X' });
+  await ChatService.sendTask({ sessionId: 'S1', question: '问', modelId: 'M1', think: 'N' });
+  check('AnalyzeCode 带 Think=X、AnalyzeTask 带 Think=N', tm.calls[0].params.Think === 'X' && tm.calls[1].fi === '/AnalyzeTask' && tm.calls[1].params.Think === 'N',
+    JSON.stringify(tm.calls.map((c) => [c.fi, c.params.Think])));
+  check('后端回答开头的思考块拆到 reasoning（真实接口路径）', rB.answer === '回答' && rB.reasoning === '先想一下');
+  await ChatService.send({ sessionId: 'S1', question: '问', modelId: 'M1' });
+  check('没传 think：不带 Think 参数（按模型配置）', !('Think' in tm.calls[2].params));
+  tm = thinkModel(false);
+  ChatService._taskApiAvailable = null;
+  check('SEGW 还没加 Think 参数：不显示按钮', !ChatService.supportsThinkToggle('CHAT') && !ChatService.supportsThinkToggle('AGENT'));
+  await ChatService.send({ sessionId: 'S1', question: '问', modelId: 'M1', think: 'X' });
+  await ChatService.sendTask({ sessionId: 'S1', question: '问', modelId: 'M1', think: 'X' });
+  check('SEGW 还没加 Think 参数：不发送（不会因多余参数报错）', tm.calls.length === 2 && tm.calls.every((c) => !('Think' in c.params)));
+  ChatService._getModel = origGetModel;
+  ChatService._taskApiAvailable = null;
+  ChatService.setConfig({ mode: 'mock' });
 
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);

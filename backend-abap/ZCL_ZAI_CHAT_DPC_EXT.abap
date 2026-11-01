@@ -138,6 +138,15 @@
 *   SEGW: Function Import AgentProgress, HTTP Method GET, Return Type
 *   GenericResult(Complex Type, Cardinality 1), 参数 ClientRequestId Edm.String 32。
 *   ★ 重贴后核对标记: 有 WHEN 'AGENTPROGRESS' 与 iv_request_id = lv_at_rid
+* V15.10 20261029(思考模式, SEGW 无需改动): AnalyzeCode / AnalyzeAgent / AnalyzeTask 出参时
+*   用 ZCL_AI_LLM_CLIENT=>wrap_think 把本轮思考过程放在 Answer 前面(<think>…</think>),
+*   前端拆开放进可折叠的「思考过程」区。只在这里拼 —— 服务层落库的回答不含思考。
+*   需先激活 LLM_CLIENT V1.6、CHAT_SERVICE V2.7(分支上为 V2.6)、AGENT_SERVICE V15.9(出参新字段 reasoning)
+*   另: 公共参数循环多读 Think(输入框「深度思考」按钮, X = 开 / N = 关), 传给 analyze /
+*   analyze_agent。SEGW: 给函数导入 AnalyzeCode 与 AnalyzeTask 各加参数 Think(Edm.String,
+*   Nullable, 长度 1)并重新生成; 未加之前前端不显示按钮、不发送(按 metadata 探测)
+*   ★ 重贴后核对标记: 搜 wrap_think( 应有 2 处(ANALYZECODE 分支 + to_agent_odata);
+*   公共参数循环有 WHEN 'THINK'; ANALYZECODE 与 ANALYZETASK 分支都有 iv_think = lv_think
 * V15.11 20261031(组合分析二期, 设计: 功能计划书/组合分析/01-二期方案 V1.1; 版本号跳过
 *   V15.10, 思考模式分支在用): 新增 2 个函数导入, 返回 GenericResult(经 auth_reply):
 *   - COMBOCREATE(POST; SessionId / SpecJson / ClientRequestId): 组合并登记 ——
@@ -285,6 +294,7 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
           lv_question TYPE string,
           lv_model    TYPE string,
           lv_prog     TYPE string,
+          lv_think    TYPE string,      " V15.10: 输入框「深度思考」按钮 X / N(SEGW 没加参数时为空)
           ls_param    LIKE LINE OF it_parameter.
 
     LOOP AT it_parameter INTO ls_param.
@@ -293,6 +303,7 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
         WHEN 'QUESTION'.     lv_question = ls_param-value.
         WHEN 'MODELID'.      lv_model    = ls_param-value.
         WHEN 'PROGRAMNAME'.  lv_prog     = ls_param-value.
+        WHEN 'THINK'.        lv_think    = to_upper( ls_param-value ).
       ENDCASE.
     ENDLOOP.
 
@@ -486,8 +497,12 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
                     iv_question     = lv_question
                     iv_model_id     = lv_model
                     iv_program_name = lv_prog
+                    iv_think        = lv_think   " V15.10
           IMPORTING es_result       = ls_result ).
 
+        " V15.10: 思考过程放在回答前面回给前端(落库的回答不含思考)
+        ls_result-answer = zcl_ai_llm_client=>wrap_think( iv_reasoning = ls_result-reasoning
+                                                          iv_answer    = ls_result-answer ).
         copy_data_to_ref( EXPORTING is_data  = ls_result
                           CHANGING  cr_data  = er_data ).
 
@@ -676,6 +691,7 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
                     iv_task_id           = lv_at_tid
                     iv_skill_id          = lv_at_skill
                     iv_request_id        = lv_at_rid   " V15.9: 运行进度键(边跑边看)
+                    iv_think             = lv_think    " V15.10: 输入框「深度思考」按钮
           IMPORTING es_result            = ls_atask ).
 
         IF ls_atask-status <> 'DENIED' AND ls_atask-status <> 'ERROR'.
@@ -1207,7 +1223,9 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
     " SEGW 属性名大写精确匹配, 不容忍下划线 —— 逐字段搬运)
     CLEAR rs.
     rs-sessionid         = is_agent-session_id.
-    rs-answer            = is_agent-answer.
+    " V15.10: 思考过程放在回答前面(落库的回答不含思考)
+    rs-answer            = zcl_ai_llm_client=>wrap_think( iv_reasoning = is_agent-reasoning
+                                                          iv_answer    = is_agent-answer ).
     rs-status            = is_agent-status.
     rs-modelid           = is_agent-model_id.
     rs-rounds            = is_agent-rounds.

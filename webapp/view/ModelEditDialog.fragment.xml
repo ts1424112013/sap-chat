@@ -74,6 +74,21 @@
                                                 <CheckBox selected="{me>/UserHideSrcBool}"/>
                                                 <Text text="{i18n>fldUserHideSrcHint}" class="hintText" wrapping="true"/>
                                         </VBox>
+                                        <!-- 20261029：思考模式（每个模型单独开关，存 ZAI_CHAT_CFG-MODEL_THINK；后端 LLM_CLIENT V1.6 按参数写法拼进请求）
+                                             DeepSeek → chat_template_kwargs.thinking；Qwen / GLM → chat_template_kwargs.enable_thinking；Ollama → think -->
+                                        <Label text="{i18n>fldThink}"/>
+                                        <VBox class="thinkCfgBox">
+                                                <CheckBox selected="{me>/ThinkOn}" text="{i18n>fldThinkOn}" select=".onThinkToggle"/>
+                                                <Select selectedKey="{me>/ThinkStyle}" width="100%" tooltip="{i18n>fldThinkStyle}" change=".onThinkStyleChange">
+                                                        <items>
+                                                                <core:Item key="" text="{i18n>fldThinkStyleNone}"/>
+                                                                <core:Item key="DS" text="{i18n>fldThinkStyleDs}"/>
+                                                                <core:Item key="QW" text="{i18n>fldThinkStyleQw}"/>
+                                                                <core:Item key="OL" text="{i18n>fldThinkStyleOl}"/>
+                                                        </items>
+                                                </Select>
+                                                <Text text="{i18n>fldThinkHint}" class="hintText" wrapping="true"/>
+                                        </VBox>
                                         <Text text="{i18n>modelEditHint}" class="hintText" wrapping="true"/>
                                 </f:content>
                         </f:SimpleForm>

@@ -357,9 +357,14 @@ sap.ui.define([
                 /**
                  * 发送消息（对话或代码分析）
                  * @param {object} oPayload {sessionId, question, modelId, programName}
-                 * @returns {Promise<{answer, status, elapsedMs, codeLines, message, modelId}>}
+                 * @returns {Promise<{answer, status, elapsedMs, codeLines, message, modelId, reasoning}>}
+                 *          20261029：reasoning = 本轮思考过程（后端放在 Answer 开头的 <think> 块，这里拆开）
                  */
                 send: function (oPayload) {
+                        return this._sendRaw(oPayload).then(Service._withThink);
+                },
+
+                _sendRaw: function (oPayload) {
                         if (this._sConfig.mode === "mock") {
                                 return this._mockSend(oPayload);
                         }
@@ -367,15 +372,20 @@ sap.ui.define([
                         var oModel = this._getModel();
                         // 20261021：问题太长时先走长文本通道（见 _prepareQuestion），否则网关 414
                         return this._prepareQuestion(oPayload.question).then(function (sQuestion) {
+                          var mParams = {
+                                SessionId: oPayload.sessionId,
+                                Question: sQuestion,
+                                ModelId: oPayload.modelId || "",
+                                ProgramName: oPayload.programName || ""
+                          };
+                          // 20261029：输入框「深度思考」按钮（SEGW 给 AnalyzeCode 加了 Think 参数才发送）
+                          if (oPayload.think && that._fiHasParam("AnalyzeCode", "Think")) {
+                                mParams.Think = oPayload.think;
+                          }
                           return new Promise(function (fnResolve, fnReject) {
                                 oModel.callFunction("/AnalyzeCode", {
                                         method: "POST",
-                                        urlParameters: {
-                                                SessionId: oPayload.sessionId,
-                                                Question: sQuestion,
-                                                ModelId: oPayload.modelId || "",
-                                                ProgramName: oPayload.programName || ""
-                                        },
+                                        urlParameters: mParams,
                                         success: function (oData) {
                                                 // V2 callFunction 返回结构做兼容解包：d.AnalyzeCode 或直接对象
                                                 var res = oData && (oData.AnalyzeCode || oData) || {};
@@ -410,6 +420,10 @@ sap.ui.define([
                   * @returns {Promise<{answer, status, elapsedMs, rounds, message, modelId, trace, analysis}>}
                   */
                 sendAgent: function (oPayload) {
+                        return this._sendAgentRaw(oPayload).then(Service._withThink);
+                },
+
+                _sendAgentRaw: function (oPayload) {
                         if (oPayload.skillId && oPayload.skillId !== "NONE") {
                                 return Promise.reject(new Error("技能请求必须使用 AnalyzeTask，不能降级到旧 Agent 接口"));
                         }
@@ -493,9 +507,13 @@ sap.ui.define([
                   *                   {taskId, taskModule, taskStatus, needsInput, pendingParamsJson, artifactRefsJson}
                   */
                 sendTask: function (oPayload) {
+                        return this._sendTaskRaw(oPayload).then(Service._withThink);
+                },
+
+                _sendTaskRaw: function (oPayload) {
                         if (this._sConfig.mode === "mock") {
                                 // 20261028：演示模式按过程摘要一步步放出进度（getAgentProgress 读），放完才返回回答
-                                return this._mockLiveRun(oPayload.clientRequestId, this._mockSendSkillTask(oPayload));
+                                return this._mockLiveRun(oPayload.clientRequestId, this._mockSendSkillTask(oPayload), oPayload.modelId, oPayload.question, oPayload.think);
                         }
                         if (this._taskApiAvailable === false) {
                                 if (oPayload.skillId && oPayload.skillId !== "NONE") {
@@ -517,6 +535,10 @@ sap.ui.define([
                         // 未加时不发，后端按"自动"处理，不会因多余参数报错）
                         if (oPayload.scene && this._fiHasParam("AnalyzeTask", "Scene")) {
                                 mParams.Scene = oPayload.scene;
+                        }
+                        // 20261029：输入框「深度思考」按钮（SEGW 给 AnalyzeTask 加了 Think 参数才发送）
+                        if (oPayload.think && this._fiHasParam("AnalyzeTask", "Think")) {
+                                mParams.Think = oPayload.think;
                         }
                         if (this._fiHasParam("AnalyzeTask", "SkillId")) {
                                 mParams.SkillId = oPayload.skillId || "";
@@ -1217,14 +1239,16 @@ sap.ui.define([
                                         focusedArtifactId: o.focusedArtifactId || "",
                                         // 20261011：会话场景（仅新会话首条消息生效，后端以库内为准）
                                         scene: o.scene || "",
-                                        skillId: o.skillId || ""
+                                        skillId: o.skillId || "",
+                                        think: o.think || ""      // 20261029：X / N / 空 = 按模型配置
                                 });
                         }
                         return this.send({
                                 sessionId: o.sessionId,
                                 question: o.question,
                                 modelId: o.modelId,
-                                programName: ""    // V4 起 prompt 保持纯用户输入
+                                programName: "",   // V4 起 prompt 保持纯用户输入
+                                think: o.think || ""
                         });
                 },
 
@@ -1377,6 +1401,177 @@ sap.ui.define([
                         return Promise.all(Object.keys(this.AGENT_MODEL_KEYS).map(function (k) {
                                 return that.saveConfigValue(that.AGENT_MODEL_KEYS[k], ((mRules || {})[k] || []).join(","));
                         }));
+                },
+
+                // =================================================================
+                // 20261029：思考模式 —— 每个模型单独开关，存 ZAI_CHAT_CFG-MODEL_THINK（GetConfig / SaveConfig，
+                // 不改表结构 / SEGW），后端 ZCL_AI_LLM_CLIENT V1.6 每次调模型时读。
+                // 值："模型ID=写法开关" 逗号分隔，如 "DS_V4=DS1,GLM_LOCAL=QW0"（CFGVALUE 是 CHAR 255）
+                //   写法 DS = chat_template_kwargs.thinking（DeepSeek）
+                //        QW = chat_template_kwargs.enable_thinking（Qwen / GLM）
+                //        OL = Ollama 原生 think
+                //   末位 1 = 开，0 = 关（显式传 false）；不在列表里的模型不传思考参数（原来的行为）
+                // 后端把思考过程放在 Answer 开头（<think>…</think>），_withThink 拆到 res.reasoning。
+                // =================================================================
+                THINK_KEY: "MODEL_THINK",
+                _mThink: null,
+
+                /** "A=DS1,B=QW0" → { A: "DS1", B: "QW0" }（同一模型写了两次以第一次为准，与后端一致） */
+                parseThinkCfg: function (sVal) {
+                        var m = {};
+                        String(sVal || "").split(",").forEach(function (sItem) {
+                                var a = sItem.split("=");
+                                var k = String(a[0] || "").trim().toUpperCase();
+                                var v = String(a[1] || "").trim().toUpperCase();
+                                if (k && !Object.prototype.hasOwnProperty.call(m, k) && /^(DS|QW|OL)[01]$/.test(v)) {
+                                        m[k] = v;
+                                }
+                        });
+                        return m;
+                },
+
+                formatThinkCfg: function (m) {
+                        return Object.keys(m || {}).sort().filter(function (k) {
+                                return /^(DS|QW|OL)[01]$/.test(m[k]);
+                        }).map(function (k) { return k + "=" + m[k]; }).join(",");
+                },
+
+                /** 读全部模型的思考设置（按连接缓存；bReload 强制重读）。读失败返回空表，不影响对话 */
+                getModelThinkMap: function (bReload) {
+                        var that = this;
+                        if (this._mThink && !bReload) {
+                                return Promise.resolve(Object.assign({}, this._mThink));
+                        }
+                        return this.getConfigValue(this.THINK_KEY).catch(function () { return ""; }).then(function (sVal) {
+                                // 演示模式：没维护过时默认给 DeepSeek 演示模型开思考，方便看效果
+                                if (!sVal && that._sConfig.mode === "mock") {
+                                        sVal = "MOCK_DEEPSEEK=DS1";
+                                }
+                                that._mThink = that.parseThinkCfg(sVal);
+                                return Object.assign({}, that._mThink);
+                        });
+                },
+
+                /** 某个模型的思考设置（同步读缓存）："" / "DS1" / "QW0" … */
+                thinkModeOf: function (sModelId) {
+                        return (this._mThink || {})[String(sModelId || "").trim().toUpperCase()] || "";
+                },
+
+                isThinkOn: function (sModelId) {
+                        return /1$/.test(this.thinkModeOf(sModelId));
+                },
+
+                // ---------- 输入框「深度思考」按钮 ----------
+                // 模型配了参数写法（不管开关是 1 还是 0）= 支持思考，输入框里显示按钮；
+                // 按钮默认跟模型管理里的开关，用户点过就按用户的（按模型记在本浏览器）。
+                // 后端要在 SEGW 给 AnalyzeCode / AnalyzeTask 加 Think 参数后才能按次开关，没加之前不显示按钮
+                THINK_PREF_KEY: "zaiChat.thinkPref",
+
+                /** 这个模型能不能思考（管理员配了参数写法） */
+                thinkCapable: function (sModelId) {
+                        return !!this.thinkModeOf(sModelId);
+                },
+
+                /** 后端能不能按次开关（SEGW 有 Think 参数；演示模式恒为 true） */
+                supportsThinkToggle: function (sMode) {
+                        if (this._sConfig.mode === "mock") {
+                                return true;
+                        }
+                        return this._fiHasParam(sMode === "AGENT" ? "AnalyzeTask" : "AnalyzeCode", "Think");
+                },
+
+                _readThinkPrefs: function () {
+                        try {
+                                var o = JSON.parse(window.localStorage.getItem(this.THINK_PREF_KEY) || "{}");
+                                return o && typeof o === "object" ? o : {};
+                        } catch (e) {
+                                return {};
+                        }
+                },
+
+                /** 用户在输入框里点过的开关：true / false；没点过 = undefined（跟模型配置） */
+                getThinkPref: function (sModelId) {
+                        var v = this._readThinkPrefs()[String(sModelId || "").trim().toUpperCase()];
+                        return typeof v === "boolean" ? v : undefined;
+                },
+
+                setThinkPref: function (sModelId, bOn) {
+                        var m = this._readThinkPrefs();
+                        m[String(sModelId || "").trim().toUpperCase()] = !!bOn;
+                        try {
+                                window.localStorage.setItem(this.THINK_PREF_KEY, JSON.stringify(m));
+                        } catch (e) { /* 存不了就只在本次有效 */ }
+                },
+
+                /** 发送时实际用的开关：不支持思考 = false；用户点过按用户的；否则按模型配置 */
+                effectiveThink: function (sModelId) {
+                        if (!this.thinkCapable(sModelId)) {
+                                return false;
+                        }
+                        var v = this.getThinkPref(sModelId);
+                        return v === undefined ? this.isThinkOn(sModelId) : v;
+                },
+
+                /** 按模型类型 / 名称猜参数写法：Ollama → OL；名字里有 deepseek → DS；其他（Qwen / GLM / vLLM）→ QW */
+                suggestThinkStyle: function (oCfg) {
+                        var o = oCfg || {};
+                        if (String(o.ModelType || "").toUpperCase() === "OLLAMA") {
+                                return "OL";
+                        }
+                        return /deepseek/i.test([o.ApiModel, o.ModelName, o.ModelId].join(" ")) ? "DS" : "QW";
+                },
+
+                /**
+                 * 保存某个模型的思考设置（管理员）：先重读再改这一项，避免覆盖别人刚存的
+                 * @param {string} sModelId 模型 ID
+                 * @param {string} sMode "DS1" / "QW0" / … ；空 = 删掉这一项（不传思考参数）
+                 */
+                saveModelThink: function (sModelId, sMode) {
+                        var that = this;
+                        var sId = String(sModelId || "").trim().toUpperCase();
+                        var sNew = String(sMode || "").toUpperCase();
+                        if (!sId) {
+                                return Promise.reject(new Error("缺少模型 ID"));
+                        }
+                        return this.getModelThinkMap(true).then(function (m) {
+                                if (/^(DS|QW|OL)[01]$/.test(sNew)) {
+                                        m[sId] = sNew;
+                                } else {
+                                        delete m[sId];
+                                }
+                                var sVal = that.formatThinkCfg(m);
+                                if (sVal.length > 255) {
+                                        throw new Error("思考设置太多（超过 255 字），请先把不用的模型改回「不传参数」");
+                                }
+                                return that.saveConfigValue(that.THINK_KEY, sVal).then(function () {
+                                        that._mThink = m;
+                                        return Object.assign({}, m);
+                                });
+                        });
+                },
+
+                /** 拆开回答开头的 <think>…</think>：{ reasoning, answer }（没有思考块时原样返回） */
+                splitThink: function (sText) {
+                        var s = String(sText || "");
+                        var m = /^\s*<think>([\s\S]*?)<\/think>\s*/i.exec(s);
+                        if (!m) {
+                                return { reasoning: "", answer: s };
+                        }
+                        return { reasoning: m[1].trim(), answer: s.slice(m[0].length) };
+                },
+
+                /** 发送结果统一后处理：answer 只留正式回答，思考过程放 reasoning（重复调用无副作用） */
+                _withThink: function (res) {
+                        if (res && typeof res.answer === "string") {
+                                var o = Service.splitThink(res.answer);
+                                if (o.answer !== res.answer) {
+                                        res.answer = o.answer;
+                                        if (o.reasoning) {
+                                                res.reasoning = res.reasoning ? res.reasoning + "\n\n" + o.reasoning : o.reasoning;
+                                        }
+                                }
+                        }
+                        return res;
                 },
 
                 /**
