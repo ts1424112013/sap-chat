@@ -53,6 +53,11 @@
 *     {WERKS} {BY}; 一条规则最多一个 {SEQn}; NUMC 字段只能用数字文字与 SEQ/NUM/DATE/TIME
 *   · 保存时校验写法与最短长度(check_rule), 写入时超长 / NUMC 非数字照旧拒绝;
 *     生成值(随机 / 序号 / 含随机或序号的规则)作主键碰撞 → 报错重试, 不误报"已有权限"
+* V1.6 20261102: 固定值不再靠人记 —— ① describe_table 给每个 CHAR / NUMC 字段带上
+*   "可选值"(opts): 域固定值(DD07V, 带说明) + 这张表里已用过的值(按出现次数, 只读
+*   GROUP BY, METHOD fill_hints); 字段带中文说明 ddtext(DDIC 字段描述)。② 固定值可写
+*   备注(FmapJson 每行新增 "n", 只在 CONST 时保存, 最长 80): SE11 给 ZAI_AUTH_FMAP /
+*   ZAI_AUTH_RMAP 各加字段 NOTE CHAR 80(先加字段再重贴本类)。不改 SEGW, 不改 DPC。
 * ★ 重贴后核对标记: "INSERT (" 只在 METHOD grant_row, "DELETE FROM (" 只在 METHOD
 *   revoke_row; "SELECT SINGLE * FROM (" 只在 row_exists(查重)与 tcode_known(自动发现, 只读);
 *   有 METHOD quote(不依赖 cl_abap_dyn_prg); decide 内有 'PENDING' 状态校验;
@@ -63,6 +68,8 @@
 *   V1.3: user_addr 只出现在 METHOD fill_user_info, list_requests 末尾调它
 *   V1.5: "SELECT (" 读目标表只在 METHOD seq_max(只读); 有 METHOD parse_rule /
 *   METHOD check_rule / METHOD gen_value; check_fmap 的 CASE 里有 'SEQ' OR 'RULE'
+*   V1.6: 动态 GROUP BY 读目标表只在 METHOD fill_hints(只读), describe_table 末尾调它;
+*   save_table / save_rule 的 APPEND 里有 note = ls_m-note
 *=======================================================================
 CLASS zcl_ai_auth_service DEFINITION
   PUBLIC
@@ -116,6 +123,14 @@ CLASS zcl_ai_auth_service DEFINITION
              error    TYPE string,
            END OF ty_list.
 
+    " V1.6: 固定值的可选项 —— txt 非空 = 域里定义的值(带说明); cnt > 0 = 表里已有这么多行用它
+    TYPES: BEGIN OF ty_opt,
+             val TYPE string,
+             txt TYPE string,
+             cnt TYPE i,
+           END OF ty_opt.
+    TYPES tt_opt TYPE STANDARD TABLE OF ty_opt WITH DEFAULT KEY.
+
     TYPES: BEGIN OF ty_field,
              fieldname TYPE string,
              keyflag   TYPE string,
@@ -124,6 +139,9 @@ CLASS zcl_ai_auth_service DEFINITION
              convexit  TYPE string,
              map_type  TYPE string,      " TCODE / USER / WERKS / CONST / RANDOM / SEQ / RULE / DATE / TIME / BY / INITIAL
              const_val TYPE string,
+             note      TYPE string,      " V1.6: 固定值备注(只在 CONST 时有)
+             ddtext    TYPE string,      " V1.6: 字段说明(DDIC 字段描述)
+             opts      TYPE tt_opt,      " V1.6: 固定值可选项(只有 describe_table 填)
            END OF ty_field.
     TYPES tt_field TYPE STANDARD TABLE OF ty_field WITH DEFAULT KEY.
 
@@ -209,7 +227,7 @@ CLASS zcl_ai_auth_service DEFINITION
       IMPORTING iv_tabname     TYPE string
       RETURNING VALUE(rs)      TYPE ty_describe.
 
-    " ADMIN: 登记 / 更新权限表与字段映射(iv_fmap_json = [{"f":字段,"t":映射类型,"c":固定值}])
+    " ADMIN: 登记 / 更新权限表与字段映射(iv_fmap_json = [{"f":字段,"t":映射类型,"c":固定值,"n":备注}])
     CLASS-METHODS save_table
       IMPORTING iv_tabname     TYPE string
                 iv_descr       TYPE string
@@ -256,6 +274,7 @@ CLASS zcl_ai_auth_service DEFINITION
              f TYPE string,
              t TYPE string,
              c TYPE string,
+             n TYPE string,              " V1.6: 固定值备注
            END OF ty_fmap_in.
     TYPES tt_fmap_in TYPE STANDARD TABLE OF ty_fmap_in WITH DEFAULT KEY.
 
@@ -263,6 +282,7 @@ CLASS zcl_ai_auth_service DEFINITION
              fieldname TYPE string,
              map_type  TYPE string,
              const_val TYPE string,
+             note      TYPE string,      " V1.6
            END OF ty_map.
     TYPES tt_map TYPE STANDARD TABLE OF ty_map WITH DEFAULT KEY.
 
@@ -322,6 +342,10 @@ CLASS zcl_ai_auth_service DEFINITION
       IMPORTING iv_tabname     TYPE string
       EXPORTING et_fields      TYPE tt_field
                 ev_error       TYPE string.
+    " V1.6: 给字段带上固定值可选项(域固定值 + 表里已用过的值), 只读
+    CLASS-METHODS fill_hints
+      IMPORTING iv_tabname     TYPE string
+      CHANGING  ct_fields      TYPE tt_field.
     CLASS-METHODS fields_with_map
       IMPORTING iv_tabname     TYPE string
       EXPORTING et_fields      TYPE tt_field
@@ -815,6 +839,10 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
                      IMPORTING et_fields  = rs-fields
                                ev_saved   = lv_saved
                                ev_error   = rs-error ).
+    IF rs-error IS INITIAL.
+      fill_hints( EXPORTING iv_tabname = to_upper( condense( iv_tabname ) )
+                  CHANGING  ct_fields  = rs-fields ).
+    ENDIF.
 
   ENDMETHOD.
 
@@ -852,7 +880,8 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
                           tabname   = lv_name
                           fieldname = ls_m-fieldname
                           map_type  = ls_m-map_type
-                          const_val = ls_m-const_val ) TO lt_save.
+                          const_val = ls_m-const_val
+                          note      = ls_m-note ) TO lt_save.
         ENDLOOP.
 
         ls_tab-mandt      = sy-mandt.
@@ -945,7 +974,8 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
                             fieldname = ls_m-fieldname
                             tabname   = lv_tab
                             map_type  = ls_m-map_type
-                            const_val = ls_m-const_val ) TO lt_rmap.
+                            const_val = ls_m-const_val
+                            note      = ls_m-note ) TO lt_rmap.
           ENDLOOP.
         ENDIF.
 
@@ -1030,6 +1060,7 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
         IF sy-subrc = 0.
           <ls_rf>-map_type  = ls_rm-map_type.
           <ls_rf>-const_val = ls_rm-const_val.
+          <ls_rf>-note      = ls_rm-note.
         ENDIF.
       ENDLOOP.
     ENDLOOP.
@@ -1291,6 +1322,7 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
       ls_f-datatype  = ls_d-datatype.
       ls_f-leng      = ls_d-leng.
       ls_f-convexit  = ls_d-convexit.
+      ls_f-ddtext    = COND #( WHEN ls_d-fieldtext IS NOT INITIAL THEN ls_d-fieldtext ELSE ls_d-scrtext_m ).
       ls_f-map_type  = 'INITIAL'.
       " 按字段名给出建议映射(IT 在页面上确认或修改)
       CASE ls_f-fieldname.
@@ -1308,6 +1340,97 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
           ls_f-map_type = 'BY'.
       ENDCASE.
       APPEND ls_f TO et_fields.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+  METHOD fill_hints.
+
+    " 每个 CHAR / NUMC 字段: 先列域固定值(带说明), 再列表里已用过的值(按行数从多到少);
+    " 同一个值两边都有就合成一项。只读; 任何一步失败只是少几个提示, 不报错
+    TYPES: BEGIN OF ty_grp,
+             val TYPE c LENGTH 60,
+             cnt TYPE i,
+           END OF ty_grp.
+    DATA: lt_ddic  TYPE ddfields,
+          lt_grp   TYPE STANDARD TABLE OF ty_grp WITH DEFAULT KEY,
+          lv_dom   TYPE domname,
+          lv_sel   TYPE string,
+          lv_grpby TYPE string,
+          lv_val   TYPE string,
+          lv_n     TYPE i,
+          lv_cnt   TYPE i.
+
+    IF safe_name( iv_tabname ) = abap_false.
+      RETURN.
+    ENDIF.
+    TRY.
+        DATA(lo_struct) = CAST cl_abap_structdescr( cl_abap_typedescr=>describe_by_name( iv_tabname ) ).
+        lt_ddic = lo_struct->get_ddic_field_list( ).
+      CATCH cx_root.
+        RETURN.
+    ENDTRY.
+
+    LOOP AT ct_fields ASSIGNING FIELD-SYMBOL(<ls_f>).
+      IF ( <ls_f>-datatype <> 'CHAR' AND <ls_f>-datatype <> 'NUMC' ) OR <ls_f>-leng > 60
+         OR safe_name( <ls_f>-fieldname ) = abap_false.
+        CONTINUE.
+      ENDIF.
+      lv_n = lv_n + 1.
+      IF lv_n > 40.
+        EXIT.                             " 字段很多的表只看前 40 个, 打开页面不至于太慢
+      ENDIF.
+
+      " ① 域固定值(只取单值, 不取区间); 登录语言没有说明时用英文
+      READ TABLE lt_ddic INTO DATA(ls_d) WITH KEY fieldname = <ls_f>-fieldname.
+      IF sy-subrc = 0 AND ls_d-domname IS NOT INITIAL.
+        lv_dom = ls_d-domname.
+        SELECT valpos, domvalue_l, domvalue_h, ddtext, ddlanguage FROM dd07v
+          WHERE domname = @lv_dom AND ( ddlanguage = @sy-langu OR ddlanguage = 'E' )
+          ORDER BY valpos
+          INTO TABLE @DATA(lt_dv) UP TO 100 ROWS.
+        LOOP AT lt_dv INTO DATA(ls_dv) WHERE ddlanguage = sy-langu AND domvalue_h IS INITIAL AND domvalue_l IS NOT INITIAL.
+          APPEND VALUE #( val = condense( ls_dv-domvalue_l ) txt = ls_dv-ddtext ) TO <ls_f>-opts.
+        ENDLOOP.
+        IF <ls_f>-opts IS INITIAL.
+          LOOP AT lt_dv INTO ls_dv WHERE domvalue_h IS INITIAL AND domvalue_l IS NOT INITIAL.
+            READ TABLE <ls_f>-opts TRANSPORTING NO FIELDS WITH KEY val = condense( ls_dv-domvalue_l ).
+            IF sy-subrc <> 0.
+              APPEND VALUE #( val = condense( ls_dv-domvalue_l ) txt = ls_dv-ddtext ) TO <ls_f>-opts.
+            ENDIF.
+          ENDLOOP.
+        ENDIF.
+      ENDIF.
+
+      " ② 表里已用过的值: 不同值超过 200 个(如账号列)说明不是"固定值"那类字段, 不列
+      lv_sel   = |{ <ls_f>-fieldname } AS val, COUNT(*) AS cnt|.
+      lv_grpby = <ls_f>-fieldname.
+      CLEAR lt_grp.
+      TRY.
+          SELECT (lv_sel) FROM (iv_tabname) GROUP BY (lv_grpby)
+            INTO CORRESPONDING FIELDS OF TABLE @lt_grp UP TO 201 ROWS.
+        CATCH cx_root.
+          CLEAR lt_grp.
+      ENDTRY.
+      IF lines( lt_grp ) > 200.
+        CLEAR lt_grp.
+      ENDIF.
+      SORT lt_grp BY cnt DESCENDING val ASCENDING.
+      lv_cnt = 0.
+      LOOP AT lt_grp INTO DATA(ls_g).
+        lv_val = condense( ls_g-val ).
+        IF lv_val IS INITIAL.
+          CONTINUE.
+        ENDIF.
+        READ TABLE <ls_f>-opts ASSIGNING FIELD-SYMBOL(<ls_o>) WITH KEY val = lv_val.
+        IF sy-subrc = 0.
+          <ls_o>-cnt = ls_g-cnt.
+        ELSEIF lv_cnt < 10.
+          APPEND VALUE #( val = lv_val cnt = ls_g-cnt ) TO <ls_f>-opts.
+          lv_cnt = lv_cnt + 1.
+        ENDIF.
+      ENDLOOP.
     ENDLOOP.
 
   ENDMETHOD.
@@ -1334,6 +1457,7 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
       IF sy-subrc = 0.
         <ls_f>-map_type  = ls_m-map_type.
         <ls_f>-const_val = ls_m-const_val.
+        <ls_f>-note      = ls_m-note.
       ENDIF.
     ENDLOOP.
 
@@ -1496,6 +1620,7 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
           lv_rule   TYPE string,
           lt_part   TYPE tt_rpart,
           lv_perr   TYPE string,
+          lv_note   TYPE string,
           lv_digits TYPE string VALUE '0123456789'.
 
     CLEAR: et_map, ev_error.
@@ -1598,6 +1723,14 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
           ev_error = |字段 { ls_in-f } 的固定值必须是数字|.
           EXIT.
         ENDIF.
+        " V1.6: 备注最长 80(ZAI_AUTH_FMAP-NOTE / ZAI_AUTH_RMAP-NOTE CHAR 80)
+        lv_note = condense( ls_in-n ).
+        IF strlen( lv_note ) > 80.
+          ev_error = |字段 { ls_in-f } 的备注不能超过 80 字|.
+          EXIT.
+        ENDIF.
+      ELSE.
+        CLEAR lv_note.
       ENDIF.
       " 主键必须有明确映射, 否则会写出"半条"权限
       IF ls_f-keyflag = 'X' AND ls_in-t = 'INITIAL'.
@@ -1608,7 +1741,8 @@ CLASS zcl_ai_auth_service IMPLEMENTATION.
                       map_type  = ls_in-t
                       const_val = COND #( WHEN ls_in-t = 'CONST' OR ls_in-t = 'SEQ' THEN lv_const
                                           WHEN ls_in-t = 'RULE' THEN lv_rule
-                                          ELSE `` ) ) TO et_map.
+                                          ELSE `` )
+                      note      = lv_note ) TO et_map.
     ENDLOOP.
 
     " V1.1: 同类映射可以配到多个字段(写入同一个值); 只要求至少有一个 USER

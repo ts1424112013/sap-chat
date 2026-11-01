@@ -169,7 +169,7 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   as('ADMIN', 'ADMIN');
   await rejects('开关关闭 → 批量代加被拒（不写权限表）', svc.authBatchAdd({ Users: 'USERB', Tcode: 'ZDPMM051', WerksList: '1000', Reason: 'x' }), /尚未启用/);
   r = await svc.authConfig();
-  check('开关关闭 → 配置照常可读（可以先配好再打开）', r.tables.length === 1 && r.rules.length === 3);
+  check('开关关闭 → 配置照常可读（可以先配好再打开）', r.tables.length === 2 && r.rules.length === 3);
   r = await svc.authTableDescribe({ Tabname: 'ZIDPPP009' });
   check('开关关闭 → 读表结构照常', r.fields.length === 3);
   r = await svc.authList({});
@@ -284,7 +284,7 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   r = await svc.authDecide({ ReqId: r.lines[0].reqId, Approve: 'X' });
   check('审批工厂为空的申请 → 开通', r.lines[0].status === 'DONE', r.lines[0].status + ' ' + r.lines[0].message);
   const cfg = await svc.authConfig();
-  check('配置页能读到已登记的表（含字段映射）和规则', cfg.tables.length === 4 && cfg.tables.some((t) => t.tabname === 'ZAUTH_TEST' && t.fields.some((f) => f.fieldname === 'TCD' && f.mapType === 'TCODE')) && cfg.tables.some((t) => t.tabname === 'ZAUTH_TWIN' && t.fields.filter((f) => f.mapType === 'USER').length === 2) && cfg.rules.length >= 4, cfg.tables.map((t) => t.tabname).join(','));
+  check('配置页能读到已登记的表（含字段映射）和规则', cfg.tables.length === 5 && cfg.tables.some((t) => t.tabname === 'ZAUTH_TEST' && t.fields.some((f) => f.fieldname === 'TCD' && f.mapType === 'TCODE')) && cfg.tables.some((t) => t.tabname === 'ZAUTH_TWIN' && t.fields.filter((f) => f.mapType === 'USER').length === 2) && cfg.rules.length >= 4, cfg.tables.map((t) => t.tabname).join(','));
 
   console.log('\n━━ 事务码规则带字段映射（V1.2）');
   as('ADMIN', 'ADMIN');
@@ -526,6 +526,32 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   const litTab = { tabname: 'ZAUTH_GEN', fields: [{ fieldname: 'ID', keyflag: 'X', mapType: 'RULE', constVal: '{USER}-X' }] };
   genState.rows.ZAUTH_GEN.push({ ID: 'USERZ-X' });
   check('纯账号 / 文字拼出来的规则主键碰撞仍算"已有"', svc._mockAuthGrant(genState, litTab, { ID: 'USERZ-X' }).status === 'EXISTS');
+
+  // ---------------------------------------------------------------- 20261102（V1.6）：固定值可选值 + 备注
+  console.log('\n[V1.6] 固定值：可选值（域固定值 + 表里已用过的值）、字段说明、备注');
+  as('ADMIN', 'ADMIN');
+  let dsc = await svc.authTableDescribe({ Tabname: 'ZAUTH_FIXED' });
+  const df = (n) => dsc.fields.find((f) => f.fieldname === n);
+  check('字段带说明 ddtext', df('ACC_TYPE').ddtext === '账号级别' && df('TCODE').ddtext === '事务码');
+  check('域固定值在前（带说明），表里的行数合进同一项', df('ACC_TYPE').opts.map((o) => o.val + ':' + o.txt + ':' + o.cnt).join('|') === '1:一级账号:15|2:二级账号:312|3:临时账号:0',
+    JSON.stringify(df('ACC_TYPE').opts));
+  check('没有域的字段：按行数从多到少列表里已用过的值', df('ROLE_GRP').opts.map((o) => o.val).join() === 'PP_KEY,PP_VIEW,MM_ALL', JSON.stringify(df('ROLE_GRP').opts));
+  check('DATS 字段不给可选值', (await svc.authTableDescribe({ Tabname: 'ZAUTH_TEST' })).fields.find((f) => f.fieldname === 'ERDAT').opts.length === 0);
+  const fixMap = (acc, note, roleType) => JSON.stringify([
+    { f: 'TCODE', t: 'TCODE', c: '' }, { f: 'UNAME', t: 'USER', c: '' }, { f: 'WERKS', t: 'WERKS', c: '' },
+    { f: 'ACC_TYPE', t: 'CONST', c: acc, n: note }, { f: 'ROLE_GRP', t: roleType || 'CONST', c: 'PP_KEY', n: '这条不该存' + (roleType ? '' : '') }]);
+  r = await svc.authTableSave({ Tabname: 'ZAUTH_FIXED', Active: 'X', FmapJson: fixMap('2', '  二级账号，财务要求，别改  ') });
+  let fx = (await svc.authConfig()).tables.find((t) => t.tabname === 'ZAUTH_FIXED');
+  check('固定值备注保存并回读（去掉首尾空格）', /已保存/.test(r.message) && fx.fields.find((f) => f.fieldname === 'ACC_TYPE').note === '二级账号，财务要求，别改');
+  r = await svc.authTableSave({ Tabname: 'ZAUTH_FIXED', Active: 'X', FmapJson: fixMap('2', 'x', 'INITIAL') });
+  fx = (await svc.authConfig()).tables.find((t) => t.tabname === 'ZAUTH_FIXED');
+  check('不是固定值的字段不存备注', fx.fields.find((f) => f.fieldname === 'ROLE_GRP').note === '');
+  await rejects('备注超过 80 字 → 拒绝', svc.authTableSave({ Tabname: 'ZAUTH_FIXED', Active: 'X', FmapJson: fixMap('2', '长'.repeat(81)) }), /备注不能超过 80 字/);
+  dsc = await svc.authTableDescribe({ Tabname: 'ZAUTH_FIXED' });
+  check('读表结构时带出已保存的备注', df('ACC_TYPE').note === 'x');
+  r = await svc.authRuleSave({ TcodePat: 'ZDEMO003', Tabname: 'ZAUTH_FIXED', RuleMode: 'AUTO', Active: 'X', FmapJson: fixMap('3', '临时账号，月底收回') });
+  const ownRule = (await svc.authConfig()).rules.find((x) => x.tcodePat === 'ZDEMO003');
+  check('规则单独映射也存备注', ownRule.ownMap === 'X' && ownRule.fields.find((f) => f.fieldname === 'ACC_TYPE').note === '临时账号，月底收回');
 
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);

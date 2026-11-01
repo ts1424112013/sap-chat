@@ -53,6 +53,25 @@ sap.ui.define([
                 return { tcodePat: "", tabname: "", ruleMode: "AUTO", allowAll: false, active: true, ownMap: false, fields: [], fieldsTab: "" };
         }
 
+        /** 20261102：一行映射提交给后端的样子；备注只在固定值时带 */
+        function fmapRow(f) {
+                return { f: f.fieldname, t: f.mapType, c: f.constVal || "", n: f.mapType === "CONST" ? (f.note || "").trim() : "" };
+        }
+
+        /** 20261102：固定值可选项的显示 —— 值、说明、表里用了多少行；on = 正是当前填的值 */
+        function decorateOpts(aOpts, sCur) {
+                return (aOpts || []).map(function (o) {
+                        var sVal = String(o.val || ""), iCnt = Number(o.cnt) || 0;
+                        return {
+                                val: sVal, txt: o.txt || "", cnt: iCnt,
+                                label: sVal + (o.txt ? " · " + o.txt : ""),
+                                count: iCnt ? iCnt + " 行" : "",
+                                tip: sVal + (o.txt ? "：" + o.txt : "") + (iCnt ? "（表里已有 " + iCnt + " 行用这个值）" : "（字典里定义的值，表里还没用过）"),
+                                on: sVal === String(sCur || "").trim()
+                        };
+                });
+        }
+
         function fmtTime(s) {
                 return /^\d{14}$/.test(s || "")
                         ? s.substring(0, 4) + "-" + s.substring(4, 6) + "-" + s.substring(6, 8) + " " + s.substring(8, 10) + ":" + s.substring(10, 12) + ":" + s.substring(12)
@@ -301,6 +320,7 @@ sap.ui.define([
                         var that = this, oModel = this._authModel();
                         oModel.setProperty("/admTab", "records");
                         oModel.setProperty("/notice", "");
+                        this._mAuthHints = {};          // 20261102：固定值可选项每次打开重新取（行数会变）
                         oModel.setProperty("/result", { lines: [], summary: "" });
                         if (!this._oAuthAdminDialog) {
                                 this._oAuthAdminDialog = sap.ui.xmlfragment(this.getView().getId(), "zai.chat.view.AuthAdminDialog", this);
@@ -414,6 +434,7 @@ sap.ui.define([
 
                 onAuthRefreshAdmin: function () {
                         var that = this;
+                        this._mAuthHints = {};
                         this._authRun(function () { return that._authLoadAdmin(true); });
                 },
 
@@ -494,8 +515,9 @@ sap.ui.define([
                         oModel.setProperty("/editTable/loaded", "");
                         this._authRun(function () {
                                 return ChatService.authTableDescribe({ Tabname: sTab }).then(function (r) {
+                                        that._authKeepHints(sTab, r.fields);
                                         oModel.setProperty("/editTable/tabname", sTab);
-                                        oModel.setProperty("/editTable/fields", r.fields || []);
+                                        oModel.setProperty("/editTable/fields", that._authWithHints(r.fields || [], sTab));
                                         oModel.setProperty("/editTable/loaded", sTab);
                                         oModel.setProperty("/editTable/ownRulesText", that._authOwnRulesText(sTab));
                                 });
@@ -506,7 +528,75 @@ sap.ui.define([
                         var oModel = this._authModel(), oRow = oEvent.getParameter("listItem").getBindingContext("auth").getObject();
                         oModel.setProperty("/editTable", {
                                 tabname: oRow.tabname, descr: oRow.descr, discover: oRow.discover === "X", active: oRow.active === "X",
-                                fields: clone(oRow.fields || []), loaded: oRow.tabname, ownRulesText: this._authOwnRulesText(oRow.tabname)
+                                fields: this._authWithHints(clone(oRow.fields || []), oRow.tabname), loaded: oRow.tabname, ownRulesText: this._authOwnRulesText(oRow.tabname)
+                        });
+                        this._authLoadHints(oRow.tabname);
+                },
+
+                /* ---------- 20261102：固定值可选项与备注 ----------
+                 * 可选项 = SE11 域固定值（带说明）+ 这张表里已用过的值（带行数），只有 AuthTableDescribe 返回；
+                 * 按表缓存在 this._mAuthHints，权限表配置与规则单独映射两处的字段行都从这里合并 */
+
+                /** 记下一张表的可选项（来自 AuthTableDescribe 的字段） */
+                _authKeepHints: function (sTab, aFields) {
+                        var m = {};
+                        (aFields || []).forEach(function (f) { m[f.fieldname] = { opts: f.opts || [], ddtext: f.ddtext || "" }; });
+                        this._mAuthHints = this._mAuthHints || {};
+                        this._mAuthHints[sTab] = m;
+                },
+
+                /** 字段行合并可选项与字段说明；这张表还没取过就原样返回（已带的不丢） */
+                _authWithHints: function (aFields, sTab) {
+                        var m = (this._mAuthHints || {})[sTab];
+                        return (aFields || []).map(function (f) {
+                                var h = m && m[f.fieldname];
+                                var aOpts = h ? h.opts : (f.opts || []);
+                                return Object.assign({}, f, {
+                                        note: f.note || "",
+                                        ddtext: f.ddtext || (h && h.ddtext) || "",
+                                        opts: decorateOpts(aOpts, f.constVal)
+                                });
+                        });
+                },
+
+                /** 后台取一次可选项（不转圈、失败不提示：只是少了提示），取到后合并进正在编辑的那张表 / 那条规则 */
+                _authLoadHints: function (sTab) {
+                        var that = this, oModel = this._authModel();
+                        if (!sTab || (this._mAuthHints || {})[sTab]) {
+                                return Promise.resolve();
+                        }
+                        return ChatService.authTableDescribe({ Tabname: sTab }).then(function (r) {
+                                that._authKeepHints(sTab, r.fields);
+                                if (oModel.getProperty("/editTable/tabname") === sTab) {
+                                        oModel.setProperty("/editTable/fields", that._authWithHints(oModel.getProperty("/editTable/fields"), sTab));
+                                }
+                                if (oModel.getProperty("/editRule/tabname") === sTab && oModel.getProperty("/editRule/ownMap")) {
+                                        oModel.setProperty("/editRule/fields", that._authWithHints(oModel.getProperty("/editRule/fields"), sTab));
+                                }
+                        }).catch(function () { /* 只是少了提示 */ });
+                },
+
+                /** 点一个可选值：填进固定值；备注还空着时顺手带上字典里的说明 */
+                onAuthPickOpt: function (oEvent) {
+                        var oOpt = oEvent.getSource().getBindingContext("auth");
+                        var sPath = oOpt.getPath().replace(/\/opts\/\d+$/, ""), oModel = oOpt.getModel();
+                        oModel.setProperty(sPath + "/constVal", oOpt.getProperty("val"));
+                        if (!(oModel.getProperty(sPath + "/note") || "").trim() && oOpt.getProperty("txt")) {
+                                oModel.setProperty(sPath + "/note", oOpt.getProperty("txt").substring(0, 80));
+                        }
+                        this._authMarkOpt(oModel, sPath);
+                },
+
+                /** 手改固定值时，可选项里"正在用的那个"跟着变 */
+                onAuthConstLive: function (oEvent) {
+                        var oCtx = oEvent.getSource().getBindingContext("auth");
+                        if (oCtx) { this._authMarkOpt(oCtx.getModel(), oCtx.getPath()); }
+                },
+
+                _authMarkOpt: function (oModel, sPath) {
+                        var sCur = String(oModel.getProperty(sPath + "/constVal") || "").trim();
+                        (oModel.getProperty(sPath + "/opts") || []).forEach(function (o, i) {
+                                oModel.setProperty(sPath + "/opts/" + i + "/on", o.val === sCur);
                         });
                 },
 
@@ -543,7 +633,7 @@ sap.ui.define([
                                 oModel.setProperty("/notice", this._rb().getText("authDescribeFirst"));
                                 return;
                         }
-                        var aMap = t.fields.map(function (f) { return { f: f.fieldname, t: f.mapType, c: f.constVal || "" }; });
+                        var aMap = t.fields.map(fmapRow);
                         this._authRun(function () {
                                 return ChatService.authTableSave({
                                         Tabname: sTab, Descr: t.descr || "", Discover: t.discover ? "X" : "", Active: t.active ? "X" : "", FmapJson: JSON.stringify(aMap)
@@ -561,7 +651,7 @@ sap.ui.define([
                         var oTab = (this._authModel().getProperty("/tables") || []).filter(function (t) { return t.tabname === sTab; })[0];
                         return clone((oTab && oTab.fields) || []).map(function (f) {
                                 return { fieldname: f.fieldname, keyflag: f.keyflag, datatype: f.datatype, leng: f.leng, convexit: f.convexit,
-                                        mapType: f.mapType || "INITIAL", constVal: f.constVal || "" };
+                                        mapType: f.mapType || "INITIAL", constVal: f.constVal || "", note: f.note || "", ddtext: f.ddtext || "" };
                         });
                 },
 
@@ -579,7 +669,8 @@ sap.ui.define([
                         var aBase = r.tabname ? this._authTableFields(r.tabname) : [];
                         var fText = function (f) {
                                 var bParam = f.mapType === "CONST" || f.mapType === "RULE" || (f.mapType === "SEQ" && f.constVal);
-                                return oRB.getText("authMap" + f.mapType) + (bParam ? "「" + f.constVal + "」" : "");
+                                return oRB.getText("authMap" + f.mapType) + (bParam ? "「" + f.constVal + "」" : "") +
+                                        (f.mapType === "CONST" && f.note ? "（" + f.note + "）" : "");
                         };
                         r.baseMap = aBase.filter(function (f) { return f.mapType !== "INITIAL"; }).map(function (f) {
                                 return { text: f.fieldname + " → " + fText(f) };
@@ -593,7 +684,14 @@ sap.ui.define([
                                 });
                         });
                         r.ownHint = oRB.getText("admRuleMapOwnHint", [r.tabname, r.fields.length]);
+                        // 20261102：单独映射的字段行也带上固定值可选项（这张表没取过就后台取一次）
+                        if (r.ownMap && r.tabname) {
+                                r.fields = this._authWithHints(r.fields, r.tabname);
+                        }
                         this._authModel().setProperty("/editRule", r);
+                        if (r.ownMap && r.tabname) {
+                                this._authLoadHints(r.tabname);
+                        }
                 },
 
                 onAuthPickRule: function (oEvent) {
@@ -664,7 +762,7 @@ sap.ui.define([
                         var sPat = (r.tcodePat || "").trim().toUpperCase(), sTab = (r.tabname || "").trim().toUpperCase();
                         // 单独映射：整份提交（每个字段一行）；沿用 / 不指定表：空串 = 后端清掉本规则的映射
                         var bOwn = !bDelete && r.ownMap && !!sTab && r.fields.length > 0;
-                        var sFmap = bOwn ? JSON.stringify(r.fields.map(function (f) { return { f: f.fieldname, t: f.mapType, c: f.constVal || "" }; })) : "";
+                        var sFmap = bOwn ? JSON.stringify(r.fields.map(fmapRow)) : "";
                         this._authRun(function () {
                                 return ChatService.authRuleSave({
                                         TcodePat: sPat, Tabname: sTab, RuleMode: r.ruleMode,

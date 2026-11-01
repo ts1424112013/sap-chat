@@ -20,7 +20,10 @@ sap.ui.define(["zai/chat/utils/AuthValueRule"], function (ValueRule) {
          * 工厂 1000 / 2000 / 3000，账号 DEMOUSER / USERA / USERB 可用、LOCKED 已锁定；
          * 可登记的表 ZIDPPP009(已登记) / ZAUTH_TEST(字段名不同) / YAUTH_SINGLE(没有事务码列) /
          * ZAUTH_NOPLANT(没有工厂列) / ZAUTH_TWIN(两列账号 + 两列事务码，同类映射配多个字段) /
-         * ZAUTH_WIDE(多一列工厂、多一列账号，演示规则单独映射)。
+         * ZAUTH_WIDE(多一列工厂、多一列账号，演示规则单独映射) /
+         * ZAUTH_FIXED(已登记；ACC_TYPE、ROLE_GRP 两列固定值，演示 20261102 的可选值与备注)。
+         *   · 20261102（V1.6）：AuthTableDescribe 的字段带 ddtext（字段说明）与 opts（可选值 = 域固定值 + 表里已用过的值）；
+         *     FmapJson 每行可带 n（固定值备注，只在 CONST 时保存，最长 80）
          * 开关：localStorage zaiChat.cfg.AUTH_ENABLED（没设过 = 开，演示方便；设置里的开关会写它）。
          * 以 Object.assign 并入 ChatService（this 即 ChatService）。
          * =====================================================================
@@ -53,9 +56,15 @@ sap.ui.define(["zai/chat/utils/AuthValueRule"], function (ValueRule) {
         function wild(pat, s) {
                 return new RegExp("^" + pat.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$").test(s);
         }
-        function fld(name, key, leng, map, type) {
-                return { fieldname: name, keyflag: key ? "X" : "", datatype: type || "CHAR", leng: leng, convexit: "", mapType: map || "INITIAL", constVal: "" };
+        function fld(name, key, leng, map, type, ddtext) {
+                return { fieldname: name, keyflag: key ? "X" : "", datatype: type || "CHAR", leng: leng, convexit: "", mapType: map || "INITIAL", constVal: "",
+                        note: "", ddtext: ddtext || DDTEXT[name] || "" };
         }
+        // 20261102：演示的字段说明（DDIC 字段描述）、域固定值（DD07V）、表里"以前手工维护"的行数
+        var DDTEXT = { TCODE: "事务码", TCD: "事务码", FIR_ACCOUNT: "账号", UNAME: "用户名", BNAME: "用户名", WERKS: "工厂", PLANT: "工厂",
+                ERDAT: "创建日期", CREATOR: "创建人", WERKS_TO: "目标工厂", OWNER: "负责人", TCODE_ALT: "备用事务码" };
+        var DOMAIN = { "ZAUTH_FIXED.ACC_TYPE": [["1", "一级账号"], ["2", "二级账号"], ["3", "临时账号"]] };
+        var SEED_CNT = { "ZAUTH_FIXED.ACC_TYPE": { 2: 312, 1: 15 }, "ZAUTH_FIXED.ROLE_GRP": { PP_KEY: 128, PP_VIEW: 40, MM_ALL: 6 } };
 
         return {
 
@@ -65,7 +74,7 @@ sap.ui.define(["zai/chat/utils/AuthValueRule"], function (ValueRule) {
                                 this._oAuthMock = {
                                         seq: 0,
                                         requests: [],
-                                        rows: { ZIDPPP009: [], ZAUTH_TEST: [], YAUTH_SINGLE: [], ZAUTH_NOPLANT: [], ZAUTH_TWIN: [], ZAUTH_WIDE: [] },
+                                        rows: { ZIDPPP009: [], ZAUTH_TEST: [], YAUTH_SINGLE: [], ZAUTH_NOPLANT: [], ZAUTH_TWIN: [], ZAUTH_WIDE: [], ZAUTH_FIXED: [] },
                                         catalog: {
                                                 ZIDPPP009: base,
                                                 ZAUTH_TEST: [fld("TCD", true, 20), fld("BNAME", true, 12), fld("PLANT", true, 4), fld("ERDAT", false, 8, "DATE", "DATS")],
@@ -73,11 +82,16 @@ sap.ui.define(["zai/chat/utils/AuthValueRule"], function (ValueRule) {
                                                 ZAUTH_NOPLANT: [fld("TCODE", true, 20), fld("BNAME", true, 12)],
                                                 ZAUTH_TWIN: [fld("TCODE", true, 20), fld("UNAME", true, 12), fld("TCODE_ALT", false, 20), fld("OWNER", false, 12)],
                                                 ZAUTH_WIDE: [fld("TCODE", true, 20, "TCODE"), fld("FIR_ACCOUNT", true, 12, "USER"), fld("WERKS", true, 4, "WERKS"), fld("WERKS_TO", false, 4),
-                                                        fld("CREATOR", false, 12), fld("ERDAT", false, 8, "DATE", "DATS")]
+                                                        fld("CREATOR", false, 12), fld("ERDAT", false, 8, "DATE", "DATS")],
+                                                ZAUTH_FIXED: [fld("TCODE", true, 20, "TCODE"), fld("UNAME", true, 12, "USER"), fld("WERKS", true, 4, "WERKS"),
+                                                        fld("ACC_TYPE", true, 1, "", "CHAR", "账号级别"), fld("ROLE_GRP", false, 10, "", "CHAR", "角色组")]
                                         },
                                         tables: {
                                                 ZIDPPP009: { descr: "演示事务码权限表", discover: "X", active: "X",
-                                                        fmap: { TCODE: { t: "TCODE", c: "" }, FIR_ACCOUNT: { t: "USER", c: "" }, WERKS: { t: "WERKS", c: "" } } }
+                                                        fmap: { TCODE: { t: "TCODE", c: "" }, FIR_ACCOUNT: { t: "USER", c: "" }, WERKS: { t: "WERKS", c: "" } } },
+                                                ZAUTH_FIXED: { descr: "演示：带固定值的权限表", discover: "", active: "X",
+                                                        fmap: { TCODE: { t: "TCODE", c: "" }, UNAME: { t: "USER", c: "" }, WERKS: { t: "WERKS", c: "" },
+                                                                ACC_TYPE: { t: "CONST", c: "2", n: "" }, ROLE_GRP: { t: "CONST", c: "PP_KEY", n: "" } } }
                                         },
                                         // 规则自己的字段映射（ZAI_AUTH_RMAP）：{ 规则: { tabname, fmap } }
                                         rmaps: {},
@@ -152,7 +166,7 @@ sap.ui.define(["zai/chat/utils/AuthValueRule"], function (ValueRule) {
 
                 _mockAuthFields: function (s, name) {
                         if (!/^[ZY][A-Z0-9_]*$/.test(name) || /^ZAI_/.test(name) || name.length > 30 || !s.catalog[name]) {
-                                fail("只能登记 Z / Y 开头的透明表, 且不能是 ZAI_* 系统表, 并且表必须存在(演示只有 ZIDPPP009 / ZAUTH_TEST / YAUTH_SINGLE / ZAUTH_NOPLANT / ZAUTH_TWIN / ZAUTH_WIDE)");
+                                fail("只能登记 Z / Y 开头的透明表, 且不能是 ZAI_* 系统表, 并且表必须存在(演示只有 ZIDPPP009 / ZAUTH_TEST / YAUTH_SINGLE / ZAUTH_NOPLANT / ZAUTH_TWIN / ZAUTH_WIDE / ZAUTH_FIXED)");
                         }
                         return clone(s.catalog[name]);
                 },
@@ -233,9 +247,11 @@ sap.ui.define(["zai/chat/utils/AuthValueRule"], function (ValueRule) {
                                         if (!c) { fail("字段 " + m.f + " 选了固定值，但没填值"); }
                                         if (c.length > f.leng || c.length > 60) { fail("字段 " + m.f + " 的固定值过长"); }
                                         if (/^(NUMC|DATS|TIMS)$/.test(f.datatype) && /\D/.test(c)) { fail("字段 " + m.f + " 的固定值必须是数字"); }
+                                        if (String(m.n || "").trim().length > 80) { fail("字段 " + m.f + " 的备注不能超过 80 字"); }
                                 }
                                 if (f.keyflag === "X" && m.t === "INITIAL") { fail("主键字段 " + m.f + " 必须配置映射(留空不允许)"); }
-                                fmap[m.f] = { t: m.t, c: m.t === "CONST" || m.t === "SEQ" ? c : m.t === "RULE" ? ValueRule.normalize(m.c) : "" };
+                                fmap[m.f] = { t: m.t, c: m.t === "CONST" || m.t === "SEQ" ? c : m.t === "RULE" ? ValueRule.normalize(m.c) : "",
+                                        n: m.t === "CONST" ? String(m.n || "").trim() : "" };
                         });
                         // 20261022（V1.1）：同类映射可以配到多个字段（写入同一个值），只要求至少有一个 USER
                         if (n.USER < 1) { fail("至少要有一个 USER(目标账号)映射"); }
@@ -487,9 +503,26 @@ sap.ui.define(["zai/chat/utils/AuthValueRule"], function (ValueRule) {
                         if (saved) {
                                 fields.forEach(function (f) {
                                         var m = saved.fmap[f.fieldname];
-                                        if (m) { f.mapType = m.t; f.constVal = m.c; }
+                                        if (m) { f.mapType = m.t; f.constVal = m.c; f.note = m.n || ""; }
                                 });
                         }
+                        // V1.6（fill_hints）：CHAR / NUMC 字段带可选值 —— 域固定值在前，再按行数列表里已用过的值（不同值超过 200 个不列，最多 10 个）
+                        var rows = ctx.s.rows[name] || [];
+                        fields.forEach(function (f) {
+                                f.opts = [];
+                                if (!/^(CHAR|NUMC)$/.test(f.datatype) || f.leng > 60) { return; }
+                                (DOMAIN[name + "." + f.fieldname] || []).forEach(function (d) { f.opts.push({ val: d[0], txt: d[1], cnt: 0 }); });
+                                var cnt = Object.assign({}, SEED_CNT[name + "." + f.fieldname] || {});
+                                rows.forEach(function (r) { var v = String(r[f.fieldname] || "").trim(); if (v) { cnt[v] = (cnt[v] || 0) + 1; } });
+                                var vals = Object.keys(cnt);
+                                if (vals.length > 200) { return; }
+                                vals.sort(function (a, b) { return cnt[b] - cnt[a] || (a < b ? -1 : 1); });
+                                var extra = 0;
+                                vals.forEach(function (v) {
+                                        var o = f.opts.filter(function (x) { return x.val === v; })[0];
+                                        if (o) { o.cnt = cnt[v]; } else if (extra < 10) { f.opts.push({ val: v, txt: "", cnt: cnt[v] }); extra++; }
+                                });
+                        });
                         return { fields: fields, error: "" };
                 },
 
@@ -537,7 +570,7 @@ sap.ui.define(["zai/chat/utils/AuthValueRule"], function (ValueRule) {
                                         r.ownMap = "X";
                                         r.fields = svc._mockAuthFields(s, r.tabname).map(function (f) {
                                                 var x = m.fmap[f.fieldname];
-                                                if (x) { f.mapType = x.t; f.constVal = x.c; }
+                                                if (x) { f.mapType = x.t; f.constVal = x.c; f.note = x.n || ""; }
                                                 return f;
                                         });
                                 }
@@ -548,7 +581,7 @@ sap.ui.define(["zai/chat/utils/AuthValueRule"], function (ValueRule) {
                                 var fields = svc._mockAuthFields(s, name);
                                 fields.forEach(function (f) {
                                         var m = t.fmap[f.fieldname];
-                                        if (m) { f.mapType = m.t; f.constVal = m.c; }
+                                        if (m) { f.mapType = m.t; f.constVal = m.c; f.note = m.n || ""; }
                                 });
                                 return { tabname: name, descr: t.descr, discover: t.discover, active: t.active, fields: fields };
                         }) };

@@ -7,7 +7,7 @@
  *      CX_SY_OPEN_SQL_DATA_ERROR → 网关 500。10-22 部署实锤：REPORT_CAPTURE_LEGACY 21 字符）
  *   2) Fiori 取数通道（ZCL_AI_ODATA_CLIENT V1.3 + Z_AI_ODATA_GET）：默认走 RFC 新会话、
  *      不再有 URL 通道、现场 DPC 捕获块调用的两个空壳方法还在、函数模块接口与调用一致
- *   3) 权限自助申请（ZCL_AI_AUTH_SERVICE V1.3，20261024）：读写目标表 / 规则映射表只在约定的方法里；USER_ADDR 只在 fill_user_info；
+ *   3) 权限自助申请（ZCL_AI_AUTH_SERVICE V1.6，20261102）：读写目标表 / 规则映射表只在约定的方法里；USER_ADDR 只在 fill_user_info；
  *      DPC 每个权限 FI 读的参数 = 前端恒发的参数清单（SAP 上 FI 参数全必填）
  *   4) 报表选择项（10.24 记录 #03a）：REPORT_SERVICE V1.0.13 整理 R / C / F、EXEC_SAP V1.1b 组装选择屏
  *   5) 报表自动登记（10.24 记录 #03b）：ZCL_AI_RPT_SCANNER / ZAI_RPT_REG 只在约定处写表；全库行长 ≤ 255
@@ -172,6 +172,20 @@ check('gen_value：序号不小于起始值、到位数上限报错、左补零'
 check('parse_rule：一条规则最多一个 SEQn、占位白名单', /lv_seqs > 1/.test(methods.parse_rule || '') && /'\^\(SEQ\|RAND\|NUM\)/.test(methods.parse_rule || ''));
 check('grant_row：生成值作主键碰撞报错（随机 / 序号 / 含 SEQ RAND NUM TIME 的规则），其余仍是 EXISTS', /map_type = 'RANDOM' OR ls_f-map_type = 'SEQ'[\s\S]*?CS '\{SEQ'[\s\S]*?CS '\{TIME'[\s\S]*?ev_status = 'EXISTS'/.test(methods.grant_row || ''));
 check('string 模板里没有未转义的花括号文字（{ 必须是占位）', !/\|[^|\n]*[^\\]\{[A-Z]/.test(auth));
+// V1.6 20261102：固定值可选值（域固定值 + 表里已用过的值）+ 字段说明 + 备注
+check('服务类版本头有 V1.6', /^\* V1\.6 20261102/m.test(authRaw));
+check('ty_field 有 note / ddtext / opts（tt_opt: val / txt / cnt）', /BEGIN OF ty_opt,\s*val\s+TYPE string,\s*txt\s+TYPE string,\s*cnt\s+TYPE i,/i.test(auth) &&
+  /BEGIN OF ty_field,[\s\S]*?note\s+TYPE string,[\s\S]*?ddtext\s+TYPE string,[\s\S]*?opts\s+TYPE tt_opt,[\s\S]*?END OF ty_field/i.test(auth));
+check('FmapJson 每行认 n（备注）', /BEGIN OF ty_fmap_in,[\s\S]*?n TYPE string,[\s\S]*?END OF ty_fmap_in/i.test(auth));
+check('动态 GROUP BY 读目标表只在 fill_hints，且只读、名字过 safe_name、异常捕获',
+  inMethods(/GROUP BY\s+\(/i).join() === 'fill_hints' && !/\b(INSERT|UPDATE|MODIFY|DELETE)\b/i.test(methods.fill_hints || '') &&
+  /safe_name\( iv_tabname \)/.test(methods.fill_hints || '') && /safe_name\( <ls_f>-fieldname \)/.test(methods.fill_hints || '') && /CATCH cx_root/.test(methods.fill_hints || ''),
+  inMethods(/GROUP BY\s+\(/i).join());
+check('fill_hints 只在 describe_table 调（配置页 / 申请不多查）', inMethods(/\bfill_hints\(/i).join() === 'describe_table', inMethods(/\bfill_hints\(/i).join());
+check('不同值超过 200 个不列（账号列之类）', /lines\( lt_grp \) > 200/.test(methods.fill_hints || '') && /UP TO 201 ROWS/.test(methods.fill_hints || ''));
+check('备注只在 CONST 时保存，最长 80', /lv_note = condense\( ls_in-n \)[\s\S]*?strlen\( lv_note \) > 80[\s\S]*?ELSE\.\s*CLEAR lv_note\./.test(methods.check_fmap || ''));
+check('save_table / save_rule 写入 note', /note\s+= ls_m-note \) TO lt_save/.test(methods.save_table || '') && /note\s+= ls_m-note \) TO lt_rmap/.test(methods.save_rule || ''));
+check('回读备注：fields_with_map（权限表）与 get_config（规则映射）', /<ls_f>-note\s+= ls_m-note/.test(methods.fields_with_map || '') && /<ls_rf>-note\s+= ls_rm-note/.test(methods.get_config || ''));
 
 // DPC 每个权限 FI 读的参数名 == 前端 _authCall 恒发的参数清单（SAP 上 FI 参数全必填，多一个少一个都会 404）
 const dpcParams = {};

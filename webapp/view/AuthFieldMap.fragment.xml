@@ -19,6 +19,8 @@
                         </customData>
                         <VBox renderType="Bare" class="admFldNameBox">
                                 <Text text="{auth>fieldname}" class="admFldName"/>
+                                <!-- 20261102：字段说明（SE11 字段描述），新人看得懂这一列是什么 -->
+                                <Text text="{auth>ddtext}" class="admFldDesc" visible="{= !!${auth>ddtext} }" tooltip="{auth>ddtext}"/>
                                 <Text text="{= ${i18n>admFldBase} + ${auth>baseText} }" class="admFldBase" visible="{= !!${auth>baseText} }"/>
                         </VBox>
                         <Text text="{= ${auth>keyflag} === 'X' ? '●' : '' }" class="admFldKey"/>
@@ -27,7 +29,7 @@
                                 tooltip="{= ${auth>mapType} === 'RANDOM' ? ${i18n>authMapRandomHint} : ${auth>mapType} === 'SEQ' ? ${i18n>authMapSeqHint} : ${auth>mapType} === 'RULE' ? ${auth>/genText/ruleHint} : '' }">
                                 <core:Item key="{auth>key}" text="{auth>text}"/>
                         </Select>
-                        <Input value="{auth>constVal}" valueLiveUpdate="true" maxLength="60"
+                        <Input value="{auth>constVal}" valueLiveUpdate="true" maxLength="60" liveChange=".onAuthConstLive"
                                 enabled="{= ${auth>mapType} === 'CONST' || ${auth>mapType} === 'SEQ' || ${auth>mapType} === 'RULE' }" class="aplInput admFldConst"
                                 tooltip="{= ${auth>mapType} === 'SEQ' ? ${i18n>authMapSeqHint} : ${auth>mapType} === 'RULE' ? ${auth>/genText/ruleHint} : '' }"
                                 placeholder="{= ${auth>mapType} === 'RANDOM' ? ${i18n>authMapRandomAuto} : ${auth>mapType} === 'SEQ' ? ${i18n>authMapSeqPh} : ${auth>mapType} === 'RULE' ? ${auth>/genText/rulePh} : '' }"/>
@@ -43,6 +45,20 @@
                                 items="{path: 'auth>/ruleTokens', templateShareable: false}">
                                 <Button text="{auth>label}" tooltip="{auth>tip}" type="Transparent" press=".onAuthRuleToken" class="admTok"/>
                         </HBox>
+                        <!-- 20261102：固定值不靠人记 —— 可选值（SE11 域固定值带说明 + 这张表里已用过的值带行数）一点即填；
+                             再加一句备注，说明这个值是什么意思（存进 ZAI_AUTH_FMAP / ZAI_AUTH_RMAP 的 NOTE） -->
+                        <HBox renderType="Bare" class="admFldOpts" visible="{= ${auth>mapType} === 'CONST' &amp;&amp; !!${auth>opts} &amp;&amp; ${auth>opts}.length > 0 }">
+                                <Text text="{i18n>authConstOpts}" class="admFldOptsLbl"/>
+                                <HBox renderType="Bare" class="admFldOptsList" items="{path: 'auth>opts', templateShareable: false}">
+                                        <Button text="{= ${auth>label} + (${auth>count} ? '   ' + ${auth>count} : '') }" tooltip="{auth>tip}" type="Transparent" press=".onAuthPickOpt" class="admOpt">
+                                                <customData>
+                                                        <core:CustomData key="on" writeToDom="true" value="{= ${auth>on} ? 'yes' : 'no' }"/>
+                                                </customData>
+                                        </Button>
+                                </HBox>
+                        </HBox>
+                        <Input value="{auth>note}" valueLiveUpdate="true" maxLength="80" visible="{= ${auth>mapType} === 'CONST' }"
+                                placeholder="{i18n>authConstNotePh}" class="aplInput admFldNote"/>
                 </HBox>
         </VBox>
 
