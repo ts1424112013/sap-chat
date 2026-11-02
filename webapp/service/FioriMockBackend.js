@@ -72,6 +72,15 @@ sap.ui.define([], function () {
                   PARAMS: [{ PARAM_ID: "WERKS" }, { PARAM_ID: "MODEL" }] },
                 { REPORT_ID: "ZDPMM455", TCODE: "ZDPMM455", NAME: "物料收发汇总", DESCRIPTION: "按期间汇总物料收发数量（演示）", EXEC_ENABLED: "X",
                   PARAMS: [{ PARAM_ID: "WERKS" }, { PARAM_ID: "BUDAT" }, { PARAM_ID: "MATNR" }] },
+                // 20261102（RFC 函数执行）：函数模块登记（REPORT_KIND = FUNC，调用名 = 函数名），参数是扫描接口后的样子
+                { REPORT_ID: "Z_AI_DEMO_PO_OPEN", TCODE: "Z_AI_DEMO_PO_OPEN", PROGNAME: "Z_AI_DEMO_PO_OPEN", REPORT_KIND: "FUNC", RESULT_REF: "ET_ITEMS",
+                  NAME: "未清采购订单（函数）", DESCRIPTION: "函数模块 Z_AI_DEMO_PO_OPEN(函数组 ZAI_DEMO, 远程启用)（演示）", EXEC_ENABLED: "X",
+                  PARAMS: [
+                        { PARAM_ID: "IV_WERKS", ABAP_NAME: "IV_WERKS", DISPLAY_LABEL: "工厂", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, REQUIRED: true, SEL_KIND: "P", SORT_NO: 10 },
+                        { PARAM_ID: "IT_LIFNR", ABAP_NAME: "IT_LIFNR", DISPLAY_LABEL: "供应商", DATA_TYPE: "CHAR", TYPE_LENGTH: 10, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 20 },
+                        { PARAM_ID: "IT_BEDAT", ABAP_NAME: "IT_BEDAT", DISPLAY_LABEL: "凭证日期", DATA_TYPE: "DATE", TYPE_LENGTH: 8, RANGE_ALLOWED: true, SEL_KIND: "S", SORT_NO: 30 },
+                        { PARAM_ID: "IV_OPEN", ABAP_NAME: "IV_OPEN", DISPLAY_LABEL: "只看未清", DATA_TYPE: "BOOL", SEL_KIND: "C", ALLOWED_OPS: "X", DEFAULT_VALUE: "X", SORT_NO: 40 }
+                  ] },
                 { REPORT_ID: "ZDPSD010", TCODE: "ZDPSD010", NAME: "出货差异对账", DESCRIPTION: "出货与开票差异（演示：暂未开放执行）",
                   PARAMS: [{ PARAM_ID: "VKORG" }] },
                 // 20261024（10.24 记录 #03a）：仿 ZRSD_IDP_0012 —— 两组单选（R）、两个复选框（C）、一堆选填条件。
@@ -491,7 +500,9 @@ sap.ui.define([], function () {
                                 sAnswer = "你没有报表「" + oDef.NAME + "(" + oDef.TCODE + ")」的使用权限, 请联系管理员在用户管理里分配。";
                                 bCard = false;
                         } else {
-                                sAnswer = "【报表 " + oDef.NAME + "】(" + oDef.TCODE + " / " + oDef.REPORT_ID + ")\n" + (oDef.DESCRIPTION || "") + "\n\n" +
+                                sAnswer = (oDef.REPORT_KIND === "FUNC"
+                                        ? "【函数 " + oDef.NAME + "】(调用名 " + oDef.TCODE + " / 函数 " + oDef.PROGNAME + ")\n"
+                                        : "【报表 " + oDef.NAME + "】(" + oDef.TCODE + " / " + oDef.REPORT_ID + ")\n") + (oDef.DESCRIPTION || "") + "\n\n" +
                                         "【需要填写参数】(在任务卡表单中填写后提交执行; 聊天内不会直接提交作业, 参数由服务端二次校验)\n" +
                                         aP.map(function (p) {
                                                 return "- " + (p.DISPLAY_LABEL || p.PARAM_ID) + "(" + (p.REQUIRED ? "必填" : "可选") +

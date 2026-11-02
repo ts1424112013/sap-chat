@@ -20,6 +20,9 @@
  *      DOMAIN_CARDS V1.4 与技能「生产工单进度」
  *  12) 20261029 思考模式：LLM_CLIENT V1.6 按写法拼 chat_template_kwargs / think、思考与正文分开；
  *      思考只随出参（DPC wrap_think），不落库、不进上下文；Agent 每轮思考挂到进度步骤
+ *  15) 20261102 RFC 函数执行：ZCL_AI_RFC_EXEC 调用后立刻 ROLLBACK、不写登记表、S_RFC 两种口径；
+ *      EXEC_SAP V1.2 按 REPORT_KIND 分支；SCANNER V1.1 / ZAI_RPT_REG V1.1 函数登记；CODE_PROVIDER V1.1 认函数；
+ *      写入类检查的词表与 JS 参考实现 rfc-scan-ref.js 一致
  * 只能查文本层面的约定，语法与运行时仍以 SAP 激活与现场验证为准。
  */
 const fs = require('fs');
@@ -647,6 +650,92 @@ console.log('\n[14] 思考模式：LLM_CLIENT V1.6 拼参数 / 拆思考、CHAT_
     /^\* V15\.10 20261029/m.test(dpRaw) && dpThink.length === 2 &&
     /ls_result-answer = zcl_ai_llm_client=>wrap_think\( iv_reasoning = ls_result-reasoning/.test(dp) &&
     /rs-answer\s+= zcl_ai_llm_client=>wrap_think\( iv_reasoning = is_agent-reasoning/.test(methodOf(dp, 'to_agent_odata')));
+}
+
+// ---------------------------------------------------------------- 15) RFC 函数执行
+console.log('\n[15] RFC 函数执行：RFC_EXEC V1.0 / EXEC_SAP V1.2 / SCANNER V1.1 / ZAI_RPT_REG V1.1 / CODE_PROVIDER V1.1');
+{
+  const rfRaw = read('ZCL_AI_RFC_EXEC.abap');
+  const rf = codeOnly(rfRaw);
+  const rfM = {};
+  (rf.match(/^\s*METHOD\s+\w+\.[\s\S]*?^\s*ENDMETHOD\./gim) || []).forEach((m) => { rfM[m.match(/METHOD\s+(\w+)\./i)[1].toLowerCase()] = m; });
+  check('RFC_EXEC 版本头 V1.0、有约定的公开方法', /^\* V1\.0\s+20261102/m.test(rfRaw) &&
+    ['read_interface', 'default_result', 'name_danger', 'scan_source', 'check_writes', 'auth_ok', 'precheck', 'run', 'build_bindings'].every((k) => !!rfM[k]));
+  const run = rfM.run || '';
+  const iCommit = run.indexOf('COMMIT WORK.');
+  const iCall = run.indexOf('CALL FUNCTION lv_fm PARAMETER-TABLE lt_ptab EXCEPTION-TABLE lt_etab.');
+  const iRb = run.indexOf('ROLLBACK WORK.', iCall);
+  check('run：先 COMMIT（运行器自己的写入）→ 动态调用 → 立刻 ROLLBACK，中间不读结果', iCommit > 0 && iCall > iCommit && iRb > iCall &&
+    !/table_to_rows|single_row|return_messages/.test(run.slice(iCall, iRb)));
+  check('动态调用异常（CX_SY_DYN_CALL_*）也 ROLLBACK 并提示重新登记', /CATCH cx_sy_dyn_call_error INTO DATA\(lx_dyn\)\.\s+ROLLBACK WORK\./.test(run) && /请重新登记/.test(run));
+  check('RFC_EXEC 不写任何数据库表（登记 / 结果由调用方写）', !/\b(INSERT|UPDATE|MODIFY)\s+(INTO\s+)?z\w+\s+(FROM|SET|VALUES)/i.test(rf) && !/DELETE\s+FROM\s+z/i.test(rf));
+  check('参数方向：IMPORTING 用 abap_func_exporting、EXPORTING 用 abap_func_importing、TABLES / CHANGING 对应',
+    /WHEN ls_p-kind = 'I' THEN abap_func_exporting ELSE abap_func_changing/.test(rfM.build_bindings || '') &&
+    /ls_pb-kind\s+= abap_func_importing\./.test(rfM.build_bindings || '') && /ls_pb-kind\s+= abap_func_tables\./.test(rfM.build_bindings || ''));
+  check('例外表：登记的例外 + ERROR_MESSAGE + OTHERS', /ls_eb-name\s+= 'ERROR_MESSAGE'/.test(rfM.build_bindings || '') && /ls_eb-name\s+= 'OTHERS'/.test(rfM.build_bindings || ''));
+  check('S_RFC：先按函数（FUNC）再按函数组（FUGR），活动 16；RFC_AUTH_CHECK = N 关闭',
+    /ID 'RFC_TYPE' FIELD 'FUNC'/.test(rfM.auth_ok || '') && /ID 'RFC_TYPE' FIELD 'FUGR'/.test(rfM.auth_ok || '') &&
+    /ID 'ACTVT'\s+FIELD '16'/.test(rfM.auth_ok || '') && /read_cfg_str\( 'RFC_AUTH_CHECK' \)/.test(rfM.auth_ok || ''));
+  check('逐字符扫描用 string（c 类型 && 拼接会丢空格）', !/TYPE c LENGTH 1/.test((rfM.strip_comment || '') + (rfM.add_target || '')) &&
+    /lv_c\s+TYPE string/.test(rfM.strip_comment || ''));
+  check('不用 FIND PCRE；类实现里方法之间没有注释', !/PCRE/i.test(rf) && (() => {
+    const lines = rfRaw.slice(rfRaw.indexOf('CLASS zcl_ai_rfc_exec IMPLEMENTATION')).split(/\r?\n/);
+    let between = false, bad = 0;
+    lines.forEach((l) => {
+      if (/^\s*ENDMETHOD\./i.test(l)) { between = true; return; }
+      if (/^\s*(METHOD\s|ENDCLASS)/i.test(l)) { between = false; return; }
+      if (between && l.trim()) { bad++; }
+    });
+    return bad === 0;
+  })());
+  // 词表与 JS 参考实现一致
+  const js = fs.readFileSync(path.join(__dirname, 'rfc-scan-ref.js'), 'utf8');
+  const jsWords = (js.match(/NAME_WORDS = \[([^\]]+)\]/) || [])[1].match(/'(\w+)'/g).map((x) => x.replace(/'/g, ''));
+  const abWords = ((rfM.name_danger || '').match(/\( `(\w+)` \)/g) || []).map((x) => x.replace(/[(` )]/g, ''));
+  check('函数名疑似词表与 rfc-scan-ref.js 一致', jsWords.join() === abWords.join(), abWords.join() + ' / ' + jsWords.join());
+  const delJs = (js.match(/\['ADJACENT'[^\]]+\]/) || [''])[0].match(/'(\w+)'/g).map((x) => x.replace(/'/g, ''));
+  check('DELETE 排除词与 JS 参考一致', delJs.every((w) => (rfM.scan_source || '').indexOf('lv_t2 <> `' + w + '`') >= 0), delJs.join());
+  check('BLOCK 关键词（COMMIT WORK / UPDATE TASK / BACKGROUND TASK / NEW TASK / BAPI_TRANSACTION_COMMIT）两边都有',
+    [' COMMIT WORK ', ' IN UPDATE TASK ', ' IN BACKGROUND TASK ', ' STARTING NEW TASK ', "'BAPI_TRANSACTION_COMMIT'"].every((k) =>
+      js.indexOf(k) >= 0 && rfRaw.indexOf(k) >= 0));
+
+  const exRaw2 = read('ZCL_AI_REPORT_EXEC_SAP.abap');
+  const ex2 = codeOnly(exRaw2);
+  const exM2 = {};
+  (ex2.match(/^\s*METHOD\s+\w+\.[\s\S]*?^\s*ENDMETHOD\./gim) || []).forEach((m) => { exM2[m.match(/METHOD\s+(\w+)\./i)[1].toLowerCase()] = m; });
+  check('EXEC_SAP V1.2：submit 里 FUNC 强制走运行器、改调 precheck', /^\* V1\.2\s+20261102/m.test(exRaw2) &&
+    /lv_func = is_func_run\( iv_report_run_id \)\.\s+IF lv_func = abap_true\.\s+lv_legacy = abap_false\./.test(exM2.submit || '') &&
+    /zcl_ai_rfc_exec=>precheck\(/.test(exM2.submit || ''));
+  const rc = exM2.run_captured || '';
+  check('run_captured：登记核验多取 report_kind / result_ref；FUNC → zcl_ai_rfc_exec=>run，否则照旧 ALV 采集',
+    /SELECT SINGLE progname, report_kind, result_ref FROM zai_rpt_def/.test(rc) && /zcl_ai_rfc_exec=>run\(/.test(rc) &&
+    /zcl_ai_alv_capture=>run\(/.test(rc) && rc.indexOf('zcl_ai_rfc_exec=>run(') < rc.indexOf('zcl_ai_alv_capture=>run('));
+  check('元数据行 columns 仍是最后一个键（read_result 按它截取）', /lv_meta = lv_meta && ',"columns":\[' && lv_cols && '\]\}'\./.test(rc) &&
+    rc.indexOf(`',"outputs":'`) < rc.indexOf(`',"columns":['`));
+
+  const scRaw2 = read('ZCL_AI_RPT_SCANNER.abap');
+  const sc2 = codeOnly(scRaw2);
+  const scM2 = {};
+  (sc2.match(/^\s*METHOD\s+\w+\.[\s\S]*?^\s*ENDMETHOD\./gim) || []).forEach((m) => { scM2[m.match(/METHOD\s+(\w+)\./i)[1].toLowerCase()] = m; });
+  const sf = scM2.scan_function || '';
+  check('SCANNER V1.1：scan_function 读接口 + 写入类检查；BLOCK 不能登记，NAME 要强制', /^\* V1\.1\s+20261102/m.test(scRaw2) &&
+    /zcl_ai_rfc_exec=>read_interface\(/.test(sf) && /zcl_ai_rfc_exec=>check_writes\( lv_fm \)/.test(sf) &&
+    /IF lv_block = abap_true AND rs-error IS INITIAL\./.test(sf) && /lv_namehit = abap_true AND iv_force = abap_false/.test(sf));
+  check('调用名规则：Z 开头、4–20 位、只含 A-Z 0-9 _', /strlen\( lv_tc \) > 20 OR strlen\( lv_tc \) < 4 OR lv_first <> 'Z'/.test(sf) &&
+    /lv_tc CN 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_'/.test(sf));
+  const sv = scM2.save || '';
+  check('save：报表 ↔ 函数互不覆盖的检查在写参数之前；新登记按草稿写 REPORT_KIND / RESULT_REF',
+    sv.indexOf('lv_kind_cmp <> lv_kind_chk') > 0 && sv.indexOf('lv_kind_cmp <> lv_kind_chk') < sv.indexOf('INSERT zai_rpt_param') &&
+    /ls_def-report_kind\s+= lv_kind_new\./.test(sv) && /ls_def-result_ref\s+= is_draft-result_ref\./.test(sv));
+  const reg2 = codeOnly(read('ZAI_RPT_REG.abap'));
+  check('ZAI_RPT_REG V1.1：S_FUNC → scan_function；主结果 / 强制只对单个函数生效', /SELECT-OPTIONS s_func FOR gv_func NO INTERVALS/.test(reg2) &&
+    /zcl_ai_rpt_scanner=>scan_function\(/.test(reg2) && /CLEAR: lv_alias, lv_res\./.test(reg2));
+
+  const cpRaw = read('ZCL_AI_CODE_PROVIDER.abap');
+  const cp = codeOnly(cpRaw);
+  check('CODE_PROVIDER V1.1：detect_objtype 查 TFDIR、get_source 有 FUNC 分支、function_include 支持命名空间',
+    /^\* V1\.1\s+20261102/m.test(cpRaw) && /WHEN 'FUNC'\./.test(cp) && /SELECT SINGLE funcname FROM tfdir/.test(cp) &&
+    /FIND 'SAPL' IN lv_p MATCH OFFSET lv_off/.test(cp));
 }
 
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));

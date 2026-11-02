@@ -14,12 +14,18 @@
 *& 依赖: ZCL_AI_RPT_SCANNER V1.0b; 写入只允许 ZAI_CHAT_USER 角色 ADMIN
 *& V1.0 20261024
 *& V1.0a 20261027(10.27 记录 #04): 扫描预览按选择屏块分段, 每块先打一行【块】标题(需 SCANNER V1.0b)
+*& V1.1 20261102(功能计划书/RFC函数执行/01 §3): 函数模块登记 —— 填 S_FUNC(函数名, 可多个)时
+*&      扫描 / 写入走 ZCL_AI_RPT_SCANNER=>scan_function: P_ALIAS = 调用名(只对单个函数),
+*&      P_RESULT = 主结果参数(只对单个函数, 空 = 第一个非 RETURN 的表), P_FFORCE = 函数名疑似
+*&      写入类也登记; 源码里有提交 / 写库 / 异步写入的函数一律不能登记(不能强制)
+*&      依赖: ZCL_AI_RPT_SCANNER V1.1
 *&---------------------------------------------------------------------*
 REPORT zai_rpt_reg LINE-SIZE 255.
 
 DATA: gv_tcode TYPE tstc-tcode,
       gv_prog  TYPE trdir-name,
-      gv_pname TYPE c LENGTH 30.
+      gv_pname TYPE c LENGTH 30,
+      gv_func  TYPE tfdir-funcname.
 
 SELECTION-SCREEN COMMENT /1(79) c_h1.
 SELECTION-SCREEN SKIP 1.
@@ -43,6 +49,10 @@ SELECTION-SCREEN END OF LINE.
 SELECTION-SCREEN BEGIN OF LINE.
 SELECTION-SCREEN COMMENT 1(20) c_pg FOR FIELD s_prog.
 SELECT-OPTIONS s_prog FOR gv_prog.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(20) c_fn FOR FIELD s_func.
+SELECT-OPTIONS s_func FOR gv_func NO INTERVALS.
 SELECTION-SCREEN END OF LINE.
 SELECTION-SCREEN BEGIN OF LINE.
 SELECTION-SCREEN COMMENT 1(20) c_alias FOR FIELD p_alias.
@@ -75,6 +85,14 @@ SELECTION-SCREEN COMMENT 1(20) c_maxr FOR FIELD p_maxr.
 PARAMETERS p_maxr TYPE i DEFAULT 200.
 SELECTION-SCREEN END OF LINE.
 SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(20) c_res FOR FIELD p_result.
+PARAMETERS p_result TYPE c LENGTH 30.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN BEGIN OF LINE.
+PARAMETERS p_fforce AS CHECKBOX.
+SELECTION-SCREEN COMMENT 3(70) c_ffor FOR FIELD p_fforce.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN BEGIN OF LINE.
 PARAMETERS p_test AS CHECKBOX DEFAULT 'X'.
 SELECTION-SCREEN COMMENT 3(70) c_test FOR FIELD p_test.
 SELECTION-SCREEN END OF LINE.
@@ -86,7 +104,10 @@ INITIALIZATION.
   c_save  = '写入登记(下面「只演练」去掉勾才真写)'.
   c_tc    = '事务码'.
   c_pg    = '程序名(没有事务码时)'.
-  c_alias = '事务码别名'.
+  c_fn    = '函数模块名'.
+  c_alias = '事务码别名 / 调用名'.
+  c_res   = '函数主结果参数'.
+  c_ffor  = '函数名疑似写入类也登记(确认只读; 源码里写库的仍不能登记)'.
   c_lang  = '标签语言'.
   c_skip  = '不登记的参数名'.
   c_force = '强制登记的参数名'.
@@ -100,6 +121,7 @@ CLASS lcl_reg DEFINITION FINAL.
     TYPES: BEGIN OF ty_job,
              tcode TYPE string,
              prog  TYPE string,
+             func  TYPE string,
            END OF ty_job.
     TYPES tt_job TYPE STANDARD TABLE OF ty_job WITH DEFAULT KEY.
     CLASS-METHODS main.
@@ -128,6 +150,7 @@ CLASS lcl_reg IMPLEMENTATION.
           ls_draft TYPE zcl_ai_rpt_scanner=>ty_draft,
           ls_save  TYPE zcl_ai_rpt_scanner=>ty_save,
           lv_alias TYPE string,
+          lv_res   TYPE string,
           lv_ok    TYPE i,
           lv_bad   TYPE i,
           lv_ans   TYPE c LENGTH 1,
@@ -140,23 +163,32 @@ CLASS lcl_reg IMPLEMENTATION.
 
     lt_job = jobs( ).
     IF lt_job IS INITIAL.
-      WRITE: / '请在「事务码」或「程序名」里至少填一个(可以多个 / 范围)'.
+      WRITE: / '请在「事务码」「程序名」「函数模块名」里至少填一个(可以多个 / 范围)'.
       RETURN.
     ENDIF.
     lt_force = names( s_force[] ).
     lt_skip  = names( s_skip[] ).
     lv_alias = p_alias.
+    lv_res   = p_result.
     IF lines( lt_job ) > 1.
-      CLEAR lv_alias.
+      CLEAR: lv_alias, lv_res.
     ENDIF.
 
     LOOP AT lt_job INTO ls_job.
-      ls_draft = zcl_ai_rpt_scanner=>scan( iv_tcode = ls_job-tcode
-                                           iv_prog  = ls_job-prog
-                                           iv_alias = lv_alias
-                                           iv_lang  = p_lang
-                                           it_force = lt_force
-                                           it_skip  = lt_skip ).
+      IF ls_job-func IS NOT INITIAL.
+        ls_draft = zcl_ai_rpt_scanner=>scan_function( iv_func   = ls_job-func
+                                                      iv_alias  = lv_alias
+                                                      iv_lang   = p_lang
+                                                      iv_result = lv_res
+                                                      iv_force  = p_fforce ).
+      ELSE.
+        ls_draft = zcl_ai_rpt_scanner=>scan( iv_tcode = ls_job-tcode
+                                             iv_prog  = ls_job-prog
+                                             iv_alias = lv_alias
+                                             iv_lang  = p_lang
+                                             it_force = lt_force
+                                             it_skip  = lt_skip ).
+      ENDIF.
       show( ls_draft ).
       APPEND ls_draft TO lt_draft.
     ENDLOOP.
@@ -275,6 +307,8 @@ CLASS lcl_reg IMPLEMENTATION.
           lv_tc   TYPE tstc-tcode,
           lt_pg   TYPE STANDARD TABLE OF trdir-name WITH DEFAULT KEY,
           lv_pg   TYPE trdir-name,
+          lt_fn   TYPE STANDARD TABLE OF tfdir-funcname WITH DEFAULT KEY,
+          lv_fn   TYPE tfdir-funcname,
           ls_job  TYPE ty_job.
 
     CLEAR rt.
@@ -291,6 +325,17 @@ CLASS lcl_reg IMPLEMENTATION.
       LOOP AT lt_pg INTO lv_pg.
         CLEAR ls_job.
         ls_job-prog = lv_pg.
+        APPEND ls_job TO rt.
+      ENDLOOP.
+    ENDIF.
+    IF s_func[] IS NOT INITIAL.
+      SELECT funcname FROM tfdir WHERE funcname IN @s_func ORDER BY funcname INTO TABLE @lt_fn UP TO 200 ROWS.
+      IF lt_fn IS INITIAL.
+        WRITE: / '「函数模块名」里填的函数都不存在(TFDIR 查不到)'.
+      ENDIF.
+      LOOP AT lt_fn INTO lv_fn.
+        CLEAR ls_job.
+        ls_job-func = lv_fn.
         APPEND ls_job TO rt.
       ENDLOOP.
     ENDIF.
@@ -314,7 +359,14 @@ CLASS lcl_reg IMPLEMENTATION.
           lv_bln  TYPE string.
 
     ULINE.
-    WRITE: / '报表', is_draft-report_id, ' 事务码', is_draft-tcode, ' 程序', is_draft-progname.
+    IF is_draft-report_kind = 'FUNC'.
+      WRITE: / '函数', is_draft-progname, ' 调用名', is_draft-tcode, ' 编号', is_draft-report_id.
+      IF is_draft-result_ref IS NOT INITIAL.
+        WRITE: / '主结果参数:', is_draft-result_ref.
+      ENDIF.
+    ELSE.
+      WRITE: / '报表', is_draft-report_id, ' 事务码', is_draft-tcode, ' 程序', is_draft-progname.
+    ENDIF.
     WRITE: / '名称:', is_draft-report_name.
     IF is_draft-module IS NOT INITIAL OR is_draft-description IS NOT INITIAL.
       WRITE: / '头注释: 模块', is_draft-module, ' 用途', is_draft-description.

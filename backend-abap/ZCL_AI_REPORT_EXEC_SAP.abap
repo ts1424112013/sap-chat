@@ -79,6 +79,16 @@
 *   V1.1b: build_seltab 的 SELECT 含 allowed_ops, 有 zcl_ai_report_service=>parse_options(
 *   V1.1c: 两处 SUBMIT … VIA JOB 都带 LANGUAGE lv_langu; 有 METHOD job_langu /
 *   METHOD abort_reason; poll 的 WHEN 'A' 里有 error_code = 'JOB_ABORT'
+* V1.2    20261102(功能计划书/RFC函数执行/01 §4): 函数登记(ZAI_RPT_DEF-REPORT_KIND = FUNC)
+*         ① submit: FUNC 一律走运行器(不看 RPT_CAPTURE_LEGACY), 不建选择屏参数, 改调
+*           ZCL_AI_RFC_EXEC=>precheck(函数存在 / S_RFC / 参数能绑定)提前拦错;
+*         ② run_captured: 登记核验多取 REPORT_KIND / RESULT_REF; FUNC → ZCL_AI_RFC_EXEC=>run
+*           (调用后立刻 ROLLBACK WORK), 结果照旧写 ZAI_RPT_RESULT; 元数据行多 "kind":"FUNC"
+*           和可选的 "outputs"(其他输出 / RETURN 消息), columns 仍是最后一个键;
+*           步骤记 PHASE = CALL
+*         依赖: ZCL_AI_RFC_EXEC V1.0(先激活)
+* ★ 重贴后核对标记: 有 METHOD is_func_run; submit 里有 zcl_ai_rfc_exec=>precheck(;
+*   run_captured 里有 zcl_ai_rfc_exec=>run( 与 iv_phase = lv_phase
 *=======================================================================
 CLASS zcl_ai_report_exec_sap DEFINITION
   PUBLIC
@@ -124,6 +134,11 @@ CLASS zcl_ai_report_exec_sap DEFINITION
       IMPORTING iv_report_run_id TYPE string
                 iv_message       TYPE string.
 
+    " V1.2: 运行对应的登记是不是函数(ZAI_RPT_DEF-REPORT_KIND = FUNC)
+    CLASS-METHODS is_func_run
+      IMPORTING iv_report_run_id TYPE string
+      RETURNING VALUE(rv)        TYPE abap_bool.
+
     " V1.0e: 删除未能释放的作业(JOB_OPEN 后失败时调用; 失败静默)
     CLASS-METHODS drop_job
       IMPORTING iv_jobname TYPE tbtcjob-jobname
@@ -164,7 +179,8 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
           lt_rsel    TYPE rsparams_tt,
           ls_rsel    TYPE rsparams,
           lv_langu   TYPE sy-langu,
-          lv_lnote   TYPE string.
+          lv_lnote   TYPE string,
+          lv_func    TYPE abap_bool.
     CLEAR: ev_status, ev_message.
 
     " V1.0a: SUBMIT 动态程序名必须是字符型定长(PROGNAME), 不能用 string
@@ -178,6 +194,11 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
     " V1.1: 默认走通用 ALV 采集(作业步骤 = ZAI_RPT_RUNNER); 回退键='X' 走旧口径
     " V1.1a: 键名必须 <= 20 字符(CFGKEY CHAR 20), 超长 OPEN SQL 直接抛异常
     lv_legacy = xsdbool( zcl_ai_task_service=>read_cfg_str( 'RPT_CAPTURE_LEGACY' ) = 'X' ).
+    " V1.2: 函数登记只能走运行器(旧口径是直接 SUBMIT 业务程序, 函数没法 SUBMIT)
+    lv_func = is_func_run( iv_report_run_id ).
+    IF lv_func = abap_true.
+      lv_legacy = abap_false.
+    ENDIF.
     IF lv_legacy = abap_false.
       SELECT SINGLE name FROM trdir
         WHERE name = @lv_runner
@@ -191,17 +212,31 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
 
     " V1.0e: 先构建选择参数再开作业 —— 参数失败时不在 SM37 留下空作业
     " V1.1: 新口径下选择参数由运行器在作业内重建; 这里仍先建一遍只为提前拦错
-    build_seltab(
-      EXPORTING iv_report_run_id = iv_report_run_id
-                iv_program       = iv_program
-                iv_params_json   = iv_params_json
-                iv_legacy        = lv_legacy
-      IMPORTING et_seltab        = lt_seltab
-                ev_err           = lv_err ).
-    IF lv_err IS NOT INITIAL.
-      ev_status  = zcl_ai_report_service=>gc_run_failed.
-      ev_message = |选择参数构建失败: { lv_err }|.
-      RETURN.
+    " V1.2: 函数不建选择屏参数, 改做调用预检(函数存在 / S_RFC / 参数能绑定)
+    IF lv_func = abap_true.
+      zcl_ai_rfc_exec=>precheck(
+        EXPORTING iv_fm            = iv_program
+                  iv_report_run_id = iv_report_run_id
+                  iv_params_json   = iv_params_json
+        IMPORTING ev_error         = lv_err ).
+      IF lv_err IS NOT INITIAL.
+        ev_status  = zcl_ai_report_service=>gc_run_failed.
+        ev_message = |函数调用预检失败: { lv_err }|.
+        RETURN.
+      ENDIF.
+    ELSE.
+      build_seltab(
+        EXPORTING iv_report_run_id = iv_report_run_id
+                  iv_program       = iv_program
+                  iv_params_json   = iv_params_json
+                  iv_legacy        = lv_legacy
+        IMPORTING et_seltab        = lt_seltab
+                  ev_err           = lv_err ).
+      IF lv_err IS NOT INITIAL.
+        ev_status  = zcl_ai_report_service=>gc_run_failed.
+        ev_message = |选择参数构建失败: { lv_err }|.
+        RETURN.
+      ENDIF.
     ENDIF.
 
     " 结果表幂等清理(防御性; 正常每 run 只提交一次)
@@ -779,7 +814,13 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
           lt_res    TYPE STANDARD TABLE OF zai_rpt_result,
           ls_res    TYPE zai_rpt_result,
           lv_idx    TYPE i,
-          lv_row    TYPE string.
+          lv_row    TYPE string,
+          lv_kind   TYPE zai_rpt_def-report_kind,
+          lv_resref TYPE zai_rpt_def-result_ref,
+          lv_outs   TYPE string,
+          lv_isfunc TYPE abap_bool,
+          lv_phase  TYPE string,
+          lv_sum    TYPE string.
 
     SELECT SINGLE * FROM zai_rpt_run
       WHERE report_run_id = @iv_report_run_id
@@ -795,47 +836,70 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
     ENDIF.
 
     lv_prog = to_upper( ls_run-progname ).
-    SELECT SINGLE progname FROM zai_rpt_def
+    SELECT SINGLE progname, report_kind, result_ref FROM zai_rpt_def
       WHERE report_id = @ls_run-report_id
         AND active = 'X'
         AND exec_enabled = 'X'
-      INTO @lv_defprog.
+      INTO ( @lv_defprog, @lv_kind, @lv_resref ).
     IF sy-subrc <> 0 OR lv_prog IS INITIAL OR to_upper( lv_defprog ) <> lv_prog.
       fail_run( iv_report_run_id = iv_report_run_id
                 iv_message       = '报表登记已停用 / 未开放执行 / 程序名与登记不一致, 已拒绝采集' ).
       RETURN.
     ENDIF.
 
-    build_seltab(
-      EXPORTING iv_report_run_id = iv_report_run_id
-                iv_program       = CONV string( ls_run-progname )
-                iv_params_json   = ls_run-params_json
-                iv_legacy        = abap_false
-      IMPORTING et_seltab        = lt_seltab
-                ev_err           = lv_err ).
-    IF lv_err IS NOT INITIAL.
-      fail_run( iv_report_run_id = iv_report_run_id
-                iv_message       = |选择参数构建失败: { lv_err }| ).
-      RETURN.
-    ENDIF.
+    lv_isfunc = xsdbool( to_upper( condense( val = CONV string( lv_kind ) ) ) = 'FUNC' ).
+    IF lv_isfunc = abap_true.
+      " V1.2: 函数登记 → 动态调用(调用后立刻 ROLLBACK WORK), 主结果转成同样的列 / 行
+      zcl_ai_rfc_exec=>run(
+        EXPORTING iv_report_run_id = iv_report_run_id
+                  iv_fm            = lv_prog
+                  iv_params_json   = ls_run-params_json
+                  iv_result_ref    = CONV string( lv_resref )
+                  iv_max_rows      = lc_max_store
+        IMPORTING ev_total         = lv_total
+                  et_cols          = lt_cols
+                  et_rows          = lt_rows
+                  ev_note          = lv_note
+                  ev_outputs       = lv_outs
+                  ev_error         = lv_err ).
+      IF lv_err IS NOT INITIAL.
+        fail_run( iv_report_run_id = iv_report_run_id
+                  iv_message       = lv_err ).
+        RETURN.
+      ENDIF.
+      lv_captured = abap_true.
+    ELSE.
+      build_seltab(
+        EXPORTING iv_report_run_id = iv_report_run_id
+                  iv_program       = CONV string( ls_run-progname )
+                  iv_params_json   = ls_run-params_json
+                  iv_legacy        = abap_false
+        IMPORTING et_seltab        = lt_seltab
+                  ev_err           = lv_err ).
+      IF lv_err IS NOT INITIAL.
+        fail_run( iv_report_run_id = iv_report_run_id
+                  iv_message       = |选择参数构建失败: { lv_err }| ).
+        RETURN.
+      ENDIF.
 
-    zcl_ai_alv_capture=>run(
-      EXPORTING iv_program  = lv_prog
-                it_seltab   = lt_seltab
-                iv_max_rows = lc_max_store
-      IMPORTING ev_captured = lv_captured
-                ev_total    = lv_total
-                et_cols     = lt_cols
-                et_rows     = lt_rows
-                ev_error    = lv_err ).
-    IF lv_err IS NOT INITIAL.
-      fail_run( iv_report_run_id = iv_report_run_id
-                iv_message       = lv_err ).
-      RETURN.
-    ENDIF.
+      zcl_ai_alv_capture=>run(
+        EXPORTING iv_program  = lv_prog
+                  it_seltab   = lt_seltab
+                  iv_max_rows = lc_max_store
+        IMPORTING ev_captured = lv_captured
+                  ev_total    = lv_total
+                  et_cols     = lt_cols
+                  et_rows     = lt_rows
+                  ev_error    = lv_err ).
+      IF lv_err IS NOT INITIAL.
+        fail_run( iv_report_run_id = iv_report_run_id
+                  iv_message       = lv_err ).
+        RETURN.
+      ENDIF.
 
-    IF lv_captured = abap_false.
-      lv_note = '报表没有输出 ALV 数据: 可能是该条件下无数据、无工厂/组织权限被程序拦截、或程序提前结束(详见 SM37 作业日志)'.
+      IF lv_captured = abap_false.
+        lv_note = '报表没有输出 ALV 数据: 可能是该条件下无数据、无工厂/组织权限被程序拦截、或程序提前结束(详见 SM37 作业日志)'.
+      ENDIF.
     ENDIF.
 
     LOOP AT lt_cols INTO DATA(ls_col).
@@ -847,10 +911,17 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
 
     lv_total_s  = |{ lv_total }|.
     lv_stored_s = |{ lines( lt_rows ) }|.
+    " columns 必须是最后一个键(read_result 按它截取); V1.2: 函数多 kind / outputs
     lv_meta = '{"__meta__":true,"total":' && lv_total_s &&
               ',"stored":' && lv_stored_s &&
-              ',"note":"' && zcl_ai_report_service=>json_escape( lv_note ) &&
-              '","columns":[' && lv_cols && ']}'.
+              ',"note":"' && zcl_ai_report_service=>json_escape( lv_note ) && '"'.
+    IF lv_isfunc = abap_true.
+      lv_meta = lv_meta && ',"kind":"FUNC"'.
+      IF lv_outs IS NOT INITIAL.
+        lv_meta = lv_meta && ',"outputs":' && lv_outs.
+      ENDIF.
+    ENDIF.
+    lv_meta = lv_meta && ',"columns":[' && lv_cols && ']}'.
 
     CLEAR ls_res.
     ls_res-mandt      = sy-mandt.
@@ -879,12 +950,37 @@ CLASS zcl_ai_report_exec_sap IMPLEMENTATION.
     ENDIF.
     COMMIT WORK AND WAIT.
 
+    IF lv_isfunc = abap_true.
+      lv_phase = 'CALL'.
+      lv_sum   = |函数调用 { lv_prog }: 总行数={ lv_total } 入库={ lv_stored_s } 列={ lines( lt_cols ) }|.
+    ELSE.
+      lv_phase = 'CAPTURE'.
+      lv_sum   = |ALV 采集: 捕获={ lv_captured } 总行数={ lv_total } 入库={ lv_stored_s } 列={ lines( lt_cols ) }|.
+    ENDIF.
     zcl_ai_report_mock=>add_step(
       iv_report_run_id = iv_report_run_id
       iv_task_id       = CONV string( ls_run-task_id )
-      iv_phase         = 'CAPTURE'
+      iv_phase         = lv_phase
       iv_status        = 'OK'
-      iv_summary       = |ALV 采集: 捕获={ lv_captured } 总行数={ lv_total } 入库={ lv_stored_s } 列={ lines( lt_cols ) }| ).
+      iv_summary       = lv_sum ).
+  ENDMETHOD.
+
+
+  METHOD is_func_run.
+    DATA lv_kind TYPE zai_rpt_def-report_kind.
+    rv = abap_false.
+    SELECT SINGLE report_id FROM zai_rpt_run
+      WHERE report_run_id = @iv_report_run_id
+      INTO @DATA(lv_rid).
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+    SELECT SINGLE report_kind FROM zai_rpt_def
+      WHERE report_id = @lv_rid
+      INTO @lv_kind.
+    IF sy-subrc = 0.
+      rv = xsdbool( to_upper( condense( val = CONV string( lv_kind ) ) ) = 'FUNC' ).
+    ENDIF.
   ENDMETHOD.
 
 

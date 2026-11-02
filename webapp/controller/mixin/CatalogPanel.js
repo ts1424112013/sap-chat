@@ -166,16 +166,20 @@ sap.ui.define([
                 _catReportItem: function (d) {
                         var oRB = this._rb();
                         var aP = pick(d, "params") || [];
+                        // 20261102（RFC 函数执行）：REPORT_KIND = FUNC 的是函数模块登记 —— 函数图标、归到「函数」分类；
+                        // 徽标仍是「后台作业」（函数也在后台作业里跑），不再重复写「函数」
+                        var bFunc = String(pick(d, "report_kind") || "").toUpperCase() === "FUNC";
                         return {
                                 id: String(pick(d, "report_id") || pick(d, "tcode") || ""),
                                 title: String(pick(d, "name") || pick(d, "report_name") || pick(d, "tcode") || ""),
                                 code: String(pick(d, "tcode") || ""),
                                 desc: String(pick(d, "description") || ""),
                                 // 20261024：模块 = 登记表 MODULE（有就用）→ 事务码 / 程序名命名推断 → 「其他」
-                                category: ReportCatalog.moduleOf(pick(d, "tcode"), pick(d, "progname"), pick(d, "module")) ||
-                                        oRB.getText("catModOther"),
+                                category: bFunc ? oRB.getText("catModFunc")
+                                        : (ReportCatalog.moduleOf(pick(d, "tcode"), pick(d, "progname"), pick(d, "module")) || oRB.getText("catModOther")),
                                 paramCount: Array.isArray(aP) ? aP.length : 0,
                                 badges: [oRB.getText("catBadgeJob")],
+                                icon: bFunc ? "fn" : undefined,
                                 disabled: pick(d, "exec_enabled") !== "X" && pick(d, "exec_enabled") !== true,
                                 disabledText: oRB.getText("catOff")
                         };

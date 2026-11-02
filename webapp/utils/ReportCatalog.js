@@ -13,7 +13,8 @@ sap.ui.define([
          * 搜索与分类切换只改行的 hidden，不重绘控件（输入框不丢焦点）。所有动态文本先 escapeHtml。
          *
          * 一期单选（mode = "single"）：点行或行尾按钮 = onPick(item)。多选（G3）以后再加。
-         * items: [{ id, title, code, desc, category, paramCount, badges: [], disabled, disabledText }]
+         * items: [{ id, title, code, desc, category, paramCount, badges: [], disabled, disabledText, icon }]
+         *   icon（可选）：这一行自己的图标（如 "fn" = 函数），不给就用目录统一的 cfg.icon
          * categories: null = 不显示分类页签；数组 = 分类页签（「全部」自动加在最前）
          * status: "loading" | "ready" | "error"（ready 且 items 为空 = 空清单）
          * texts: { title, searchPh, footNote, empty, loadFail, retry, loading, all, noMatch,
@@ -29,6 +30,8 @@ sap.ui.define([
         /** 行首图标（内联 SVG，跟随 currentColor；doc = TCode 报表，chart = Fiori 报表） */
         var ICONS = {
                 doc: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
+                // 20261102（RFC 函数执行）：函数模块登记的行
+                fn: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4c-2 0-3 1-3 3v2.5c0 1-.6 1.8-1.5 2.5.9.7 1.5 1.5 1.5 2.5V17c0 2 1 3 3 3"/><path d="M16 4c2 0 3 1 3 3v2.5c0 1 .6 1.8 1.5 2.5-.9.7-1.5 1.5-1.5 2.5V17c0 2-1 3-3 3"/><path d="M10 9l4 6M14 9l-4 6"/></svg>',
                 chart: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M5 15l4-5 4 3 6-7"/></svg>',
                 search: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
                 list: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg>',
@@ -158,7 +161,7 @@ sap.ui.define([
                 return '<div class="catRow' + (bOff ? " off" : "") + '" data-id="' + esc(it.id) + '"' +
                         (bOff ? ' aria-disabled="true" title="' + esc(t.offTip || "") + '"' : ' title="' + esc(t.pickTip || "") + '"') +
                         ' tabindex="0" role="button">' +
-                        '<div class="rIcon">' + (ICONS[(o && o.icon) || "doc"] || ICONS.doc) + "</div>" +
+                        '<div class="rIcon">' + (ICONS[it.icon || (o && o.icon) || "doc"] || ICONS.doc) + "</div>" +
                         '<div class="rMain"><div class="rName"><span class="rTitle">' + esc(it.title) + "</span>" +
                         (it.code ? '<span class="tc">' + esc(it.code) + "</span>" : "") + "</div>" +
                         (it.desc ? '<div class="rDesc">' + esc(it.desc) + "</div>" : "") + "</div>" +

@@ -36,6 +36,9 @@
 * V15.7 20261028(10.28 记录 #01): read_program_source 新增可选参数 keyword
 *   (按关键词定位报错文案/字段/FORM, 执行见 AGENT_SERVICE V15.7 exec_read_source)
 *   ★ 重贴后核对标记: read_program_source 有 name / start_line / keyword 三个参数
+* V15.8 20261102(功能计划书/RFC函数执行/01 §5): read_program_source 说明加「函数模块名」
+*   (CODE_PROVIDER V1.1 认 TFDIR 里的函数, 只返回该函数的接口 + 本体源码)
+*   ★ 重贴后核对标记: read_program_source 的 description 含「函数模块」
 *         sap_data_analysis  受控查询计划取数(能力目录白名单实体/字段),
 *                            args 直接承载计划 JSON 对象(不走扁平 kv),
 *                            解析/校验见 AGENT_GUARD.parse_analysis_plan,
@@ -253,12 +256,13 @@ CLASS zcl_ai_tool_registry IMPLEMENTATION.
       TO lt_p.
     APPEND VALUE #(
       tool_id     = gc_tool_read_source
-      description = '读取自开发 ABAP 对象的源码(程序/类/函数组, 每行带行号; 事务码会自动解析到主程序)。'
+      description = '读取自开发 ABAP 对象的源码(程序/类/函数组/函数模块, 每行带行号; 事务码会自动解析到主程序; '
+                    && '给函数模块名时只返回这一个函数: 先是接口(参数/类型/必填/默认值/例外), 再是函数本体源码)。'
                     && '给 keyword 时按关键词定位(不区分大小写, 最长 40 字符): 返回命中的行号 hit_lines 和每处前后 6 行; '
                     && '问报错文案、消息、字段或 FORM 在哪时先用 keyword 搜, 再用 start_line 读命中处附近。'
                     && '不给 keyword 时分页读取: 每次最多约 400 行, more=true 时用 start_line=上次 end_line+1 继续读; '
                     && '只读需要的部分, 不要一次性把整个大程序全部读完。'
-                    && 'args: {"name":"<程序名/事务码/类名, 如 ZRMM_IDP_0702 或 ZDPMM702>","keyword":"<可选, 要找的文字>","start_line":"<可选, 起始行号, 默认 1>"}'
+                    && 'args: {"name":"<程序名/事务码/类名/函数模块名, 如 ZRMM_IDP_0702 或 ZDPMM702 或 Z_AI_ODATA_GET>","keyword":"<可选, 要找的文字>","start_line":"<可选, 起始行号, 默认 1>"}'
       params      = lt_p
       read_only   = abap_true ) TO rt_tools.
 

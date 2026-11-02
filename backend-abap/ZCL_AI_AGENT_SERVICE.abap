@@ -196,6 +196,12 @@
 *     没点名对象的数据类诉求改按普通问题回答
 *   依赖: ZCL_AI_ACCESS V1.1(先激活)
 *   ★ 重贴后核对标记: 有 lv_auto_deny 与 "V15.12: 「自动」只用开放的能力"
+* V15.13 20261102(功能计划书/RFC函数执行/01 §5): read_program_source 也能给函数模块名
+*   ① read_program_source 解析在 CODE_PROVIDER V1.1, 这里只改对象名不合法时的提示文字;
+*   ② build_report_intro: 函数登记(REPORT_KIND = FUNC)的卡片标题写「【函数 …】(调用名 / 函数)」
+*   依赖: ZCL_AI_CODE_PROVIDER V1.1
+*   ★ 重贴后核对标记: exec_read_source 的提示是「只能是程序名/事务码/类名/函数模块名」;
+*     build_report_intro 里有 IF to_upper( ls_def-report_kind ) = 'FUNC'
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -2049,7 +2055,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     " 只读自开发对象(Z/Y 开头或 /命名空间/), 与对话页旧口径一致
     IF lv_name IS INITIAL OR strlen( lv_name ) > 40
        OR lv_name CN 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_/'.
-      ev_json = '{"ok":false,"error":"对象名不合法(只能是程序名/事务码/类名)"}'.
+      ev_json = '{"ok":false,"error":"对象名不合法(只能是程序名/事务码/类名/函数模块名)"}'.
       RETURN.
     ENDIF.
     DATA(lv_first) = substring( val = lv_name len = 1 ).
@@ -2672,9 +2678,16 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                    iv_report_id = ls_def-report_id
                    iv_config_version = ls_def-config_version ).
 
-    ev_answer =
-      |【报表 { ls_def-report_name }】({ ls_def-tcode } / { ls_def-report_id })\n| &&
-      |{ ls_def-description }\n|.
+    " V15.13: 函数模块登记(REPORT_KIND = FUNC)的卡片标题写「函数」
+    IF to_upper( ls_def-report_kind ) = 'FUNC'.
+      ev_answer =
+        |【函数 { ls_def-report_name }】(调用名 { ls_def-tcode } / 函数 { ls_def-progname })\n| &&
+        |{ ls_def-description }\n|.
+    ELSE.
+      ev_answer =
+        |【报表 { ls_def-report_name }】({ ls_def-tcode } / { ls_def-report_id })\n| &&
+        |{ ls_def-description }\n|.
+    ENDIF.
 
     IF lt_p IS INITIAL.
       ev_answer = ev_answer &&

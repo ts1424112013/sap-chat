@@ -153,6 +153,10 @@ async function rejects(name, promise, re) {
   const ctx = Object.assign({ _rb: () => rb }, CP);
   let it = ctx._catReportItem({ REPORT_ID: 'ZDPMM702', TCODE: 'ZDPMM702', NAME: 'MIH 需求报表', DESCRIPTION: 'x', EXEC_ENABLED: 'X', PARAMS: [{}, {}] });
   check('ReportDefinitions 大写键 → 目录行', it.id === 'ZDPMM702' && it.code === 'ZDPMM702' && it.title === 'MIH 需求报表' && it.paramCount === 2 && it.disabled === false && it.badges[0] === I18N.catBadgeJob);
+  it = ctx._catReportItem({ REPORT_ID: 'Z_AI_DEMO_PO_OPEN', TCODE: 'Z_AI_DEMO_PO_OPEN', PROGNAME: 'Z_AI_DEMO_PO_OPEN', REPORT_KIND: 'FUNC', NAME: 'f', EXEC_ENABLED: 'X', PARAMS: [{}] });
+  check('REPORT_KIND = FUNC → 函数图标、「函数」分类、徽标仍是「后台作业」', it.icon === 'fn' && it.badges[0] === I18N.catBadgeJob && it.category === I18N.catModFunc && !it.disabled);
+  check('函数行 HTML 用函数图标；报表行不受影响', RC.rowHtml(it, { texts: TF }).indexOf('M10 9l4 6') >= 0 &&
+    RC.rowHtml(ctx._catReportItem({ REPORT_ID: 'A', TCODE: 'ZA01', EXEC_ENABLED: 'X', PARAMS: [] }), { texts: TF }).indexOf('M10 9l4 6') < 0);
   it = ctx._catReportItem({ report_id: 'R2', tcode: 'ZX01', name: 'n', params: [] });
   check('小写键也认；exec_enabled 为空 → 停用 + 暂未开放', it.code === 'ZX01' && it.disabled === true && it.disabledText === I18N.catOff);
   it = ctx._catFioriItem({ reportId: 'SHIPMENT', reportName: 'shipment報表', category: '销量分析', keywords: 'k', description: 'd', params: [{}, {}, {}] });
@@ -332,7 +336,14 @@ async function rejects(name, promise, re) {
   check('FIORI_ENABLED 关闭 → Agent 说明能力未开启', /能力未开启/.test(turn('选择报表：shipment報表').answer));
   fakeWindow.localStorage.removeItem('zaiChat.cfg.FIORI_ENABLED');
   r = await svc.getReportCatalog();
-  check('演示模式的报表执行目录：5 张（20261024 加了 ZDPSD012、20261027 加了 ZDPPP059）、一张未开放（大写键）', r.defs.length === 5 && r.defs.filter((d) => d.EXEC_ENABLED !== 'X').length === 1);
+  check('演示模式的报表执行目录：6 张（20261024 加了 ZDPSD012、20261027 加了 ZDPPP059、20261102 加了函数 Z_AI_DEMO_PO_OPEN）、一张未开放（大写键）', r.defs.length === 6 && r.defs.filter((d) => d.EXEC_ENABLED !== 'X').length === 1);
+  {
+    // 20261102（RFC 函数执行）：演示 Agent「执行 <函数调用名>」→ 卡片标题写「函数」，参数卡照常
+    const tf = await svc._mockReportAgent({ question: '执行 Z_AI_DEMO_PO_OPEN', sessionId: 'SFN1', scene: 'REPORT' });
+    const pf = JSON.parse(tf.pendingParamsJson || '{}');
+    check('演示「执行 Z_AI_DEMO_PO_OPEN」→【函数 …】+ 参数卡 4 项（P / S / S / C）', /【函数 /.test(tf.answer) && tf.needsInput &&
+      pf.report_id === 'Z_AI_DEMO_PO_OPEN' && (pf.params || []).length === 4, tf.answer);
+  }
   {
     // 20261024：演示 ZDPSD012 的参数定义与后端 get_params 整理后同口径；演示 Agent「执行 ZDPSD012」只给类型
     const d12 = r.defs.filter((d) => d.TCODE === 'ZDPSD012')[0];

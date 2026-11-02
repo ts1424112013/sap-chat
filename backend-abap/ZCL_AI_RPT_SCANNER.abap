@@ -27,6 +27,19 @@
 *   READ REPORT / READ TEXTPOOL 后面是 lv_pname; V1.0b: ty_param 有 group_label, save 里
 *   ASSIGN COMPONENT 'GROUP_LABEL'; 有 METHOD scan / METHOD save; INSERT zai_rpt_param 与 zai_rpt_def 只在
 *   METHOD save; 全文没有 SCAN ABAP-SOURCE / FIND PCRE; 方法之间没有注释
+* V1.1    20261102(功能计划书/RFC函数执行/01 §3): 函数模块登记 ——
+*         ① 新方法 scan_function: 读接口(ZCL_AI_RFC_EXEC=>read_interface)生成参数草稿,
+*           规则与 test-server/rfc-scan-ref.js 的 draftParams 一致(npm run test:rfcscan):
+*           单值 → P / 标记 → C / 范围表(IMPORTING 或 TABLES)→ S(日期 = 范围, 其余 = 多值);
+*           结构 / 表 / 通用类型不登记(必填的 → 整个函数不能登记); 没有可填输入 → 不能登记;
+*           调用名(存 TCODE) = 函数名或别名, 要 Z 开头、不超过 20 位、只含 A-Z 0-9 _;
+*           写入类检查(ZCL_AI_RFC_EXEC=>check_writes): 提交 / 写库 / 异步写入 → 不能登记,
+*           函数名疑似 → 勾「强制登记」才能写; 主结果(RESULT_REF)默认第一个非 RETURN 的表
+*         ② ty_draft 加 report_kind / result_ref; save 按草稿写 REPORT_KIND / RESULT_MODE /
+*           RESULT_REF(没给 = ALV, 和原来一样); 同一编号已登记成另一种(报表 ↔ 函数)→ 拒绝
+*         依赖: ZCL_AI_RFC_EXEC V1.0(先激活)
+* ★ 核对标记 V1.1: 有 METHOD scan_function 与 METHOD fm_default; save 里有 lv_kind_new;
+*   ty_draft 有 report_kind / result_ref
 *=======================================================================
 CLASS zcl_ai_rpt_scanner DEFINITION
   PUBLIC
@@ -70,6 +83,8 @@ CLASS zcl_ai_rpt_scanner DEFINITION
              params      TYPE tt_param,
              notes       TYPE string_table,
              error       TYPE string,     " 非空 = 不能写入(预览照样显示)
+             report_kind TYPE string,     " V1.1: 空 = ALV 报表; FUNC = 函数模块
+             result_ref  TYPE string,     " V1.1: 函数的主结果参数名
            END OF ty_draft.
 
     TYPES: BEGIN OF ty_save,
@@ -97,6 +112,21 @@ CLASS zcl_ai_rpt_scanner DEFINITION
                 iv_exec_enabled TYPE abap_bool DEFAULT abap_false
                 iv_max_rows     TYPE i DEFAULT 200
       RETURNING VALUE(rs)       TYPE ty_save.
+
+    " V1.1: 函数模块登记草稿; iv_alias = 调用名(函数名超过 20 位或不是 Z 开头时必填);
+    " iv_result = 主结果参数(空 = 第一个非 RETURN 的表); iv_force = 函数名疑似写入类时确认登记
+    CLASS-METHODS scan_function
+      IMPORTING iv_func   TYPE string
+                iv_alias  TYPE string OPTIONAL
+                iv_lang   TYPE sy-langu DEFAULT sy-langu
+                iv_result TYPE string OPTIONAL
+                iv_force  TYPE abap_bool DEFAULT abap_false
+      RETURNING VALUE(rs) TYPE ty_draft.
+
+    CLASS-METHODS fm_default
+      IMPORTING iv_text  TYPE string
+      EXPORTING ev_type  TYPE string
+                ev_value TYPE string.
 
     CLASS-METHODS parse_default
       IMPORTING iv_text  TYPE string
@@ -701,7 +731,11 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
           lv_tc    TYPE zai_rpt_def-tcode,
           lv_other TYPE zai_rpt_def-report_id,
           lv_n     TYPE i,
-          lv_nogrp TYPE abap_bool.
+          lv_nogrp TYPE abap_bool,
+          lv_kind_new TYPE string,
+          lv_kind_old TYPE zai_rpt_def-report_kind,
+          lv_kind_cmp TYPE string,
+          lv_kind_chk TYPE string.
     FIELD-SYMBOLS <lv_grp> TYPE any.
 
     IF zcl_ai_chat_service=>v8_get_role( ) <> 'ADMIN'.
@@ -726,6 +760,17 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
 
     lv_rid = is_draft-report_id.
     lv_tc  = is_draft-tcode.
+    " V1.1: 报表 ↔ 函数不能互相覆盖(同一编号已登记成另一种 → 拒绝, 在写参数之前拦)
+    lv_kind_new = COND #( WHEN is_draft-report_kind IS INITIAL THEN `ALV` ELSE to_upper( is_draft-report_kind ) ).
+    SELECT SINGLE report_kind FROM zai_rpt_def WHERE report_id = @lv_rid INTO @lv_kind_old.
+    IF sy-subrc = 0.
+      lv_kind_cmp = COND #( WHEN lv_kind_old IS INITIAL OR lv_kind_old <> 'FUNC' THEN `ALV` ELSE `FUNC` ).
+      lv_kind_chk = COND #( WHEN lv_kind_new = 'FUNC' THEN `FUNC` ELSE `ALV` ).
+      IF lv_kind_cmp <> lv_kind_chk.
+        rs-message = |编号 { is_draft-report_id } 已登记成{ COND string( WHEN lv_kind_cmp = 'FUNC' THEN '函数' ELSE '报表' ) }, 不能改登, 换一个编号 / 别名|.
+        RETURN.
+      ENDIF.
+    ENDIF.
     " 事务码唯一: 已被别的报表编号占用 → 拒绝
     SELECT SINGLE report_id FROM zai_rpt_def
       WHERE tcode = @lv_tc AND report_id <> @lv_rid
@@ -790,6 +835,12 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
       IF iv_exec_enabled = abap_true.
         ls_def-exec_enabled = 'X'.
       ENDIF.
+      IF lv_kind_new = 'FUNC'.
+        ls_def-report_kind = 'FUNC'.
+        ls_def-result_mode = 'FUNC_CALL'.
+        ls_def-result_ref  = is_draft-result_ref.
+        ls_def-progname    = is_draft-progname.
+      ENDIF.
       UPDATE zai_rpt_def FROM ls_def.
     ELSE.
       CLEAR ls_def.
@@ -798,8 +849,9 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
       ls_def-progname        = is_draft-progname.
       ls_def-report_name     = is_draft-report_name.
       ls_def-description     = is_draft-description.
-      ls_def-report_kind     = 'ALV'.
-      ls_def-result_mode     = 'ALV_CAPTURE'.
+      ls_def-report_kind     = lv_kind_new.
+      ls_def-result_mode     = COND #( WHEN lv_kind_new = 'FUNC' THEN 'FUNC_CALL' ELSE 'ALV_CAPTURE' ).
+      ls_def-result_ref      = is_draft-result_ref.
       ls_def-exec_mode       = 'JOB'.
       ls_def-read_enabled    = 'X'.
       ls_def-exec_enabled    = COND #( WHEN iv_exec_enabled = abap_true THEN 'X' ELSE ' ' ).
@@ -1610,6 +1662,238 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
         ev_value = lv_v.
       ENDIF.
     ENDLOOP.
+
+  ENDMETHOD.
+
+
+  METHOD scan_function.
+
+    TYPES: BEGIN OF ty_tt,
+             stext TYPE c LENGTH 80,
+           END OF ty_tt.
+    DATA: lv_fm     TYPE string,
+          lv_tc     TYPE string,
+          lv_first  TYPE string,
+          lt_ip     TYPE zcl_ai_rfc_exec=>tt_iparam,
+          lv_remote TYPE abap_bool,
+          lv_group  TYPE string,
+          lv_err    TYPE string,
+          lt_hits   TYPE zcl_ai_rfc_exec=>tt_hit,
+          lv_block  TYPE abap_bool,
+          lv_namehit TYPE abap_bool,
+          ls_r      TYPE ty_param,
+          lv_req    TYPE abap_bool,
+          lv_sort   TYPE i,
+          lv_ninc   TYPE i,
+          lv_res    TYPE string,
+          lv_dt     TYPE string,
+          lv_dv     TYPE string,
+          lt_tt     TYPE STANDARD TABLE OF ty_tt WITH DEFAULT KEY,
+          lv_cols   TYPE string VALUE `STEXT`,
+          lv_tab    TYPE string VALUE `TFTIT`,
+          lv_where  TYPE string,
+          lv_tc20   TYPE zai_rpt_def-tcode,
+          lv_rid    TYPE zai_rpt_def-report_id,
+          lv_rid_old TYPE zai_rpt_def-report_id,
+          lv_ver_old TYPE zai_rpt_def-config_version,
+          lv_kind_old TYPE zai_rpt_def-report_kind.
+
+    CLEAR: gt_note, gv_title, gv_incl.
+    gv_lang = iv_lang.
+    lv_fm = to_upper( condense( iv_func ) ).
+    rs-report_kind = 'FUNC'.
+    rs-progname    = lv_fm.
+
+    zcl_ai_rfc_exec=>read_interface(
+      EXPORTING iv_fm     = lv_fm
+      IMPORTING et_params = lt_ip
+                ev_remote = lv_remote
+                ev_group  = lv_group
+                ev_error  = lv_err ).
+    IF lv_err IS NOT INITIAL.
+      rs-error = lv_err.
+      RETURN.
+    ENDIF.
+
+    " 调用名(存 TCODE): Agent 认「Z 开头、4–20 位」的词, 目录点选也按它发「执行 XXX」
+    lv_tc = to_upper( condense( iv_alias ) ).
+    IF lv_tc IS INITIAL.
+      lv_tc = lv_fm.
+    ENDIF.
+    rs-tcode     = lv_tc.
+    rs-report_id = lv_tc.
+    IF strlen( lv_tc ) > 0.
+      lv_first = substring( val = lv_tc len = 1 ).
+    ENDIF.
+    IF strlen( lv_tc ) > 20 OR strlen( lv_tc ) < 4 OR lv_first <> 'Z'
+       OR lv_tc CN 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_'.
+      rs-error = |调用名 { lv_tc } 不合规: 要 Z 开头、4–20 位、只含字母数字和下划线, 请填「事务码别名」(例如 ZF_PO_ITEMS)|.
+    ENDIF.
+
+    lv_where = |FUNCNAME = '{ lv_fm }' AND SPRAS = '{ gv_lang }'|.
+    TRY.
+        SELECT (lv_cols) FROM (lv_tab) WHERE (lv_where) INTO TABLE @lt_tt.
+      CATCH cx_sy_dynamic_osql_error.
+        CLEAR lt_tt.
+    ENDTRY.
+    READ TABLE lt_tt INTO DATA(ls_tt) INDEX 1.
+    IF sy-subrc = 0.
+      rs-report_name = condense( CONV string( ls_tt-stext ) ).
+    ENDIF.
+    IF rs-report_name IS INITIAL.
+      rs-report_name = lv_fm.
+    ENDIF.
+    rs-description = |函数模块 { lv_fm }(函数组 { lv_group }{ COND string( WHEN lv_remote = abap_true THEN ', 远程启用' ) })|.
+    rs-module      = 'FUNC'.
+    IF lv_remote = abap_false.
+      APPEND '函数不是远程启用(RFC)的: 不影响在灵犀里执行(本系统内调用)' TO gt_note.
+    ENDIF.
+
+    " 已登记过?(按调用名, 再按编号); 已登记成报表的编号不能改登成函数
+    lv_tc20 = lv_tc.
+    SELECT SINGLE report_id, config_version, report_kind FROM zai_rpt_def
+      WHERE tcode = @lv_tc20
+      INTO ( @lv_rid_old, @lv_ver_old, @lv_kind_old ).
+    IF sy-subrc <> 0.
+      lv_rid = lv_tc.
+      SELECT SINGLE report_id, config_version, report_kind FROM zai_rpt_def
+        WHERE report_id = @lv_rid
+        INTO ( @lv_rid_old, @lv_ver_old, @lv_kind_old ).
+    ENDIF.
+    IF sy-subrc = 0.
+      rs-exists      = abap_true.
+      rs-report_id   = lv_rid_old.
+      rs-cur_version = lv_ver_old.
+      IF to_upper( condense( CONV string( lv_kind_old ) ) ) <> 'FUNC' AND rs-error IS INITIAL.
+        rs-error = |{ lv_tc } 已登记成报表({ lv_rid_old }), 不能改登成函数: 换一个别名|.
+      ENDIF.
+    ENDIF.
+
+    " 写入类检查: BLOCK 不能登记; NAME 要勾「强制登记」; WARN 只提示
+    lt_hits = zcl_ai_rfc_exec=>check_writes( lv_fm ).
+    LOOP AT lt_hits INTO DATA(ls_hit).
+      CASE ls_hit-level.
+        WHEN 'BLOCK'.
+          lv_block = abap_true.
+          APPEND |✗ { COND string( WHEN ls_hit-line > 0 THEN |第 { ls_hit-line } 行: | ) }{ ls_hit-text }| TO gt_note.
+        WHEN 'NAME'.
+          lv_namehit = abap_true.
+          APPEND |? { ls_hit-text }| TO gt_note.
+        WHEN OTHERS.
+          APPEND |! { COND string( WHEN ls_hit-line > 0 THEN |第 { ls_hit-line } 行: | ) }{ ls_hit-text }| TO gt_note.
+      ENDCASE.
+    ENDLOOP.
+    IF lv_block = abap_true AND rs-error IS INITIAL.
+      rs-error = '函数源码里有提交 / 写数据库 / 异步写入语句, 不能登记(只能登记只读函数)'.
+    ELSEIF lv_namehit = abap_true AND iv_force = abap_false AND rs-error IS INITIAL.
+      rs-error = '函数名疑似写入类: 确认它只读后勾「函数名疑似写入类也登记」再写入'.
+    ENDIF.
+
+    " 接口 → 参数草稿(规则与 rfc-scan-ref.js draftParams 一致)
+    LOOP AT lt_ip INTO DATA(ls_ip).
+      IF ls_ip-kind = 'X' OR ls_ip-kind = 'E'.
+        CONTINUE.
+      ENDIF.
+      IF ls_ip-kind = 'T' AND ls_ip-shape <> 'RANGE'.
+        CONTINUE.
+      ENDIF.
+      lv_req = xsdbool( ls_ip-kind = 'I' AND ls_ip-optional = abap_false ).
+      CLEAR ls_r.
+      ls_r-param_id      = ls_ip-name.
+      ls_r-abap_name     = ls_ip-name.
+      ls_r-display_label = COND #( WHEN ls_ip-label IS NOT INITIAL THEN ls_ip-label ELSE ls_ip-name ).
+      ls_r-label_src     = COND #( WHEN ls_ip-text IS NOT INITIAL THEN `FUNCT`
+                                   WHEN ls_ip-label IS NOT INITIAL AND ls_ip-label <> ls_ip-name THEN `DDIC`
+                                   ELSE `NAME` ).
+      ls_r-data_type     = COND #( WHEN ls_ip-data_type IS NOT INITIAL THEN ls_ip-data_type ELSE `CHAR` ).
+      ls_r-type_length   = ls_ip-type_length.
+      ls_r-include       = abap_true.
+      IF ls_ip-shape = 'SCALAR' AND ( ls_ip-kind = 'I' OR ls_ip-kind = 'C' ).
+        ls_r-sel_kind = 'P'.
+        ls_r-required = lv_req.
+        fm_default( EXPORTING iv_text = ls_ip-defval IMPORTING ev_type = lv_dt ev_value = lv_dv ).
+        ls_r-default_type  = lv_dt.
+        ls_r-default_value = lv_dv.
+      ELSEIF ls_ip-shape = 'FLAG' AND ( ls_ip-kind = 'I' OR ls_ip-kind = 'C' ).
+        ls_r-sel_kind    = 'C'.
+        ls_r-data_type   = 'BOOL'.
+        ls_r-type_length = 1.
+        fm_default( EXPORTING iv_text = ls_ip-defval IMPORTING ev_type = lv_dt ev_value = lv_dv ).
+        IF to_upper( lv_dv ) = 'X'.
+          ls_r-allowed_ops = 'X'.
+        ENDIF.
+      ELSEIF ls_ip-shape = 'RANGE'.
+        ls_r-sel_kind = 'S'.
+        ls_r-required = lv_req.
+        IF ls_r-data_type = 'DATE'.
+          ls_r-range_allowed = abap_true.
+        ELSE.
+          ls_r-multi_value = abap_true.
+        ENDIF.
+      ELSE.
+        ls_r-include  = abap_false.
+        ls_r-sel_kind = 'P'.
+        ls_r-note     = COND #( WHEN ls_ip-shape = 'GENERIC' THEN `通用类型，不支持传值`
+                                ELSE `结构 / 表参数，一期不支持传值` ).
+        IF lv_req = abap_true AND rs-error IS INITIAL.
+          rs-error = |必填参数 { ls_ip-name } 是{ COND string( WHEN ls_ip-shape = 'GENERIC' THEN '通用类型' ELSE '结构 / 表' ) }, 一期不支持, 函数不能登记|.
+        ENDIF.
+      ENDIF.
+      IF ls_r-include = abap_true.
+        lv_sort = lv_sort + 10.
+        ls_r-sort_no = lv_sort.
+        lv_ninc = lv_ninc + 1.
+      ENDIF.
+      APPEND ls_r TO rs-params.
+    ENDLOOP.
+    IF lv_ninc = 0 AND rs-error IS INITIAL.
+      rs-error = '函数没有可填的输入参数, 一期不能登记(参数卡至少要一项)'.
+    ENDIF.
+
+    " 主结果
+    lv_res = to_upper( condense( iv_result ) ).
+    IF lv_res IS INITIAL.
+      lv_res = zcl_ai_rfc_exec=>default_result( lt_ip ).
+    ELSEIF NOT line_exists( lt_ip[ name = lv_res shape = 'TABLE' ] ).
+      IF rs-error IS INITIAL.
+        rs-error = |主结果 { lv_res } 不是这个函数的输出表|.
+      ENDIF.
+    ENDIF.
+    rs-result_ref = lv_res.
+    IF lv_res IS NOT INITIAL.
+      APPEND |主结果: { lv_res }(结果表格就是这张表; 其他单值输出放在结果说明里)| TO gt_note.
+    ELSE.
+      APPEND '没有表输出: 结果是输出参数合成的一行' TO gt_note.
+    ENDIF.
+
+    rs-notes = gt_note.
+
+  ENDMETHOD.
+
+
+  METHOD fm_default.
+
+    DATA lv_up TYPE string.
+
+    CLEAR: ev_type, ev_value.
+    lv_up = to_upper( condense( iv_text ) ).
+    IF lv_up IS INITIAL.
+      RETURN.
+    ENDIF.
+    IF lv_up = 'ABAP_TRUE'.
+      ev_type  = 'STATIC'.
+      ev_value = 'X'.
+      RETURN.
+    ENDIF.
+    IF lv_up = 'SY-DATLO'.
+      ev_type  = 'TODAY'.
+      ev_value = '0'.
+      RETURN.
+    ENDIF.
+    parse_default( EXPORTING iv_text = iv_text IMPORTING ev_type = ev_type ev_value = ev_value ).
+    IF ev_type = 'STATIC' AND ev_value IS INITIAL.
+      CLEAR ev_type.
+    ENDIF.
 
   ENDMETHOD.
 

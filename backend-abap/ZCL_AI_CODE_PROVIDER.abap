@@ -1,3 +1,15 @@
+*=======================================================================
+* 对象:   ZCL_AI_CODE_PROVIDER
+* 用途:   读 ABAP 对象源码(程序 / 类 / 函数组 / 函数模块)与表结构, 供 Agent 代码分析
+* V1.1    20261102(功能计划书/RFC函数执行/01 §5): 认函数模块名 ——
+*         ① detect_objtype: TADIR 找不到时查 TFDIR, 命中 = FUNC;
+*         ② FUNC 只返回这一个函数: 接口摘要(FUPARAREF: 参数 / 类型 / 必填 / 默认值 / 例外,
+*           参数说明读 FUNCT, 动态列名读, 读不到只是没有说明) + 函数本体 include 源码;
+*         ③ 新公开方法 function_include(TFDIR-PNAME + INCLUDE → L<组>U<nn>, 支持 /命名空间/),
+*           ZCL_AI_RFC_EXEC 写入类检查共用; object_exists 也认函数模块
+* ★ 重贴后核对标记: 有 METHOD read_function 与 METHOD function_include;
+*   get_source 的 CASE 有 WHEN 'FUNC'; detect_objtype 里有 FROM tfdir
+*=======================================================================
 CLASS zcl_ai_code_provider DEFINITION
   PUBLIC
   FINAL
@@ -28,6 +40,12 @@ CLASS zcl_ai_code_provider DEFINITION
       IMPORTING iv_tcode TYPE string
       EXPORTING ev_prog  TYPE string.
 
+    " V1.1: 函数模块本体 include 名(TFDIR-PNAME = SAPL<组>, INCLUDE = 两位序号)
+    CLASS-METHODS function_include
+      IMPORTING iv_pname   TYPE clike
+                iv_include TYPE clike
+      RETURNING VALUE(rv)  TYPE string.
+
   PROTECTED SECTION.
   PRIVATE SECTION.
 
@@ -49,6 +67,11 @@ CLASS zcl_ai_code_provider DEFINITION
       IMPORTING iv_name        TYPE string
       EXPORTING et_lines       TYPE tt_lines
                 ev_error       TYPE string.
+
+    CLASS-METHODS read_function
+      IMPORTING iv_name  TYPE string
+      EXPORTING et_lines TYPE tt_lines
+                ev_error TYPE string.
 
     CLASS-METHODS read_report_plain
       IMPORTING iv_prog  TYPE clike
@@ -191,6 +214,17 @@ CLASS zcl_ai_code_provider IMPLEMENTATION.
           ENDIF.
         ENDLOOP.
 
+      WHEN 'FUNC'.
+        read_function(
+          EXPORTING iv_name  = lv_name
+          IMPORTING et_lines = DATA(lt_func)
+                    ev_error = DATA(lv_func_err) ).
+        IF lv_func_err IS NOT INITIAL.
+          rs_source-error = lv_func_err.
+          RETURN.
+        ENDIF.
+        APPEND LINES OF lt_func TO lt_out.
+
       WHEN 'TABL' OR 'VIEW'.
         read_structure(
           EXPORTING iv_name  = lv_name
@@ -211,7 +245,7 @@ CLASS zcl_ai_code_provider IMPLEMENTATION.
                                   it_lines  = lt_main
                         CHANGING  ct_out    = lt_out ).
         ELSE.
-          rs_source-error = |不支持的对象类型或对象不存在: { lv_name }|. " 支持PROG/CLAS/FUGR
+          rs_source-error = |不支持的对象类型或对象不存在: { lv_name }|. " 支持PROG/CLAS/FUGR/FUNC
           RETURN.
         ENDIF.
     ENDCASE.
@@ -236,6 +270,12 @@ CLASS zcl_ai_code_provider IMPLEMENTATION.
       INTO @DATA(lv_obj).
 
     rv_exists = xsdbool( sy-subrc = 0 ).
+    IF rv_exists = abap_false.
+      SELECT SINGLE funcname FROM tfdir
+        WHERE funcname = @iv_name
+        INTO @DATA(lv_fn).
+      rv_exists = xsdbool( sy-subrc = 0 ).
+    ENDIF.
 
   ENDMETHOD.
 
@@ -318,9 +358,140 @@ CLASS zcl_ai_code_provider IMPLEMENTATION.
 
     IF sy-subrc = 0.
       ev_objtype = lv_obj.
+      RETURN.
+    ENDIF.
+
+    " V1.1: 函数模块不在 TADIR 的 R3TR 层(属于函数组), 查 TFDIR
+    SELECT SINGLE funcname FROM tfdir
+      WHERE funcname = @iv_name
+      INTO @DATA(lv_fname).
+    IF sy-subrc = 0.
+      ev_objtype = 'FUNC'.
     ELSE.
       ev_objtype = 'UNKNOWN'.
     ENDIF.
+
+  ENDMETHOD.
+
+  METHOD function_include.
+
+    DATA: lv_p      TYPE string,
+          lv_off    TYPE i,
+          lv_goff   TYPE i,
+          lv_prefix TYPE string,
+          lv_group  TYPE string.
+
+    lv_p = to_upper( condense( val = CONV string( iv_pname ) ) ).
+    FIND 'SAPL' IN lv_p MATCH OFFSET lv_off.
+    IF sy-subrc <> 0.
+      CLEAR rv.
+      RETURN.
+    ENDIF.
+    IF lv_off > 0.
+      lv_prefix = substring( val = lv_p len = lv_off ).
+    ENDIF.
+    lv_goff  = lv_off + 4.
+    lv_group = substring( val = lv_p off = lv_goff ).
+    rv = |{ lv_prefix }L{ lv_group }U{ condense( val = CONV string( iv_include ) ) }|.
+
+  ENDMETHOD.
+
+  METHOD read_function.
+
+    TYPES: BEGIN OF ty_txt,
+             parameter TYPE c LENGTH 30,
+             stext     TYPE c LENGTH 80,
+           END OF ty_txt.
+    DATA: lt_txt   TYPE STANDARD TABLE OF ty_txt WITH DEFAULT KEY,
+          lv_cols  TYPE string VALUE `PARAMETER, STEXT`,
+          lv_tab   TYPE string VALUE `FUNCT`,
+          lv_where TYPE string,
+          lv_inc   TYPE string,
+          lv_group TYPE string,
+          lv_kind  TYPE string,
+          lv_txt   TYPE string,
+          lv_req   TYPE string,
+          ls_line  TYPE ty_line,
+          lt_head  TYPE tt_lines,
+          lt_types TYPE STANDARD TABLE OF string WITH DEFAULT KEY.
+
+    CLEAR: et_lines, ev_error.
+
+    SELECT SINGLE pname, include, fmode FROM tfdir
+      WHERE funcname = @iv_name
+      INTO @DATA(ls_dir).
+    IF sy-subrc <> 0.
+      ev_error = |未找到函数模块 { iv_name }|.
+      RETURN.
+    ENDIF.
+
+    lv_inc = function_include( iv_pname = ls_dir-pname iv_include = ls_dir-include ).
+    lv_group = ls_dir-pname.
+    REPLACE FIRST OCCURRENCE OF 'SAPL' IN lv_group WITH ``.
+
+    SELECT parameter, paramtype, pposition, structure, defaultval, optional
+      FROM fupararef
+      WHERE funcname = @iv_name AND r3state = 'A'
+      ORDER BY paramtype, pposition
+      INTO TABLE @DATA(lt_par).
+
+    " 参数说明: FUNCT 列名未在本系统实测, 动态读, 读不到只是不显示说明
+    lv_where = |FUNCNAME = '{ iv_name }' AND SPRAS = '{ sy-langu }'|.
+    TRY.
+        SELECT (lv_cols) FROM (lv_tab) WHERE (lv_where) INTO TABLE @lt_txt.
+      CATCH cx_sy_dynamic_osql_error.
+        CLEAR lt_txt.
+    ENDTRY.
+
+    ls_line-text = |函数组: { lv_group }    远程启用(RFC): { COND string( WHEN ls_dir-fmode = 'R' THEN '是' ELSE '否' ) }|.
+    APPEND ls_line TO lt_head.
+    ls_line-text = |接口: 种类 / 参数 / 类型 / 必填 / 默认值 / 说明|.
+    APPEND ls_line TO lt_head.
+
+    lt_types = VALUE #( ( `I` ) ( `E` ) ( `C` ) ( `T` ) ( `X` ) ).
+    LOOP AT lt_types INTO DATA(lv_t).
+      lv_kind = SWITCH string( lv_t WHEN 'I' THEN 'IMPORTING'
+                                    WHEN 'E' THEN 'EXPORTING'
+                                    WHEN 'C' THEN 'CHANGING'
+                                    WHEN 'T' THEN 'TABLES'
+                                    ELSE 'EXCEPTIONS' ).
+      LOOP AT lt_par INTO DATA(ls_par) WHERE paramtype = lv_t.
+        CLEAR lv_txt.
+        READ TABLE lt_txt INTO DATA(ls_txt) WITH KEY parameter = ls_par-parameter.
+        IF sy-subrc = 0.
+          lv_txt = ls_txt-stext.
+        ENDIF.
+        IF lv_t = 'X'.
+          ls_line-text = |  { lv_kind WIDTH = 11 }{ ls_par-parameter WIDTH = 31 }{ lv_txt }|.
+        ELSE.
+          lv_req = COND #( WHEN lv_t = 'E' THEN ''
+                           WHEN ls_par-optional = 'X' OR ls_par-defaultval IS NOT INITIAL THEN '选填'
+                           ELSE '必填' ).
+          ls_line-text = |  { lv_kind WIDTH = 11 }{ ls_par-parameter WIDTH = 31 }| &&
+                         |{ ls_par-structure WIDTH = 31 }{ lv_req WIDTH = 5 }| &&
+                         |{ COND string( WHEN ls_par-defaultval IS NOT INITIAL THEN |默认 { ls_par-defaultval } | ) }{ lv_txt }|.
+        ENDIF.
+        APPEND ls_line TO lt_head.
+      ENDLOOP.
+    ENDLOOP.
+    IF lt_par IS INITIAL.
+      ls_line-text = '  (没有参数)'.
+      APPEND ls_line TO lt_head.
+    ENDIF.
+
+    append_block( EXPORTING iv_banner = |===== 函数模块: { iv_name } =====|
+                            it_lines  = lt_head
+                  CHANGING  ct_out    = et_lines ).
+
+    read_report_plain( EXPORTING iv_prog  = lv_inc
+                       IMPORTING et_lines = DATA(lt_src) ev_found = DATA(lv_ok) ).
+    IF lv_ok = abap_false.
+      ev_error = |函数模块 { iv_name } 的源码 include { lv_inc } 读取失败|.
+      RETURN.
+    ENDIF.
+    append_block( EXPORTING iv_banner = |===== 函数源码: { lv_inc } =====|
+                            it_lines  = lt_src
+                  CHANGING  ct_out    = et_lines ).
 
   ENDMETHOD.
 
