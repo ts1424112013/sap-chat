@@ -345,10 +345,12 @@ check('预览单元格超 60 字截断、参数值超 40 字截断、SQL 原文�
 check('AGENT_SERVICE V15.6：analyze_agent 有可选参数 iv_request_id', /^\* V15\.6 20261028/m.test(agRaw) &&
   /CLASS-METHODS analyze_agent[\s\S]*?iv_request_id TYPE string OPTIONAL[\s\S]*?EXPORTING es_result/i.test(ag));
 const agCnt = (re) => (ag.match(re) || []).length;
-check('进度调用数：start 1 / sync 7 / finish 2', agCnt(/zcl_ai_agent_progress=>start\(/g) === 1 && agCnt(/zcl_ai_agent_progress=>sync\(/g) === 7 &&
+// 20261102 V15.14：call_function 分支多 2 处 sync（调用前写那句话、调用后收口）
+check('进度调用数：start 1 / sync 9 / finish 2', agCnt(/zcl_ai_agent_progress=>start\(/g) === 1 && agCnt(/zcl_ai_agent_progress=>sync\(/g) === 9 &&
   agCnt(/zcl_ai_agent_progress=>finish\(/g) === 2, 'start ' + agCnt(/zcl_ai_agent_progress=>start\(/g) + ' / sync ' + agCnt(/zcl_ai_agent_progress=>sync\(/g) + ' / finish ' + agCnt(/zcl_ai_agent_progress=>finish\(/g));
 check('每轮调模型前写本轮占位（循环里 sync 在 zcl_ai_llm_client=>chat 之前）', /lv_round = lv_round \+ 1\.\s*zcl_ai_agent_progress=>sync\([\s\S]*?is_running = VALUE #\( phase = 'PLANNING'[\s\S]*?zcl_ai_llm_client=>chat\(/.test(ag));
-check('工具执行前写模型那句话 + 工具占位：数据分析在 execute_plan 前、扁平参数工具在参数校验后', agCnt(/iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \)/g) === 2 &&
+check('工具执行前写模型那句话 + 工具占位：数据分析在 execute_plan 前、call_function 在 call_sync 前、扁平参数工具在参数校验后', agCnt(/iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \)/g) === 3 &&
+  /iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \) \)\.\s*GET RUN TIME FIELD lv_cf_t0\.\s*zcl_ai_rfc_exec=>call_sync\(/.test(ag) &&
   /plan_running\([^)]*\) \)\.\s*lt_ds = zcl_ai_data_analysis_service=>execute_plan/.test(ag) && /CONTINUE\.\s*ENDIF\.\s*zcl_ai_agent_progress=>sync\([\s\S]*?kv_running\(/.test(ag));
 check('数据分析查询后带预览 sync（preview_of 按查询逐条）', /LOOP AT lt_ds INTO DATA\(ls_ds_prev\)\.[\s\S]*?preview_of\([\s\S]*?zcl_ai_agent_progress=>sync\( it_trace = lt_trace it_preview = lt_prog_prev \)/.test(ag));
 check('收口：sync + finish 在 trace_json 序列化之前；finish_det 里也有', /zcl_ai_agent_progress=>finish\( \)\.\s*es_result-trace_json = \/ui2\/cl_json=>serialize/.test(ag) &&
@@ -659,20 +661,64 @@ console.log('\n[15] RFC 函数执行：RFC_EXEC V1.0 / EXEC_SAP V1.2 / SCANNER V
   const rf = codeOnly(rfRaw);
   const rfM = {};
   (rf.match(/^\s*METHOD\s+\w+\.[\s\S]*?^\s*ENDMETHOD\./gim) || []).forEach((m) => { rfM[m.match(/METHOD\s+(\w+)\./i)[1].toLowerCase()] = m; });
-  check('RFC_EXEC 版本头 V1.0、有约定的公开方法', /^\* V1\.0\s+20261102/m.test(rfRaw) &&
-    ['read_interface', 'default_result', 'name_danger', 'scan_source', 'check_writes', 'auth_ok', 'precheck', 'run', 'build_bindings'].every((k) => !!rfM[k]));
-  const run = rfM.run || '';
-  const iCommit = run.indexOf('COMMIT WORK.');
-  const iCall = run.indexOf('CALL FUNCTION lv_fm PARAMETER-TABLE lt_ptab EXCEPTION-TABLE lt_etab.');
-  const iRb = run.indexOf('ROLLBACK WORK.', iCall);
-  check('run：先 COMMIT（运行器自己的写入）→ 动态调用 → 立刻 ROLLBACK，中间不读结果', iCommit > 0 && iCall > iCommit && iRb > iCall &&
-    !/table_to_rows|single_row|return_messages/.test(run.slice(iCall, iRb)));
-  check('动态调用异常（CX_SY_DYN_CALL_*）也 ROLLBACK 并提示重新登记', /CATCH cx_sy_dyn_call_error INTO DATA\(lx_dyn\)\.\s+ROLLBACK WORK\./.test(run) && /请重新登记/.test(run));
+  check('RFC_EXEC 版本头 V1.0 / V1.1、有约定的方法', /^\* V1\.0\s+20261102/m.test(rfRaw) && /^\* V1\.1\s+20261102/m.test(rfRaw) &&
+    ['read_interface', 'default_result', 'name_danger', 'scan_source', 'check_writes', 'auth_ok', 'precheck', 'run', 'build_bindings',
+      'bind_core', 'invoke', 'run_direct', 'call_sync', 'list_callable', 'tool_description'].every((k) => !!rfM[k]));
+  const inv = rfM.invoke || '';
+  const iCommit = inv.indexOf('COMMIT WORK.');
+  const iCall = inv.indexOf('CALL FUNCTION iv_fm PARAMETER-TABLE it_ptab EXCEPTION-TABLE it_etab.');
+  const iRb = inv.indexOf('ROLLBACK WORK.', iCall);
+  check('invoke：先 COMMIT（调用方自己的写入）→ 动态调用 → 立刻 ROLLBACK，中间不读结果', iCommit > 0 && iCall > iCommit && iRb > iCall &&
+    !/table_to|single_row|return_messages/.test(inv.slice(iCall, iRb)));
+  check('run 与 run_direct 都只经 invoke 调函数（不另写 CALL FUNCTION lv_fm）', /invoke\(/.test(rfM.run || '') && /invoke\(/.test(rfM.run_direct || '') &&
+    !/CALL FUNCTION lv_fm/.test(rf));
+  check('动态调用异常（CX_SY_DYN_CALL_*）也 ROLLBACK 并提示重新登记', /CATCH cx_sy_dyn_call_error INTO DATA\(lx_dyn\)\.\s+ROLLBACK WORK\./.test(inv) && /请重新登记/.test(inv));
   check('RFC_EXEC 不写任何数据库表（登记 / 结果由调用方写）', !/\b(INSERT|UPDATE|MODIFY)\s+(INTO\s+)?z\w+\s+(FROM|SET|VALUES)/i.test(rf) && !/DELETE\s+FROM\s+z/i.test(rf));
   check('参数方向：IMPORTING 用 abap_func_exporting、EXPORTING 用 abap_func_importing、TABLES / CHANGING 对应',
-    /WHEN ls_p-kind = 'I' THEN abap_func_exporting ELSE abap_func_changing/.test(rfM.build_bindings || '') &&
-    /ls_pb-kind\s+= abap_func_importing\./.test(rfM.build_bindings || '') && /ls_pb-kind\s+= abap_func_tables\./.test(rfM.build_bindings || ''));
-  check('例外表：登记的例外 + ERROR_MESSAGE + OTHERS', /ls_eb-name\s+= 'ERROR_MESSAGE'/.test(rfM.build_bindings || '') && /ls_eb-name\s+= 'OTHERS'/.test(rfM.build_bindings || ''));
+    /WHEN ls_p-kind = 'I' THEN abap_func_exporting ELSE abap_func_changing/.test(rfM.bind_core || '') &&
+    /ls_pb-kind\s+= abap_func_importing\./.test(rfM.bind_core || '') && /ls_pb-kind\s+= abap_func_tables\./.test(rfM.bind_core || ''));
+  check('例外表：登记的例外 + ERROR_MESSAGE + OTHERS', /ls_eb-name\s+= 'ERROR_MESSAGE'/.test(rfM.bind_core || '') && /ls_eb-name\s+= 'OTHERS'/.test(rfM.bind_core || ''));
+  // ---- V1.1 数据分析同步调用（03 方案）
+  const cs = rfM.call_sync || '';
+  check('call_sync：先查可用清单 + validate_params，再 DESTINATION NONE 调 Z_AI_RFC_RUN，接住 SYSTEM_FAILURE 并关连接',
+    cs.indexOf('list_callable( )') > 0 && cs.indexOf('validate_params(') > cs.indexOf('list_callable( )') &&
+    cs.indexOf("CALL FUNCTION 'Z_AI_RFC_RUN' DESTINATION 'NONE'") > cs.indexOf('validate_params(') &&
+    /system_failure\s+= 1 MESSAGE lv_msg/.test(cs) && /RFC_CONNECTION_CLOSE/.test(cs) && /iv_params_json\s+= ls_pv-norm_json/.test(cs));
+  check('run_direct：新会话里再核登记 / 授权 / S_RFC，再绑定调用', /def_lookup\(/.test(rfM.run_direct || '') && /auth_ok\( ls_def-progname \)/.test(rfM.run_direct || '') &&
+    /zcl_ai_access=>report_ok\(/.test(rfM.def_lookup || '') && /report_kind[\s\S]*?<> 'FUNC'/.test(rfM.def_lookup || ''));
+  check('可用清单：FUNC + 活动 + 开放执行 + EXEC_MODE 不是 JOB + 报表授权；开关 RFC_IN_DATA；同一请求只算一次',
+    /WHERE report_kind = 'FUNC' AND active = 'X' AND exec_enabled = 'X'/.test(rfM.list_callable || '') && /= 'JOB'/.test(rfM.list_callable || '') &&
+    /zcl_ai_access=>report_ok\(/.test(rfM.list_callable || '') && /data_enabled\( \) = abap_false/.test(rfM.list_callable || '') &&
+    /IF gv_loaded = abap_true\./.test(rfM.list_callable || '') && /read_cfg_str\( 'RFC_IN_DATA' \)/.test(rfM.data_enabled || ''));
+  check('数据集 JSON 键大写（/ui2/cl_json 不设 pretty_name 直接还原）', /"NAME":/.test(rfM.run_direct || '') && /"COLUMNS":\[/.test(rfM.run_direct || '') &&
+    /"ROWS":\[/.test(rfM.run_direct || '') && /"TOTAL_ROWS":/.test(rfM.run_direct || '') && !/pretty_name/i.test(rf));
+  check('次数上限 RFC_MAX_EXEC：默认 3、最多 10', /rv = 3\./.test(rfM.max_exec || '') && /rv > 10/.test(rfM.max_exec || '') && /'RFC_MAX_EXEC'/.test(rfM.max_exec || ''));
+  const zr = codeOnly(read('Z_AI_RFC_RUN.abap'));
+  check('Z_AI_RFC_RUN：只调 run_direct，接口全值传递', /FUNCTION z_ai_rfc_run\./.test(zr) && /zcl_ai_rfc_exec=>run_direct\(/.test(zr) &&
+    /VALUE\(IV_REPORT_ID\) TYPE  STRING/.test(read('Z_AI_RFC_RUN.abap')) && /VALUE\(EV_RESULT\) TYPE  STRING/.test(read('Z_AI_RFC_RUN.abap')));
+  const agRaw3 = read('ZCL_AI_AGENT_SERVICE.abap');
+  const ag3 = codeOnly(agRaw3);
+  const iCf = ag3.indexOf('IF ls_out-tool = zcl_ai_tool_registry=>gc_tool_call_func.');
+  check('AGENT V15.14：call_function 分支在 sap_data_analysis 之后、扁平 kv 解析之前；次数上限；结果进 lt_datasets', /^\* V15\.14 20261102/m.test(agRaw3) &&
+    iCf > ag3.indexOf('IF ls_out-tool = zcl_ai_tool_registry=>gc_tool_data_analysis.') && iCf < ag3.indexOf('zcl_ai_agent_guard=>parse_flat_json(') &&
+    /lv_cf_execs > zcl_ai_rfc_exec=>max_exec\( \)/.test(ag3) && /APPEND ls_cf_ds TO lt_datasets\./.test(ag3) &&
+    /zcl_ai_agent_guard=>parse_function_call\(/.test(ag3));
+  const rgRaw = read('ZCL_AI_TOOL_REGISTRY.abap');
+  check('工具注册表 V15.9：没有可用函数时不注册 call_function；DATA 白名单带它', /^\* V15\.9 20261102/m.test(rgRaw) &&
+    /DATA\(lv_fn_desc\) = zcl_ai_rfc_exec=>tool_description\( \)\.\s*IF lv_fn_desc IS NOT INITIAL\./.test(rgRaw) &&
+    /APPEND gc_tool_call_func\s+TO lt_allow\./.test(rgRaw));
+  const mtSrc = fs.readFileSync(path.join(__dirname, 'mock-tools.js'), 'utf8');
+  const fixed = ['调用系统里已登记的只读查询函数(秒级出数), 返回统一数据集(表格+图表可用)。', '有现成函数能直接回答时优先用它, 不够再用 run_sql 补查。',
+    '带 * 的参数必填, 缺了先问用户; 多值用逗号分隔, 范围写 low,high, 复选框写 X 或空, 日期 YYYYMMDD。', '可用函数: ', '未列出, 知道调用名也可以直接调用',
+    '范围 low,high', '多值逗号分隔', 'X/空'];
+  check('工具说明 / 参数说明的固定文字：ABAP 与本地 mock-tools.js 一致', fixed.every((t) => rfRaw.indexOf(t) >= 0 && mtSrc.indexOf(t) >= 0),
+    fixed.filter((t) => rfRaw.indexOf(t) < 0 || mtSrc.indexOf(t) < 0).join(' | '));
+  check('SCANNER V1.1a：函数登记 EXEC_MODE 默认 SYNC（报表仍 JOB；已登记的为空才补）', /^\* V1\.1a\s+20261102/m.test(read('ZCL_AI_RPT_SCANNER.abap')) &&
+    /ls_def-exec_mode\s+= COND #\( WHEN lv_kind_new = 'FUNC' THEN 'SYNC' ELSE 'JOB' \)/.test(read('ZCL_AI_RPT_SCANNER.abap')) &&
+    /IF ls_def-exec_mode IS INITIAL\.\s+ls_def-exec_mode = 'SYNC'\./.test(read('ZCL_AI_RPT_SCANNER.abap')));
+  const gdRaw = read('ZCL_AI_AGENT_GUARD.abap');
+  check('GUARD V1.1.6：parse_function_call 只认扁平 params、调用名 4–20 位', /^\* V1\.1\.6 20261102/m.test(gdRaw) &&
+    /METHOD parse_function_call\./.test(gdRaw) && /IF lv_in CA '\{\['\./.test(gdRaw) && /strlen\( ev_function \) < 4 OR strlen\( ev_function \) > 20/.test(gdRaw));
   check('S_RFC：先按函数（FUNC）再按函数组（FUGR），活动 16；RFC_AUTH_CHECK = N 关闭',
     /ID 'RFC_TYPE' FIELD 'FUNC'/.test(rfM.auth_ok || '') && /ID 'RFC_TYPE' FIELD 'FUGR'/.test(rfM.auth_ok || '') &&
     /ID 'ACTVT'\s+FIELD '16'/.test(rfM.auth_ok || '') && /read_cfg_str\( 'RFC_AUTH_CHECK' \)/.test(rfM.auth_ok || ''));

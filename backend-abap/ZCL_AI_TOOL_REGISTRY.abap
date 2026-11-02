@@ -39,6 +39,13 @@
 * V15.8 20261102(功能计划书/RFC函数执行/01 §5): read_program_source 说明加「函数模块名」
 *   (CODE_PROVIDER V1.1 认 TFDIR 里的函数, 只返回该函数的接口 + 本体源码)
 *   ★ 重贴后核对标记: read_program_source 的 description 含「函数模块」
+* V15.9 20261102(功能计划书/RFC函数执行/03 §7): 新工具 call_function —— 数据分析里调用
+*   已登记的只读函数; 说明 = ZCL_AI_RFC_EXEC=>tool_description(列出当前用户可用的函数);
+*   开关 RFC_IN_DATA = N 或没有可用函数时不注册(模型看不到也调不了); DATA 模块白名单加它。
+*   args 带嵌套 params 对象, params 规格留空(同 sap_data_analysis), 解析见 AGENT_GUARD
+*   依赖: ZCL_AI_RFC_EXEC V1.1(先激活)
+*   ★ 重贴后核对标记: 有 gc_tool_call_func; get_tools 里有 zcl_ai_rfc_exec=>tool_description( );
+*     get_tools_for_module 的 DATA 分支有 APPEND gc_tool_call_func
 *         sap_data_analysis  受控查询计划取数(能力目录白名单实体/字段),
 *                            args 直接承载计划 JSON 对象(不走扁平 kv),
 *                            解析/校验见 AGENT_GUARD.parse_analysis_plan,
@@ -63,7 +70,9 @@ CLASS zcl_ai_tool_registry DEFINITION
                gc_tool_rpt_params    TYPE string VALUE 'get_report_parameters',
                gc_tool_rpt_result    TYPE string VALUE 'get_report_result',
                " V15.1: 代码分析场景只读工具
-               gc_tool_read_source   TYPE string VALUE 'read_program_source'.
+               gc_tool_read_source   TYPE string VALUE 'read_program_source',
+               " V15.9: 数据分析里调用已登记函数
+               gc_tool_call_func     TYPE string VALUE 'call_function'.
 
     " 参数类型枚举(强类型 Schema, 值格式由 GUARD 逐一校验):
     "   PLANT     工厂 4 位字母数字
@@ -198,6 +207,17 @@ CLASS zcl_ai_tool_registry IMPLEMENTATION.
       params      = lt_p
       read_only   = abap_true ) TO rt_tools.
 
+    " V15.9: call_function —— 说明里列出当前用户可用的函数; 没有可用函数 / 开关关 → 不注册
+    DATA(lv_fn_desc) = zcl_ai_rfc_exec=>tool_description( ).
+    IF lv_fn_desc IS NOT INITIAL.
+      CLEAR lt_p.
+      APPEND VALUE #(
+        tool_id     = gc_tool_call_func
+        description = lv_fn_desc
+        params      = lt_p
+        read_only   = abap_true ) TO rt_tools.
+    ENDIF.
+
     " V14: 动态 SQL 三工具(只读; 校验见 ZCL_AI_SQL_GUARD, 执行见 SQL_EXECUTOR)
     " search_tables: 按业务关键词定位表
     CLEAR lt_p.
@@ -302,6 +322,7 @@ CLASS zcl_ai_tool_registry IMPLEMENTATION.
         APPEND gc_tool_search_tables TO lt_allow.
         APPEND gc_tool_describe_tab  TO lt_allow.
         APPEND gc_tool_run_sql       TO lt_allow.
+        APPEND gc_tool_call_func     TO lt_allow.   " V15.9: 未注册时下面的正向选取自动跳过
       WHEN zcl_ai_task_service=>gc_mod_code.
         " V15.1: 代码分析 = 读源码 + 读表结构(不取表数据, 不写 SQL)
         APPEND gc_tool_read_source  TO lt_allow.

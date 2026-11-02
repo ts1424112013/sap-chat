@@ -44,6 +44,10 @@
 *   ★ 重贴后核对标记: parse_model_json 内 extract_json_object( iv_text = iv_raw
 *     iv_key = '"action"' ); PUBLIC 有 salvage_answer 声明; extract_json_object
 *     声明有 iv_key TYPE string OPTIONAL
+* V1.1.6 20261102(功能计划书/RFC函数执行/03 §7.2): 新增 PUBLIC parse_function_call ——
+*   call_function 的 args: function / purpose 两个字符串 + params 嵌套对象(只认扁平键值,
+*   值里不能再有对象 / 数组); 调用名只能是 A-Z 0-9 _ 且 4–20 位; 没给 params = {}
+*   ★ 重贴后核对标记: PUBLIC 有 parse_function_call 声明; 方法里有 extract_json_object( lv_rest )
 *         - parse_analysis_plan    查询计划 JSON 解析与规范化
 *                                  (白名单校验在 DATA_ANALYSIS_SERVICE)
 *         - parse_analysis_output  结构化分析输出解析+字段清洗+图表引用校验
@@ -141,6 +145,14 @@ CLASS zcl_ai_agent_guard DEFINITION
     CLASS-METHODS extract_args_object
       IMPORTING iv_raw        TYPE string
       RETURNING VALUE(rv)     TYPE string.
+
+    " V1.1.6: call_function 的 args 拆解(iv_json = extract_args_object 的结果)
+    CLASS-METHODS parse_function_call
+      IMPORTING iv_json      TYPE string
+      EXPORTING ev_function  TYPE string
+                ev_purpose   TYPE string
+                ev_params    TYPE string
+                ev_error     TYPE string.
 
   PRIVATE SECTION.
 
@@ -855,6 +867,70 @@ CLASS zcl_ai_agent_guard IMPLEMENTATION.
       CATCH cx_root.
         rv = iv.
     ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD parse_function_call.
+
+    DATA: lv_raw  TYPE string,
+          lv_off  TYPE i,
+          lv_rest TYPE string,
+          lv_in   TYPE string,
+          lv_cnt  TYPE i.
+
+    CLEAR: ev_function, ev_purpose, ev_params, ev_error.
+
+    TRY.
+        FIND REGEX '"function"\s*:\s*"((?:[^"\\]|\\.)*)"' IN iv_json SUBMATCHES lv_raw.
+        IF sy-subrc = 0.
+          ev_function = to_upper( condense( val = json_unescape( lv_raw ) ) ).
+        ENDIF.
+        CLEAR lv_raw.
+        FIND REGEX '"purpose"\s*:\s*"((?:[^"\\]|\\.)*)"' IN iv_json SUBMATCHES lv_raw.
+        IF sy-subrc = 0.
+          ev_purpose = condense( val = json_unescape( lv_raw ) ).
+          IF strlen( ev_purpose ) > 60.
+            ev_purpose = ev_purpose(60).
+          ENDIF.
+        ENDIF.
+      CATCH cx_root.
+        ev_error = 'call_function 的 args 解析失败'.
+        RETURN.
+    ENDTRY.
+
+    IF ev_function IS INITIAL.
+      ev_error = 'call_function 缺少 function(函数调用名)'.
+      RETURN.
+    ENDIF.
+    IF strlen( ev_function ) < 4 OR strlen( ev_function ) > 20
+       OR ev_function CN 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_'.
+      ev_error = |函数调用名不合法: { ev_function }(见工具说明里的可用函数)|.
+      RETURN.
+    ENDIF.
+
+    " params: "params" 之后第一个配平的对象; 没给 = {}
+    FIND '"params"' IN iv_json MATCH OFFSET lv_off.
+    IF sy-subrc <> 0.
+      ev_params = '{}'.
+      RETURN.
+    ENDIF.
+    lv_rest = substring( val = iv_json off = lv_off ).
+    ev_params = extract_json_object( lv_rest ).
+    IF ev_params IS INITIAL.
+      ev_params = '{}'.
+      RETURN.
+    ENDIF.
+    " 只认扁平键值: 去掉最外层花括号后不能再有 { 或 [(字符串里的不算太严, 宁可拒绝)
+    lv_in = ev_params.
+    lv_cnt = strlen( lv_in ) - 2.
+    IF lv_cnt > 0.
+      lv_in = substring( val = lv_in off = 1 len = lv_cnt ).
+      IF lv_in CA '{['.
+        ev_error = 'call_function 的 params 只能是扁平键值(值写字符串, 多值用逗号分隔, 范围写 low,high)'.
+        CLEAR ev_params.
+        RETURN.
+      ENDIF.
+    ENDIF.
 
   ENDMETHOD.
 

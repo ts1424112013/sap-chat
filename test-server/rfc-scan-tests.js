@@ -147,5 +147,23 @@ console.log('\n━━ 接口 → 参数草稿');
   check('只有 RETURN 一张表 → 没有默认主结果', ref.defaultResult([P({ name: 'RETURN', kind: 'T', shape: 'TABLE' })]) === '');
 }
 
-console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
-process.exit(failed ? 1 : 0);
+console.log('\n━━ 数据分析调用函数（03 方案，本地 mock 对照 ZCL_AI_RFC_EXEC V1.1）');
+(async () => {
+  const mt = require('./mock-tools');
+  const desc = mt.functionToolDescription();
+  check('工具说明：只列 EXEC_MODE 不是 JOB 的函数；参数格式 = 编号 标签*(类型)', desc.indexOf('Z_AI_DEMO_PO_OPEN 未清采购订单: IV_WERKS 工厂*(CHAR4)、IT_LIFNR 供应商(CHAR 多值逗号分隔)、IT_BEDAT 凭证日期(DATE 范围 low,high)、IV_OPEN 只看未清(X/空); ') >= 0 &&
+    desc.indexOf('Z_AI_DEMO_SLOW') < 0, desc);
+  check('没有可用函数 → 说明为空（不注册工具）；超过上限写「还有 N 个」', mt.functionToolDescription([{ tcode: 'ZX', name: 'x', exec_mode: 'JOB', params: [] }]) === '' &&
+    /还有 2 个未列出/.test(mt.functionToolDescription([1, 2, 3].map((i) => ({ tcode: 'ZF' + i, name: 'f', exec_mode: 'SYNC', params: [] })), 1)));
+  const tools = mt.getToolsForDomain('DATA').map((t) => t.id);
+  check('DATA 领域工具带 call_function；其他领域不带', tools.indexOf('call_function') >= 0 && mt.getToolsForDomain('INVENTORY').every((t) => t.id !== 'call_function'));
+  const ok = await mt.execute('call_function', { function: 'z_ai_demo_po_open', purpose: '1000 未清', params: { iv_werks: '1000', it_bedat: '20261001,20261031' } });
+  check('正常调用：返回数据集（只看未清默认 X）', ok.status === 'OK' && ok.data.dataset.name === '1000 未清' && ok.data.dataset.total_rows === 3, JSON.stringify(ok.summary));
+  const miss = await mt.execute('call_function', { function: 'Z_AI_DEMO_PO_OPEN', params: {} });
+  check('缺必填 → 回具体参数，让模型改了再调', miss.status === 'ERROR' && /IV_WERKS: 必填/.test(miss.data.error));
+  const job = await mt.execute('call_function', { function: 'Z_AI_DEMO_SLOW', params: { IV_GJAHR: '2026' } });
+  check('EXEC_MODE = JOB 的函数在数据分析里调不了', job.status === 'ERROR' && /只能走报表执行/.test(job.data.error));
+  console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
+  process.exit(failed ? 1 : 0);
+})();
+

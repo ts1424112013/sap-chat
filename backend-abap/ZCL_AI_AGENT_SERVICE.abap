@@ -202,6 +202,16 @@
 *   依赖: ZCL_AI_CODE_PROVIDER V1.1
 *   ★ 重贴后核对标记: exec_read_source 的提示是「只能是程序名/事务码/类名/函数模块名」;
 *     build_report_intro 里有 IF to_upper( ls_def-report_kind ) = 'FUNC'
+* V15.14 20261102(功能计划书/RFC函数执行/03 §7.3): 数据分析里调用已登记函数 ——
+*   ① 工具分发新分支 call_function(在 sap_data_analysis 分支之后、扁平 kv 之前):
+*     GUARD.parse_function_call 拆 args → 次数上限(ZCL_AI_RFC_EXEC=>max_exec, 失败也算) →
+*     ZCL_AI_RFC_EXEC=>call_sync(查可用清单 + validate_params + 新会话执行) →
+*     数据集 JSON 还原成 ty_dataset 进 lt_datasets(前端表格 / 图表 / CSV), 回填前 200 行;
+*     失败把原因回给模型(参数错误让它改了再调), 步骤条一行 EXECUTING
+*   ② build_protocol_prompt: call_function 的参数区写成 args 对象说明(同 sap_data_analysis)
+*   依赖: ZCL_AI_RFC_EXEC V1.1 / ZCL_AI_AGENT_GUARD V1.1.6 / ZCL_AI_TOOL_REGISTRY V15.9 / Z_AI_RFC_RUN
+*   ★ 重贴后核对标记: 有 zcl_ai_rfc_exec=>call_sync( 与 zcl_ai_agent_guard=>parse_function_call(;
+*     有 lv_cf_execs > zcl_ai_rfc_exec=>max_exec( )
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -1457,6 +1467,110 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         CONTINUE.
       ENDIF.
 
+      " ---- V15.14: call_function —— 调用已登记的只读函数(新会话同步执行) ----
+      " args 带嵌套 params 对象, 不走下方扁平 kv 协议; 校验 / 授权 / 执行都在 ZCL_AI_RFC_EXEC
+      IF ls_out-tool = zcl_ai_tool_registry=>gc_tool_call_func.
+        DATA: lv_cf_fn     TYPE string,
+              lv_cf_purp   TYPE string,
+              lv_cf_par    TYPE string,
+              lv_cf_err    TYPE string,
+              lv_cf_res    TYPE string,
+              lv_cf_name   TYPE string,
+              lv_cf_tc     TYPE string,
+              lv_cf_json   TYPE string,
+              lv_cf_label  TYPE string,
+              lv_cf_t0     TYPE i,
+              lv_cf_t1     TYPE i,
+              lv_cf_execs  TYPE i,
+              ls_cf_ds     TYPE zcl_ai_data_analysis_service=>ty_dataset,
+              ls_cf_feed   TYPE zcl_ai_data_analysis_service=>ty_dataset.
+        CLEAR: lv_cf_fn, lv_cf_purp, lv_cf_par, lv_cf_err, lv_cf_res, lv_cf_name, lv_cf_tc,
+               lv_cf_json, lv_cf_label, ls_cf_ds, ls_cf_feed.
+
+        lv_cf_execs = lv_cf_execs + 1.
+        zcl_ai_agent_guard=>parse_function_call(
+          EXPORTING iv_json     = zcl_ai_agent_guard=>extract_args_object( lv_content )
+          IMPORTING ev_function = lv_cf_fn
+                    ev_purpose  = lv_cf_purp
+                    ev_params   = lv_cf_par
+                    ev_error    = lv_cf_err ).
+        IF lv_cf_err IS INITIAL AND lv_cf_execs > zcl_ai_rfc_exec=>max_exec( ).
+          lv_cf_err = '已达单次请求的函数调用次数上限, 请基于已有结果直接 action=final 回答'.
+        ENDIF.
+
+        IF lv_cf_err IS INITIAL.
+          zcl_ai_agent_progress=>sync(
+            it_trace = lt_trace
+            iv_note  = zcl_ai_agent_guard=>sanitize_summary( ls_out-summary ) ).
+          GET RUN TIME FIELD lv_cf_t0.
+          zcl_ai_rfc_exec=>call_sync(
+            EXPORTING iv_call_name   = lv_cf_fn
+                      iv_params_json = lv_cf_par
+            IMPORTING ev_result      = lv_cf_res
+                      ev_name        = lv_cf_name
+                      ev_tcode       = lv_cf_tc
+                      ev_error       = lv_cf_err ).
+          GET RUN TIME FIELD lv_cf_t1.
+        ENDIF.
+
+        " 数据集 JSON(键大写)还原成 ty_dataset; 失败按调用失败处理
+        IF lv_cf_err IS INITIAL.
+          TRY.
+              /ui2/cl_json=>deserialize( EXPORTING json = lv_cf_res CHANGING data = ls_cf_ds ).
+            CATCH cx_root INTO DATA(lx_cf).
+              lv_cf_err = |函数结果解析失败: { lx_cf->get_text( ) }|.
+          ENDTRY.
+        ENDIF.
+
+        IF lv_cf_err IS NOT INITIAL.
+          lv_cf_json  = |\{"ok":false,"function":"{ json_text( lv_cf_fn ) }","error":"{ json_text( lv_cf_err ) }"\}|.
+          lv_cf_label = |调用函数失败: { lv_cf_fn }, { lv_cf_err }|.
+          APPEND VALUE #( phase  = 'EXECUTING'
+                          tool   = ls_out-tool
+                          label  = lv_cf_label
+                          status = 'ERROR' ) TO lt_trace.
+        ELSE.
+          " 名称 = 模型给的目的(空用函数名称); 函数在结果说明里的提示放进 error 字段带回(状态仍 OK)
+          ls_cf_ds-name       = COND #( WHEN lv_cf_purp IS NOT INITIAL THEN lv_cf_purp ELSE lv_cf_name ).
+          ls_cf_ds-status     = 'OK'.
+          ls_cf_ds-source     = |FUNC:{ lv_cf_tc }|.
+          ls_cf_ds-elapsed_ms = ( lv_cf_t1 - lv_cf_t0 ) / 1000.
+          APPEND ls_cf_ds TO lt_datasets.
+
+          ls_cf_feed = ls_cf_ds.
+          IF lines( ls_cf_feed-rows ) > zcl_ai_sql_executor=>gc_llm_rows.
+            DELETE ls_cf_feed-rows FROM zcl_ai_sql_executor=>gc_llm_rows + 1.
+          ENDIF.
+          lv_cf_json = |\{"ok":true,"function":"{ json_text( lv_cf_tc ) }","name":"{ json_text( lv_cf_name ) }",| &&
+                       |"dataset":| && zcl_ai_data_analysis_service=>build_datasets_json(
+                                         it_datas     = VALUE #( ( ls_cf_feed ) )
+                                         iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 300 ) && '}'.
+          lv_cf_label = |调用函数: { lv_cf_name }({ lv_cf_tc }), 共 { ls_cf_ds-total_rows } 行|.
+          APPEND VALUE #( phase      = 'EXECUTING'
+                          tool       = ls_out-tool
+                          label      = lv_cf_label
+                          status     = 'OK'
+                          elapsed_ms = ls_cf_ds-elapsed_ms
+                          rows       = ls_cf_ds-total_rows
+                          detail     = lv_cf_par ) TO lt_trace.
+        ENDIF.
+        zcl_ai_agent_progress=>sync( it_trace = lt_trace ).
+
+        CLEAR ls_msg.
+        ls_msg-role    = 'assistant'.
+        ls_msg-content = lv_content.
+        APPEND ls_msg TO lt_messages.
+
+        CLEAR ls_msg.
+        ls_msg-role    = 'user'.
+        ls_msg-content = zcl_ai_agent_guard=>wrap_tool_result(
+                           iv_tool = ls_out-tool
+                           iv_json = zcl_ai_agent_guard=>trim_result( iv_text = lv_cf_json ) ).
+        APPEND ls_msg TO lt_messages.
+
+        CONTINUE.
+      ENDIF.
+
       " ---- tool: 参数解析 + Schema 校验(不通过不执行) ----
       DATA: lt_kv    TYPE zcl_ai_agent_guard=>tt_kv,
             lt_norm  TYPE zcl_ai_agent_guard=>tt_kv,
@@ -2270,6 +2384,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         " V1.3.0: 数据分析工具的 args 是查询计划 JSON(非扁平 kv),
         " 参数区以计划格式说明替代 kv 列表(完整 JSON 模板见工具描述)
         lv_tools = lv_tools && |- { ls_tool-tool_id }(args=查询计划JSON): { ls_tool-description }\n|.
+      ELSEIF ls_tool-tool_id = zcl_ai_tool_registry=>gc_tool_call_func.
+        " V15.14: call_function 的 args 带嵌套 params 对象(格式与可用函数见工具描述)
+        lv_tools = lv_tools && |- { ls_tool-tool_id }(args=\{function, purpose, params\}): { ls_tool-description }\n|.
       ELSE.
         CLEAR lv_params.
         LOOP AT ls_tool-params INTO DATA(ls_p).

@@ -40,6 +40,10 @@
 *         依赖: ZCL_AI_RFC_EXEC V1.0(先激活)
 * ★ 核对标记 V1.1: 有 METHOD scan_function 与 METHOD fm_default; save 里有 lv_kind_new;
 *   ty_draft 有 report_kind / result_ref
+* V1.1a   20261102(功能计划书/RFC函数执行/03 §13 E3): 函数登记的 EXEC_MODE 默认写 SYNC
+*         (= 数据分析里也能同步调用); 跑得久的函数在 SE16 改成 JOB, 只走报表执行。
+*         已登记的函数重新登记时 EXEC_MODE 为空才补 SYNC, 手工改过的不动; 报表仍写 JOB
+* ★ 核对标记 V1.1a: save 里有 ls_def-exec_mode = COND #( WHEN lv_kind_new = 'FUNC' THEN 'SYNC'
 *=======================================================================
 CLASS zcl_ai_rpt_scanner DEFINITION
   PUBLIC
@@ -838,6 +842,9 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
       IF lv_kind_new = 'FUNC'.
         ls_def-report_kind = 'FUNC'.
         ls_def-result_mode = 'FUNC_CALL'.
+        IF ls_def-exec_mode IS INITIAL.
+          ls_def-exec_mode = 'SYNC'.
+        ENDIF.
         ls_def-result_ref  = is_draft-result_ref.
         ls_def-progname    = is_draft-progname.
       ENDIF.
@@ -852,7 +859,7 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
       ls_def-report_kind     = lv_kind_new.
       ls_def-result_mode     = COND #( WHEN lv_kind_new = 'FUNC' THEN 'FUNC_CALL' ELSE 'ALV_CAPTURE' ).
       ls_def-result_ref      = is_draft-result_ref.
-      ls_def-exec_mode       = 'JOB'.
+      ls_def-exec_mode       = COND #( WHEN lv_kind_new = 'FUNC' THEN 'SYNC' ELSE 'JOB' ).
       ls_def-read_enabled    = 'X'.
       ls_def-exec_enabled    = COND #( WHEN iv_exec_enabled = abap_true THEN 'X' ELSE ' ' ).
       ls_def-analyze_enabled = 'X'.

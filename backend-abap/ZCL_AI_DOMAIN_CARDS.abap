@@ -25,6 +25,9 @@
 * V1.5   20261102(功能计划书/RFC函数执行/01 §5): CODE 域卡第 1 条加「函数模块」——
 *   直接给函数名读, 返回接口 + 本体源码
 *   ★ 重贴后核对标记: CODE 域卡第 1 条含「函数模块」
+* V1.6   20261102(功能计划书/RFC函数执行/03 §7.4): DATA 域卡加【已登记函数】一段 ——
+*   有 call_function 且现成函数能直接回答时优先调函数, 不用 SQL 重拼; 参数按说明填, 必填缺了先问
+*   ★ 重贴后核对标记: DATA 域卡含【已登记函数】
 *=======================================================================
 CLASS zcl_ai_domain_cards DEFINITION
   PUBLIC
@@ -191,6 +194,12 @@ CLASS zcl_ai_domain_cards IMPLEMENTATION.
         |    WHERE EXISTS ( SELECT J~OBJNR FROM JEST AS J WHERE J~OBJNR = A~OBJNR\n| &&
         |    AND J~STAT = 'I0002' AND J~INACT = ' ' )(I0002 = REL, 状态码以 TJ02T 为准);\n| &&
         |    需要列出状态文字时单独再查一次。\n| &&
+        |\n| &&
+        |【已登记函数】(工具白名单里有 call_function 时)\n| &&
+        |1. 工具说明里有现成函数能直接回答的, 优先调函数, 不要用 SQL 重新拼它的逻辑;\n| &&
+        |   函数结果不够时再用 run_sql 补查(例如补名称、补维度)。\n| &&
+        |2. 参数按说明里的编号和格式填; 带 * 的必填, 用户没给的先问, 不要猜。\n| &&
+        |3. 函数报参数错误时按提示改了再调; 函数报错或中断时如实说明, 可以改用 SQL。\n| &&
         |\n| &&
         |【推荐 SQL 模板】\n| &&
         |SELECT H~KUNNR AS CUSTOMER_ID, C~NAME1 AS CUSTOMER_NAME,\n| &&

@@ -3,6 +3,61 @@
  * 对照后端的 ZCL_AI_INVENTORY_TOOLS / ZCL_AI_DDIC_TOOLS / ZCL_AI_SQL_EXECUTOR
  */
 
+/* ---------- 20261102（RFC 函数执行 03 方案）：数据分析里调用已登记函数 ----------
+ * 对照 ZCL_AI_RFC_EXEC V1.1：list_callable 的参数说明 / tool_description 的工具说明格式，
+ * call_sync 的「只能调可用清单里的 + 参数按登记校验」。改格式时两边同步（rfc-scan-tests 锁住）。
+ */
+const DEMO_FUNCS = [
+  { tcode: 'Z_AI_DEMO_PO_OPEN', name: '未清采购订单', exec_mode: 'SYNC',
+    params: [
+      { param_id: 'IV_WERKS', display_label: '工厂', data_type: 'CHAR', type_length: 4, required: true },
+      { param_id: 'IT_LIFNR', display_label: '供应商', data_type: 'CHAR', type_length: 10, multi_value: true },
+      { param_id: 'IT_BEDAT', display_label: '凭证日期', data_type: 'DATE', type_length: 8, range_allowed: true },
+      { param_id: 'IV_OPEN', display_label: '只看未清', data_type: 'BOOL', type_length: 1 }
+    ] },
+  // EXEC_MODE = JOB：只走报表执行，不进数据分析清单
+  { tcode: 'Z_AI_DEMO_SLOW', name: '全年对账（慢）', exec_mode: 'JOB',
+    params: [{ param_id: 'IV_GJAHR', display_label: '年度', data_type: 'NUM', type_length: 4, required: true }] }
+];
+const DEMO_PO_ROWS = [
+  { EBELN: '4500000101', EBELP: '00010', LIFNR: 'V1001', WERKS: '1000', MATNR: 'RM-001', MENGE: 500, WEMNG: 200, BEDAT: '2026-10-03' },
+  { EBELN: '4500000102', EBELP: '00010', LIFNR: 'V1001', WERKS: '1000', MATNR: 'RM-002', MENGE: 120, WEMNG: 0, BEDAT: '2026-10-11' },
+  { EBELN: '4500000103', EBELP: '00020', LIFNR: 'V1002', WERKS: '1000', MATNR: 'RM-003', MENGE: 80, WEMNG: 80, BEDAT: '2026-10-15' },
+  { EBELN: '4500000104', EBELP: '00010', LIFNR: 'V1003', WERKS: '2000', MATNR: 'RM-001', MENGE: 300, WEMNG: 100, BEDAT: '2026-10-20' },
+  { EBELN: '4500000105', EBELP: '00010', LIFNR: 'V1002', WERKS: '1000', MATNR: 'RM-004', MENGE: 60, WEMNG: 10, BEDAT: '2026-10-28' }
+];
+
+/** 一个参数的说明（ABAP list_callable 同格式）：编号 标签(*必填)(类型) */
+function funcParamText(p) {
+  let kind;
+  if (p.data_type === 'BOOL') { kind = 'X/空'; }
+  else if (p.range_allowed) { kind = `${p.data_type} 范围 low,high`; }
+  else if (p.multi_value) { kind = `${p.data_type} 多值逗号分隔`; }
+  else if (p.data_type === 'DATE') { kind = 'YYYYMMDD'; }
+  else { kind = `${p.data_type}${p.type_length > 0 ? p.type_length : ''}`; }
+  return `${p.param_id} ${p.display_label}${p.required ? '*' : ''}(${kind})`;
+}
+
+/** 数据分析可用的函数（EXEC_MODE = JOB 的不进） */
+function callableFuncs(funcs) {
+  return (funcs || DEMO_FUNCS).filter((f) => String(f.exec_mode || '').toUpperCase() !== 'JOB');
+}
+
+/** call_function 工具说明（ABAP tool_description 同格式；没有可用函数 = 空串，不注册工具） */
+function functionToolDescription(funcs, max) {
+  const lim = max || 30;
+  const list = callableFuncs(funcs);
+  if (!list.length) { return ''; }
+  const lst = list.slice(0, lim).map((f) => `${f.tcode} ${f.name}: ${f.params.map(funcParamText).join('、')}; `).join('');
+  let d = '调用系统里已登记的只读查询函数(秒级出数), 返回统一数据集(表格+图表可用)。' +
+    '有现成函数能直接回答时优先用它, 不够再用 run_sql 补查。' +
+    'args: {"function":"<调用名>","purpose":"<一句话, 作为结果标题>","params":{"<参数编号>":"<值>"}}; ' +
+    '带 * 的参数必填, 缺了先问用户; 多值用逗号分隔, 范围写 low,high, 复选框写 X 或空, 日期 YYYYMMDD。' +
+    `可用函数: ${lst}`;
+  if (list.length > lim) { d += `(还有 ${list.length - lim} 个未列出, 知道调用名也可以直接调用)`; }
+  return d;
+}
+
 /**
  * 根据领域返回可用工具列表
  */
@@ -63,7 +118,17 @@ function getToolsForDomain(domain) {
   if (domain === 'INVENTORY') {
     return [allTools.resolve_material, allTools.get_stock, allTools.get_movements];
   } else if (domain === 'DATA') {
-    return [allTools.search_tables, allTools.describe_table, allTools.run_sql];
+    const out = [allTools.search_tables, allTools.describe_table, allTools.run_sql];
+    const fnDesc = functionToolDescription();
+    if (fnDesc) {
+      out.push({ id: 'call_function', description: fnDesc,
+        parameters: [
+          { name: 'function', type: 'string', required: true, description: '函数调用名' },
+          { name: 'purpose', type: 'string', required: false, description: '结果标题' },
+          { name: 'params', type: 'object', required: false, description: '参数对象（编号: 值）' }
+        ] });
+    }
+    return out;
   } else {
     return [];
   }
@@ -564,6 +629,40 @@ async function execute(toolId, args) {
       };
     }
 
+    case 'call_function': {
+      // 对照 ZCL_AI_RFC_EXEC=>call_sync：只能调可用清单里的；必填缺了回具体参数；结果是数据集
+      const fn = String(args.function || '').trim().toUpperCase();
+      const def = callableFuncs().filter((f) => f.tcode === fn)[0];
+      if (!def) {
+        return { status: 'ERROR', summary: `函数 ${fn} 不可用`, rows: 0,
+          data: { ok: false, error: `函数 ${fn} 未登记、未开放、只能走报表执行, 或你没有使用权限; 可用的函数见工具说明` } };
+      }
+      const prm = {};
+      Object.keys(args.params || {}).forEach((k) => { prm[k.toUpperCase()] = String(args.params[k] == null ? '' : args.params[k]).trim(); });
+      const miss = def.params.filter((p) => p.required && !prm[p.param_id]).map((p) => `${p.param_id}: 必填`);
+      if (miss.length) {
+        return { status: 'ERROR', summary: '参数不对', rows: 0, data: { ok: false, error: `参数不对: ${miss.join('; ')}(参数编号和格式见工具说明)` } };
+      }
+      let rows = DEMO_PO_ROWS.filter((r) => r.WERKS === prm.IV_WERKS.toUpperCase());
+      if (prm.IT_LIFNR) {
+        const set = prm.IT_LIFNR.toUpperCase().split(',').map((x) => x.trim()).filter(Boolean);
+        rows = rows.filter((r) => set.indexOf(r.LIFNR) >= 0);
+      }
+      if (prm.IT_BEDAT) {
+        const [lo, hi] = prm.IT_BEDAT.split(',').map((x) => x.trim().replace(/-/g, ''));
+        rows = rows.filter((r) => { const d = r.BEDAT.replace(/-/g, ''); return (!lo || d >= lo) && (!hi || d <= hi); });
+      }
+      if ((prm.IV_OPEN || 'X').toUpperCase() === 'X') { rows = rows.filter((r) => r.WEMNG < r.MENGE); }
+      const name = args.purpose || def.name;
+      return {
+        status: 'OK',
+        summary: `调用函数: ${def.name}(${def.tcode}), 共 ${rows.length} 行`,
+        rows: rows.length,
+        data: { ok: true, function: def.tcode, name: def.name,
+          dataset: { name, columns: Object.keys(DEMO_PO_ROWS[0]), rows, total_rows: rows.length } }
+      };
+    }
+
     default:
       return {
         status: 'ERROR',
@@ -630,4 +729,4 @@ function splitSqlLines(sql, max = 180) {
   return out;
 }
 
-module.exports = { getToolsForDomain, execute, sqlDialectError, splitSqlLines };
+module.exports = { getToolsForDomain, execute, sqlDialectError, splitSqlLines, functionToolDescription, funcParamText, callableFuncs, DEMO_FUNCS };

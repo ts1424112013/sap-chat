@@ -19,9 +19,20 @@
 * 安装:   SE24 -> 新建类 ZCL_AI_RFC_EXEC -> 源代码视图整类粘贴 (ABAP 7.50, 755 适用)
 *         激活顺序: CODE_PROVIDER V1.1 之后, REPORT_EXEC_SAP V1.2 之前
 * V1.0    20261102: 首版
+* V1.1    20261102(功能计划书/RFC函数执行/03-数据分析调用函数方案): 数据分析里同步调用 ——
+*         ① list_callable / tool_description: 数据分析可用的函数(FUNC + 活动 + 开放执行 +
+*           EXEC_MODE 不是 JOB + 报表授权; 开关 RFC_IN_DATA = N 关闭), 拼成工具说明(最多 30 个);
+*         ② call_sync(网关会话): 按调用名找登记 → validate_params(和参数卡同一套) →
+*           CALL FUNCTION 'Z_AI_RFC_RUN' DESTINATION 'NONE'(新会话, dump 只变 SYSTEM_FAILURE);
+*         ③ run_direct(新会话里, Z_AI_RFC_RUN 调): 复核登记 / 授权 → 同一套绑定 → invoke →
+*           主结果转「列 + 字符串单元格」数据集 JSON(键大写, 供 /ui2/cl_json 直接还原);
+*         ④ 重构: build_bindings 拆出 bind_core(登记行 + 快照); 调用 + ROLLBACK 收进 invoke,
+*           run / run_direct 共用; max_exec 读 RFC_MAX_EXEC(默认 3, 最多 10)
 * ★ 核对标记: 有 METHOD read_interface / check_writes / scan_source / name_danger /
-*   auth_ok / precheck / run / build_bindings; run 里 CALL FUNCTION lv_fm PARAMETER-TABLE
-*   之后紧跟 ROLLBACK WORK; 全文没有 FIND PCRE; 方法之间没有注释
+*   auth_ok / precheck / run / build_bindings / bind_core / invoke / run_direct / call_sync /
+*   list_callable / tool_description; invoke 里 CALL FUNCTION iv_fm PARAMETER-TABLE 之后紧跟
+*   ROLLBACK WORK; call_sync 里 CALL FUNCTION 'Z_AI_RFC_RUN' DESTINATION 'NONE';
+*   全文没有 FIND PCRE; 方法之间没有注释
 *=======================================================================
 CLASS zcl_ai_rfc_exec DEFINITION
   PUBLIC
@@ -63,6 +74,20 @@ CLASS zcl_ai_rfc_exec DEFINITION
            END OF ty_target.
     TYPES tt_target TYPE STANDARD TABLE OF ty_target WITH DEFAULT KEY.
 
+    " V1.1: 数据分析里可调用的函数(调用名 = TCODE)
+    TYPES: BEGIN OF ty_callable,
+             report_id      TYPE string,
+             tcode          TYPE string,
+             name           TYPE string,
+             progname       TYPE string,
+             config_version TYPE string,
+             params_text    TYPE string,
+           END OF ty_callable.
+    TYPES tt_callable TYPE STANDARD TABLE OF ty_callable WITH DEFAULT KEY.
+
+    CONSTANTS: gc_tool_max_funcs TYPE i VALUE 30,
+               gc_data_max_rows  TYPE i VALUE 2000.
+
     CLASS-METHODS read_interface
       IMPORTING iv_fm     TYPE clike
       EXPORTING et_params TYPE tt_iparam
@@ -97,6 +122,40 @@ CLASS zcl_ai_rfc_exec DEFINITION
                 iv_params_json   TYPE string
       EXPORTING ev_error         TYPE string.
 
+    " V1.1: 数据分析开关(ZAI_CHAT_CFG RFC_IN_DATA = N 关; 不维护 = 开)
+    CLASS-METHODS data_enabled
+      RETURNING VALUE(rv) TYPE abap_bool.
+
+    " V1.1: 每次提问最多调用几次(RFC_MAX_EXEC, 默认 3, 最多 10)
+    CLASS-METHODS max_exec
+      RETURNING VALUE(rv) TYPE i.
+
+    " V1.1: 当前用户在数据分析里可调用的函数(同一请求内只算一次)
+    CLASS-METHODS list_callable
+      RETURNING VALUE(rt) TYPE tt_callable.
+
+    " V1.1: call_function 工具说明(开关关 / 没有可用函数 = 空, 调用方不注册工具)
+    CLASS-METHODS tool_description
+      RETURNING VALUE(rv) TYPE string.
+
+    " V1.1: 网关会话里同步调用(新会话执行); ev_result = 数据集 JSON(键大写)
+    CLASS-METHODS call_sync
+      IMPORTING iv_call_name   TYPE string
+                iv_params_json TYPE string
+                iv_max_rows    TYPE i DEFAULT gc_data_max_rows
+      EXPORTING ev_result      TYPE string
+                ev_name        TYPE string
+                ev_tcode       TYPE string
+                ev_error       TYPE string.
+
+    " V1.1: 新会话里执行(Z_AI_RFC_RUN 调); iv_params_json = validate_params 的规范化快照
+    CLASS-METHODS run_direct
+      IMPORTING iv_report_id   TYPE string
+                iv_params_json TYPE string
+                iv_max_rows    TYPE i DEFAULT gc_data_max_rows
+      EXPORTING ev_result      TYPE string
+                ev_error       TYPE string.
+
     CLASS-METHODS run
       IMPORTING iv_report_run_id TYPE string
                 iv_fm            TYPE clike
@@ -122,6 +181,9 @@ CLASS zcl_ai_rfc_exec DEFINITION
            END OF ty_reg.
     TYPES tt_reg TYPE STANDARD TABLE OF ty_reg WITH DEFAULT KEY.
 
+    CLASS-DATA: gt_callable TYPE tt_callable,
+                gv_loaded   TYPE abap_bool.
+
     CLASS-METHODS make_data
       IMPORTING iv_type_name TYPE string
                 iv_kind      TYPE string
@@ -144,6 +206,44 @@ CLASS zcl_ai_rfc_exec DEFINITION
       EXPORTING et_ptab          TYPE abap_func_parmbind_tab
                 et_etab          TYPE abap_func_excpbind_tab
                 ev_error         TYPE string.
+
+    CLASS-METHODS reg_rows
+      IMPORTING iv_report_id TYPE clike
+                iv_version   TYPE clike
+      RETURNING VALUE(rt)    TYPE tt_reg.
+
+    CLASS-METHODS bind_core
+      IMPORTING it_reg         TYPE tt_reg
+                iv_params_json TYPE string
+                it_params      TYPE tt_iparam
+      EXPORTING et_ptab        TYPE abap_func_parmbind_tab
+                et_etab        TYPE abap_func_excpbind_tab
+                ev_error       TYPE string.
+
+    CLASS-METHODS invoke
+      IMPORTING iv_fm    TYPE string
+                it_ptab  TYPE abap_func_parmbind_tab
+                it_etab  TYPE abap_func_excpbind_tab
+      EXPORTING ev_error TYPE string.
+
+    CLASS-METHODS table_to_cells
+      IMPORTING ir_tab   TYPE REF TO data
+                iv_max   TYPE i
+      EXPORTING ev_total TYPE i
+                ev_cols  TYPE string
+                ev_rows  TYPE string
+                ev_error TYPE string.
+
+    CLASS-METHODS cell_text
+      IMPORTING iv_val    TYPE any
+      EXPORTING ev_text   TYPE string
+                ev_num    TYPE abap_bool.
+
+    CLASS-METHODS def_lookup
+      IMPORTING iv_report_id TYPE string
+      EXPORTING es_def       TYPE ty_callable
+                ev_resref    TYPE string
+                ev_error     TYPE string.
 
     CLASS-METHODS set_value
       IMPORTING iv_val TYPE string
@@ -629,9 +729,6 @@ CLASS zcl_ai_rfc_exec IMPLEMENTATION.
           lt_params TYPE tt_iparam,
           lt_ptab   TYPE abap_func_parmbind_tab,
           lt_etab   TYPE abap_func_excpbind_tab,
-          lv_rc     TYPE sysubrc,
-          lv_exc    TYPE string,
-          lv_msg    TYPE string,
           lv_ref    TYPE string,
           lv_first  TYPE string,
           lv_nerr   TYPE i,
@@ -663,33 +760,9 @@ CLASS zcl_ai_rfc_exec IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    " 先提交运行器自己的写入, 调用后的 ROLLBACK WORK 只撤回函数的改动
-    COMMIT WORK.
-    TRY.
-        CALL FUNCTION lv_fm PARAMETER-TABLE lt_ptab EXCEPTION-TABLE lt_etab.
-        lv_rc = sy-subrc.
-      CATCH cx_sy_dyn_call_error INTO DATA(lx_dyn).
-        ROLLBACK WORK.
-        ev_error = |参数和函数 { lv_fm } 的接口不一致, 函数接口可能改过, 请重新登记({ lx_dyn->get_text( ) })|.
-        RETURN.
-    ENDTRY.
-    IF lv_rc <> 0 AND sy-msgid IS NOT INITIAL.
-      MESSAGE ID sy-msgid TYPE 'S' NUMBER sy-msgno
-        WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4 INTO lv_msg.
-    ENDIF.
-    ROLLBACK WORK.
-
-    IF lv_rc <> 0.
-      READ TABLE lt_etab INTO DATA(ls_e) WITH KEY value = lv_rc.
-      IF sy-subrc = 0.
-        lv_exc = ls_e-name.
-      ENDIF.
-      IF lv_exc = 'ERROR_MESSAGE'.
-        ev_error = |函数 { lv_fm } 报错: { COND string( WHEN lv_msg IS NOT INITIAL THEN lv_msg ELSE '(没有消息文本)' ) }|.
-      ELSE.
-        ev_error = |函数 { lv_fm } 返回例外 { COND string( WHEN lv_exc IS NOT INITIAL THEN lv_exc ELSE |{ lv_rc }| ) }| &&
-                   COND string( WHEN lv_msg IS NOT INITIAL THEN |: { lv_msg }| ).
-      ENDIF.
+    invoke( EXPORTING iv_fm = lv_fm it_ptab = lt_ptab it_etab = lt_etab
+            IMPORTING ev_error = ev_error ).
+    IF ev_error IS NOT INITIAL.
       RETURN.
     ENDIF.
 
@@ -760,6 +833,554 @@ CLASS zcl_ai_rfc_exec IMPLEMENTATION.
       ev_note = COND #( WHEN ev_note IS INITIAL THEN |其他输出: { lv_otxt }|
                         ELSE |{ ev_note }; 其他输出: { lv_otxt }| ).
     ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD invoke.
+
+    DATA: lv_rc  TYPE sysubrc,
+          lv_exc TYPE string,
+          lv_msg TYPE string.
+
+    CLEAR ev_error.
+    " 先提交调用方自己的写入, 调用后的 ROLLBACK WORK 只撤回函数的改动
+    COMMIT WORK.
+    TRY.
+        CALL FUNCTION iv_fm PARAMETER-TABLE it_ptab EXCEPTION-TABLE it_etab.
+        lv_rc = sy-subrc.
+      CATCH cx_sy_dyn_call_error INTO DATA(lx_dyn).
+        ROLLBACK WORK.
+        ev_error = |参数和函数 { iv_fm } 的接口不一致, 函数接口可能改过, 请重新登记({ lx_dyn->get_text( ) })|.
+        RETURN.
+    ENDTRY.
+    IF lv_rc <> 0 AND sy-msgid IS NOT INITIAL.
+      MESSAGE ID sy-msgid TYPE 'S' NUMBER sy-msgno
+        WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4 INTO lv_msg.
+    ENDIF.
+    ROLLBACK WORK.
+
+    IF lv_rc <> 0.
+      READ TABLE it_etab INTO DATA(ls_e) WITH KEY value = lv_rc.
+      IF sy-subrc = 0.
+        lv_exc = ls_e-name.
+      ENDIF.
+      IF lv_exc = 'ERROR_MESSAGE'.
+        ev_error = |函数 { iv_fm } 报错: { COND string( WHEN lv_msg IS NOT INITIAL THEN lv_msg ELSE '(没有消息文本)' ) }|.
+      ELSE.
+        ev_error = |函数 { iv_fm } 返回例外 { COND string( WHEN lv_exc IS NOT INITIAL THEN lv_exc ELSE |{ lv_rc }| ) }| &&
+                   COND string( WHEN lv_msg IS NOT INITIAL THEN |: { lv_msg }| ).
+      ENDIF.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD data_enabled.
+
+    DATA lv TYPE string.
+    lv = to_upper( condense( val = zcl_ai_task_service=>read_cfg_str( 'RFC_IN_DATA' ) ) ).
+    rv = xsdbool( lv <> 'N' AND lv <> '-' ).
+
+  ENDMETHOD.
+
+
+  METHOD max_exec.
+
+    DATA lv TYPE string.
+    rv = 3.
+    lv = condense( val = zcl_ai_task_service=>read_cfg_str( 'RFC_MAX_EXEC' ) ).
+    IF lv IS INITIAL OR lv CN '0123456789'.
+      RETURN.
+    ENDIF.
+    rv = lv.
+    IF rv < 1.
+      rv = 3.
+    ELSEIF rv > 10.
+      rv = 10.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD list_callable.
+
+    DATA: ls_c    TYPE ty_callable,
+          lt_par  TYPE zcl_ai_report_service=>tt_param,
+          lv_pt   TYPE string,
+          lv_seg  TYPE string,
+          lv_kind TYPE string.
+
+    IF gv_loaded = abap_true.
+      rt = gt_callable.
+      RETURN.
+    ENDIF.
+    gv_loaded = abap_true.
+    CLEAR gt_callable.
+    IF data_enabled( ) = abap_false.
+      RETURN.
+    ENDIF.
+
+    SELECT report_id, tcode, report_name, progname, config_version, exec_mode
+      FROM zai_rpt_def
+      WHERE report_kind = 'FUNC' AND active = 'X' AND exec_enabled = 'X'
+      ORDER BY tcode
+      INTO TABLE @DATA(lt_def).
+
+    LOOP AT lt_def INTO DATA(ls_def).
+      IF to_upper( condense( val = CONV string( ls_def-exec_mode ) ) ) = 'JOB'.
+        CONTINUE.
+      ENDIF.
+      IF zcl_ai_access=>report_ok( iv_src_type  = zcl_ai_access=>gc_src_report
+                                   iv_report_id = CONV string( ls_def-report_id ) ) = abap_false.
+        CONTINUE.
+      ENDIF.
+      CLEAR: ls_c, lv_pt.
+      ls_c-report_id      = ls_def-report_id.
+      ls_c-tcode          = ls_def-tcode.
+      ls_c-name           = ls_def-report_name.
+      ls_c-progname       = ls_def-progname.
+      ls_c-config_version = ls_def-config_version.
+      " 参数说明: 编号 标签(*必填)(类型 / 多值 / 范围 / 复选框), 与参数卡同一份登记
+      lt_par = zcl_ai_report_service=>get_params( iv_report_id      = ls_c-report_id
+                                                  iv_config_version = ls_c-config_version ).
+      LOOP AT lt_par INTO DATA(ls_p).
+        lv_kind = COND #( WHEN ls_p-data_type = 'BOOL' THEN `X/空`
+                          WHEN ls_p-range_allowed = abap_true THEN |{ ls_p-data_type } 范围 low,high|
+                          WHEN ls_p-multi_value = abap_true THEN |{ ls_p-data_type } 多值逗号分隔|
+                          WHEN ls_p-data_type = 'DATE' THEN `YYYYMMDD`
+                          ELSE |{ ls_p-data_type }{ COND string( WHEN ls_p-type_length > 0 THEN |{ ls_p-type_length }| ) }| ).
+        lv_seg = |{ ls_p-param_id } { ls_p-display_label }{ COND string( WHEN ls_p-required = abap_true THEN `*` ) }({ lv_kind })|.
+        lv_pt = COND #( WHEN lv_pt IS INITIAL THEN lv_seg ELSE |{ lv_pt }、{ lv_seg }| ).
+      ENDLOOP.
+      ls_c-params_text = lv_pt.
+      APPEND ls_c TO gt_callable.
+    ENDLOOP.
+    rt = gt_callable.
+
+  ENDMETHOD.
+
+
+  METHOD tool_description.
+
+    DATA: lt_c   TYPE tt_callable,
+          lv_n   TYPE i,
+          lv_lst TYPE string.
+
+    CLEAR rv.
+    lt_c = list_callable( ).
+    IF lt_c IS INITIAL.
+      RETURN.
+    ENDIF.
+    LOOP AT lt_c INTO DATA(ls_c).
+      lv_n = lv_n + 1.
+      IF lv_n > gc_tool_max_funcs.
+        EXIT.
+      ENDIF.
+      lv_lst = lv_lst && |{ ls_c-tcode } { ls_c-name }: { ls_c-params_text }; |.
+    ENDLOOP.
+    rv = '调用系统里已登记的只读查询函数(秒级出数), 返回统一数据集(表格+图表可用)。'
+         && '有现成函数能直接回答时优先用它, 不够再用 run_sql 补查。'
+         && 'args: {"function":"<调用名>","purpose":"<一句话, 作为结果标题>","params":{"<参数编号>":"<值>"}}; '
+         && '带 * 的参数必填, 缺了先问用户; 多值用逗号分隔, 范围写 low,high, 复选框写 X 或空, 日期 YYYYMMDD。'
+         && |可用函数: { lv_lst }|.
+    IF lines( lt_c ) > gc_tool_max_funcs.
+      rv = rv && |(还有 { lines( lt_c ) - gc_tool_max_funcs } 个未列出, 知道调用名也可以直接调用)|.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD call_sync.
+
+    DATA: lv_call TYPE string,
+          lt_c    TYPE tt_callable,
+          ls_def  TYPE zcl_ai_report_service=>ty_def,
+          ls_pv   TYPE zcl_ai_report_service=>ty_pvres,
+          lv_msg  TYPE c LENGTH 255,
+          lv_res  TYPE string,
+          lv_err  TYPE string,
+          lv_perr TYPE string.
+
+    CLEAR: ev_result, ev_name, ev_tcode, ev_error.
+    lv_call = to_upper( condense( val = iv_call_name ) ).
+    IF data_enabled( ) = abap_false.
+      ev_error = '数据分析里调用函数的功能已关闭(RFC_IN_DATA)'.
+      RETURN.
+    ENDIF.
+
+    " 只能调可用清单里的(登记 + 开放执行 + 不是 JOB + 有授权); 清单外的知道调用名也可以, 规则相同
+    lt_c = list_callable( ).
+    READ TABLE lt_c INTO DATA(ls_c) WITH KEY tcode = lv_call.
+    IF sy-subrc <> 0.
+      ev_error = |函数 { lv_call } 未登记、未开放、只能走报表执行, 或你没有使用权限; 可用的函数见工具说明|.
+      RETURN.
+    ENDIF.
+    ev_name  = ls_c-name.
+    ev_tcode = ls_c-tcode.
+
+    " 参数: 和参数卡同一套校验(必填 / 类型 / 范围 / 值域 / 默认值)
+    ls_def = zcl_ai_report_service=>get_def( ls_c-report_id ).
+    IF ls_def-report_id IS INITIAL.
+      ev_error = |函数 { lv_call } 的登记读取失败|.
+      RETURN.
+    ENDIF.
+    ls_pv = zcl_ai_report_service=>validate_params( is_def = ls_def iv_params_json = iv_params_json ).
+    IF ls_pv-ok = abap_false OR ls_pv-needs_input = abap_true.
+      LOOP AT ls_pv-errors INTO DATA(ls_e).
+        lv_perr = COND #( WHEN lv_perr IS INITIAL THEN |{ ls_e-param_id }: { ls_e-message }|
+                          ELSE |{ lv_perr }; { ls_e-param_id }: { ls_e-message }| ).
+      ENDLOOP.
+      ev_error = |参数不对: { COND string( WHEN lv_perr IS NOT INITIAL THEN lv_perr ELSE '缺必填参数' ) }(参数编号和格式见工具说明)|.
+      RETURN.
+    ENDIF.
+
+    " 新会话里执行: 函数 dump 只会变成 SYSTEM_FAILURE, 不打断当前 Agent 请求
+    " 同步 RFC 会让调用方隐式提交一次数据库(调用方此前没有未提交的写操作)
+    CALL FUNCTION 'Z_AI_RFC_RUN' DESTINATION 'NONE'
+      EXPORTING
+        iv_report_id          = ls_c-report_id
+        iv_params_json        = ls_pv-norm_json
+        iv_max_rows           = iv_max_rows
+      IMPORTING
+        ev_result             = lv_res
+        ev_error              = lv_err
+      EXCEPTIONS
+        system_failure        = 1 MESSAGE lv_msg
+        communication_failure = 2 MESSAGE lv_msg
+        OTHERS                = 3.
+    IF sy-subrc <> 0.
+      ev_error = |函数调用中断({ COND string( WHEN sy-subrc = 1 THEN 'SYSTEM_FAILURE' WHEN sy-subrc = 2 THEN 'COMMUNICATION_FAILURE' ELSE 'OTHERS' ) }): | &&
+                 |{ condense( val = CONV string( lv_msg ) ) }; 请换条件, 或改用报表执行|.
+    ELSE.
+      ev_result = lv_res.
+      ev_error  = lv_err.
+    ENDIF.
+    CALL FUNCTION 'RFC_CONNECTION_CLOSE'
+      EXPORTING
+        destination          = 'NONE'
+      EXCEPTIONS
+        destination_not_open = 1
+        OTHERS               = 2.
+
+  ENDMETHOD.
+
+
+  METHOD def_lookup.
+
+    CLEAR: es_def, ev_resref, ev_error.
+    SELECT SINGLE report_id, tcode, report_name, progname, config_version, report_kind, result_ref
+      FROM zai_rpt_def
+      WHERE report_id = @iv_report_id AND active = 'X' AND exec_enabled = 'X'
+      INTO @DATA(ls_row).
+    IF sy-subrc <> 0 OR to_upper( condense( val = CONV string( ls_row-report_kind ) ) ) <> 'FUNC'.
+      ev_error = |函数登记 { iv_report_id } 不存在、已停用或未开放执行|.
+      RETURN.
+    ENDIF.
+    IF zcl_ai_access=>report_ok( iv_src_type  = zcl_ai_access=>gc_src_report
+                                 iv_report_id = iv_report_id ) = abap_false.
+      ev_error = |你没有函数 { ls_row-tcode } 的使用权限|.
+      RETURN.
+    ENDIF.
+    es_def-report_id      = ls_row-report_id.
+    es_def-tcode          = ls_row-tcode.
+    es_def-name           = ls_row-report_name.
+    es_def-progname       = to_upper( condense( val = CONV string( ls_row-progname ) ) ).
+    es_def-config_version = ls_row-config_version.
+    ev_resref             = to_upper( condense( val = CONV string( ls_row-result_ref ) ) ).
+
+  ENDMETHOD.
+
+
+  METHOD run_direct.
+
+    DATA: ls_def    TYPE ty_callable,
+          lv_ref    TYPE string,
+          lt_params TYPE tt_iparam,
+          lt_ptab   TYPE abap_func_parmbind_tab,
+          lt_etab   TYPE abap_func_excpbind_tab,
+          lv_total  TYPE i,
+          lv_cols   TYPE string,
+          lv_rows   TYPE string,
+          lv_first  TYPE string,
+          lv_nerr   TYPE i,
+          lv_rjson  TYPE string,
+          lv_note   TYPE string,
+          lv_trunc  TYPE string,
+          lv_text   TYPE string,
+          lv_num    TYPE abap_bool,
+          lv_seg    TYPE string,
+          lv_cell   TYPE string.
+    FIELD-SYMBOLS <lv_v> TYPE any.
+
+    CLEAR: ev_result, ev_error.
+
+    " 新会话里再核一遍登记与授权(Z_AI_RFC_RUN 能被单独调用)
+    def_lookup( EXPORTING iv_report_id = iv_report_id
+                IMPORTING es_def = ls_def ev_resref = lv_ref ev_error = ev_error ).
+    IF ev_error IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+    read_interface( EXPORTING iv_fm = ls_def-progname IMPORTING et_params = lt_params ev_error = ev_error ).
+    IF ev_error IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+    IF auth_ok( ls_def-progname ) = abap_false.
+      ev_error = |没有函数 { ls_def-progname } 的调用权限(S_RFC, 按函数或函数组, 活动 16), 请联系管理员|.
+      RETURN.
+    ENDIF.
+    bind_core( EXPORTING it_reg         = reg_rows( iv_report_id = ls_def-report_id iv_version = ls_def-config_version )
+                         iv_params_json = iv_params_json
+                         it_params      = lt_params
+               IMPORTING et_ptab        = lt_ptab
+                         et_etab        = lt_etab
+                         ev_error       = ev_error ).
+    IF ev_error IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+
+    invoke( EXPORTING iv_fm = ls_def-progname it_ptab = lt_ptab it_etab = lt_etab
+            IMPORTING ev_error = ev_error ).
+    IF ev_error IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+
+    IF lv_ref IS INITIAL.
+      lv_ref = default_result( lt_params ).
+    ENDIF.
+    READ TABLE lt_ptab INTO DATA(ls_res) WITH TABLE KEY name = CONV abap_parmname( lv_ref ).
+    IF lv_ref IS NOT INITIAL AND sy-subrc = 0 AND ls_res-value IS BOUND.
+      table_to_cells( EXPORTING ir_tab   = ls_res-value
+                                iv_max   = iv_max_rows
+                      IMPORTING ev_total = lv_total
+                                ev_cols  = lv_cols
+                                ev_rows  = lv_rows
+                                ev_error = ev_error ).
+      IF ev_error IS NOT INITIAL.
+        RETURN.
+      ENDIF.
+    ELSE.
+      " 没有表输出: EXPORTING / CHANGING 单值合成一行
+      LOOP AT lt_params INTO DATA(ls_p) WHERE ( kind = 'E' OR kind = 'C' ) AND ( shape = 'SCALAR' OR shape = 'FLAG' ).
+        READ TABLE lt_ptab INTO DATA(ls_b) WITH TABLE KEY name = CONV abap_parmname( ls_p-name ).
+        IF sy-subrc <> 0 OR ls_b-value IS NOT BOUND.
+          CONTINUE.
+        ENDIF.
+        ASSIGN ls_b-value->* TO <lv_v>.
+        cell_text( EXPORTING iv_val = <lv_v> IMPORTING ev_text = lv_text ev_num = lv_num ).
+        lv_seg  = |\{"NAME":"{ zcl_ai_report_service=>json_escape( ls_p-name ) }","LABEL":"{ zcl_ai_report_service=>json_escape( ls_p-label ) }","NUMERIC":"{ lv_num }"\}|.
+        lv_cols = COND #( WHEN lv_cols IS INITIAL THEN lv_seg ELSE lv_cols && ',' && lv_seg ).
+        lv_cell = |"{ zcl_ai_report_service=>json_escape( lv_text ) }"|.
+        lv_rows = COND #( WHEN lv_rows IS INITIAL THEN lv_cell ELSE lv_rows && ',' && lv_cell ).
+      ENDLOOP.
+      IF lv_rows IS NOT INITIAL.
+        lv_rows  = |[{ lv_rows }]|.
+        lv_total = 1.
+      ENDIF.
+    ENDIF.
+
+    READ TABLE lt_ptab INTO DATA(ls_ret) WITH TABLE KEY name = CONV abap_parmname( 'RETURN' ).
+    IF sy-subrc = 0 AND ls_ret-value IS BOUND.
+      return_messages( EXPORTING ir_data = ls_ret-value
+                       IMPORTING ev_first = lv_first ev_errors = lv_nerr ev_json = lv_rjson ).
+      IF lv_nerr > 0 AND lv_total = 0.
+        ev_error = |函数 { ls_def-progname } 返回错误消息: { lv_first }|.
+        RETURN.
+      ENDIF.
+      IF lv_nerr > 0.
+        lv_note = |函数同时返回了 { lv_nerr } 条错误消息, 第一条: { lv_first }|.
+      ENDIF.
+    ENDIF.
+    IF lv_total > iv_max_rows.
+      lv_trunc = 'X'.
+      lv_note  = COND #( WHEN lv_note IS INITIAL THEN |共 { lv_total } 行, 只取前 { iv_max_rows } 行|
+                         ELSE |{ lv_note }; 共 { lv_total } 行, 只取前 { iv_max_rows } 行| ).
+    ENDIF.
+
+    " 键大写: 调用方 /ui2/cl_json=>deserialize 不设 pretty_name 直接还原成 ty_dataset
+    ev_result = |\{"NAME":"{ zcl_ai_report_service=>json_escape( ls_def-name ) }",| &&
+                |"STATUS":"OK","COLUMNS":[{ lv_cols }],"ROWS":[{ lv_rows }],| &&
+                |"TOTAL_ROWS":{ lv_total },"TRUNCATED":"{ lv_trunc }",| &&
+                |"ERROR":"{ zcl_ai_report_service=>json_escape( lv_note ) }"\}|.
+
+  ENDMETHOD.
+
+
+  METHOD table_to_cells.
+
+    DATA: lo_td   TYPE REF TO cl_abap_typedescr,
+          lo_tab  TYPE REF TO cl_abap_tabledescr,
+          lo_line TYPE REF TO cl_abap_datadescr,
+          lo_sd   TYPE REF TO cl_abap_structdescr,
+          lt_dd   TYPE ddfields,
+          lt_name TYPE string_table,
+          lv_lbl  TYPE string,
+          lv_seg  TYPE string,
+          lv_row  TYPE string,
+          lv_text TYPE string,
+          lv_num  TYPE abap_bool,
+          lv_n    TYPE i,
+          lv_flat TYPE abap_bool,
+          lv_first TYPE abap_bool VALUE abap_true.
+    FIELD-SYMBOLS: <lt_tab> TYPE ANY TABLE,
+                   <ls_row> TYPE any,
+                   <lv_c>   TYPE any.
+
+    CLEAR: ev_total, ev_cols, ev_rows, ev_error.
+    ASSIGN ir_tab->* TO <lt_tab>.
+    IF sy-subrc <> 0.
+      ev_error = '主结果参数不是内表, 请在登记里改选主结果(RESULT_REF)'.
+      RETURN.
+    ENDIF.
+    ev_total = lines( <lt_tab> ).
+    lo_td  = cl_abap_typedescr=>describe_by_data( <lt_tab> ).
+    lo_tab ?= lo_td.
+    lo_line = lo_tab->get_table_line_type( ).
+
+    IF lo_line->kind <> cl_abap_typedescr=>kind_struct.
+      lv_flat = abap_true.
+      APPEND `VALUE` TO lt_name.
+    ELSE.
+      lo_sd ?= lo_line.
+      lo_sd->get_ddic_field_list(
+        EXPORTING p_langu = sy-langu
+        RECEIVING p_field_list = lt_dd
+        EXCEPTIONS OTHERS = 1 ).
+      IF sy-subrc <> 0.
+        CLEAR lt_dd.
+      ENDIF.
+      LOOP AT lo_sd->components INTO DATA(ls_comp).
+        CASE ls_comp-type_kind.
+          WHEN 'h' OR 'l' OR 'r' OR 'm' OR 'u' OR 'v'.
+            CONTINUE.
+        ENDCASE.
+        APPEND CONV string( ls_comp-name ) TO lt_name.
+      ENDLOOP.
+    ENDIF.
+
+    " 单元格: 日期 YYYY-MM-DD / 数值原样 / 转换例程 _OUTPUT; 列的「数值」按第一行的值类型定
+    LOOP AT <lt_tab> ASSIGNING <ls_row>.
+      lv_n = lv_n + 1.
+      IF lv_n > iv_max.
+        EXIT.
+      ENDIF.
+      CLEAR lv_row.
+      LOOP AT lt_name INTO DATA(lv_name).
+        IF lv_flat = abap_true.
+          ASSIGN <ls_row> TO <lv_c>.
+        ELSE.
+          ASSIGN COMPONENT lv_name OF STRUCTURE <ls_row> TO <lv_c>.
+        ENDIF.
+        IF sy-subrc <> 0.
+          CONTINUE.
+        ENDIF.
+        cell_text( EXPORTING iv_val = <lv_c> IMPORTING ev_text = lv_text ev_num = lv_num ).
+        lv_seg = |"{ zcl_ai_report_service=>json_escape( lv_text ) }"|.
+        lv_row = COND #( WHEN lv_row IS INITIAL THEN lv_seg ELSE lv_row && ',' && lv_seg ).
+        IF lv_first = abap_true.
+          CLEAR lv_lbl.
+          READ TABLE lt_dd INTO DATA(ls_dd) WITH KEY fieldname = lv_name.
+          IF sy-subrc = 0.
+            lv_lbl = COND #( WHEN ls_dd-scrtext_m IS NOT INITIAL THEN condense( val = CONV string( ls_dd-scrtext_m ) )
+                             ELSE condense( val = CONV string( ls_dd-fieldtext ) ) ).
+          ENDIF.
+          IF lv_lbl IS INITIAL.
+            lv_lbl = lv_name.
+          ENDIF.
+          lv_seg  = |\{"NAME":"{ zcl_ai_report_service=>json_escape( lv_name ) }","LABEL":"{ zcl_ai_report_service=>json_escape( lv_lbl ) }","NUMERIC":"{ lv_num }"\}|.
+          ev_cols = COND #( WHEN ev_cols IS INITIAL THEN lv_seg ELSE ev_cols && ',' && lv_seg ).
+        ENDIF.
+      ENDLOOP.
+      lv_first = abap_false.
+      lv_row  = |[{ lv_row }]|.
+      ev_rows = COND #( WHEN ev_rows IS INITIAL THEN lv_row ELSE ev_rows && ',' && lv_row ).
+    ENDLOOP.
+
+    " 0 行: 列照样给(标题取字典), 数值标记为空
+    IF lv_first = abap_true.
+      LOOP AT lt_name INTO lv_name.
+        CLEAR lv_lbl.
+        READ TABLE lt_dd INTO ls_dd WITH KEY fieldname = lv_name.
+        IF sy-subrc = 0.
+          lv_lbl = condense( val = CONV string( ls_dd-scrtext_m ) ).
+        ENDIF.
+        IF lv_lbl IS INITIAL.
+          lv_lbl = lv_name.
+        ENDIF.
+        lv_seg  = |\{"NAME":"{ zcl_ai_report_service=>json_escape( lv_name ) }","LABEL":"{ zcl_ai_report_service=>json_escape( lv_lbl ) }","NUMERIC":""\}|.
+        ev_cols = COND #( WHEN ev_cols IS INITIAL THEN lv_seg ELSE ev_cols && ',' && lv_seg ).
+      ENDLOOP.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD cell_text.
+
+    DATA: lo_td   TYPE REF TO cl_abap_typedescr,
+          lo_el   TYPE REF TO cl_abap_elemdescr,
+          ls_df   TYPE dfies,
+          lv_conv TYPE string,
+          lv_cfm  TYPE string,
+          lv_out  TYPE c LENGTH 255,
+          lv_d    TYPE d,
+          lv_t    TYPE t.
+
+    CLEAR: ev_text, ev_num.
+    lo_td = cl_abap_typedescr=>describe_by_data( iv_val ).
+    IF lo_td->kind <> cl_abap_typedescr=>kind_elem.
+      RETURN.
+    ENDIF.
+    lo_el ?= lo_td.
+    CASE lo_el->type_kind.
+      WHEN cl_abap_typedescr=>typekind_date.
+        lv_d = iv_val.
+        IF lv_d IS NOT INITIAL.
+          ev_text = |{ lv_d+0(4) }-{ lv_d+4(2) }-{ lv_d+6(2) }|.
+        ENDIF.
+        RETURN.
+      WHEN cl_abap_typedescr=>typekind_time.
+        lv_t = iv_val.
+        ev_text = |{ lv_t+0(2) }:{ lv_t+2(2) }:{ lv_t+4(2) }|.
+        RETURN.
+      WHEN cl_abap_typedescr=>typekind_int OR cl_abap_typedescr=>typekind_int1
+        OR cl_abap_typedescr=>typekind_int2 OR cl_abap_typedescr=>typekind_packed
+        OR cl_abap_typedescr=>typekind_float OR cl_abap_typedescr=>typekind_int8
+        OR cl_abap_typedescr=>typekind_decfloat16 OR cl_abap_typedescr=>typekind_decfloat34.
+        ev_num  = abap_true.
+        ev_text = |{ iv_val }|.
+        RETURN.
+    ENDCASE.
+
+    " 字符: 有转换例程的走 _OUTPUT(料号去前导零, 和 SAP 界面一样)
+    IF lo_el->is_ddic_type( ) = abap_true.
+      lo_el->get_ddic_field(
+        EXPORTING p_langu = sy-langu
+        RECEIVING p_flddescr = ls_df
+        EXCEPTIONS OTHERS = 1 ).
+      IF sy-subrc = 0.
+        lv_conv = condense( val = CONV string( ls_df-convexit ) ).
+      ENDIF.
+    ENDIF.
+    IF lv_conv IS NOT INITIAL AND iv_val IS NOT INITIAL.
+      lv_cfm = |CONVERSION_EXIT_{ lv_conv }_OUTPUT|.
+      TRY.
+          CALL FUNCTION lv_cfm
+            EXPORTING
+              input  = iv_val
+            IMPORTING
+              output = lv_out
+            EXCEPTIONS
+              OTHERS = 1.
+          IF sy-subrc = 0.
+            ev_text = condense( val = CONV string( lv_out ) ).
+            RETURN.
+          ENDIF.
+        CATCH cx_root.
+          CLEAR lv_out.
+      ENDTRY.
+    ENDIF.
+    ev_text = condense( val = |{ iv_val }| ).
 
   ENDMETHOD.
 
@@ -901,6 +1522,45 @@ CLASS zcl_ai_rfc_exec IMPLEMENTATION.
 
   METHOD build_bindings.
 
+    CLEAR: et_ptab, et_etab, ev_error.
+
+    SELECT SINGLE report_id, config_version FROM zai_rpt_run
+      WHERE report_run_id = @iv_report_run_id
+      INTO ( @DATA(lv_rid), @DATA(lv_ver) ).
+    IF sy-subrc <> 0.
+      ev_error = '运行记录不存在, 无法定位函数参数登记'.
+      RETURN.
+    ENDIF.
+    bind_core( EXPORTING it_reg         = reg_rows( iv_report_id = lv_rid iv_version = lv_ver )
+                         iv_params_json = iv_params_json
+                         it_params      = it_params
+               IMPORTING et_ptab        = et_ptab
+                         et_etab        = et_etab
+                         ev_error       = ev_error ).
+
+  ENDMETHOD.
+
+
+  METHOD reg_rows.
+
+    CLEAR rt.
+    SELECT param_id, abap_name, sel_kind, multi_value, range_allowed, allowed_ops
+      FROM zai_rpt_param
+      WHERE report_id      = @iv_report_id
+        AND config_version = @iv_version
+        AND active = 'X'
+        AND abap_name <> ''
+      INTO TABLE @rt.
+    LOOP AT rt ASSIGNING FIELD-SYMBOL(<ls_reg>).
+      <ls_reg>-abap_name = to_upper( condense( val = <ls_reg>-abap_name ) ).
+      <ls_reg>-sel_kind  = to_upper( condense( val = <ls_reg>-sel_kind ) ).
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+  METHOD bind_core.
+
     DATA: lt_reg  TYPE tt_reg,
           ls_reg  TYPE ty_reg,
           lt_kv   TYPE zcl_ai_report_service=>tt_kv,
@@ -917,25 +1577,7 @@ CLASS zcl_ai_rfc_exec IMPLEMENTATION.
                    <lt_any> TYPE STANDARD TABLE.
 
     CLEAR: et_ptab, et_etab, ev_error.
-
-    SELECT SINGLE report_id, config_version FROM zai_rpt_run
-      WHERE report_run_id = @iv_report_run_id
-      INTO ( @DATA(lv_rid), @DATA(lv_ver) ).
-    IF sy-subrc <> 0.
-      ev_error = '运行记录不存在, 无法定位函数参数登记'.
-      RETURN.
-    ENDIF.
-    SELECT param_id, abap_name, sel_kind, multi_value, range_allowed, allowed_ops
-      FROM zai_rpt_param
-      WHERE report_id      = @lv_rid
-        AND config_version = @lv_ver
-        AND active = 'X'
-        AND abap_name <> ''
-      INTO TABLE @lt_reg.
-    LOOP AT lt_reg ASSIGNING FIELD-SYMBOL(<ls_reg>).
-      <ls_reg>-abap_name = to_upper( condense( val = <ls_reg>-abap_name ) ).
-      <ls_reg>-sel_kind  = to_upper( condense( val = <ls_reg>-sel_kind ) ).
-    ENDLOOP.
+    lt_reg = it_reg.
 
     " 参数快照 = validate_params 的规范化扁平对象(键 = to_lower(param_id))
     lt_kv = zcl_ai_report_service=>parse_flat_kv( iv_params_json ).
