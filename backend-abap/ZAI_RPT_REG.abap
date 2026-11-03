@@ -19,13 +19,17 @@
 *&      P_RESULT = 主结果参数(只对单个函数, 空 = 第一个非 RETURN 的表), P_FFORCE = 函数名疑似
 *&      写入类也登记; 源码里有提交 / 写库 / 异步写入的函数一律不能登记(不能强制)
 *&      依赖: ZCL_AI_RPT_SCANNER V1.1
+*& V1.2 20261104(功能计划书/RFC函数执行/05-表参数粘贴数据方案): S_TIN「当输入的 TABLES 表」——
+*&      TABLES 表默认当输出, 名字是 IT_ / I_ / IN_ / INPUT_ / T_IN 开头的自动当输入; 别的要当
+*&      输入在这里点名(参数卡粘贴数据). 依赖: ZCL_AI_RPT_SCANNER V1.3
 *&---------------------------------------------------------------------*
 REPORT zai_rpt_reg LINE-SIZE 255.
 
 DATA: gv_tcode TYPE tstc-tcode,
       gv_prog  TYPE trdir-name,
       gv_pname TYPE c LENGTH 30,
-      gv_func  TYPE tfdir-funcname.
+      gv_func  TYPE tfdir-funcname,
+      gv_tin   TYPE c LENGTH 30.
 
 SELECTION-SCREEN COMMENT /1(79) c_h1.
 SELECTION-SCREEN SKIP 1.
@@ -89,6 +93,10 @@ SELECTION-SCREEN COMMENT 1(20) c_res FOR FIELD p_result.
 PARAMETERS p_result TYPE c LENGTH 30.
 SELECTION-SCREEN END OF LINE.
 SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN COMMENT 1(20) c_tin FOR FIELD s_tin.
+SELECT-OPTIONS s_tin FOR gv_tin NO INTERVALS.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN BEGIN OF LINE.
 PARAMETERS p_fforce AS CHECKBOX.
 SELECTION-SCREEN COMMENT 3(70) c_ffor FOR FIELD p_fforce.
 SELECTION-SCREEN END OF LINE.
@@ -107,6 +115,7 @@ INITIALIZATION.
   c_fn    = '函数模块名'.
   c_alias = '事务码别名 / 调用名'.
   c_res   = '函数主结果参数'.
+  c_tin   = '当输入的TABLES表'.
   c_ffor  = '函数名疑似写入类也登记(确认只读; 源码里写库的仍不能登记)'.
   c_lang  = '标签语言'.
   c_skip  = '不登记的参数名'.
@@ -180,7 +189,8 @@ CLASS lcl_reg IMPLEMENTATION.
                                                       iv_alias  = lv_alias
                                                       iv_lang   = p_lang
                                                       iv_result = lv_res
-                                                      iv_force  = p_fforce ).
+                                                      iv_force  = p_fforce
+                                                      it_tin    = names( s_tin[] ) ).
       ELSE.
         ls_draft = zcl_ai_rpt_scanner=>scan( iv_tcode = ls_job-tcode
                                              iv_prog  = ls_job-prog

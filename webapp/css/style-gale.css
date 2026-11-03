@@ -2094,3 +2094,45 @@ button.rsnHead:focus-visible { outline: none; box-shadow: var(--ring); }
 @media (max-width: 600px) {
         .vhKey { flex-basis: 5.5rem; }
 }
+
+/* —— 20261104 函数表参数：粘贴框 + 列说明 + 预览 —— */
+.askFieldTable { align-items: start !important; }
+.askFieldTable > .sapMFlexItem:first-child { padding-top: .45rem; }
+.askPasteBox { gap: .3rem; min-width: 0; }
+.askPasteCols { font-size: .72rem !important; color: var(--sub) !important; line-height: 1.45 !important; }
+.askPasteInput .sapMInputBaseContentWrapper { border-radius: 9px !important; }
+.askPasteInput textarea { font-family: ui-monospace, "SF Mono", Consolas, monospace !important; font-size: .78rem !important; white-space: pre !important; overflow-x: auto !important; }
+.askPastePrev { min-width: 0; }
+.askPasteEmpty { display: none; }
+.askPasteScroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 9px; }
+.askPastePrev table { border-collapse: collapse; font-size: .74rem; min-width: 100%; }
+.askPastePrev th, .askPastePrev td { padding: .28rem .55rem; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line); color: var(--text); }
+.askPastePrev th { background: var(--hover); color: var(--text-2); font-weight: 600; }
+.askPastePrev th span { margin-left: .35rem; color: var(--sub); font-weight: 400; font-family: ui-monospace, "SF Mono", Consolas, monospace; }
+.askPastePrev tbody tr:last-child td { border-bottom: none; }
+.askPastePrev td { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+.askPasteNote { font-size: .72rem; color: var(--sub); margin-top: .3rem; }
+.askPasteNote.askPasteWarn { color: var(--warning, #B45309); }
+.askPasteErr { font-size: .74rem; color: var(--danger, #DC2626); }
+
+/* 20261104：参数卡 / 搜索帮助弹层的输入框在暗色下被通用规则去掉了边框和字色，这里还回来（同设置页做法） */
+[data-theme="dark"] .askFields .sapMInputBaseContentWrapper,
+[data-theme="dark"] .vhPop .sapMInputBaseContentWrapper {
+        background: var(--bg) !important;
+        border: 1px solid var(--line-strong) !important;
+        box-shadow: none !important;
+}
+[data-theme="dark"] .askFields .sapMInputBaseContentWrapper:hover,
+[data-theme="dark"] .vhPop .sapMInputBaseContentWrapper:hover { border-color: var(--sub) !important; }
+[data-theme="dark"] .askFields .sapMFocus .sapMInputBaseContentWrapper,
+[data-theme="dark"] .askFields .sapMInputBaseContentWrapper:focus-within,
+[data-theme="dark"] .vhPop .sapMInputBaseContentWrapper:focus-within { border-color: var(--accent) !important; box-shadow: var(--ring) !important; }
+[data-theme="dark"] .askFields .sapMInputBaseInner,
+[data-theme="dark"] .askFields textarea,
+[data-theme="dark"] .vhPop .sapMInputBaseInner { background: transparent !important; color: var(--text) !important; }
+[data-theme="dark"] .askFields .sapMInputBaseInner::placeholder,
+[data-theme="dark"] .askFields textarea::placeholder,
+[data-theme="dark"] .vhPop .sapMInputBaseInner::placeholder { color: var(--sub) !important; }
+[data-theme="dark"] .askFields .sapMInputBaseIcon,
+[data-theme="dark"] .vhPop .sapMInputBaseIcon { background: transparent !important; color: var(--text-2) !important; }
+[data-theme="dark"] .askFields .sapMInputBaseContentWrapperError { border-color: var(--danger, #F87171) !important; }

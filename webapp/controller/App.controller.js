@@ -4798,13 +4798,16 @@ sap.ui.define([
                                 if (oEntry.ask !== oAsk || oAsk.state !== "open") {
                                         return;
                                 }
-                                var mVh = {}, mLbl = {};
+                                var mVh = {}, mLbl = {}, mCols = {};
                                 ((o && o.params) || []).forEach(function (p) {
                                         var sId = String(p.paramId || "").toUpperCase();
                                         if (p.hasHelp) { mVh[sId] = true; }
                                         if (p.label) { mLbl[sId] = String(p.label); }
+                                        // 20261104：函数表参数的列（粘贴框列说明 / 标题对字段）
+                                        if (Array.isArray(p.columns) && p.columns.length) { mCols[sId] = p.columns; }
                                 });
                                 oAsk.vh = mVh;
+                                oAsk.tcols = mCols;
                                 oAsk.params = (oAsk.params || []).map(function (p) {
                                         var sId = String(p.param_id || "").toUpperCase();
                                         var bNoName = !p.label || String(p.label).toUpperCase() === sId;
@@ -5024,6 +5027,12 @@ sap.ui.define([
                         }
                         if (oPick.missing && oPick.missing.length) {
                                 oAsk.error = oRB.getText("askMissing", [oPick.missing.join(oRB.getText("listSep"))]);
+                                this._renderAsk(sUid);
+                                return;
+                        }
+                        // 20261104：粘贴的表解析不了（列对不上 / 超行数等）
+                        if (oPick.invalid && oPick.invalid.length) {
+                                oAsk.error = oPick.invalid.join("；");
                                 this._renderAsk(sUid);
                                 return;
                         }

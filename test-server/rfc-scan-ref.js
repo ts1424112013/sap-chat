@@ -175,14 +175,25 @@ function parseFmDefault(defval) {
  * 接口 → 参数草稿（params 是 read_interface 的结果：name/kind/shape/data_type/type_length/optional/defval/label/text）
  * @returns {{rows: object[], error: string, notes: string[]}}
  */
-function draftParams(params) {
+/** V1.2（05 表参数方案）：TABLES 表当输入 —— 名字规则或点名（ZCL_AI_RFC_EXEC=>table_input_name） */
+function tableInputName(name, tin) {
+  const n = String(name || '').trim().toUpperCase();
+  if (!n) { return false; }
+  if ((tin || []).map((x) => String(x).trim().toUpperCase()).indexOf(n) >= 0) { return true; }
+  return /^(IT|I|IN|INPUT)_|^T_IN/.test(n);
+}
+
+function draftParams(params, tin) {
   const rows = [];
   const notes = [];
   let error = '';
   let sort = 0;
   params.forEach((p) => {
     if (p.kind === 'X' || p.kind === 'E') { return; }
-    if (p.kind === 'T' && p.shape !== 'RANGE') { return; }
+    // V1.3：TABLES 非范围表默认当输出；名字规则或点名的当输入（表参数）
+    if (p.kind === 'T' && p.shape !== 'RANGE') {
+      if (!(p.shape === 'TABLE' && (p.cols || 0) > 0 && tableInputName(p.name, tin))) { return; }
+    }
     const required = p.kind === 'I' && !p.optional;
     const row = {
       param_id: p.name, abap_name: p.name, display_label: p.label || p.name,
@@ -206,10 +217,16 @@ function draftParams(params) {
       row.sel_kind = 'S';
       row.required = required;
       if (row.data_type === 'DATE') { row.range_allowed = true; } else { row.multi_value = true; }
+    } else if ((p.shape === 'TABLE' || p.shape === 'STRUCT') && (p.cols || 0) > 0) {
+      row.sel_kind = 'T';
+      row.data_type = 'TABLE';
+      row.type_length = 0;
+      row.required = required;
+      row.multi_value = p.shape === 'TABLE';
     } else {
       row.include = false;
       row.sel_kind = 'P';
-      row.note = p.shape === 'GENERIC' ? '通用类型，不支持传值' : '结构 / 表参数，一期不支持传值';
+      row.note = p.shape === 'GENERIC' ? '通用类型，不支持传值' : '结构 / 表里有嵌套表等复杂字段，不支持传值';
       if (required) {
         error = `必填参数 ${p.name} 是${p.shape === 'GENERIC' ? '通用类型' : '结构 / 表'}，一期不支持，函数不能登记`;
       }
@@ -222,8 +239,116 @@ function draftParams(params) {
 }
 
 function defaultResult(params) {
-  const p = params.filter((x) => x.shape === 'TABLE' && x.name !== 'RETURN' && ['T', 'E', 'C'].indexOf(x.kind) >= 0)[0];
+  const p = params.filter((x) => x.shape === 'TABLE' && x.name !== 'RETURN' && ['T', 'E', 'C'].indexOf(x.kind) >= 0 &&
+    !(x.kind === 'T' && tableInputName(x.name)))[0];
   return p ? p.name : '';
 }
 
-module.exports = { nameDanger, stripComment, scanSource, checkWrites, parseFmDefault, draftParams, defaultResult };
+/**
+ * V1.0.17（ZCL_AI_REPORT_SERVICE=>parse_flat_kv 手写扫描）的参考实现：
+ * 只认对象形态；键 [A-Za-z0-9_]，值 "字符串"（JSON 反转义）/ 数字 / true / false / null（原样文本）
+ */
+function parseFlatKv(json) {
+  const out = [];
+  const s = String(json || '');
+  let i = 0;
+  while (i < s.length && /\s/.test(s[i])) { i++; }
+  if (s[i] !== '{') { return out; }
+  i++;
+  for (;;) {
+    let h = s.indexOf('"', i);
+    if (h < 0) { break; }
+    i = h + 1;
+    h = s.indexOf('"', i);
+    if (h < 0) { break; }
+    const key = s.slice(i, h);
+    i = h + 1;
+    while (i < s.length && /\s/.test(s[i])) { i++; }
+    if (i >= s.length) { break; }
+    if (s[i] !== ':') { continue; }
+    i++;
+    while (i < s.length && /\s/.test(s[i])) { i++; }
+    if (i >= s.length) { break; }
+    let val = '', ok = false;
+    if (s[i] === '"') {
+      i++;
+      let n = i, end = -1;
+      while (n < s.length) {
+        const m = s.slice(n).search(/["\\]/);
+        if (m < 0) { break; }
+        if (s[n + m] === '"') { end = n + m; break; }
+        n = n + m + 2;
+      }
+      if (end < 0) { break; }
+      try { val = JSON.parse('"' + s.slice(i, end) + '"'); } catch (e) { val = s.slice(i, end); }
+      ok = true;
+      i = end + 1;
+    } else {
+      const m = s.slice(i).search(/[,}]/);
+      const end = m < 0 ? s.length : i + m;
+      val = s.slice(i, end).trim();
+      i = end;
+      ok = val === 'true' || val === 'false' || val === 'null' || (val !== '' && /^[-0-9.]+$/.test(val));
+    }
+    if (ok && key && /^[A-Za-z0-9_]+$/.test(key)) { out.push({ name: key.toLowerCase(), value: val }); }
+    if (i >= s.length) { break; }
+  }
+  return out;
+}
+
+/** V1.2（ZCL_AI_RFC_EXEC=>parse_rows）的参考实现：JSON 数组的数组 → 字符串行；\n \t \r → 空格；null → 空 */
+function parseRows(json, maxRows) {
+  const max = maxRows || 1000;
+  const s = String(json || '');
+  const rows = [];
+  let i = 0;
+  if (!s.length) { return { rows, error: '' }; }
+  const ws = (set) => { while (i < s.length && set.indexOf(s[i]) >= 0) { i++; } };
+  ws(' \t\n\r');
+  if (s[i] !== '[') { return { rows, error: '表数据格式不对(要 [[字段名…],[值…]])' }; }
+  i++;
+  for (;;) {
+    ws(' \t\n\r,');
+    if (i >= s.length) { return { rows, error: '表数据不完整(缺少结尾的 ])' }; }
+    if (s[i] === ']') { break; }
+    if (s[i] !== '[') { return { rows, error: `表数据格式不对(第 ${rows.length + 1} 行不是数组)` }; }
+    i++;
+    const row = [];
+    for (;;) {
+      ws(' \t\n\r');
+      if (i >= s.length) { return { rows, error: '表数据不完整(行没有结尾的 ])' }; }
+      const c = s[i];
+      if (c === ']') { i++; break; }
+      if (c === ',') { i++; continue; }
+      if (c === '"') {
+        i++;
+        let cell = '';
+        for (;;) {
+          const m = s.slice(i).search(/["\\]/);
+          if (m < 0) { return { rows, error: '表数据里有没闭合的引号' }; }
+          const hit = i + m;
+          cell += s.slice(i, hit);
+          if (s[hit] === '"') { i = hit + 1; break; }
+          const e = s[hit + 1];
+          if (e === 'n' || e === 't' || e === 'r') { cell += ' '; i = hit + 2; } else if (e === 'u') {
+            cell += String.fromCharCode(parseInt(s.slice(hit + 2, hit + 6), 16)); i = hit + 6;
+          } else { cell += e; i = hit + 2; }
+        }
+        row.push(cell);
+      } else {
+        const m = s.slice(i).search(/[,\]]/);
+        if (m < 0) { return { rows, error: '表数据不完整(行没有结尾的 ])' }; }
+        let cell = s.slice(i, i + m).trim();
+        if (cell === 'null') { cell = ''; }
+        row.push(cell);
+        i += m;
+      }
+    }
+    rows.push(row);
+    if (rows.length > max + 1) { return { rows, error: `表数据超过 ${max} 行, 请分批` }; }
+  }
+  return { rows, error: '' };
+}
+
+module.exports = { nameDanger, stripComment, scanSource, checkWrites, parseFmDefault, draftParams, defaultResult,
+  tableInputName, parseFlatKv, parseRows };

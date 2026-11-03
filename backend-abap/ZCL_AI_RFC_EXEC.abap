@@ -33,6 +33,16 @@
 *   list_callable / tool_description; invoke 里 CALL FUNCTION iv_fm PARAMETER-TABLE 之后紧跟
 *   ROLLBACK WORK; call_sync 里 CALL FUNCTION 'Z_AI_RFC_RUN' DESTINATION 'NONE';
 *   全文没有 FIND PCRE; 方法之间没有注释
+* V1.2    20261104(功能计划书/RFC函数执行/05-表参数粘贴数据方案): 表参数 ——
+*         ① classify 算出行的可填字段数 cols(行展开 include 后全是单值字段才算, 单字段行 = 1;
+*           0 = 不支持); table_columns 给参数卡列说明; table_input_name: TABLES 表按名字
+*           (IT_ / I_ / IN_ / INPUT_ / T_IN)或点名当输入, default_result 不再选它当主结果
+*         ② 参数值 = JSON 数组的数组(第一行字段名), parse_rows 手写扫描(不用长正则);
+*           bind_core 对表 / 结构参数调 fill_table: 按表头对字段, 逐格 set_value(数字去千分位),
+*           错误写「第 n 行 字段: 原因」; 最多 gc_tbl_max_rows 行
+*         ③ list_callable: 有必填表参数的函数不进数据分析; 说明里不列表参数
+* ★ 核对标记 V1.2: 有 METHOD parse_rows / fill_table / table_columns / table_input_name /
+*   flat_cols; bind_core 里 WHEN 'STRUCT' OR 'TABLE'
 *=======================================================================
 CLASS zcl_ai_rfc_exec DEFINITION
   PUBLIC
@@ -55,6 +65,7 @@ CLASS zcl_ai_rfc_exec DEFINITION
              type_length TYPE i,
              sort_no     TYPE i,
              pos         TYPE i,
+             cols        TYPE i,         " V1.2: 表 / 结构行的可填字段数(0 = 不支持粘贴)
            END OF ty_iparam.
     TYPES tt_iparam TYPE STANDARD TABLE OF ty_iparam WITH DEFAULT KEY.
 
@@ -86,7 +97,36 @@ CLASS zcl_ai_rfc_exec DEFINITION
     TYPES tt_callable TYPE STANDARD TABLE OF ty_callable WITH DEFAULT KEY.
 
     CONSTANTS: gc_tool_max_funcs TYPE i VALUE 30,
-               gc_data_max_rows  TYPE i VALUE 2000.
+               gc_data_max_rows  TYPE i VALUE 2000,
+               gc_tbl_max_rows   TYPE i VALUE 1000,      " V1.2: 表参数最多行数
+               gc_tbl_max_cols   TYPE i VALUE 60.
+
+    " V1.2: 表参数的一列(参数卡列说明)
+    TYPES: BEGIN OF ty_tcol,
+             name  TYPE string,
+             label TYPE string,
+             type  TYPE string,
+             len   TYPE i,
+           END OF ty_tcol.
+    TYPES tt_tcol TYPE STANDARD TABLE OF ty_tcol WITH DEFAULT KEY.
+    TYPES tt_rows TYPE STANDARD TABLE OF string_table WITH EMPTY KEY.
+
+    " V1.2: TABLES 表当输入: 名字规则或点名(it_tin 大写)
+    CLASS-METHODS table_input_name
+      IMPORTING iv_name   TYPE clike
+                it_tin    TYPE string_table OPTIONAL
+      RETURNING VALUE(rv) TYPE abap_bool.
+
+    " V1.2: 表参数的列(参照类型 → 行字段; 单字段行 = TABLE_LINE)
+    CLASS-METHODS table_columns
+      IMPORTING iv_type_name TYPE clike
+      RETURNING VALUE(rt)    TYPE tt_tcol.
+
+    " V1.2: JSON 数组的数组 → 行(每行一组字符串); 手写扫描
+    CLASS-METHODS parse_rows
+      IMPORTING iv_json  TYPE string
+      EXPORTING et_rows  TYPE tt_rows
+                ev_error TYPE string.
 
     CLASS-METHODS read_interface
       IMPORTING iv_fm     TYPE clike
@@ -192,6 +232,15 @@ CLASS zcl_ai_rfc_exec DEFINITION
     CLASS-METHODS classify
       IMPORTING ir_data TYPE REF TO data
       CHANGING  cs_p    TYPE ty_iparam.
+
+    CLASS-METHODS flat_cols
+      IMPORTING io_sd     TYPE REF TO cl_abap_structdescr
+      RETURNING VALUE(rv) TYPE i.
+
+    CLASS-METHODS fill_table
+      IMPORTING ir_data TYPE REF TO data
+                iv_val  TYPE string
+      EXPORTING ev_err  TYPE string.
 
     CLASS-METHODS elem_info
       IMPORTING io_el    TYPE REF TO cl_abap_elemdescr
@@ -390,6 +439,10 @@ CLASS zcl_ai_rfc_exec IMPLEMENTATION.
     CLEAR rv.
     LOOP AT it_params INTO DATA(ls_p) WHERE shape = 'TABLE' AND name <> 'RETURN'
                                        AND ( kind = 'T' OR kind = 'E' OR kind = 'C' ).
+      " V1.2: 当输入的 TABLES 表不当主结果
+      IF ls_p-kind = 'T' AND table_input_name( ls_p-name ) = abap_true.
+        CONTINUE.
+      ENDIF.
       rv = ls_p-name.
       RETURN.
     ENDLOOP.
@@ -944,6 +997,11 @@ CLASS zcl_ai_rfc_exec IMPLEMENTATION.
       " 参数说明: 编号 标签(*必填)(类型 / 多值 / 范围 / 复选框), 与参数卡同一份登记
       lt_par = zcl_ai_report_service=>get_params( iv_report_id      = ls_c-report_id
                                                   iv_config_version = ls_c-config_version ).
+      " V1.2: 表参数数据分析里传不了 —— 有必填的整个函数不进清单, 选填的不列
+      IF line_exists( lt_par[ sel_kind = 'T' required = abap_true ] ).
+        CONTINUE.
+      ENDIF.
+      DELETE lt_par WHERE sel_kind = 'T'.
       LOOP AT lt_par INTO DATA(ls_p).
         lv_kind = COND #( WHEN ls_p-data_type = 'BOOL' THEN `X/空`
                           WHEN ls_p-range_allowed = abap_true THEN |{ ls_p-data_type } 范围 low,high|
@@ -1455,12 +1513,18 @@ CLASS zcl_ai_rfc_exec IMPLEMENTATION.
         ENDIF.
       WHEN cl_abap_typedescr=>kind_struct.
         cs_p-shape = 'STRUCT'.
+        lo_sd ?= lo_td.
+        cs_p-cols = flat_cols( lo_sd ).
       WHEN cl_abap_typedescr=>kind_table.
         lo_tab ?= lo_td.
         lo_line = lo_tab->get_table_line_type( ).
         cs_p-shape = 'TABLE'.
+        IF lo_line->kind = cl_abap_typedescr=>kind_elem.
+          cs_p-cols = 1.
+        ENDIF.
         IF lo_line->kind = cl_abap_typedescr=>kind_struct.
           lo_sd ?= lo_line.
+          cs_p-cols = flat_cols( lo_sd ).
           IF line_exists( lo_sd->components[ name = 'SIGN' ] )
              AND line_exists( lo_sd->components[ name = 'OPTION' ] )
              AND line_exists( lo_sd->components[ name = 'LOW' ] )
@@ -1483,6 +1547,383 @@ CLASS zcl_ai_rfc_exec IMPLEMENTATION.
       WHEN OTHERS.
         cs_p-shape = 'GENERIC'.
     ENDCASE.
+
+  ENDMETHOD.
+
+
+  METHOD flat_cols.
+
+    DATA lt_view TYPE cl_abap_structdescr=>included_view.
+
+    CLEAR rv.
+    lt_view = io_sd->get_included_view( ).
+    LOOP AT lt_view INTO DATA(ls_c).
+      IF ls_c-type->kind <> cl_abap_typedescr=>kind_elem.
+        CLEAR rv.
+        RETURN.
+      ENDIF.
+      rv = rv + 1.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+  METHOD table_input_name.
+
+    DATA lv TYPE string.
+
+    CLEAR rv.
+    lv = to_upper( condense( val = CONV string( iv_name ) ) ).
+    IF lv IS INITIAL.
+      RETURN.
+    ENDIF.
+    IF line_exists( it_tin[ table_line = lv ] ).
+      rv = abap_true.
+      RETURN.
+    ENDIF.
+    FIND REGEX '^(IT|I|IN|INPUT)_|^T_IN' IN lv.
+    IF sy-subrc = 0.
+      rv = abap_true.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD table_columns.
+
+    DATA: lo_td   TYPE REF TO cl_abap_typedescr,
+          lo_tab  TYPE REF TO cl_abap_tabledescr,
+          lo_line TYPE REF TO cl_abap_datadescr,
+          lo_sd   TYPE REF TO cl_abap_structdescr,
+          lo_el   TYPE REF TO cl_abap_elemdescr,
+          lt_view TYPE cl_abap_structdescr=>included_view,
+          ls_col  TYPE ty_tcol,
+          lv_t    TYPE string.
+
+    CLEAR rt.
+    lv_t = to_upper( condense( val = CONV string( iv_type_name ) ) ).
+    IF lv_t IS INITIAL.
+      RETURN.
+    ENDIF.
+    cl_abap_typedescr=>describe_by_name(
+      EXPORTING  p_name         = lv_t
+      RECEIVING  p_descr_ref    = lo_td
+      EXCEPTIONS type_not_found = 1
+                 OTHERS         = 2 ).
+    IF sy-subrc <> 0 OR lo_td IS NOT BOUND.
+      RETURN.
+    ENDIF.
+    IF lo_td->kind = cl_abap_typedescr=>kind_table.
+      lo_tab ?= lo_td.
+      lo_line = lo_tab->get_table_line_type( ).
+    ELSEIF lo_td->kind = cl_abap_typedescr=>kind_struct OR lo_td->kind = cl_abap_typedescr=>kind_elem.
+      lo_line ?= lo_td.
+    ELSE.
+      RETURN.
+    ENDIF.
+
+    IF lo_line->kind = cl_abap_typedescr=>kind_elem.
+      lo_el ?= lo_line.
+      CLEAR ls_col.
+      ls_col-name = 'TABLE_LINE'.
+      elem_info( EXPORTING io_el = lo_el IMPORTING ev_type = ls_col-type ev_len = ls_col-len ev_label = ls_col-label ).
+      APPEND ls_col TO rt.
+      RETURN.
+    ENDIF.
+    IF lo_line->kind <> cl_abap_typedescr=>kind_struct.
+      RETURN.
+    ENDIF.
+    lo_sd ?= lo_line.
+    lt_view = lo_sd->get_included_view( ).
+    LOOP AT lt_view INTO DATA(ls_c).
+      IF ls_c-type->kind <> cl_abap_typedescr=>kind_elem.
+        CONTINUE.
+      ENDIF.
+      lo_el ?= ls_c-type.
+      CLEAR ls_col.
+      ls_col-name = ls_c-name.
+      elem_info( EXPORTING io_el = lo_el IMPORTING ev_type = ls_col-type ev_len = ls_col-len ev_label = ls_col-label ).
+      IF ls_col-label IS INITIAL.
+        ls_col-label = ls_col-name.
+      ENDIF.
+      APPEND ls_col TO rt.
+      IF lines( rt ) >= gc_tbl_max_cols.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+  METHOD parse_rows.
+
+    DATA: lv_len  TYPE i,
+          lv_i    TYPE i,
+          lv_c    TYPE string,
+          lv_e    TYPE string,
+          lv_hit  TYPE i,
+          lv_n    TYPE i,
+          lv_cell TYPE string,
+          lv_hex  TYPE c LENGTH 4,
+          lt_row  TYPE string_table.
+
+    CLEAR: et_rows, ev_error.
+    lv_len = strlen( iv_json ).
+    IF lv_len = 0.
+      RETURN.
+    ENDIF.
+
+    " 外层 [
+    WHILE lv_i < lv_len AND substring( val = iv_json off = lv_i len = 1 ) CO | \t\n\r|.
+      lv_i = lv_i + 1.
+    ENDWHILE.
+    IF lv_i >= lv_len OR substring( val = iv_json off = lv_i len = 1 ) <> '['.
+      ev_error = '表数据格式不对(要 [[字段名…],[值…]])'.
+      RETURN.
+    ENDIF.
+    lv_i = lv_i + 1.
+
+    DO.
+      WHILE lv_i < lv_len AND substring( val = iv_json off = lv_i len = 1 ) CO | \t\n\r,|.
+        lv_i = lv_i + 1.
+      ENDWHILE.
+      IF lv_i >= lv_len.
+        ev_error = '表数据不完整(缺少结尾的 ])'.
+        RETURN.
+      ENDIF.
+      lv_c = substring( val = iv_json off = lv_i len = 1 ).
+      IF lv_c = ']'.
+        EXIT.
+      ENDIF.
+      IF lv_c <> '['.
+        ev_error = |表数据格式不对(第 { lines( et_rows ) + 1 } 行不是数组)|.
+        RETURN.
+      ENDIF.
+      lv_i = lv_i + 1.
+      CLEAR lt_row.
+
+      " 一行里的格子
+      DO.
+        WHILE lv_i < lv_len AND substring( val = iv_json off = lv_i len = 1 ) CO | \t\n\r|.
+          lv_i = lv_i + 1.
+        ENDWHILE.
+        IF lv_i >= lv_len.
+          ev_error = '表数据不完整(行没有结尾的 ])'.
+          RETURN.
+        ENDIF.
+        lv_c = substring( val = iv_json off = lv_i len = 1 ).
+        IF lv_c = ']'.
+          lv_i = lv_i + 1.
+          EXIT.
+        ELSEIF lv_c = ','.
+          lv_i = lv_i + 1.
+          CONTINUE.
+        ELSEIF lv_c = '"'.
+          lv_i = lv_i + 1.
+          CLEAR lv_cell.
+          DO.
+            FIND FIRST OCCURRENCE OF REGEX '["\\]' IN SECTION OFFSET lv_i OF iv_json MATCH OFFSET lv_hit.
+            IF sy-subrc <> 0.
+              ev_error = '表数据里有没闭合的引号'.
+              RETURN.
+            ENDIF.
+            lv_n = lv_hit - lv_i.
+            IF lv_n > 0.
+              lv_cell = lv_cell && substring( val = iv_json off = lv_i len = lv_n ).
+            ENDIF.
+            IF substring( val = iv_json off = lv_hit len = 1 ) = '"'.
+              lv_i = lv_hit + 1.
+              EXIT.
+            ENDIF.
+            " 反斜杠转义
+            IF lv_hit + 1 >= lv_len.
+              ev_error = '表数据里有不完整的转义'.
+              RETURN.
+            ENDIF.
+            lv_e = substring( val = iv_json off = lv_hit + 1 len = 1 ).
+            CASE lv_e.
+              WHEN 'n' OR 't' OR 'r'.
+                lv_cell = lv_cell && ` `.
+                lv_i = lv_hit + 2.
+              WHEN 'u'.
+                IF lv_hit + 6 > lv_len.
+                  ev_error = '表数据里有不完整的 \u 转义'.
+                  RETURN.
+                ENDIF.
+                lv_hex = substring( val = iv_json off = lv_hit + 2 len = 4 ).
+                TRY.
+                    lv_cell = lv_cell && cl_abap_conv_in_ce=>uccp( lv_hex ).
+                  CATCH cx_root.
+                    lv_cell = lv_cell && `?`.
+                ENDTRY.
+                lv_i = lv_hit + 6.
+              WHEN OTHERS.
+                lv_cell = lv_cell && lv_e.
+                lv_i = lv_hit + 2.
+            ENDCASE.
+          ENDDO.
+          APPEND lv_cell TO lt_row.
+        ELSE.
+          " 不带引号的数字 / null / true / false
+          FIND FIRST OCCURRENCE OF REGEX '[,\]]' IN SECTION OFFSET lv_i OF iv_json MATCH OFFSET lv_hit.
+          IF sy-subrc <> 0.
+            ev_error = '表数据不完整(行没有结尾的 ])'.
+            RETURN.
+          ENDIF.
+          lv_cell = condense( val = substring( val = iv_json off = lv_i len = lv_hit - lv_i ) ).
+          IF lv_cell = 'null'.
+            CLEAR lv_cell.
+          ENDIF.
+          APPEND lv_cell TO lt_row.
+          lv_i = lv_hit.
+        ENDIF.
+      ENDDO.
+
+      APPEND lt_row TO et_rows.
+      IF lines( et_rows ) > gc_tbl_max_rows + 1.
+        ev_error = |表数据超过 { gc_tbl_max_rows } 行, 请分批|.
+        RETURN.
+      ENDIF.
+    ENDDO.
+
+  ENDMETHOD.
+
+
+  METHOD fill_table.
+
+    DATA: lt_rows  TYPE tt_rows,
+          lt_head  TYPE string_table,
+          lt_map   TYPE string_table,
+          lo_td    TYPE REF TO cl_abap_typedescr,
+          lo_tab   TYPE REF TO cl_abap_tabledescr,
+          lo_line  TYPE REF TO cl_abap_datadescr,
+          lo_cell  TYPE REF TO cl_abap_typedescr,
+          lo_el    TYPE REF TO cl_abap_elemdescr,
+          lr_line  TYPE REF TO data,
+          lv_single TYPE abap_bool,
+          lv_elem  TYPE abap_bool,
+          lv_h     TYPE string,
+          lv_f     TYPE string,
+          lv_cell  TYPE string,
+          lv_err   TYPE string,
+          lv_rowno TYPE i,
+          lv_col   TYPE i,
+          lv_any   TYPE abap_bool,
+          lv_ndata TYPE i.
+    FIELD-SYMBOLS: <lt>   TYPE ANY TABLE,
+                   <ls>   TYPE any,
+                   <lv>   TYPE any,
+                   <lv_t> TYPE any,
+                   <lt_r> TYPE string_table.
+
+    CLEAR ev_err.
+    parse_rows( EXPORTING iv_json = iv_val IMPORTING et_rows = lt_rows ev_error = ev_err ).
+    IF ev_err IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+    IF lt_rows IS INITIAL.
+      RETURN.
+    ENDIF.
+    READ TABLE lt_rows INTO lt_head INDEX 1.
+
+    lo_td = cl_abap_typedescr=>describe_by_data_ref( ir_data ).
+    IF lo_td->kind = cl_abap_typedescr=>kind_table.
+      lo_tab ?= lo_td.
+      lo_line = lo_tab->get_table_line_type( ).
+      ASSIGN ir_data->* TO <lt>.
+    ELSEIF lo_td->kind = cl_abap_typedescr=>kind_struct.
+      lv_single = abap_true.
+      lo_line ?= lo_td.
+    ELSE.
+      ev_err = '不是表或结构'.
+      RETURN.
+    ENDIF.
+    CREATE DATA lr_line TYPE HANDLE lo_line.
+    ASSIGN lr_line->* TO <ls>.
+    lv_elem = xsdbool( lo_line->kind = cl_abap_typedescr=>kind_elem ).
+    IF lv_elem = abap_false AND lo_line->kind <> cl_abap_typedescr=>kind_struct.
+      ev_err = '表的行类型不支持(只支持扁平结构或单字段)'.
+      RETURN.
+    ENDIF.
+
+    " 表头 → 字段
+    LOOP AT lt_head INTO lv_h.
+      lv_h = to_upper( condense( val = lv_h ) ).
+      IF lv_elem = abap_true.
+        IF lines( lt_head ) > 1.
+          ev_err = '这张表每行只有一个值, 只能有一列'.
+          RETURN.
+        ENDIF.
+        APPEND `TABLE_LINE` TO lt_map.
+        CONTINUE.
+      ENDIF.
+      ASSIGN COMPONENT lv_h OF STRUCTURE <ls> TO <lv>.
+      IF sy-subrc <> 0 OR lv_h IS INITIAL.
+        ev_err = |列「{ lv_h }」不是这张表的字段|.
+        RETURN.
+      ENDIF.
+      IF cl_abap_typedescr=>describe_by_data( <lv> )->kind <> cl_abap_typedescr=>kind_elem.
+        ev_err = |字段 { lv_h } 不是单值字段, 不能粘贴|.
+        RETURN.
+      ENDIF.
+      APPEND lv_h TO lt_map.
+    ENDLOOP.
+
+    lv_ndata = lines( lt_rows ) - 1.
+    IF lv_ndata > gc_tbl_max_rows.
+      ev_err = |超过 { gc_tbl_max_rows } 行, 请分批|.
+      RETURN.
+    ENDIF.
+
+    LOOP AT lt_rows ASSIGNING <lt_r> FROM 2.
+      lv_rowno = sy-tabix - 1.
+      CLEAR: <ls>, lv_any.
+      LOOP AT <lt_r> INTO lv_cell.
+        lv_col = sy-tabix.
+        READ TABLE lt_map INTO lv_f INDEX lv_col.
+        IF sy-subrc <> 0.
+          ev_err = |第 { lv_rowno } 行比表头多出列|.
+          RETURN.
+        ENDIF.
+        lv_cell = condense( val = lv_cell ).
+        IF lv_cell IS INITIAL.
+          CONTINUE.
+        ENDIF.
+        lv_any = abap_true.
+        IF lv_elem = abap_true.
+          ASSIGN <ls> TO <lv>.
+        ELSE.
+          ASSIGN COMPONENT lv_f OF STRUCTURE <ls> TO <lv>.
+        ENDIF.
+        " 数字列去千分位(Excel 复制常带 1,234.5)
+        lo_cell = cl_abap_typedescr=>describe_by_data( <lv> ).
+        IF lo_cell->kind = cl_abap_typedescr=>kind_elem.
+          lo_el ?= lo_cell.
+          IF lo_el->type_kind CA 'PIbs8Fae'.
+            REPLACE ALL OCCURRENCES OF ',' IN lv_cell WITH ``.
+          ENDIF.
+        ENDIF.
+        CLEAR lv_err.
+        set_value( EXPORTING iv_val = lv_cell IMPORTING ev_err = lv_err CHANGING cv = <lv> ).
+        IF lv_err IS NOT INITIAL.
+          ev_err = |第 { lv_rowno } 行 { lv_f }: { lv_err }|.
+          RETURN.
+        ENDIF.
+      ENDLOOP.
+      IF lv_any = abap_false.
+        CONTINUE.
+      ENDIF.
+      IF lv_single = abap_true.
+        IF lv_rowno > 1.
+          ev_err = '这个参数是结构, 只能填一行'.
+          RETURN.
+        ENDIF.
+        ASSIGN ir_data->* TO <lv_t>.
+        <lv_t> = <ls>.
+      ELSE.
+        INSERT <ls> INTO TABLE <lt>.
+      ENDIF.
+    ENDLOOP.
 
   ENDMETHOD.
 
@@ -1657,8 +2098,11 @@ CLASS zcl_ai_rfc_exec IMPLEMENTATION.
                               IMPORTING ev_err = lv_err
                               CHANGING ct_tab = <lt_any> ).
                 ENDIF.
+              WHEN 'STRUCT' OR 'TABLE'.
+                " V1.2: 粘贴的表 / 一行结构
+                fill_table( EXPORTING ir_data = lr_data iv_val = lv_val IMPORTING ev_err = lv_err ).
               WHEN OTHERS.
-                lv_err = |参数 { ls_p-name } 是结构 / 表, 一期不支持传值|.
+                lv_err = |参数 { ls_p-name } 的类型不支持传值|.
             ENDCASE.
             IF lv_err IS NOT INITIAL.
               ev_error = |参数 { ls_p-label }: { lv_err }|.
@@ -1671,6 +2115,13 @@ CLASS zcl_ai_rfc_exec IMPLEMENTATION.
           ls_pb-value = lr_data.
           INSERT ls_pb INTO TABLE et_ptab.
         WHEN 'T'.
+          IF lv_has = abap_true AND ls_p-shape = 'TABLE' AND lv_kind = 'T'.
+            fill_table( EXPORTING ir_data = lr_data iv_val = lv_val IMPORTING ev_err = lv_err ).
+            IF lv_err IS NOT INITIAL.
+              ev_error = |参数 { ls_p-label }: { lv_err }|.
+              RETURN.
+            ENDIF.
+          ENDIF.
           IF lv_has = abap_true AND ls_p-shape = 'RANGE'.
             ASSIGN lr_data->* TO <lt_any>.
             IF sy-subrc = 0.

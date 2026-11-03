@@ -147,6 +147,52 @@ console.log('\n━━ 接口 → 参数草稿');
   check('只有 RETURN 一张表 → 没有默认主结果', ref.defaultResult([P({ name: 'RETURN', kind: 'T', shape: 'TABLE' })]) === '');
 }
 
+console.log('\n━━ 表参数登记 / 解析（05 方案，对照 RFC_EXEC V1.2 / SCANNER V1.3 / REPORT_SERVICE V1.0.17）');
+{
+  const P = (o) => Object.assign({ optional: false, defval: '', text: '', label: '', data_type: 'CHAR', type_length: 10, cols: 0 }, o);
+  const params = [
+    P({ name: 'IV_WERKS', kind: 'I', shape: 'SCALAR' }),
+    P({ name: 'IT_MATS', kind: 'I', shape: 'TABLE', cols: 3, label: '物料清单' }),
+    P({ name: 'IS_OPT', kind: 'I', shape: 'STRUCT', cols: 2, optional: true }),
+    P({ name: 'IS_DEEP', kind: 'I', shape: 'STRUCT', cols: 0, optional: true }),
+    P({ name: 'T_INPUT', kind: 'T', shape: 'TABLE', cols: 2, optional: true }),
+    P({ name: 'MATERIALS', kind: 'T', shape: 'TABLE', cols: 2, optional: true }),
+    P({ name: 'ET_STOCK', kind: 'T', shape: 'TABLE', cols: 5, optional: true })
+  ];
+  const d = ref.draftParams(params);
+  const row = (id) => d.rows.filter((r) => r.param_id === id)[0] || {};
+  check('IMPORTING 表 → T / TABLE / 多行，必填照接口', row('IT_MATS').sel_kind === 'T' && row('IT_MATS').data_type === 'TABLE' &&
+    row('IT_MATS').multi_value === true && row('IT_MATS').required === true);
+  check('扁平结构 → T，只收一行（multi_value = false）', row('IS_OPT').sel_kind === 'T' && row('IS_OPT').multi_value === false && !row('IS_OPT').required);
+  check('有嵌套的结构（cols = 0）仍不登记并写原因', row('IS_DEEP').include === false && /复杂字段/.test(row('IS_DEEP').note));
+  check('TABLES：T_IN… 名字规则当输入；其余（MATERIALS / ET_STOCK）仍当输出', row('T_INPUT').sel_kind === 'T' &&
+    !d.rows.some((r) => r.param_id === 'MATERIALS' || r.param_id === 'ET_STOCK'));
+  const d2 = ref.draftParams(params, ['materials']);
+  check('点名的 TABLES 表当输入（不分大小写）', d2.rows.some((r) => r.param_id === 'MATERIALS' && r.sel_kind === 'T'));
+  check('默认主结果跳过当输入的 TABLES 表', ref.defaultResult([P({ name: 'IT_KEYS', kind: 'T', shape: 'TABLE', cols: 1 }),
+    P({ name: 'ET_STOCK', kind: 'T', shape: 'TABLE', cols: 5 })]) === 'ET_STOCK');
+  const d3 = ref.draftParams([P({ name: 'IS_KEY', kind: 'I', shape: 'STRUCT', cols: 2 })]);
+  check('必填扁平结构现在能登记（原来挡住整个函数）', d3.error === '' && d3.rows[0].sel_kind === 'T' && d3.rows[0].required);
+  check('名字规则：IT_ / I_ / IN_ / INPUT_ / T_IN 是输入，ET_ / RETURN 不是', ['IT_A', 'I_B', 'IN_C', 'INPUT_D', 'T_INPUT'].every((n) => ref.tableInputName(n)) &&
+    !['ET_A', 'RETURN', 'T_OUT', 'ITAB'].some((n) => ref.tableInputName(n)));
+
+  // 参数快照解析：长值（粘贴的表）不丢、转义正确
+  const rowsJson = JSON.stringify([['MATNR', 'WERKS']].concat(Array.from({ length: 1000 }, (x, i) => ['M' + i + '"q', '1000'])));
+  const flat = JSON.stringify({ it_mats: rowsJson, iv_werks: '1000' }).replace('}', ',"n":12,"b":true,"bad-key":"x"}');
+  const kv = ref.parseFlatKv(flat);
+  const g = (k) => (kv.filter((x) => x.name === k)[0] || {}).value;
+  check('parse_flat_kv：几万字的值完整取回（原正则会整串丢失）', flat.length > 20000 && g('it_mats') === rowsJson && g('iv_werks') === '1000', String(flat.length));
+  check('parse_flat_kv：数字 / true 原样；非法键丢掉', g('n') === '12' && g('b') === 'true' && !kv.some((x) => x.name === 'bad-key'));
+  check('parse_flat_kv：不是对象 → 空', ref.parseFlatKv('[1,2]').length === 0 && ref.parseFlatKv('').length === 0);
+  const pr = ref.parseRows(rowsJson);
+  check('parse_rows：1000 行数据 + 表头，引号还原', !pr.error && pr.rows.length === 1001 && pr.rows[1][0] === 'M0"q');
+  check('parse_rows：超过 1000 行 → 报错', /超过 1000 行/.test(ref.parseRows(JSON.stringify(Array.from({ length: 1003 }, () => ['x']))).error));
+  check('parse_rows：\\n / \\t 变空格、\\u 还原、null → 空、数字原样', JSON.stringify(ref.parseRows('[["A","B","C"],["x\\ny\\tz","\\u4e2d",null],[1, 2.5 ,true]]').rows) ===
+    JSON.stringify([['A', 'B', 'C'], ['x y z', '中', ''], ['1', '2.5', 'true']]));
+  check('parse_rows：格式错误给出原因', /不是数组/.test(ref.parseRows('[["A"],"x"]').error) && /没闭合/.test(ref.parseRows('[["A').error) &&
+    /格式不对/.test(ref.parseRows('{"a":1}').error));
+}
+
 console.log('\n━━ 数据分析调用函数（03 方案，本地 mock 对照 ZCL_AI_RFC_EXEC V1.1）');
 (async () => {
   const mt = require('./mock-tools');

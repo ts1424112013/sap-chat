@@ -168,6 +168,9 @@
 *   HTTP Method GET, 参数 ReportId / ParamId / Query 全部 Edm.String(ParamId / Query 可为空)
 *   先激活 ZCL_AI_RPT_SCANNER V1.2 → ZCL_AI_VALUE_HELP
 *   ★ 重贴后核对标记: 有 WHEN 'VALUEHELP' 与 zcl_ai_value_help=>search(
+* V15.14 20261104(函数表参数粘贴数据, 设计: 功能计划书/RFC函数执行/05): STARTREPORTRUN 的
+*   ParamsJson 以 "@@ZAI_TEXT:" 开头时经 resolve_text 换回原文(粘贴的表太长, 前端先存长文本)
+*   ★ 重贴后核对标记: WHEN 'STARTREPORTRUN' 里有 lv_srun_pj = resolve_text( lv_srun_pj )
 CLASS zcl_zai_chat_dpc_ext DEFINITION
   PUBLIC
   INHERITING FROM zcl_zai_chat_dpc
@@ -832,11 +835,16 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
         DATA: ls_srun TYPE ty_generic_result,
               ls_rst  TYPE zcl_ai_report_service=>ty_run_start.
         CLEAR: ls_srun, ls_rst.
+        " V15.14: 参数太长(粘贴的表)时前端先存长文本, 这里换回原文
+        DATA(lv_srun_pj) = v8_param( it_parameter = it_parameter iv_name = 'ParamsJson' ).
+        IF lv_srun_pj CP '@@ZAI_TEXT:*'.
+          lv_srun_pj = resolve_text( lv_srun_pj ).
+        ENDIF.
         ls_rst = zcl_ai_report_service=>start_run(
                    iv_task_id     = v8_param( it_parameter = it_parameter iv_name = 'TaskId' )
                    iv_session_id  = v8_param( it_parameter = it_parameter iv_name = 'SessionId' )
                    iv_report_id   = v8_param( it_parameter = it_parameter iv_name = 'ReportId' )
-                   iv_params_json = v8_param( it_parameter = it_parameter iv_name = 'ParamsJson' )
+                   iv_params_json = lv_srun_pj
                    iv_request_id  = v8_param( it_parameter = it_parameter iv_name = 'ClientRequestId' ) ).
         ls_srun-success = COND #( WHEN ls_rst-rejected = abap_true THEN '' ELSE 'X' ).
         ls_srun-message = ls_rst-message.

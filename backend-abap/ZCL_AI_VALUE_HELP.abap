@@ -17,6 +17,10 @@
 * V1.0    20261103: 首版
 * ★ 核对标记: 有 METHOD meta / search / search_ref / by_fixed / by_shlp / by_check;
 *   by_shlp 里 call_shlp_exit = ' '; 全文没有 FIND PCRE; 方法之间没有注释
+* V1.1    20261104(功能计划书/RFC函数执行/05-表参数粘贴数据方案): 元数据给函数表参数
+*         (SEL_KIND T)带 columns(ZCL_AI_RFC_EXEC=>table_columns, 参数卡列说明 / 粘贴对字段);
+*         依赖 ZCL_AI_RFC_EXEC V1.2
+* ★ 核对标记 V1.1: meta 里有 zcl_ai_rfc_exec=>table_columns(
 *=======================================================================
 CLASS zcl_ai_value_help DEFINITION
   PUBLIC
@@ -40,6 +44,7 @@ CLASS zcl_ai_value_help DEFINITION
              has_help TYPE abap_bool,
              label    TYPE string,   " 字典文字(登记里没有名称时前端用它)
              ref      TYPE string,
+             columns  TYPE zcl_ai_rfc_exec=>tt_tcol,   " V1.1: 表参数的列
            END OF ty_mparam.
     TYPES tt_mparam TYPE STANDARD TABLE OF ty_mparam WITH DEFAULT KEY.
 
@@ -93,6 +98,7 @@ CLASS zcl_ai_value_help DEFINITION
              ref      TYPE string,
              label    TYPE string,
              skip     TYPE abap_bool,   " 复选框 / 单选组 / 日期: 不需要搜索帮助
+             is_table TYPE abap_bool,   " V1.1: 函数表参数(SEL_KIND T)
            END OF ty_ref.
     TYPES tt_ref TYPE STANDARD TABLE OF ty_ref WITH DEFAULT KEY.
 
@@ -228,6 +234,13 @@ CLASS zcl_ai_value_help IMPLEMENTATION.
       ENDIF.
       IF ls_ref-label IS NOT INITIAL.
         ls_mp-label = ls_ref-label.
+      ENDIF.
+      IF ls_ref-is_table = abap_true AND ls_ref-ref IS NOT INITIAL.
+        ls_mp-columns = zcl_ai_rfc_exec=>table_columns( ls_ref-ref ).
+        CLEAR ls_mp-label.
+        IF ls_ref-label IS NOT INITIAL.
+          ls_mp-label = ls_ref-label.
+        ENDIF.
       ENDIF.
       APPEND ls_mp TO rs-params.
     ENDLOOP.
@@ -411,6 +424,10 @@ CLASS zcl_ai_value_help IMPLEMENTATION.
       IF lv_sk = 'C' OR lv_sk = 'R' OR lv_sk = 'F' OR lv_dt = 'BOOL' OR lv_dt = 'ENUM' OR lv_dt CS 'DAT'.
         ls_ref-skip = abap_true.
       ENDIF.
+      IF lv_sk = 'T'.
+        ls_ref-skip     = abap_true.
+        ls_ref-is_table = abap_true.
+      ENDIF.
       lv_lbl = condense( CONV string( ls_par-display_label ) ).
       IF lv_lbl IS NOT INITIAL
          AND to_upper( lv_lbl ) <> ls_ref-param_id
@@ -421,7 +438,7 @@ CLASS zcl_ai_value_help IMPLEMENTATION.
       IF sy-subrc = 0.
         ls_ref-ref = to_upper( condense( CONV string( ls_rf-ref_field ) ) ).
       ENDIF.
-      IF ls_ref-ref IS INITIAL AND ls_ref-skip = abap_false.
+      IF ls_ref-ref IS INITIAL AND ( ls_ref-skip = abap_false OR ls_ref-is_table = abap_true ).
         lv_need = abap_true.
       ENDIF.
       APPEND ls_ref TO et_refs.
@@ -437,7 +454,7 @@ CLASS zcl_ai_value_help IMPLEMENTATION.
       SELECT parameter, structure FROM fupararef
         WHERE funcname = @lv_fm AND r3state = 'A'
         INTO TABLE @lt_fp.
-      LOOP AT et_refs ASSIGNING <ls_ref> WHERE ref IS INITIAL AND skip = abap_false.
+      LOOP AT et_refs ASSIGNING <ls_ref> WHERE ref IS INITIAL AND ( skip = abap_false OR is_table = abap_true ).
         READ TABLE lt_par INTO ls_par WITH KEY param_id = CONV zai_rpt_param-param_id( <ls_ref>-param_id ).
         IF sy-subrc <> 0.
           CONTINUE.

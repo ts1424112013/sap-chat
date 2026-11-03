@@ -1073,13 +1073,19 @@ sap.ui.define([
                   * @returns {Promise<{created, rejected, needsInput, status, reportRunId, shortId, message}>}
                   */
                 startReportRun: function (o) {
-                        return this._taskCall("StartReportRun", {
-                                SessionId: o.sessionId,
-                                TaskId: o.taskId,
-                                ReportId: o.reportId,
-                                ParamsJson: o.paramsJson || "{}",
-                                ClientRequestId: o.clientRequestId
-                        }, true).then(function (r) {
+                        var that = this;
+                        var sPj = o.paramsJson || "{}";
+                        // 20261104：粘贴的表让参数很长（URL 超限）→ 先存长文本（ChatTexts），传 "@@ZAI_TEXT:<编号>"
+                        var p = this._sConfig.mode === "mock" ? Promise.resolve(sPj) : this._prepareQuestion(sPj);
+                        return p.then(function (sArg) {
+                                return that._taskCall("StartReportRun", {
+                                        SessionId: o.sessionId,
+                                        TaskId: o.taskId,
+                                        ReportId: o.reportId,
+                                        ParamsJson: sArg,
+                                        ClientRequestId: o.clientRequestId
+                                }, true);
+                        }).then(function (r) {
                                 return (r && r.result) || {
                                         rejected: true, needsInput: false,
                                         message: (r && r.message) || "启动失败"

@@ -149,6 +149,13 @@
 *   管理员 → 全部. get_def / get_def_by_tcode 不过滤(结果读取、组合来源按本人归属)
 *   依赖: ZCL_AI_ACCESS V1.0(先激活)
 *   ★ 重贴后核对标记: list_defs 与 start_run 里各有一处 zcl_ai_access=>report_ok(
+* V1.0.17 20261104(功能计划书/RFC函数执行/05-表参数粘贴数据方案): 函数表参数 ——
+*   ① parse_flat_kv 改成手写扫描: 原正则遇到几万字的值(粘贴的表)会抛「正则过于复杂」,
+*     整串参数丢失; 结果口径不变(键小写, 字符串反转义, 数字 / true / false / null 原样)
+*   ② validate_params: SEL_KIND = T 的值是 JSON 数组的数组, 这里只查必填 / 形状 / 长度
+*     (上限 40 万字符), 原样进快照; 逐格校验在 ZCL_AI_RFC_EXEC 预检(提交作业前)
+*   ★ 重贴后核对标记: parse_flat_kv 里没有 FIND ALL OCCURRENCES OF REGEX; validate_params 有
+*     IF ls_p-sel_kind = 'T'.
 *=======================================================================
 CLASS zcl_ai_report_service DEFINITION
   PUBLIC
@@ -1140,48 +1147,110 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
 * +--------------------------------------------------------------------------------------</SIGNATURE>
   METHOD parse_flat_kv.
 
-    " 扁平键值解析(正则模式与已部署的 AGENT_GUARD.parse_flat_json 一致;
-    " 偏移/长度先落中间变量 —— 踩坑清单 §2.1-2 三犯模式对策)
-    " 只接受对象形态; 值限 "字符串" / 数字 / true / false / null
+    " 扁平键值解析: 只接受对象形态; 值限 "字符串" / 数字 / true / false / null
+    " V1.0.12(BE-11): 字符串值按 JSON 转义取出后反转义
+    " V1.0.17: 手写扫描(原正则对几万字的值会抛「正则过于复杂」, 整串参数丢失);
+    "   只用找单个字符的 FIND, 不做长串回溯
+    DATA: lv_len TYPE i,
+          lv_i   TYPE i,
+          lv_hit TYPE i,
+          lv_n   TYPE i,
+          lv_end TYPE i,
+          lv_key TYPE string,
+          lv_raw TYPE string,
+          lv_val TYPE string,
+          lv_ok  TYPE abap_bool.
+
     CLEAR rt.
-    DATA(lv_inner) = iv_json.
-    IF strlen( lv_inner ) >= 2 AND lv_inner(1) = '{'.
-      DATA(lv_len)  = strlen( lv_inner ).
-      DATA(lv_body) = lv_len - 2.
-      lv_inner = lv_inner+1(lv_body).
-    ELSE.
+    lv_len = strlen( iv_json ).
+    WHILE lv_i < lv_len AND substring( val = iv_json off = lv_i len = 1 ) CO | \t\n\r|.
+      lv_i = lv_i + 1.
+    ENDWHILE.
+    IF lv_i >= lv_len OR substring( val = iv_json off = lv_i len = 1 ) <> '{'.
       RETURN.
     ENDIF.
+    lv_i = lv_i + 1.
 
-    " V1.0.12(BE-11): 字符串值按 JSON 转义成对匹配, 取出后反转义;
-    "   正则异常(值过长等)返回空表, 由 validate_params 按缺参处理
-    DATA: lt_m   TYPE match_result_tab,
-          lv_raw TYPE string.
-    TRY.
-        FIND ALL OCCURRENCES OF REGEX
-          '"([A-Za-z0-9_]+)"\s*:\s*("((?:[^"\\]|\\.)*)"|(-?[0-9]+(\.[0-9]+)?|true|false|null))'
-          IN lv_inner RESULTS lt_m.
-      CATCH cx_root.
-        RETURN.
-    ENDTRY.
-
-    LOOP AT lt_m INTO DATA(ls_m).
-      DATA(lv_s1) = ls_m-submatches[ 1 ].
-      DATA(lv_s3) = ls_m-submatches[ 3 ].
-      DATA(lv_s4) = ls_m-submatches[ 4 ].
-      DATA(lv_key) = to_lower( substring( val = lv_inner
-                                          off = lv_s1-offset
-                                          len = lv_s1-length ) ).
-      DATA(lv_val) = ``.
-      IF lv_s3-length > 0.
-        " 带引号字符串: 取引号内内容并反转义(V1.0.12)
-        lv_raw = substring( val = lv_inner off = lv_s3-offset len = lv_s3-length ).
-        lv_val = json_unescape( lv_raw ).
-      ELSEIF lv_s4-length > 0.
-        lv_val = substring( val = lv_inner off = lv_s4-offset len = lv_s4-length ).
+    DO.
+      " 键: "…"
+      FIND FIRST OCCURRENCE OF '"' IN SECTION OFFSET lv_i OF iv_json MATCH OFFSET lv_hit.
+      IF sy-subrc <> 0.
+        EXIT.
       ENDIF.
-      APPEND VALUE #( name = lv_key value = lv_val ) TO rt.
-    ENDLOOP.
+      lv_i = lv_hit + 1.
+      FIND FIRST OCCURRENCE OF '"' IN SECTION OFFSET lv_i OF iv_json MATCH OFFSET lv_hit.
+      IF sy-subrc <> 0.
+        EXIT.
+      ENDIF.
+      lv_n   = lv_hit - lv_i.
+      lv_key = substring( val = iv_json off = lv_i len = lv_n ).
+      lv_i   = lv_hit + 1.
+      WHILE lv_i < lv_len AND substring( val = iv_json off = lv_i len = 1 ) CO | \t\n\r|.
+        lv_i = lv_i + 1.
+      ENDWHILE.
+      IF lv_i >= lv_len.
+        EXIT.
+      ENDIF.
+      IF substring( val = iv_json off = lv_i len = 1 ) <> ':'.
+        CONTINUE.
+      ENDIF.
+      lv_i = lv_i + 1.
+      WHILE lv_i < lv_len AND substring( val = iv_json off = lv_i len = 1 ) CO | \t\n\r|.
+        lv_i = lv_i + 1.
+      ENDWHILE.
+      IF lv_i >= lv_len.
+        EXIT.
+      ENDIF.
+
+      CLEAR: lv_val, lv_ok.
+      IF substring( val = iv_json off = lv_i len = 1 ) = '"'.
+        " 字符串: 找没被反斜杠转义的结尾引号
+        lv_i   = lv_i + 1.
+        lv_n   = lv_i.
+        lv_end = -1.
+        DO.
+          IF lv_n >= lv_len.
+            EXIT.
+          ENDIF.
+          FIND FIRST OCCURRENCE OF REGEX '["\\]' IN SECTION OFFSET lv_n OF iv_json MATCH OFFSET lv_hit.
+          IF sy-subrc <> 0.
+            EXIT.
+          ENDIF.
+          IF substring( val = iv_json off = lv_hit len = 1 ) = '"'.
+            lv_end = lv_hit.
+            EXIT.
+          ENDIF.
+          lv_n = lv_hit + 2.
+        ENDDO.
+        IF lv_end < 0.
+          EXIT.
+        ENDIF.
+        lv_n   = lv_end - lv_i.
+        lv_raw = substring( val = iv_json off = lv_i len = lv_n ).
+        lv_val = json_unescape( lv_raw ).
+        lv_ok  = abap_true.
+        lv_i   = lv_end + 1.
+      ELSE.
+        " 数字 / true / false / null: 到下一个 , 或 } 为止
+        FIND FIRST OCCURRENCE OF REGEX '[,}]' IN SECTION OFFSET lv_i OF iv_json MATCH OFFSET lv_hit.
+        lv_end = COND #( WHEN sy-subrc = 0 THEN lv_hit ELSE lv_len ).
+        lv_n   = lv_end - lv_i.
+        lv_val = condense( substring( val = iv_json off = lv_i len = lv_n ) ).
+        lv_i   = lv_end.
+        IF lv_val = 'true' OR lv_val = 'false' OR lv_val = 'null'
+           OR ( lv_val IS NOT INITIAL AND lv_val CO '-0123456789.' ).
+          lv_ok = abap_true.
+        ENDIF.
+      ENDIF.
+
+      IF lv_ok = abap_true AND lv_key IS NOT INITIAL
+         AND lv_key CO 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_'.
+        APPEND VALUE #( name = to_lower( lv_key ) value = lv_val ) TO rt.
+      ENDIF.
+      IF lv_i >= lv_len.
+        EXIT.
+      ENDIF.
+    ENDDO.
 
   ENDMETHOD.
 
@@ -1610,6 +1679,37 @@ CLASS ZCL_AI_REPORT_SERVICE IMPLEMENTATION.
       ENDIF.
 
       DATA(lv_val) = COND string( WHEN sy-subrc = 0 THEN ls_kv-value ELSE `` ).
+
+      " V1.0.17: 函数表参数 —— 值是 JSON 数组的数组(第一行字段名); 这里只查必填 / 形状 / 长度,
+      " 逐格校验在 ZCL_AI_RFC_EXEC 预检(提交作业前)
+      IF ls_p-sel_kind = 'T'.
+        CONSTANTS lc_tbl_max TYPE i VALUE 400000.
+        DATA: lv_tv   TYPE string,
+              lv_tlen TYPE i.
+        lv_tv = condense( lv_val ).
+        IF lv_tv IS INITIAL OR lv_tv = '[]' OR lv_tv = '[[]]'.
+          IF ls_p-required = abap_true.
+            rs-ok = abap_false.
+            rs-needs_input = abap_true.
+            APPEND VALUE #( param_id = ls_p-param_id code = 'REQUIRED'
+                            message = |{ ls_p-display_label } 为必填项, 请粘贴数据后重试| )
+              TO rs-errors.
+          ENDIF.
+          CONTINUE.
+        ENDIF.
+        lv_tlen = strlen( lv_tv ).
+        IF lv_tlen > lc_tbl_max
+           OR substring( val = lv_tv off = 0 len = 1 ) <> '['
+           OR substring( val = lv_tv off = lv_tlen - 1 len = 1 ) <> ']'.
+          rs-ok = abap_false.
+          APPEND VALUE #( param_id = ls_p-param_id code = 'TABLE'
+                          message = |{ ls_p-display_label }: 表数据格式不对或太大(上限 { lc_tbl_max } 字符)| )
+            TO rs-errors.
+          CONTINUE.
+        ENDIF.
+        APPEND VALUE #( name = to_lower( ls_p-param_id ) value = lv_tv ) TO lt_norm.
+        CONTINUE.
+      ENDIF.
 
       " V1.0.13: 复选框 —— 空 = 不勾, 快照里明确记空(EXEC_SAP 下发空格), 不套默认值
       IF ls_p-sel_kind = 'C'.

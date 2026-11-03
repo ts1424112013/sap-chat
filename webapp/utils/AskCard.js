@@ -9,8 +9,9 @@ sap.ui.define([
         "sap/m/ToggleButton",
         "sap/ui/core/Icon",
         "sap/m/ResponsivePopover",
-        "sap/ui/core/HTML"
-], function (VBox, HBox, Text, Label, Input, DatePicker, Button, ToggleButton, Icon, ResponsivePopover, HTML) {
+        "sap/ui/core/HTML",
+        "sap/m/TextArea"
+], function (VBox, HBox, Text, Label, Input, DatePicker, Button, ToggleButton, Icon, ResponsivePopover, HTML, TextArea) {
         "use strict";
 
         /**
@@ -34,6 +35,212 @@ sap.ui.define([
          *   这些输入框右侧出现小方块按钮（和 SAP GUI 的 F4 一样，焦点在框里按 F4 也能打开），点开是自绘弹层：
          *   搜索框 + 「编号 / 名称」列表；单值点一行即填入，多值勾选后「填入」。取值由 setValueHelp 注入的函数负责
          */
+
+        /* =================================================================
+         * 20261104（函数表参数粘贴数据，功能计划书/RFC函数执行/05）：data_type = TABLE 的参数是粘贴框，
+         * 从 Excel / ALV 复制几行粘进来；第一行对得上字段（字段名或中文名）就当标题，否则按列顺序。
+         * 提交值 = JSON 数组的数组，第一行是字段名：[["MATNR","WERKS"],["100234","1000"]]
+         * 列定义来自 oAsk.tcols[参数编号大写]（控制器按 ValueHelp 元数据填）；没有时第一行必须写字段名。
+         * ================================================================= */
+        var TBL_MAX_ROWS = 1000;
+
+        function isTable(oP) {
+                return String((oP && oP.data_type) || "").toUpperCase() === "TABLE";
+        }
+
+        /** Excel 复制出来的 TSV → 行（支持带引号的格子：里面的换行 / Tab / 两个引号） */
+        function parseTsv(sText) {
+                var s = String(sText || "").replace(/\r\n?/g, "\n");
+                var aRows = [], aRow = [], sCell = "", bQ = false, i = 0;
+                for (; i < s.length; i++) {
+                        var c = s.charAt(i);
+                        if (bQ) {
+                                if (c === '"') {
+                                        if (s.charAt(i + 1) === '"') { sCell += '"'; i++; } else { bQ = false; }
+                                } else {
+                                        sCell += c;
+                                }
+                        } else if (c === '"' && sCell === "") {
+                                bQ = true;
+                        } else if (c === "\t") {
+                                aRow.push(sCell); sCell = "";
+                        } else if (c === "\n") {
+                                aRow.push(sCell); aRows.push(aRow); aRow = []; sCell = "";
+                        } else {
+                                sCell += c;
+                        }
+                }
+                if (sCell !== "" || aRow.length) {
+                        aRow.push(sCell);
+                        aRows.push(aRow);
+                }
+                return aRows.map(function (r) {
+                        return r.map(function (x) { return String(x).replace(/[\r\n\t]+/g, " ").trim(); });
+                }).filter(function (r) { return r.some(Boolean); });
+        }
+
+        /**
+          * 粘贴内容 → 提交值。
+          * @param {string} sText 粘贴的原文
+          * @param {object[]} aCols 列定义 [{name, label}]（可空）
+          * @param {boolean} bSingle 结构参数：只收一行
+          * @returns {{ok, json, header:string[], labels:string[], rows:string[][], count, unknown:string[], note, error, byOrder}}
+          */
+        function parsePaste(sText, aCols, bSingle) {
+                var out = { ok: false, json: "", header: [], labels: [], rows: [], count: 0, unknown: [], note: "", error: "", byOrder: false };
+                var aLines = parseTsv(sText);
+                if (!aLines.length) {
+                        return out;
+                }
+                var aC = (aCols || []).filter(function (c) { return c && c.name; });
+                var fnNorm = function (x) { return String(x || "").replace(/\s+/g, "").toUpperCase(); };
+                var fnFind = function (h) {
+                        var k = fnNorm(h);
+                        return k ? aC.filter(function (c) { return fnNorm(c.name) === k || fnNorm(c.label) === k; })[0] : null;
+                };
+                var aFirst = aLines[0];
+                var aHits = aFirst.map(fnFind);
+                var bHeader = !aC.length || aHits.some(Boolean);
+                var aMap, aData;
+                if (bHeader) {
+                        aMap = aFirst.map(function (h, i) {
+                                if (aC.length) { return aHits[i] ? aHits[i].name : null; }
+                                var k = String(h || "").trim().toUpperCase();
+                                return /^[A-Z0-9_\/]+$/.test(k) ? k : null;
+                        });
+                        out.unknown = aFirst.filter(function (h, i) { return !aMap[i] && String(h || "").trim(); });
+                        aData = aLines.slice(1);
+                        if (!aC.length && aMap.every(function (x) { return !x; })) {
+                                out.error = "第一行要写字段名（如 MATNR），后面每行一条数据";
+                                return out;
+                        }
+                } else {
+                        out.byOrder = true;
+                        var iW = aLines.reduce(function (m, r) { return Math.max(m, r.length); }, 0);
+                        if (iW > aC.length) {
+                                out.error = "粘贴了 " + iW + " 列，这张表只有 " + aC.length + " 列；第一行写上标题可以只填其中几列";
+                                return out;
+                        }
+                        aMap = aC.slice(0, iW).map(function (c) { return c.name; });
+                        aData = aLines;
+                }
+                var aIdx = [];
+                aMap.forEach(function (f, i) { if (f) { aIdx.push(i); } });
+                if (!aIdx.length) {
+                        out.error = "第一行的标题一个也没对上字段";
+                        return out;
+                }
+                var aHead = aIdx.map(function (i) { return aMap[i]; });
+                var aDup = aHead.filter(function (f, i) { return aHead.indexOf(f) !== i; });
+                if (aDup.length) {
+                        out.error = "字段 " + aDup[0] + " 出现了两次";
+                        return out;
+                }
+                var aRows = aData.map(function (r) {
+                        return aIdx.map(function (i) { return r[i] === undefined ? "" : r[i]; });
+                }).filter(function (r) { return r.some(Boolean); });
+                if (!aRows.length) {
+                        out.error = "只有标题，没有数据行";
+                        return out;
+                }
+                if (bSingle && aRows.length > 1) {
+                        out.note = "这个参数只收一行，只用第一行";
+                        aRows = aRows.slice(0, 1);
+                }
+                if (aRows.length > TBL_MAX_ROWS) {
+                        out.error = "超过 " + TBL_MAX_ROWS + " 行，请分批";
+                        return out;
+                }
+                out.header = aHead;
+                out.labels = aHead.map(function (f) {
+                        var c = aC.filter(function (x) { return x.name === f; })[0];
+                        return c && c.label && c.label !== f ? c.label : f;
+                });
+                out.rows = aRows;
+                out.count = aRows.length;
+                out.json = JSON.stringify([aHead].concat(aRows));
+                out.ok = true;
+                return out;
+        }
+
+        /** 粘贴预览（前 8 行） */
+        function pastePreviewHtml(res, aCols) {
+                if (!res || (!res.ok && !res.error)) {
+                        return "<div class=\"askPastePrev askPasteEmpty\"></div>";
+                }
+                if (!res.ok) {
+                        return "<div class=\"askPastePrev\"><div class=\"askPasteErr\">" + escHtml(res.error) + "</div></div>";
+                }
+                var sHead = res.header.map(function (f, i) {
+                        return "<th>" + escHtml(res.labels[i]) + (res.labels[i] !== f ? "<span>" + escHtml(f) + "</span>" : "") + "</th>";
+                }).join("");
+                var sBody = res.rows.slice(0, 8).map(function (r) {
+                        return "<tr>" + r.map(function (x) { return "<td>" + escHtml(x) + "</td>"; }).join("") + "</tr>";
+                }).join("");
+                var aNote = ["共 " + res.count + " 行" + (res.byOrder ? " · 按列顺序对应" : "")];
+                if (res.count > 8) { aNote.push("预览前 8 行"); }
+                if (res.unknown.length) { aNote.push("没对上的列不提交：" + res.unknown.slice(0, 5).join("、")); }
+                if (res.note) { aNote.push(res.note); }
+                return "<div class=\"askPastePrev\"><div class=\"askPasteScroll\"><table><thead><tr>" + sHead + "</tr></thead><tbody>" + sBody +
+                        "</tbody></table></div><div class=\"askPasteNote" + (res.unknown.length || res.note ? " askPasteWarn" : "") + "\">" +
+                        escHtml(aNote.join(" · ")) + "</div></div>";
+        }
+
+        /** 列说明：「列：物料 MATNR、工厂 WERKS…」 */
+        function pasteColsText(aCols) {
+                var a = (aCols || []).filter(function (c) { return c && c.name; });
+                if (!a.length) {
+                        return "第一行写字段名（如 MATNR、WERKS），后面每行一条数据";
+                }
+                if (a.length === 1 && a[0].name === "TABLE_LINE") {
+                        return "每行一个" + (a[0].label && a[0].label !== "TABLE_LINE" ? a[0].label : "值");
+                }
+                var sList = a.slice(0, 8).map(function (c) {
+                        return c.label && c.label !== c.name ? c.label + " " + c.name : c.name;
+                }).join("、");
+                return "列：" + sList + (a.length > 8 ? " 等 " + a.length + " 列" : "") + "。第一行写标题可以只填其中几列、顺序随意";
+        }
+
+        /** 表参数控件：粘贴框 + 列说明 + 预览 */
+        function buildTable(oP, mVals, bMarkErr, oAsk) {
+                var sId = oP.param_id;
+                var sKey = String(sId || "").toUpperCase();
+                var aCols = (oAsk && oAsk.tcols && oAsk.tcols[sKey]) || [];
+                var bSingle = oP.multi_value === false;
+                oAsk.paste = oAsk.paste || {};
+                var sRaw = oAsk.paste[sId] || "";
+                var oRec = { id: sId, label: oP.label || sId, required: oP.required === true, table: true, res: parsePaste(sRaw, aCols, bSingle) };
+                var oPrev = new HTML({ content: pastePreviewHtml(oRec.res, aCols), preferDOM: false });
+                var oTa = new TextArea({
+                        value: sRaw,
+                        width: "100%",
+                        rows: 3,
+                        growing: true,
+                        growingMaxLines: 8,
+                        placeholder: bSingle ? "从 Excel 复制一行粘到这里（可以带标题行）" : "从 Excel / SAP 表格复制几行粘到这里（可以带标题行）"
+                }).addStyleClass("askPasteInput");
+                oTa.attachLiveChange(function (e) {
+                        var v = e.getParameter("value") || "";
+                        oAsk.paste[sId] = v;
+                        oRec.res = parsePaste(v, aCols, bSingle);
+                        mVals[sId] = oRec.res.ok ? oRec.res.json : "";
+                        oTa.setValueState("None");
+                        oPrev.setContent(pastePreviewHtml(oRec.res, aCols));
+                });
+                mVals[sId] = oRec.res.ok ? oRec.res.json : "";
+                if (bMarkErr && ((oRec.required && !oRec.res.ok) || oRec.res.error)) {
+                        oTa.setValueState("Error");
+                }
+                oRec.ta = oTa;
+                oRec.cell = new VBox({
+                        items: [
+                                new Label({ text: oRec.label, required: oRec.required, wrapping: true }).addStyleClass("askFieldLabel"),
+                                new VBox({ items: [new Text({ text: pasteColsText(aCols) }).addStyleClass("askPasteCols"), oTa, oPrev] })
+                                        .addStyleClass("askPasteBox")
+                        ]
+                }).addStyleClass("askField askFieldTable");
+                return oRec;
+        }
 
         /** 20261103：搜索帮助取值函数 fn(oAsk, sParamId, sQuery) → Promise<{items, keyLabel, textLabel, source, sourceName, message, truncated}> */
         var fnValueHelp = null;
@@ -350,6 +557,14 @@ sap.ui.define([
 
         /** 提交后回显：范围 "从 ~ 至"，多值 "a、b"，日期转 yyyy-MM-dd，ENUM 显示选项文字 */
         function valueDisplay(oP, sVal) {
+                if (isTable(oP)) {
+                        try {
+                                var a = JSON.parse(sVal);
+                                return Array.isArray(a) ? Math.max(0, a.length - 1) + " 行" : "";
+                        } catch (e) {
+                                return "";
+                        }
+                }
                 if (isBool(oP)) {
                         return sVal === "X" ? "是" : "否";
                 }
@@ -365,6 +580,9 @@ sap.ui.define([
 
         /** 参数控件：DATE → 日期选择器；范围 → 从/至两个输入；其余单输入（多值逗号分隔） */
         function buildParam(oP, mVals, bMarkErr, oAsk) {
+                if (isTable(oP)) {
+                        return buildTable(oP, mVals, bMarkErr, oAsk || {});
+                }
                 var sId = oP.param_id;
                 var bDate = String(oP.data_type || "").toUpperCase().indexOf("DAT") >= 0;
                 var bMulti = oP.multi_value === true;
@@ -542,9 +760,19 @@ sap.ui.define([
 
         /** 收集参数值；必填缺失的控件标红，返回 {values, missing[]} */
         function collect(aRecs) {
-                var mOut = {}, aMissing = [];
+                var mOut = {}, aMissing = [], aInvalid = [];
                 aRecs.forEach(function (r) {
                         var sV;
+                        if (r.table) {
+                                // 20261104：粘贴的表 —— 解析出错算无效，没粘且必填算缺
+                                mOut[r.id] = r.res && r.res.ok ? r.res.json : "";
+                                var bBad = !!(r.res && r.res.error);
+                                var bMissT = r.required && !mOut[r.id] && !bBad;
+                                r.ta.setValueState(bBad || bMissT ? "Error" : "None");
+                                if (bBad) { aInvalid.push(r.label + "：" + r.res.error); }
+                                if (bMissT) { aMissing.push(r.label); }
+                                return;
+                        }
                         if (r.bool) {
                                 mOut[r.id] = r.bool.getPressed() ? "X" : "";
                                 return;
@@ -576,7 +804,7 @@ sap.ui.define([
                                 aMissing.push(r.label);
                         }
                 });
-                return { values: mOut, missing: aMissing };
+                return { values: mOut, missing: aMissing, invalid: aInvalid };
         }
 
         /**
@@ -742,6 +970,7 @@ sap.ui.define([
                                 oAsk.values = oC.values;
                                 oPick.values = oC.values;
                                 oPick.missing = oC.missing;
+                                oPick.invalid = oC.invalid;
                         }
                         fnAction(oPick);
                 }
@@ -856,5 +1085,6 @@ sap.ui.define([
 
         return { render: render, detectChoices: detectChoices, dateDisplay: dateDisplay, valueDisplay: valueDisplay, enumOptions: enumOptions,
                 mergeParamDefs: mergeParamDefs, layoutParams: layoutParams, groupBools: groupBools, defaultValueOf: defaultValueOf,
-                setValueHelp: setValueHelp, hasValueHelp: hasValueHelp, openPicker: openPicker };
+                setValueHelp: setValueHelp, hasValueHelp: hasValueHelp, openPicker: openPicker,
+                isTable: isTable, parsePaste: parsePaste, parseTsv: parseTsv, pasteColsText: pasteColsText };
 });

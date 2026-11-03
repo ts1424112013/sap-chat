@@ -71,7 +71,7 @@ const registry = {
   'sap/ui/core/HTML': Ctl, 'sap/m/MessageToast': { show() {} },
   'sap/m/VBox': Ctl, 'sap/m/HBox': Ctl, 'sap/m/Text': Ctl, 'sap/m/Label': Ctl, 'sap/m/Input': Ctl,
   'sap/m/DatePicker': Ctl, 'sap/m/Button': Ctl, 'sap/m/ToggleButton': Ctl, 'sap/ui/core/Icon': Ctl,
-  'sap/m/ResponsivePopover': Ctl
+  'sap/m/ResponsivePopover': Ctl, 'sap/m/TextArea': Ctl
 };
 function load(name) {
   if (registry[name]) { return registry[name]; }
@@ -337,7 +337,7 @@ async function rejects(name, promise, re) {
   check('FIORI_ENABLED 关闭 → Agent 说明能力未开启', /能力未开启/.test(turn('选择报表：shipment報表').answer));
   fakeWindow.localStorage.removeItem('zaiChat.cfg.FIORI_ENABLED');
   r = await svc.getReportCatalog();
-  check('演示模式的报表执行目录：6 张（20261024 加了 ZDPSD012、20261027 加了 ZDPPP059、20261102 加了函数 Z_AI_DEMO_PO_OPEN）、一张未开放（大写键）', r.defs.length === 6 && r.defs.filter((d) => d.EXEC_ENABLED !== 'X').length === 1);
+  check('演示模式的报表执行目录：7 张（20261024 加了 ZDPSD012、20261027 加了 ZDPPP059、20261102 加了函数 Z_AI_DEMO_PO_OPEN、20261104 加了表参数函数 Z_AI_DEMO_MAT_STOCK）、一张未开放（大写键）', r.defs.length === 7 && r.defs.filter((d) => d.EXEC_ENABLED !== 'X').length === 1);
   {
     // 20261102（RFC 函数执行）：演示 Agent「执行 <函数调用名>」→ 卡片标题写「函数」，参数卡照常
     const tf = await svc._mockReportAgent({ question: '执行 Z_AI_DEMO_PO_OPEN', sessionId: 'SFN1', scene: 'REPORT' });
@@ -386,6 +386,47 @@ async function rejects(name, promise, re) {
     check('AskCard：注入后按 oAsk.vh 判断（参数编号不分大小写）', AC.hasValueHelp({ vh: { WERKS: true } }, 'werks') === true &&
       AC.hasValueHelp({ vh: { WERKS: true } }, 'MODEL') === false && AC.hasValueHelp({}, 'WERKS') === false);
     AC.setValueHelp(null);
+  }
+
+  {
+    // 20261104（函数表参数粘贴数据）：AskCard.parsePaste 纯函数 + 演示函数的列定义
+    console.log('\n━━ 函数表参数：粘贴解析（AskCard.parsePaste）');
+    const AC = load('zai/chat/utils/AskCard');
+    const cols = [{ name: 'MATNR', label: '物料' }, { name: 'WERKS', label: '工厂' }, { name: 'LGORT', label: '库存地点' }];
+    const r1 = AC.parsePaste('工厂\t物料\t备注\n1000\t100234\tx\n1010\t100235\ty\n', cols, false);
+    check('中文标题、顺序随意：按标题对字段，没对上的列不提交', r1.ok && r1.header.join() === 'WERKS,MATNR' && r1.count === 2 &&
+      r1.unknown.join() === '备注' && r1.json === JSON.stringify([['WERKS', 'MATNR'], ['1000', '100234'], ['1010', '100235']]), r1.json);
+    const r2 = AC.parsePaste('100234\t1000\n100235\t1010\n', cols, false);
+    check('没有标题：按列定义顺序对应（只用前两列）', r2.ok && r2.byOrder && r2.header.join() === 'MATNR,WERKS' && r2.count === 2);
+    const r3 = AC.parsePaste('a\tb\tc\td\n', cols, false);
+    check('没有标题且列数超过定义：报错并提示写标题', !r3.ok && /4 列/.test(r3.error));
+    const r4 = AC.parsePaste('matnr\tWERKS\n100234\t1000\n\n\t\n', cols, false);
+    check('字段名不分大小写；空行丢掉', r4.ok && r4.count === 1 && r4.header.join() === 'MATNR,WERKS');
+    const r5 = AC.parsePaste('MATNR\tWERKS\nA\t1\nB\t2\n', cols, true);
+    check('结构参数只收一行：多行只用第一行并提示', r5.ok && r5.count === 1 && /只用第一行/.test(r5.note));
+    const r6 = AC.parsePaste('MATNR\tWERKS\n"多行\n文本"\t1000\n"带""引号"\t1010\n', cols, false);
+    check('Excel 带引号的格子：里面的换行变空格、两个引号还原成一个', r6.ok && r6.rows[0][0] === '多行 文本' && r6.rows[1][0] === '带"引号');
+    const r7 = AC.parsePaste('MATNR\tMATNR\n1\t2\n', cols, false);
+    check('同一字段出现两次：报错', !r7.ok && /两次/.test(r7.error));
+    const r8 = AC.parsePaste('MATNR\tWERKS\n', cols, false);
+    check('只有标题没有数据：报错', !r8.ok && /没有数据/.test(r8.error));
+    const r9 = AC.parsePaste('MATNR\tWERKS\n100234\t1000\n', [], false);
+    check('没有列定义：第一行当字段名', r9.ok && r9.header.join() === 'MATNR,WERKS');
+    const r10 = AC.parsePaste('物料\t工厂\n1\t2\n', [], false);
+    check('没有列定义、第一行不是字段名：报错要求写字段名', !r10.ok && /字段名/.test(r10.error));
+    const big = ['MATNR'].concat(Array.from({ length: 1001 }, (x, i) => String(i))).join('\n');
+    check('超过 1000 行：报错', !AC.parsePaste(big, cols, false).ok);
+    check('空内容：不算错（必填由提交时判断）', !AC.parsePaste('  \n', cols, false).ok && AC.parsePaste('  \n', cols, false).error === '');
+    check('回显：表参数显示「N 行」', AC.valueDisplay({ data_type: 'TABLE' }, r1.json) === '2 行');
+    check('列说明：列出字段和中文名；单字段表写「每行一个」', /物料 MATNR/.test(AC.pasteColsText(cols)) &&
+      /每行一个物料/.test(AC.pasteColsText([{ name: 'TABLE_LINE', label: '物料' }])) && /字段名/.test(AC.pasteColsText([])));
+    const vmT = await svc.valueHelpMeta('Z_AI_DEMO_MAT_STOCK');
+    const pT = (vmT.params || []).filter((p) => p.paramId === 'IT_MATS')[0] || {};
+    check('演示后端：表参数元数据带列定义、没有搜索帮助', (pT.columns || []).map((c) => c.name).join() === 'MATNR,WERKS,LGORT' && pT.hasHelp === false);
+    const tT = await svc._mockReportAgent({ question: '执行 Z_AI_DEMO_MAT_STOCK', sessionId: 'STB1', scene: 'REPORT' });
+    const pdT = JSON.parse(tT.pendingParamsJson || '{}');
+    check('演示：表参数进参数卡（data_type TABLE；结构参数 multi_value = false）', (pdT.params || []).length === 2 &&
+      pdT.params[0].data_type === 'TABLE' && pdT.params[0].multi_value === true && pdT.params[1].multi_value === false);
   }
 
   /* ---------------- 5) AskCard ENUM / 闸门 HTML / 场景 ---------------- */

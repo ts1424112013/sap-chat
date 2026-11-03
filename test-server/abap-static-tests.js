@@ -828,5 +828,66 @@ console.log('\n[16] 参数卡搜索帮助：VALUE_HELP V1.0 / SCANNER V1.2 / DPC
     /iv_name = 'Query'/.test(dp));
 }
 
+console.log('\n[17] 函数表参数粘贴数据：RFC_EXEC V1.2 / SCANNER V1.3 / REG V1.2 / REPORT_SERVICE V1.0.17 / VALUE_HELP V1.1 / DPC V15.14');
+{
+  const ref = require('./rfc-scan-ref.js');
+  const methodsOf = (code) => {
+    const m = {};
+    (code.match(/^\s*METHOD\s+\w+\.[\s\S]*?^\s*ENDMETHOD\./gim) || []).forEach((x) => { m[x.match(/METHOD\s+(\w+)\./i)[1].toLowerCase()] = x; });
+    return m;
+  };
+  const rfRaw = read('ZCL_AI_RFC_EXEC.abap');
+  const rf = codeOnly(rfRaw);
+  const rfM = methodsOf(rf);
+  check('RFC_EXEC V1.2：版本头、新方法齐全、源码行不超过 255', /^\* V1\.2\s+20261104/m.test(rfRaw) &&
+    ['parse_rows', 'fill_table', 'table_columns', 'table_input_name', 'flat_cols'].every((k) => !!rfM[k]) &&
+    rfRaw.split('\n').every((l) => l.length <= 255));
+  check('TABLES 当输入的名字规则：ABAP 与 rfc-scan-ref.js 同一条正则', /FIND REGEX '\^\(IT\|I\|IN\|INPUT\)_\|\^T_IN' IN lv\./.test(rfM.table_input_name || '') &&
+    /\^\(IT\|I\|IN\|INPUT\)_\|\^T_IN/.test(ref.tableInputName.toString()));
+  check('行数上限 1000：ABAP 常量、JS 参考、前端 AskCard 一致', /gc_tbl_max_rows\s+TYPE i VALUE 1000/.test(rf) &&
+    /TBL_MAX_ROWS = 1000/.test(fs.readFileSync(path.join(__dirname, '../webapp/utils/AskCard.js'), 'utf8')) && /maxRows \|\| 1000/.test(ref.parseRows.toString()));
+  check('parse_rows：只用找单个字符的 FIND（不做长串正则）；\\u 用 uccp 还原', !/FIND ALL OCCURRENCES/.test(rfM.parse_rows || '') &&
+    /FIND FIRST OCCURRENCE OF REGEX '\["\\\\\]' IN SECTION OFFSET lv_i OF iv_json/.test(rfM.parse_rows || '') &&
+    /cl_abap_conv_in_ce=>uccp\( lv_hex \)/.test(rfM.parse_rows || ''));
+  check('parse_rows 错误文字与 JS 参考一致', ['表数据里有没闭合的引号', '表数据不完整(行没有结尾的 ])', '请分批'].every((t) =>
+    (rfM.parse_rows || '').indexOf(t) >= 0 && ref.parseRows.toString().indexOf(t) >= 0));
+  const fl = rfM.fill_table || '';
+  check('fill_table：按表头 ASSIGN COMPONENT 对字段、逐格 set_value、数字列去千分位、结构只收一行',
+    /ASSIGN COMPONENT lv_h OF STRUCTURE <ls> TO <lv>\./.test(fl) && /set_value\( EXPORTING iv_val = lv_cell/.test(fl) &&
+    /type_kind CA 'PIbs8Fae'/.test(fl) && /只能填一行/.test(fl) && /第 \{ lv_rowno \} 行 \{ lv_f \}: \{ lv_err \}/.test(fl));
+  check('bind_core：IMPORTING / CHANGING 的表 / 结构与 TABLES 表参数都走 fill_table', /WHEN 'STRUCT' OR 'TABLE'\.\s+(" [^\n]*\n\s+)?fill_table\(/.test(rfM.bind_core || '') &&
+    /ls_p-shape = 'TABLE' AND lv_kind = 'T'\.\s+fill_table\(/.test(rfM.bind_core || ''));
+  check('classify 算 cols（行展开 include 后全是单值字段）；default_result 跳过当输入的 TABLES 表',
+    /cs_p-cols = flat_cols\( lo_sd \)\./.test(rfM.classify || '') && /get_included_view\( \)/.test(rfM.flat_cols || '') &&
+    /table_input_name\( ls_p-name \) = abap_true/.test(rfM.default_result || ''));
+  check('list_callable：有必填表参数的函数不进数据分析、说明里不列表参数', /line_exists\( lt_par\[ sel_kind = 'T' required = abap_true \] \)/.test(rfM.list_callable || '') &&
+    /DELETE lt_par WHERE sel_kind = 'T'\./.test(rfM.list_callable || ''));
+
+  const scRaw = read('ZCL_AI_RPT_SCANNER.abap');
+  const scM = methodsOf(codeOnly(scRaw));
+  const sf = scM.scan_function || '';
+  check('SCANNER V1.3：表 / 扁平结构 → T / TABLE，表 = 多行；TABLES 按名字或点名当输入', /^\* V1\.3\s+20261104/m.test(scRaw) &&
+    /ls_r-sel_kind\s+= 'T'\./.test(sf) && /ls_r-data_type\s+= 'TABLE'\./.test(sf) && /ls_r-multi_value = xsdbool\( ls_ip-shape = 'TABLE' \)\./.test(sf) &&
+    /table_input_name\( iv_name = ls_ip-name it_tin = lt_tin \)/.test(sf) && scRaw.split('\n').every((l) => l.length <= 255));
+  const reg = codeOnly(read('ZAI_RPT_REG.abap'));
+  check('ZAI_RPT_REG V1.2：S_TIN 传给 scan_function', /SELECT-OPTIONS s_tin FOR gv_tin NO INTERVALS/.test(reg) && /it_tin\s+= names\( s_tin\[\] \)/.test(reg));
+
+  const rsRaw = read('ZCL_AI_REPORT_SERVICE.abap');
+  const rsM = methodsOf(codeOnly(rsRaw));
+  check('REPORT_SERVICE V1.0.17：parse_flat_kv 不再用长正则（只找单个字符）', /^\* V1\.0\.17\s+20261104/m.test(rsRaw) &&
+    !/FIND ALL OCCURRENCES OF REGEX/.test(rsM.parse_flat_kv || '') && /json_unescape\( lv_raw \)/.test(rsM.parse_flat_kv || '') &&
+    rsRaw.split('\n').every((l) => l.length <= 255));
+  const vp = rsM.validate_params || '';
+  check('validate_params：表参数先于复选框分支处理，必填 / 形状 / 长度，原样进快照', vp.indexOf("IF ls_p-sel_kind = 'T'.") > 0 &&
+    vp.indexOf("IF ls_p-sel_kind = 'T'.") < vp.indexOf("IF ls_p-sel_kind = 'C'.") && /lc_tbl_max TYPE i VALUE 400000/.test(vp) &&
+    /APPEND VALUE #\( name = to_lower\( ls_p-param_id \) value = lv_tv \) TO lt_norm\./.test(vp));
+
+  const vh = codeOnly(read('ZCL_AI_VALUE_HELP.abap'));
+  check('VALUE_HELP V1.1：元数据给表参数带 columns', /columns\s+TYPE zcl_ai_rfc_exec=>tt_tcol/.test(vh) && /zcl_ai_rfc_exec=>table_columns\( ls_ref-ref \)/.test(vh));
+  const dp = codeOnly(read('ZCL_ZAI_CHAT_DPC_EXT.abap'));
+  check('DPC V15.14：StartReportRun 的 ParamsJson 是长文本引用时换回原文', /IF lv_srun_pj CP '@@ZAI_TEXT:\*'\.\s+lv_srun_pj = resolve_text\( lv_srun_pj \)\./.test(dp) &&
+    /iv_params_json = lv_srun_pj/.test(dp));
+}
+
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);

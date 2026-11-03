@@ -81,6 +81,18 @@ sap.ui.define([], function () {
                         { PARAM_ID: "IT_BEDAT", ABAP_NAME: "IT_BEDAT", DISPLAY_LABEL: "凭证日期", DATA_TYPE: "DATE", TYPE_LENGTH: 8, RANGE_ALLOWED: true, SEL_KIND: "S", SORT_NO: 30 },
                         { PARAM_ID: "IV_OPEN", ABAP_NAME: "IV_OPEN", DISPLAY_LABEL: "只看未清", DATA_TYPE: "BOOL", SEL_KIND: "C", ALLOWED_OPS: "X", DEFAULT_VALUE: "X", SORT_NO: 40 }
                   ] },
+                // 20261104（函数表参数粘贴数据）：IT_MATS 是表（多行），IS_OPT 是结构（只收一行）；COLUMNS = 后端 ValueHelp 元数据给的列
+                { REPORT_ID: "Z_AI_DEMO_MAT_STOCK", TCODE: "Z_AI_DEMO_MAT_STOCK", PROGNAME: "Z_AI_DEMO_MAT_STOCK", REPORT_KIND: "FUNC", RESULT_REF: "ET_STOCK",
+                  NAME: "物料库存（函数）", DESCRIPTION: "函数模块 Z_AI_DEMO_MAT_STOCK(函数组 ZAI_DEMO)：按粘贴的物料 + 工厂清单查库存（演示表参数）", EXEC_ENABLED: "X",
+                  PARAMS: [
+                        { PARAM_ID: "IT_MATS", ABAP_NAME: "IT_MATS", DISPLAY_LABEL: "物料清单", DATA_TYPE: "TABLE", SEL_KIND: "T", REQUIRED: true, MULTI_VALUE: true, SORT_NO: 10,
+                          REF_FIELD: "ZAI_T_MAT_WERKS",
+                          COLUMNS: [{ name: "MATNR", label: "物料", type: "CHAR", len: 18 }, { name: "WERKS", label: "工厂", type: "CHAR", len: 4 },
+                                { name: "LGORT", label: "库存地点", type: "CHAR", len: 4 }] },
+                        { PARAM_ID: "IS_OPT", ABAP_NAME: "IS_OPT", DISPLAY_LABEL: "查询选项", DATA_TYPE: "TABLE", SEL_KIND: "T", MULTI_VALUE: false, SORT_NO: 20,
+                          REF_FIELD: "ZAI_S_STOCK_OPT",
+                          COLUMNS: [{ name: "WITH_ZERO", label: "含零库存", type: "CHAR", len: 1 }, { name: "MAX_ROWS", label: "最多行数", type: "NUM", len: 10 }] }
+                  ] },
                 { REPORT_ID: "ZDPSD010", TCODE: "ZDPSD010", NAME: "出货差异对账", DESCRIPTION: "出货与开票差异（演示：暂未开放执行）",
                   PARAMS: [{ PARAM_ID: "VKORG" }] },
                 // 20261024（10.24 记录 #03a）：仿 ZRSD_IDP_0012 —— 两组单选（R）、两个复选框（C）、一堆选填条件。
@@ -527,8 +539,11 @@ sap.ui.define([], function () {
                                                 fnResolve({
                                                         reportId: oDef.REPORT_ID,
                                                         params: aP.map(function (p) {
+                                                                if (p.DATA_TYPE === "TABLE") {
+                                                                        return { paramId: p.PARAM_ID, hasHelp: false, label: "", ref: p.REF_FIELD || "", columns: p.COLUMNS || [] };
+                                                                }
                                                                 var k = vhKind(p.REF_FIELD);
-                                                                return { paramId: p.PARAM_ID, hasHelp: !!k, label: k ? VH_DATA[k].label : "", ref: p.REF_FIELD || "" };
+                                                                return { paramId: p.PARAM_ID, hasHelp: !!k, label: k ? VH_DATA[k].label : "", ref: p.REF_FIELD || "", columns: [] };
                                                         }),
                                                         message: aP.length + " 个参数"
                                                 });

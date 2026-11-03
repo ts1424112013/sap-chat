@@ -51,6 +51,12 @@
 *         ② save 按名写 ZAI_RPT_PARAM-REF_FIELD(SE11 没加这列照常写入, 结果里提示)
 *         ZCL_AI_VALUE_HELP 也调 scan 给老登记现场取参照
 * ★ 核对标记 V1.2: ty_param 有 ref_field; 有 METHOD deref; save 里 ASSIGN COMPONENT 'REF_FIELD'
+* V1.3    20261104(功能计划书/RFC函数执行/05-表参数粘贴数据方案): 函数表参数 ——
+*         IMPORTING / CHANGING 的表或扁平结构(ZCL_AI_RFC_EXEC V1.2 cols > 0)登记成表参数
+*         (SEL_KIND T, DATA_TYPE TABLE; 表 = MULTI_VALUE X, 结构 = 只收一行); TABLES 表按名字
+*         (IT_ / I_ / IN_ / INPUT_ / T_IN)或 it_tin 点名当输入(选填), 其余仍当输出;
+*         规则与 rfc-scan-ref.js draftParams 一致
+* ★ 核对标记 V1.3: scan_function 有 it_tin; 有 ls_r-sel_kind = 'T'
 *=======================================================================
 CLASS zcl_ai_rpt_scanner DEFINITION
   PUBLIC
@@ -133,6 +139,7 @@ CLASS zcl_ai_rpt_scanner DEFINITION
                 iv_lang   TYPE sy-langu DEFAULT sy-langu
                 iv_result TYPE string OPTIONAL
                 iv_force  TYPE abap_bool DEFAULT abap_false
+                it_tin    TYPE string_table OPTIONAL
       RETURNING VALUE(rs) TYPE ty_draft.
 
     CLASS-METHODS fm_default
@@ -1728,11 +1735,16 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
           lv_rid    TYPE zai_rpt_def-report_id,
           lv_rid_old TYPE zai_rpt_def-report_id,
           lv_ver_old TYPE zai_rpt_def-config_version,
-          lv_kind_old TYPE zai_rpt_def-report_kind.
+          lv_kind_old TYPE zai_rpt_def-report_kind,
+          lt_tin    TYPE string_table,
+          lv_tin    TYPE string.
 
     CLEAR: gt_note, gv_title, gv_incl.
     gv_lang = iv_lang.
     lv_fm = to_upper( condense( iv_func ) ).
+    LOOP AT it_tin INTO lv_tin.
+      APPEND to_upper( condense( lv_tin ) ) TO lt_tin.
+    ENDLOOP.
     rs-report_kind = 'FUNC'.
     rs-progname    = lv_fm.
 
@@ -1826,8 +1838,12 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
       IF ls_ip-kind = 'X' OR ls_ip-kind = 'E'.
         CONTINUE.
       ENDIF.
+      " V1.3: TABLES 非范围表默认当输出; 名字规则或点名的当输入(表参数)
       IF ls_ip-kind = 'T' AND ls_ip-shape <> 'RANGE'.
-        CONTINUE.
+        IF NOT ( ls_ip-shape = 'TABLE' AND ls_ip-cols > 0
+                 AND zcl_ai_rfc_exec=>table_input_name( iv_name = ls_ip-name it_tin = lt_tin ) = abap_true ).
+          CONTINUE.
+        ENDIF.
       ENDIF.
       lv_req = xsdbool( ls_ip-kind = 'I' AND ls_ip-optional = abap_false ).
       CLEAR ls_r.
@@ -1863,11 +1879,20 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
         ELSE.
           ls_r-multi_value = abap_true.
         ENDIF.
+      ELSEIF ( ls_ip-shape = 'TABLE' OR ls_ip-shape = 'STRUCT' ) AND ls_ip-cols > 0.
+        " V1.3: 表 / 扁平结构 → 表参数(参数卡粘贴数据)
+        ls_r-sel_kind    = 'T'.
+        ls_r-data_type   = 'TABLE'.
+        ls_r-type_length = 0.
+        ls_r-required    = lv_req.
+        ls_r-multi_value = xsdbool( ls_ip-shape = 'TABLE' ).
+        ls_r-note        = COND #( WHEN ls_ip-shape = 'TABLE' THEN |表参数({ ls_ip-cols } 列), 参数卡粘贴数据|
+                                   ELSE |结构参数({ ls_ip-cols } 个字段), 参数卡粘贴一行| ).
       ELSE.
         ls_r-include  = abap_false.
         ls_r-sel_kind = 'P'.
         ls_r-note     = COND #( WHEN ls_ip-shape = 'GENERIC' THEN `通用类型，不支持传值`
-                                ELSE `结构 / 表参数，一期不支持传值` ).
+                                ELSE `结构 / 表里有嵌套表等复杂字段，不支持传值` ).
         IF lv_req = abap_true AND rs-error IS INITIAL.
           rs-error = |必填参数 { ls_ip-name } 是{ COND string( WHEN ls_ip-shape = 'GENERIC' THEN '通用类型' ELSE '结构 / 表' ) }, 一期不支持, 函数不能登记|.
         ENDIF.
@@ -1887,6 +1912,18 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
     lv_res = to_upper( condense( iv_result ) ).
     IF lv_res IS INITIAL.
       lv_res = zcl_ai_rfc_exec=>default_result( lt_ip ).
+      " V1.3: 点名当输入的 TABLES 表不当主结果
+      IF line_exists( lt_tin[ table_line = lv_res ] ).
+        CLEAR lv_res.
+        LOOP AT lt_ip INTO DATA(ls_rp) WHERE shape = 'TABLE' AND name <> 'RETURN'
+                                         AND ( kind = 'T' OR kind = 'E' OR kind = 'C' ).
+          IF ls_rp-kind = 'T' AND zcl_ai_rfc_exec=>table_input_name( iv_name = ls_rp-name it_tin = lt_tin ) = abap_true.
+            CONTINUE.
+          ENDIF.
+          lv_res = ls_rp-name.
+          EXIT.
+        ENDLOOP.
+      ENDIF.
     ELSEIF NOT line_exists( lt_ip[ name = lv_res shape = 'TABLE' ] ).
       IF rs-error IS INITIAL.
         rs-error = |主结果 { lv_res } 不是这个函数的输出表|.
