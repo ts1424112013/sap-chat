@@ -160,6 +160,14 @@
 *   参数), 拼进 v8_save_user 的 JSON; Reports 以 "@@ZAI_TEXT:" 开头时经 resolve_text 换回原文;
 *   两个值去掉双引号与反斜杠, 不让它们改动 JSON 里别的字段. 前端看 $metadata 有 Scenes 才发
 *   ★ 重贴后核对标记: WHEN 'SAVEUSER' 里有 "AccessSet" 与 lv_su_rep
+* V15.13 20261103(参数卡搜索帮助, 设计: 功能计划书/参数搜索帮助/01-方案 V1.0):
+*   新增函数导入 VALUEHELP(GET; ReportId / ParamId / Query), 返回 GenericResult(经 auth_reply):
+*   ParamId 为空 = 元数据(ZCL_AI_VALUE_HELP=>meta: 哪些参数有搜索帮助 + 字典文字),
+*   有值 = 搜索(ZCL_AI_VALUE_HELP=>search, 最多 100 条)
+*   SEGW: Function Import ValueHelp, Return Type GenericResult(Complex Type, Cardinality 1),
+*   HTTP Method GET, 参数 ReportId / ParamId / Query 全部 Edm.String(ParamId / Query 可为空)
+*   先激活 ZCL_AI_RPT_SCANNER V1.2 → ZCL_AI_VALUE_HELP
+*   ★ 重贴后核对标记: 有 WHEN 'VALUEHELP' 与 zcl_ai_value_help=>search(
 CLASS zcl_zai_chat_dpc_ext DEFINITION
   PUBLIC
   INHERITING FROM zcl_zai_chat_dpc
@@ -488,6 +496,27 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
         copy_data_to_ref( EXPORTING is_data = to_generic_odata(
                             auth_reply( iv_error = ls_cbr-error iv_message = ls_cbr-message iv_data = ls_cbr ) )
                           CHANGING cr_data = er_data ).
+
+      " ===============================================================
+      " V15.13: 参数卡搜索帮助(ParamId 空 = 元数据; 有值 = 搜索)
+      " ===============================================================
+      WHEN 'VALUEHELP'.
+        DATA(lv_vh_pid) = v8_param( it_parameter = it_parameter iv_name = 'ParamId' ).
+        IF lv_vh_pid IS INITIAL.
+          DATA(ls_vhm) = zcl_ai_value_help=>meta(
+                           iv_report_id = v8_param( it_parameter = it_parameter iv_name = 'ReportId' ) ).
+          copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                              auth_reply( iv_error = ls_vhm-error iv_message = ls_vhm-message iv_data = ls_vhm ) )
+                            CHANGING cr_data = er_data ).
+        ELSE.
+          DATA(ls_vhs) = zcl_ai_value_help=>search(
+                           iv_report_id = v8_param( it_parameter = it_parameter iv_name = 'ReportId' )
+                           iv_param_id  = lv_vh_pid
+                           iv_query     = v8_param( it_parameter = it_parameter iv_name = 'Query' ) ).
+          copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                              auth_reply( iv_error = ls_vhs-error iv_message = ls_vhs-message iv_data = ls_vhs ) )
+                            CHANGING cr_data = er_data ).
+        ENDIF.
 
       WHEN 'ANALYZECODE'.
         DATA: ls_result TYPE zcl_ai_chat_service=>ty_analyze_result.

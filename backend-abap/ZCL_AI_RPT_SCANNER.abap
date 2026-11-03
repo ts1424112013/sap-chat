@@ -44,6 +44,13 @@
 *         (= 数据分析里也能同步调用); 跑得久的函数在 SE16 改成 JOB, 只走报表执行。
 *         已登记的函数重新登记时 EXEC_MODE 为空才补 SYNC, 手工改过的不动; 报表仍写 JOB
 * ★ 核对标记 V1.1a: save 里有 ls_def-exec_mode = COND #( WHEN lv_kind_new = 'FUNC' THEN 'SYNC'
+* V1.2    20261103(功能计划书/参数搜索帮助/01 §3.1): 参数卡搜索帮助要字典参照 ——
+*         ① ty_param 加 ref_field: 报表 = TYPE / LIKE / FOR 引用经 deref 换成字典名(引用是
+*           程序变量 FOR gv_werks / gs_alv-werks 时, 在源码 DATA … TYPE x 里找, 最多追两层;
+*           只留 describe_by_name 能解析的); 函数 = 接口参数的参照类型
+*         ② save 按名写 ZAI_RPT_PARAM-REF_FIELD(SE11 没加这列照常写入, 结果里提示)
+*         ZCL_AI_VALUE_HELP 也调 scan 给老登记现场取参照
+* ★ 核对标记 V1.2: ty_param 有 ref_field; 有 METHOD deref; save 里 ASSIGN COMPONENT 'REF_FIELD'
 *=======================================================================
 CLASS zcl_ai_rpt_scanner DEFINITION
   PUBLIC
@@ -71,6 +78,7 @@ CLASS zcl_ai_rpt_scanner DEFINITION
              note          TYPE string,
              sort_no       TYPE i,
              group_label   TYPE string,   " V1.0b: 所在选择屏块的标题(参数卡按它分组)
+             ref_field     TYPE string,   " V1.2: 字典参照(TAB-FIELD / 数据元素), 搜索帮助用
            END OF ty_param.
     TYPES tt_param TYPE STANDARD TABLE OF ty_param WITH DEFAULT KEY.
 
@@ -273,6 +281,10 @@ CLASS zcl_ai_rpt_scanner DEFINITION
       EXPORTING ev_kind  TYPE string
                 ev_len   TYPE i
                 ev_label TYPE string.
+    CLASS-METHODS deref
+      IMPORTING iv_ref    TYPE string
+                iv_depth  TYPE i DEFAULT 0
+      RETURNING VALUE(rv) TYPE string.
     CLASS-METHODS parse_header
       IMPORTING it_src     TYPE string_table
       EXPORTING ev_purpose TYPE string
@@ -548,6 +560,7 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
           ENDIF.
         ENDIF.
         default_of( EXPORTING is_decl = ls_d IMPORTING ev_type = ls_r-default_type ev_value = ls_r-default_value ).
+        ls_r-ref_field = deref( ls_d-ref ).
         " 程序必填但有默认值(或 INITIALIZATION 赋值): 登记成选填 + 默认, 不填就按默认下发
         IF ls_d-obligatory = abap_true AND ls_r-default_type IS INITIAL.
           ls_r-required = abap_true.
@@ -736,11 +749,13 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
           lv_other TYPE zai_rpt_def-report_id,
           lv_n     TYPE i,
           lv_nogrp TYPE abap_bool,
+          lv_noref TYPE abap_bool,
           lv_kind_new TYPE string,
           lv_kind_old TYPE zai_rpt_def-report_kind,
           lv_kind_cmp TYPE string,
           lv_kind_chk TYPE string.
-    FIELD-SYMBOLS <lv_grp> TYPE any.
+    FIELD-SYMBOLS: <lv_grp> TYPE any,
+                   <lv_ref> TYPE any.
 
     IF zcl_ai_chat_service=>v8_get_role( ) <> 'ADMIN'.
       rs-message = '只有 ZAI_CHAT_USER 里角色为 ADMIN 的账号能写报表登记'.
@@ -811,6 +826,13 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
         <lv_grp> = ls_p-group_label.
       ELSEIF ls_p-group_label IS NOT INITIAL.
         lv_nogrp = abap_true.
+      ENDIF.
+      " V1.2: 字典参照列同样按名取(SE11 还没加 REF_FIELD 时照常写入, 搜索帮助现场取)
+      ASSIGN COMPONENT 'REF_FIELD' OF STRUCTURE ls_db TO <lv_ref>.
+      IF sy-subrc = 0.
+        <lv_ref> = ls_p-ref_field.
+      ELSEIF ls_p-ref_field IS NOT INITIAL.
+        lv_noref = abap_true.
       ENDIF.
       INSERT zai_rpt_param FROM ls_db.
       IF sy-subrc <> 0.
@@ -883,6 +905,9 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
     ENDIF.
     IF lv_nogrp = abap_true.
       rs-message = rs-message && |; ZAI_RPT_PARAM 还没有 GROUP_LABEL 列, 选择屏分组未保存(SE11 加列后重新登记)|.
+    ENDIF.
+    IF lv_noref = abap_true.
+      rs-message = rs-message && |; ZAI_RPT_PARAM 还没有 REF_FIELD 列, 字典参照未保存(搜索帮助会现场扫描源码)|.
     ENDIF.
 
   ENDMETHOD.
@@ -1815,6 +1840,7 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
       ls_r-data_type     = COND #( WHEN ls_ip-data_type IS NOT INITIAL THEN ls_ip-data_type ELSE `CHAR` ).
       ls_r-type_length   = ls_ip-type_length.
       ls_r-include       = abap_true.
+      ls_r-ref_field     = to_upper( condense( ls_ip-type_name ) ).
       IF ls_ip-shape = 'SCALAR' AND ( ls_ip-kind = 'I' OR ls_ip-kind = 'C' ).
         ls_r-sel_kind = 'P'.
         ls_r-required = lv_req.
@@ -2010,6 +2036,76 @@ CLASS zcl_ai_rpt_scanner IMPLEMENTATION.
                          ELSE CONV string( ls_dfies-fieldtext ) ).
       ev_label = condense( ev_label ).
     ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD deref.
+
+    DATA: lv_ref  TYPE string,
+          lv_head TYPE string,
+          lv_tail TYPE string,
+          lv_off  TYPE i,
+          lv_up   TYPE string,
+          lv_pat  TYPE string,
+          lv_s1   TYPE string,
+          lv_s2   TYPE string,
+          lv_s3   TYPE string,
+          lv_s4   TYPE string,
+          lv_cand TYPE string,
+          lo_type TYPE REF TO cl_abap_typedescr,
+          ls_st   TYPE ty_stmt.
+
+    lv_ref = to_upper( condense( iv_ref ) ).
+    IF lv_ref IS INITIAL OR iv_depth > 2.
+      RETURN.
+    ENDIF.
+
+    " 1) 本身就是字典名(T001W-WERKS / WERKS_D / SY-DATUM)
+    lv_cand = lv_ref.
+    IF lv_cand CP 'SY-*'.
+      REPLACE FIRST OCCURRENCE OF 'SY-' IN lv_cand WITH 'SYST-'.
+    ENDIF.
+    cl_abap_typedescr=>describe_by_name(
+      EXPORTING  p_name         = lv_cand
+      RECEIVING  p_descr_ref    = lo_type
+      EXCEPTIONS type_not_found = 1
+                 OTHERS         = 2 ).
+    IF sy-subrc = 0 AND lo_type IS BOUND AND lo_type->is_ddic_type( ) = abap_true.
+      rv = lv_ref.
+      RETURN.
+    ENDIF.
+
+    " 2) 程序变量: 在源码 DATA / TYPES 里找它的类型, 再换成字典名
+    FIND FIRST OCCURRENCE OF '-' IN lv_ref MATCH OFFSET lv_off.
+    IF sy-subrc = 0 AND lv_off > 0.
+      lv_head = substring( val = lv_ref len = lv_off ).
+      lv_tail = substring( val = lv_ref off = lv_off + 1 ).
+    ELSE.
+      lv_head = lv_ref.
+    ENDIF.
+    IF lv_head CN 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_'.
+      RETURN.
+    ENDIF.
+    lv_pat = `(^|[\s:,])` && lv_head
+          && `\s+(TYPE|LIKE)\s+(REF\s+TO\s+|LINE\s+OF\s+|RANGE\s+OF\s+)?([A-Z0-9_/]+(-[A-Z0-9_]+)?)`.
+    LOOP AT gt_stmt INTO ls_st.
+      lv_up = to_upper( ls_st-text ).
+      IF lv_up NS lv_head.
+        CONTINUE.
+      ENDIF.
+      CLEAR: lv_s1, lv_s2, lv_s3, lv_s4.
+      FIND FIRST OCCURRENCE OF REGEX lv_pat IN lv_up SUBMATCHES lv_s1 lv_s2 lv_s3 lv_s4.
+      IF sy-subrc <> 0.
+        CONTINUE.
+      ENDIF.
+      IF lv_s3 CS 'REF' OR lv_s4 = 'STANDARD' OR lv_s4 = 'SORTED' OR lv_s4 = 'HASHED' OR lv_s4 = 'TABLE'.
+        RETURN.
+      ENDIF.
+      lv_cand = COND #( WHEN lv_tail IS NOT INITIAL THEN |{ lv_s4 }-{ lv_tail }| ELSE lv_s4 ).
+      rv = deref( iv_ref = lv_cand iv_depth = iv_depth + 1 ).
+      RETURN.
+    ENDLOOP.
 
   ENDMETHOD.
 

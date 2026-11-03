@@ -1030,6 +1030,43 @@ sap.ui.define([
                         return this._comboCall("ComboResult", { ArtifactId: sArtifactId }, false);
                 },
 
+                /* =================================================================
+                 * 20261103：参数卡搜索帮助（设计：功能计划书/参数搜索帮助/01-方案 V1.0）
+                 * 函数导入 ValueHelp（GET；ReportId / ParamId / Query → GenericResult，ZCL_AI_VALUE_HELP）：
+                 *   ParamId 空 = 元数据 {reportId, params:[{paramId, hasHelp, label, ref}]}
+                 *   ParamId 有值 = 搜索 {source, sourceName, keyLabel, textLabel, items:[{key, display, text}], truncated, message}
+                 * 后端 $metadata 没有 ValueHelp（SEGW 还没加）时不调用，参数卡和原来一样。
+                 * ================================================================= */
+                valueHelpReady: function () {
+                        return this._sConfig.mode === "mock" || this._fiHasParam("ValueHelp", "ReportId");
+                },
+
+                _valueHelpCall: function (sReportId, sParamId, sQuery) {
+                        if (this._sConfig.mode === "mock") {
+                                return this._mockValueHelp(sReportId, sParamId || "", sQuery || "");
+                        }
+                        return this._taskCall("ValueHelp", {
+                                ReportId: sReportId || "",
+                                ParamId: sParamId || "",
+                                Query: sQuery || ""
+                        }, false).then(function (o) {
+                                if (!o.success) {
+                                        throw new Error(o.message || "搜索帮助调用失败");
+                                }
+                                return o.result || {};
+                        });
+                },
+
+                /** 哪些参数有搜索帮助 + 字典文字 */
+                valueHelpMeta: function (sReportId) {
+                        return this._valueHelpCall(sReportId, "", "");
+                },
+
+                /** 按关键字取候选值（最多 100 条） */
+                valueHelpSearch: function (sReportId, sParamId, sQuery) {
+                        return this._valueHelpCall(sReportId, sParamId, sQuery);
+                },
+
                 /**
                   * 幂等启动报表运行（后端 REPORT_EXEC_ENABLED 默认关闭）。
                   * @param {object} o {sessionId, taskId, reportId, paramsJson, clientRequestId}

@@ -69,15 +69,15 @@ sap.ui.define([], function () {
         /** 「报表执行」目录演示清单（与真实 ReportDefinitions 一样用大写键） */
         var TCODE_DEFS = [
                 { REPORT_ID: "ZDPMM702", TCODE: "ZDPMM702", NAME: "MIH 需求报表", DESCRIPTION: "按工厂、机种汇总 MIH 需求（程序 ZRMM_IDP_0702）", EXEC_ENABLED: "X",
-                  PARAMS: [{ PARAM_ID: "WERKS" }, { PARAM_ID: "MODEL" }] },
+                  PARAMS: [{ PARAM_ID: "WERKS", REF_FIELD: "T001W-WERKS" }, { PARAM_ID: "MODEL", REF_FIELD: "ZMODEL" }] },
                 { REPORT_ID: "ZDPMM455", TCODE: "ZDPMM455", NAME: "物料收发汇总", DESCRIPTION: "按期间汇总物料收发数量（演示）", EXEC_ENABLED: "X",
-                  PARAMS: [{ PARAM_ID: "WERKS" }, { PARAM_ID: "BUDAT" }, { PARAM_ID: "MATNR" }] },
+                  PARAMS: [{ PARAM_ID: "WERKS", REF_FIELD: "T001W-WERKS" }, { PARAM_ID: "BUDAT" }, { PARAM_ID: "MATNR", REF_FIELD: "MARA-MATNR" }] },
                 // 20261102（RFC 函数执行）：函数模块登记（REPORT_KIND = FUNC，调用名 = 函数名），参数是扫描接口后的样子
                 { REPORT_ID: "Z_AI_DEMO_PO_OPEN", TCODE: "Z_AI_DEMO_PO_OPEN", PROGNAME: "Z_AI_DEMO_PO_OPEN", REPORT_KIND: "FUNC", RESULT_REF: "ET_ITEMS",
                   NAME: "未清采购订单（函数）", DESCRIPTION: "函数模块 Z_AI_DEMO_PO_OPEN(函数组 ZAI_DEMO, 远程启用)（演示）", EXEC_ENABLED: "X",
                   PARAMS: [
-                        { PARAM_ID: "IV_WERKS", ABAP_NAME: "IV_WERKS", DISPLAY_LABEL: "工厂", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, REQUIRED: true, SEL_KIND: "P", SORT_NO: 10 },
-                        { PARAM_ID: "IT_LIFNR", ABAP_NAME: "IT_LIFNR", DISPLAY_LABEL: "供应商", DATA_TYPE: "CHAR", TYPE_LENGTH: 10, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 20 },
+                        { PARAM_ID: "IV_WERKS", REF_FIELD: "WERKS_D", ABAP_NAME: "IV_WERKS", DISPLAY_LABEL: "工厂", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, REQUIRED: true, SEL_KIND: "P", SORT_NO: 10 },
+                        { PARAM_ID: "IT_LIFNR", REF_FIELD: "RANGE_T_LIFNR", ABAP_NAME: "IT_LIFNR", DISPLAY_LABEL: "供应商", DATA_TYPE: "CHAR", TYPE_LENGTH: 10, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 20 },
                         { PARAM_ID: "IT_BEDAT", ABAP_NAME: "IT_BEDAT", DISPLAY_LABEL: "凭证日期", DATA_TYPE: "DATE", TYPE_LENGTH: 8, RANGE_ALLOWED: true, SEL_KIND: "S", SORT_NO: 30 },
                         { PARAM_ID: "IV_OPEN", ABAP_NAME: "IV_OPEN", DISPLAY_LABEL: "只看未清", DATA_TYPE: "BOOL", SEL_KIND: "C", ALLOWED_OPS: "X", DEFAULT_VALUE: "X", SORT_NO: 40 }
                   ] },
@@ -87,7 +87,7 @@ sap.ui.define([], function () {
                 // PARAMS 写成后端 get_params 整理后的样子：R → ENUM + ENUM_JSON + 默认项；C → BOOL；F（固定值）不返回
                 { REPORT_ID: "ZDPSD012", TCODE: "ZDPSD012", PROGNAME: "ZRSD_IDP_0012", NAME: "出貨明細報表", DESCRIPTION: "按工廠、出貨日期查出貨明細（演示：單選組 / 複選框 / 選填條件折疊）", EXEC_ENABLED: "X",
                   PARAMS: [
-                        { PARAM_ID: "P_PLANT", ABAP_NAME: "P_PLANT", DISPLAY_LABEL: "工廠", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, REQUIRED: true, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 10 },
+                        { PARAM_ID: "P_PLANT", REF_FIELD: "T001W-WERKS", ABAP_NAME: "P_PLANT", DISPLAY_LABEL: "工廠", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, REQUIRED: true, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 10 },
                         { PARAM_ID: "S_ERDAT", ABAP_NAME: "S_ERDAT", DISPLAY_LABEL: "出貨日期", DATA_TYPE: "DATE", TYPE_LENGTH: 8, REQUIRED: true, RANGE_ALLOWED: true, SEL_KIND: "S", SORT_NO: 20 },
                         { PARAM_ID: "RB_SHIP", ABAP_NAME: "G_SHIP", DISPLAY_LABEL: "出貨狀態", DATA_TYPE: "ENUM", SEL_KIND: "R", SORT_NO: 30,
                           ALLOWED_OPS: "P_SHIP=已出貨;P_OPEN=未出貨;P_ALL=全部*", VALIDATION_RULE: "P_SHIP,P_OPEN,P_ALL", DEFAULT_TYPE: "STATIC", DEFAULT_VALUE: "P_ALL",
@@ -98,24 +98,24 @@ sap.ui.define([], function () {
                         { PARAM_ID: "P_CANCEL", ABAP_NAME: "P_CANCEL", DISPLAY_LABEL: "含取消發票", DATA_TYPE: "BOOL", SEL_KIND: "C", SORT_NO: 50 },
                         { PARAM_ID: "P_ERRONLY", ABAP_NAME: "P_ERRONLY", DISPLAY_LABEL: "只看異常", DATA_TYPE: "BOOL", SEL_KIND: "C", SORT_NO: 60, ALLOWED_OPS: "X", DEFAULT_VALUE: "X",
                           HELP_TEXT: "出貨數量與開票數量不一致的行" },
-                        { PARAM_ID: "S_KUNNR", ABAP_NAME: "S_KUNNR", DISPLAY_LABEL: "客戶代碼", DATA_TYPE: "CHAR", TYPE_LENGTH: 10, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 70 },
-                        { PARAM_ID: "S_VKORG", ABAP_NAME: "S_VKORG", DISPLAY_LABEL: "銷售組織", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 80 },
-                        { PARAM_ID: "S_MODEL", ABAP_NAME: "S_MODEL", DISPLAY_LABEL: "機種", DATA_TYPE: "CHAR", TYPE_LENGTH: 18, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 90 },
+                        { PARAM_ID: "S_KUNNR", REF_FIELD: "KNA1-KUNNR", ABAP_NAME: "S_KUNNR", DISPLAY_LABEL: "客戶代碼", DATA_TYPE: "CHAR", TYPE_LENGTH: 10, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 70 },
+                        { PARAM_ID: "S_VKORG", REF_FIELD: "TVKO-VKORG", ABAP_NAME: "S_VKORG", DISPLAY_LABEL: "銷售組織", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 80 },
+                        { PARAM_ID: "S_MODEL", REF_FIELD: "ZMODEL", ABAP_NAME: "S_MODEL", DISPLAY_LABEL: "機種", DATA_TYPE: "CHAR", TYPE_LENGTH: 18, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 90 },
                         { PARAM_ID: "S_BSTNK", ABAP_NAME: "S_BSTNK", DISPLAY_LABEL: "客戶PO", DATA_TYPE: "CHAR", TYPE_LENGTH: 20, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 100 },
                         { PARAM_ID: "S_GSBER", ABAP_NAME: "S_GSBER", DISPLAY_LABEL: "業務範圍", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 110 },
                         { PARAM_ID: "S_VBELN", ABAP_NAME: "S_VBELN", DISPLAY_LABEL: "交貨單號", DATA_TYPE: "CHAR", TYPE_LENGTH: 10, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 120 },
-                        { PARAM_ID: "S_FKART", ABAP_NAME: "S_FKART", DISPLAY_LABEL: "發票類型", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 130 },
+                        { PARAM_ID: "S_FKART", REF_FIELD: "TVFK-FKART", ABAP_NAME: "S_FKART", DISPLAY_LABEL: "發票類型", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 130 },
                         { PARAM_ID: "S_INVNO", ABAP_NAME: "S_INVNO", DISPLAY_LABEL: "發票號碼", DATA_TYPE: "CHAR", TYPE_LENGTH: 10, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 140 }
                   ] },
                 // 20261027（10.27 记录 #04）：仿 ZDPPP059 工單查核報表 —— 复选框分属三个选择屏块（GROUP_LABEL = 块标题），
                 // 参数卡按块分组显示；ZDPSD012 没有 GROUP_LABEL，复选框仍是一行「选项」
                 { REPORT_ID: "ZDPPP059", TCODE: "ZDPPP059", PROGNAME: "ZRPP_IDP_0059", NAME: "工單查核報表", DESCRIPTION: "按工廠、創建日期查工單發料 / 完工狀態（演示：複選框按原選擇屏分塊）", EXEC_ENABLED: "X",
                   PARAMS: [
-                        { PARAM_ID: "S_WERKS", ABAP_NAME: "S_WERKS", DISPLAY_LABEL: "工廠", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, REQUIRED: true, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 10, GROUP_LABEL: "選取範圍" },
+                        { PARAM_ID: "S_WERKS", REF_FIELD: "T001W-WERKS", ABAP_NAME: "S_WERKS", DISPLAY_LABEL: "工廠", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, REQUIRED: true, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 10, GROUP_LABEL: "選取範圍" },
                         { PARAM_ID: "S_ERDAT", ABAP_NAME: "S_ERDAT", DISPLAY_LABEL: "創建日期", DATA_TYPE: "DATE", TYPE_LENGTH: 8, REQUIRED: true, RANGE_ALLOWED: true, SEL_KIND: "S", SORT_NO: 20, GROUP_LABEL: "選取範圍" },
                         { PARAM_ID: "S_AUFNR", ABAP_NAME: "S_AUFNR", DISPLAY_LABEL: "工單號碼", DATA_TYPE: "CHAR", TYPE_LENGTH: 12, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 30, GROUP_LABEL: "選取範圍" },
-                        { PARAM_ID: "S_MATNR", ABAP_NAME: "S_MATNR", DISPLAY_LABEL: "生產料號", DATA_TYPE: "CHAR", TYPE_LENGTH: 18, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 40, GROUP_LABEL: "選取範圍" },
-                        { PARAM_ID: "S_AUART", ABAP_NAME: "S_AUART", DISPLAY_LABEL: "訂單類型", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 50, GROUP_LABEL: "選取範圍" },
+                        { PARAM_ID: "S_MATNR", REF_FIELD: "MARA-MATNR", ABAP_NAME: "S_MATNR", DISPLAY_LABEL: "生產料號", DATA_TYPE: "CHAR", TYPE_LENGTH: 18, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 40, GROUP_LABEL: "選取範圍" },
+                        { PARAM_ID: "S_AUART", REF_FIELD: "T003O-AUART", ABAP_NAME: "S_AUART", DISPLAY_LABEL: "訂單類型", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 50, GROUP_LABEL: "選取範圍" },
                         { PARAM_ID: "S_GSTRP", ABAP_NAME: "S_GSTRP", DISPLAY_LABEL: "開始日期", DATA_TYPE: "DATE", TYPE_LENGTH: 8, RANGE_ALLOWED: true, SEL_KIND: "S", SORT_NO: 60, GROUP_LABEL: "選取範圍" },
                         { PARAM_ID: "P_NOFULL", ABAP_NAME: "P_NOFULL", DISPLAY_LABEL: "只顯示未發齊的工單", DATA_TYPE: "BOOL", SEL_KIND: "C", SORT_NO: 70, GROUP_LABEL: "選取範圍" },
                         { PARAM_ID: "P_ISSUE", ABAP_NAME: "P_ISSUE", DISPLAY_LABEL: "只顯示應發數量 > 0", DATA_TYPE: "BOOL", SEL_KIND: "C", SORT_NO: 80, GROUP_LABEL: "選取範圍" },
@@ -135,6 +135,42 @@ sap.ui.define([], function () {
         ];
 
         /** 演示取数结果在 localStorage 里的键与保留份数（DATA-01：刷新后可重读） */
+        /**
+          * 20261103：参数卡搜索帮助演示数据（按字典参照的「字段」归类；语义与 ZCL_AI_VALUE_HELP 对应）。
+          * key = 内部格式（物料号带前导零），display = 输出格式。
+          */
+        var VH_DATA = {
+                WERKS: { label: "工厂", source: "SHLP", sourceName: "H_T001W", keyLabel: "工厂", textLabel: "名称", rows: [
+                        ["1000", "昆山一厂"], ["1010", "昆山二厂"], ["1100", "苏州工业园厂"], ["1200", "无锡厂"], ["1300", "南京厂"],
+                        ["2000", "深圳龙华厂"], ["2010", "深圳观澜厂"], ["2100", "东莞厂"], ["3000", "重庆厂"], ["3100", "成都厂"],
+                        ["4000", "郑州厂"], ["5000", "台北总部"], ["5100", "新竹厂"], ["6000", "越南北宁厂"], ["7000", "墨西哥厂"]] },
+                MATNR: { label: "物料", source: "SHLP", sourceName: "MAT1A", keyLabel: "物料", textLabel: "物料描述", alpha: 18, rows: [
+                        ["100234", "主板 MB-A12"], ["100235", "主板 MB-A13"], ["100410", "电源适配器 65W"], ["100411", "电源适配器 90W"],
+                        ["200015", "LCD 面板 14 寸"], ["200016", "LCD 面板 15.6 寸"], ["300120", "键盘 US 布局"], ["300121", "键盘 繁中布局"],
+                        ["400001", "包装箱 小"], ["400002", "包装箱 大"], ["500300", "电池 3 芯"], ["500301", "电池 4 芯"]] },
+                MODEL: { label: "机种", source: "CHECK", sourceName: "ZTMODEL", keyLabel: "机种", textLabel: "名称", rows: [
+                        ["NB-A12", "笔记本 A12"], ["NB-A13", "笔记本 A13"], ["NB-B20", "笔记本 B20"], ["AIO-24", "一体机 24 寸"],
+                        ["SRV-R2", "服务器 R2"], ["TAB-10", "平板 10 寸"]] },
+                LIFNR: { label: "供应商", source: "SHLP", sourceName: "KRED_A", keyLabel: "供应商", textLabel: "名称", alpha: 10, rows: [
+                        ["10001", "华东电子材料有限公司"], ["10002", "苏州精密五金"], ["10015", "深圳光电科技"], ["20003", "台湾晶片股份"],
+                        ["20010", "东莞包材"], ["30001", "日本精工株式会社"]] },
+                KUNNR: { label: "客户", source: "SHLP", sourceName: "DEBIA", keyLabel: "客户", textLabel: "名称", alpha: 10, rows: [
+                        ["300001", "北美渠道 A"], ["300002", "欧洲渠道 B"], ["300010", "日本客户 C"], ["300020", "国内电商 D"]] },
+                VKORG: { label: "销售组织", source: "CHECK", sourceName: "TVKOT", keyLabel: "销售组织", textLabel: "名称", rows: [
+                        ["1000", "华东销售"], ["2000", "华南销售"], ["5000", "台湾销售"], ["9000", "海外销售"]] },
+                FKART: { label: "发票类型", source: "CHECK", sourceName: "TVFKT", keyLabel: "发票类型", textLabel: "名称", rows: [
+                        ["F2", "发票"], ["G2", "贷项凭证"], ["L2", "借项凭证"], ["S1", "取消发票"]] },
+                AUART: { label: "订单类型", source: "CHECK", sourceName: "T003P", keyLabel: "订单类型", textLabel: "名称", rows: [
+                        ["PP01", "标准生产订单"], ["PP02", "返工订单"], ["PP03", "试产订单"]] }
+        };
+
+        /** 字典参照 → 演示数据分类（T001W-WERKS / WERKS_D / RANGE_T_LIFNR → WERKS / LIFNR） */
+        function vhKind(sRef) {
+                var s = String(sRef || "").toUpperCase();
+                var a = Object.keys(VH_DATA).filter(function (k) { return s.indexOf(k) >= 0; });
+                return a[0] || "";
+        }
+
         var MOCK_FIORI_KEY = "zaiChat.mockFiori.v1";
         var MOCK_FIORI_KEEP = 30;
 
@@ -468,6 +504,57 @@ sap.ui.define([], function () {
                                                          rangeAllowed: !!p.rangeAllowed, commonKey: p.commonKey || "", helpText: p.helpText || "" };
                                         })
                                 };
+                        });
+                },
+
+                /** 20261103：参数卡搜索帮助演示（ParamId 空 = 元数据；有值 = 搜索，最多 100 条） */
+                _mockValueHelp: function (sReportId, sParamId, sQuery) {
+                        var Service = this;
+                        var sRid = String(sReportId || "").toUpperCase();
+                        var oDef = TCODE_DEFS.filter(function (d) { return d.REPORT_ID === sRid || d.TCODE === sRid; })[0];
+                        return new Promise(function (fnResolve, fnReject) {
+                                setTimeout(function () {
+                                        if (!oDef) {
+                                                fnReject(new Error("报表 " + sRid + " 没有登记或已停用"));
+                                                return;
+                                        }
+                                        if (!Service._mockReportOk("REPORT", oDef.REPORT_ID)) {
+                                                fnReject(new Error("没有报表 " + sRid + " 的使用权限"));
+                                                return;
+                                        }
+                                        var aP = oDef.PARAMS || [];
+                                        if (!sParamId) {
+                                                fnResolve({
+                                                        reportId: oDef.REPORT_ID,
+                                                        params: aP.map(function (p) {
+                                                                var k = vhKind(p.REF_FIELD);
+                                                                return { paramId: p.PARAM_ID, hasHelp: !!k, label: k ? VH_DATA[k].label : "", ref: p.REF_FIELD || "" };
+                                                        }),
+                                                        message: aP.length + " 个参数"
+                                                });
+                                                return;
+                                        }
+                                        var oP = aP.filter(function (p) { return p.PARAM_ID === String(sParamId).toUpperCase(); })[0];
+                                        var k = oP && vhKind(oP.REF_FIELD);
+                                        if (!k) {
+                                                fnReject(new Error("参数 " + sParamId + " 没有字典参照, 没有搜索帮助"));
+                                                return;
+                                        }
+                                        var oD = VH_DATA[k];
+                                        var q = String(sQuery || "").replace(/[*+]/g, "").trim().toUpperCase();
+                                        var aItems = oD.rows.filter(function (r) {
+                                                return !q || r[0].toUpperCase().indexOf(q) >= 0 || r[1].toUpperCase().indexOf(q) >= 0;
+                                        }).map(function (r) {
+                                                var sKey = oD.alpha ? (new Array(oD.alpha + 1).join("0") + r[0]).slice(-oD.alpha) : r[0];
+                                                return { key: sKey, display: r[0], text: r[1] };
+                                        });
+                                        fnResolve({
+                                                reportId: oDef.REPORT_ID, paramId: oP.PARAM_ID, query: sQuery || "",
+                                                source: oD.source, sourceName: oD.sourceName, keyLabel: oD.keyLabel, textLabel: oD.textLabel,
+                                                items: aItems, truncated: false,
+                                                message: aItems.length ? "共 " + aItems.length + " 条" : (q ? "没有匹配「" + sQuery + "」的值" : "没有可选值")
+                                        });
+                                }, 250);
                         });
                 },
 

@@ -70,7 +70,8 @@ const registry = {
   'sap/ui/model/FilterOperator': {}, 'sap/ui/model/Sorter': function () {},
   'sap/ui/core/HTML': Ctl, 'sap/m/MessageToast': { show() {} },
   'sap/m/VBox': Ctl, 'sap/m/HBox': Ctl, 'sap/m/Text': Ctl, 'sap/m/Label': Ctl, 'sap/m/Input': Ctl,
-  'sap/m/DatePicker': Ctl, 'sap/m/Button': Ctl, 'sap/m/ToggleButton': Ctl, 'sap/ui/core/Icon': Ctl
+  'sap/m/DatePicker': Ctl, 'sap/m/Button': Ctl, 'sap/m/ToggleButton': Ctl, 'sap/ui/core/Icon': Ctl,
+  'sap/m/ResponsivePopover': Ctl
 };
 function load(name) {
   if (registry[name]) { return registry[name]; }
@@ -357,6 +358,34 @@ async function rejects(name, promise, re) {
     check('演示 Agent：不是「执行 X」的问题交回通用演示（返回 null）', svc._mockReportAgent({ sessionId: 'S12', question: '统计一下出货' }) === null);
     const tNo = await svc._mockReportAgent({ sessionId: 'S12', question: '执行 ZNOPE01' });
     check('演示 Agent：未登记的事务码 → 说明未登记、不出卡片', tNo.needsInput === false && /未登记/.test(tNo.answer) && !tNo.pendingParamsJson);
+  }
+
+  {
+    // 20261103（参数搜索帮助）：演示后端 ValueHelp —— 元数据标出有帮助的参数 + 字典文字；搜索按编号或名称；物料号是内部格式
+    console.log('\n━━ 参数卡搜索帮助（演示后端 / AskCard）');
+    check('演示模式下搜索帮助可用', svc.valueHelpReady() === true);
+    const vm1 = await svc.valueHelpMeta('ZDPMM702');
+    const pW = (vm1.params || []).filter((p) => p.paramId === 'WERKS')[0] || {};
+    const pM = (vm1.params || []).filter((p) => p.paramId === 'MODEL')[0] || {};
+    check('元数据：ZDPMM702 的 WERKS / MODEL 都有帮助，带字典文字（工厂 / 机种）', pW.hasHelp && pM.hasHelp && pW.label === '工厂' && pM.label === '机种', JSON.stringify(vm1));
+    const vm2 = await svc.valueHelpMeta('ZDPMM455');
+    check('元数据：没有字典参照的参数（BUDAT）没有帮助', ((vm2.params || []).filter((p) => p.paramId === 'BUDAT')[0] || {}).hasHelp === false);
+    const vs1 = await svc.valueHelpSearch('ZDPMM702', 'WERKS', '深圳');
+    check('搜索：按名称过滤（深圳 → 2000 / 2010），带来源说明', (vs1.items || []).map((i) => i.key).join() === '2000,2010' && vs1.source === 'SHLP' && vs1.sourceName === 'H_T001W');
+    const vs2 = await svc.valueHelpSearch('ZDPMM702', 'werks', '11');
+    check('搜索：按编号过滤、参数编号不分大小写', (vs2.items || []).map((i) => i.key).join() === '1100');
+    const vs3 = await svc.valueHelpSearch('ZDPMM455', 'MATNR', '100235');
+    check('物料号：key = 内部格式（前导零），display = 输出格式', vs3.items.length === 1 && vs3.items[0].key === '000000000000100235' && vs3.items[0].display === '100235');
+    const vs4 = await svc.valueHelpSearch('ZDPMM702', 'WERKS', 'zzz');
+    check('搜不到：空列表 + 说明', vs4.items.length === 0 && /没有匹配/.test(vs4.message));
+    await rejects('没有字典参照的参数：拒绝', svc.valueHelpSearch('ZDPMM455', 'BUDAT', ''), /没有字典参照/);
+    await rejects('没登记的报表：拒绝', svc.valueHelpMeta('ZNOPE01'), /没有登记/);
+    const AC = load('zai/chat/utils/AskCard');
+    check('AskCard：没注入取值函数时不显示小方块', AC.hasValueHelp({ vh: { WERKS: true } }, 'WERKS') === false);
+    AC.setValueHelp(() => Promise.resolve({ items: [] }));
+    check('AskCard：注入后按 oAsk.vh 判断（参数编号不分大小写）', AC.hasValueHelp({ vh: { WERKS: true } }, 'werks') === true &&
+      AC.hasValueHelp({ vh: { WERKS: true } }, 'MODEL') === false && AC.hasValueHelp({}, 'WERKS') === false);
+    AC.setValueHelp(null);
   }
 
   /* ---------------- 5) AskCard ENUM / 闸门 HTML / 场景 ---------------- */

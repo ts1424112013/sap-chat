@@ -4755,6 +4755,7 @@ sap.ui.define([
                         if (!oAsk || oAsk.fiori || (!oAsk.reportId && !oAsk.tcode)) {
                                 return;
                         }
+                        this._loadValueHelp(oEntry);
                         ChatService.getReportCatalog().then(function (o) {
                                 var fnStr = function (d, a) {
                                         for (var i = 0; i < a.length; i++) {
@@ -4774,6 +4775,43 @@ sap.ui.define([
                                 oAsk.values = oRes.values;
                                 that._renderAsk(oEntry.uid);
                         }).catch(function () { /* 目录取不到：卡片保持原样 */ });
+                },
+
+                /**
+                  * 20261103（参数搜索帮助，功能计划书/参数搜索帮助/01）：问后端这张报表哪些参数有搜索帮助，
+                  * 标进 oAsk.vh（参数卡据此显示小方块按钮）；登记里没有名称（标签 = 参数编号）的换成字典文字。
+                  * 后端没部署 ValueHelp 时什么都不做。
+                  */
+                _loadValueHelp: function (oEntry) {
+                        var that = this;
+                        var oAsk = oEntry && oEntry.ask;
+                        var sRid = oAsk && (oAsk.reportId || oAsk.tcode);
+                        if (!oAsk || oAsk.fiori || !sRid || oAsk.vh || typeof ChatService.valueHelpReady !== "function" ||
+                                !ChatService.valueHelpReady()) {
+                                return;
+                        }
+                        AskCard.setValueHelp(function (oA, sParamId, sQuery) {
+                                return ChatService.valueHelpSearch(oA.reportId || oA.tcode, sParamId, sQuery);
+                        });
+                        oAsk.vh = {};
+                        ChatService.valueHelpMeta(sRid).then(function (o) {
+                                if (oEntry.ask !== oAsk || oAsk.state !== "open") {
+                                        return;
+                                }
+                                var mVh = {}, mLbl = {};
+                                ((o && o.params) || []).forEach(function (p) {
+                                        var sId = String(p.paramId || "").toUpperCase();
+                                        if (p.hasHelp) { mVh[sId] = true; }
+                                        if (p.label) { mLbl[sId] = String(p.label); }
+                                });
+                                oAsk.vh = mVh;
+                                oAsk.params = (oAsk.params || []).map(function (p) {
+                                        var sId = String(p.param_id || "").toUpperCase();
+                                        var bNoName = !p.label || String(p.label).toUpperCase() === sId;
+                                        return bNoName && mLbl[sId] ? Object.assign({}, p, { label: mLbl[sId] }) : p;
+                                });
+                                that._renderAsk(oEntry.uid);
+                        }).catch(function () { /* 取不到：参数卡保持普通输入框 */ });
                 },
 
                 /** V16：按 uid 找消息条目（不依赖下标） */

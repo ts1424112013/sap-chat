@@ -784,5 +784,49 @@ console.log('\n[15] RFC 函数执行：RFC_EXEC V1.0 / EXEC_SAP V1.2 / SCANNER V
     /FIND 'SAPL' IN lv_p MATCH OFFSET lv_off/.test(cp));
 }
 
+console.log('\n[16] 参数卡搜索帮助：VALUE_HELP V1.0 / SCANNER V1.2 / DPC V15.13');
+{
+  const vhRaw = read('ZCL_AI_VALUE_HELP.abap');
+  const vh = codeOnly(vhRaw);
+  const vhM = {};
+  (vh.match(/^\s*METHOD\s+\w+\.[\s\S]*?^\s*ENDMETHOD\./gim) || []).forEach((m) => { vhM[m.match(/METHOD\s+(\w+)\./i)[1].toLowerCase()] = m; });
+  check('VALUE_HELP 版本头 V1.0、有约定的方法', /^\* V1\.0\s+20261103/m.test(vhRaw) &&
+    ['meta', 'search', 'search_ref', 'has_help', 'report_refs', 'access_error', 'resolve', 'by_fixed', 'get_shlp', 'by_shlp',
+      'shlp_select', 'by_check', 'fill_items', 'like_pat'].every((k) => !!vhM[k]));
+  check('VALUE_HELP 源码行不超过 255 字符、没有 FIND PCRE', vhRaw.split('\n').every((l) => l.length <= 255) && !/FIND\s+PCRE/i.test(vh));
+  check('取值顺序：固定值 → 搜索帮助 → 检查表（前一个取到就停）', (() => {
+    const sr = vhM.search_ref || '';
+    const a = sr.indexOf('by_fixed('), b = sr.indexOf('by_shlp('), c = sr.indexOf('by_check(');
+    return a > 0 && b > a && c > b && /IF rs-source IS INITIAL\.\s+by_shlp/.test(sr) && /IF rs-source IS INITIAL\.\s+by_check/.test(sr);
+  })());
+  check('F4IF_SELECT_VALUES 不调搜索帮助出口；所有 F4IF_* 调用都接住 CX_SY_DYN_CALL_ERROR',
+    /call_shlp_exit = ' '/.test(vhM.shlp_select || '') &&
+    (vh.match(/CALL FUNCTION 'F4IF_/g) || []).length === 5 && (vh.match(/CATCH cx_sy_dyn_call_error/g) || []).length >= 6);
+  check('关键字转义后才进动态 WHERE（# % _ 与单引号），检查表读取接住动态 SQL 异常',
+    /REPLACE ALL OCCURRENCES OF '%' IN lv WITH '#%'/.test(vhM.like_pat || '') && /cl_abap_dyn_prg=>escape_quotes\( lv \)/.test(vhM.like_pat || '') &&
+    /ESCAPE '#'/.test(vhM.by_check || '') && /CATCH cx_sy_dynamic_osql_error cx_sy_open_sql_db INTO DATA\(lx\)/.test(vhM.by_check || ''));
+  check('表名 / 字段只从登记 + 字典推出（search 不接受前端传表名）', !/iv_tab|iv_table/i.test(vhM.search || '') &&
+    /READ TABLE lt_refs INTO DATA\(ls_ref\) WITH KEY param_id = lv_pid/.test(vhM.search || ''));
+  check('权限：登记必须活动；报表授权动态调 ZCL_AI_ACCESS（类不存在跳过）', /active = 'X'/.test(vhM.access_error || '') &&
+    /CALL METHOD \('ZCL_AI_ACCESS'\)=>\('REPORT_OK'\)/.test(vhM.access_error || ''));
+  check('REF_FIELD 列按名动态读；老登记现场取（函数 FUPARAREF / 报表 scan）', /lv_rcols TYPE string VALUE `PARAM_ID, REF_FIELD`/.test(vhM.report_refs || '') &&
+    /FROM fupararef/.test(vhM.report_refs || '') && /zcl_ai_rpt_scanner=>scan\(/.test(vhM.report_refs || ''));
+  check('VALUE_HELP 不写任何数据库表', !/\b(INSERT|UPDATE|MODIFY)\s+(INTO\s+)?\w+\s+(FROM|SET|VALUES)/i.test(vh) && !/DELETE\s+FROM/i.test(vh));
+
+  const scRaw3 = read('ZCL_AI_RPT_SCANNER.abap');
+  const sc3 = codeOnly(scRaw3);
+  check('SCANNER V1.2：ty_param 有 ref_field、build_rows 经 deref 填、函数填接口类型、save 按名写 REF_FIELD',
+    /^\* V1\.2\s+20261103/m.test(scRaw3) && /ref_field\s+TYPE string/.test(sc3) && /ls_r-ref_field = deref\( ls_d-ref \)\./.test(sc3) &&
+    /ls_r-ref_field\s+= to_upper\( condense\( ls_ip-type_name \) \)\./.test(sc3) && /ASSIGN COMPONENT 'REF_FIELD' OF STRUCTURE ls_db TO <lv_ref>\./.test(sc3) &&
+    /METHOD deref\./.test(sc3));
+  check('SCANNER 源码行不超过 255 字符', scRaw3.split('\n').every((l) => l.length <= 255));
+
+  const dpRaw = read('ZCL_ZAI_CHAT_DPC_EXT.abap');
+  const dp = codeOnly(dpRaw);
+  check('DPC V15.13：VALUEHELP 分支 ParamId 空 = meta、有值 = search，经 auth_reply 返回', /^\* V15\.13\s+20261103/m.test(dpRaw) &&
+    /WHEN 'VALUEHELP'\./.test(dp) && /zcl_ai_value_help=>meta\(/.test(dp) && /zcl_ai_value_help=>search\(/.test(dp) &&
+    /iv_name = 'Query'/.test(dp));
+}
+
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);

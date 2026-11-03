@@ -7,8 +7,10 @@ sap.ui.define([
         "sap/m/DatePicker",
         "sap/m/Button",
         "sap/m/ToggleButton",
-        "sap/ui/core/Icon"
-], function (VBox, HBox, Text, Label, Input, DatePicker, Button, ToggleButton, Icon) {
+        "sap/ui/core/Icon",
+        "sap/m/ResponsivePopover",
+        "sap/ui/core/HTML"
+], function (VBox, HBox, Text, Label, Input, DatePicker, Button, ToggleButton, Icon, ResponsivePopover, HTML) {
         "use strict";
 
         /**
@@ -28,7 +30,184 @@ sap.ui.define([
          *  · mergeParamDefs：TCode 报表的待填参数（Agent 只给类型）按 ReportDefinitions 补选项 / 默认值 / 说明
          * 20261027（10.27 记录 #04）：复选框按原选择屏的块分组 —— 参数定义带 group_label（块标题，
          *   SCANNER V1.0b 登记、REPORT_SERVICE V1.0.15 透出）时，每块一行、块标题作行标签；都没有时仍是一行「选项」
+         * 20261103（参数搜索帮助）：oAsk.vh = {参数编号大写: true} 标出有搜索帮助的参数（控制器按 ValueHelp 元数据填），
+         *   这些输入框右侧出现小方块按钮（和 SAP GUI 的 F4 一样，焦点在框里按 F4 也能打开），点开是自绘弹层：
+         *   搜索框 + 「编号 / 名称」列表；单值点一行即填入，多值勾选后「填入」。取值由 setValueHelp 注入的函数负责
          */
+
+        /** 20261103：搜索帮助取值函数 fn(oAsk, sParamId, sQuery) → Promise<{items, keyLabel, textLabel, source, sourceName, message, truncated}> */
+        var fnValueHelp = null;
+
+        function setValueHelp(fn) {
+                fnValueHelp = typeof fn === "function" ? fn : null;
+        }
+
+        function hasValueHelp(oAsk, sId) {
+                return !!(fnValueHelp && oAsk && oAsk.vh && oAsk.vh[String(sId || "").toUpperCase()] === true);
+        }
+
+        function escHtml(s) {
+                return String(s === undefined || s === null ? "" : s).replace(/[&<>"']/g, function (c) {
+                        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c];
+                });
+        }
+
+        var VH_SOURCE = { SHLP: "搜索帮助", CHECK: "检查表", FIXED: "固定值" };
+
+        /**
+          * 20261103：搜索帮助弹层（自绘列表）。
+          * @param {sap.ui.core.Control} oOpener 输入框
+          * @param {object} o {title, multi, current: string[], load: fn(q) → Promise, onPick: fn(string[])}
+          */
+        function openPicker(oOpener, o) {
+                var aItems = [];
+                var iSel = 0;
+                var iReq = 0;
+                var tDeb = null;
+                var oLast = null;
+                var aChecked = (o.current || []).slice();
+                var oSearch = new Input({ placeholder: "输入编号或名称搜索", width: "100%", showClearIcon: true }).addStyleClass("vhSearch");
+                var oList = new HTML({ content: "<div class=\"vhList\"></div>", preferDOM: false });
+                var oStatus = new Text({ text: "加载中…" }).addStyleClass("vhStatus");
+                var oFill = null;
+                var oPop;
+
+                var bHadValue = aChecked.length > 0;
+                // 原来有值、全部取消勾选 = 清空；原来没值又没勾 = 灰掉
+                var fnFillText = function () {
+                        return aChecked.length ? "填入（" + aChecked.length + "）" : (bHadValue ? "清空" : "填入");
+                };
+                var fnFillSync = function () {
+                        oFill.setText(fnFillText());
+                        oFill.setEnabled(aChecked.length > 0 || bHadValue);
+                };
+                var fnRowHtml = function (it, i) {
+                        var bChk = o.multi && aChecked.indexOf(it.key) >= 0;
+                        return "<div class=\"vhRow" + (i === iSel ? " vhOn" : "") + (bChk ? " vhChk" : "") + "\" data-i=\"" + i + "\" role=\"option\">" +
+                                (o.multi ? "<span class=\"vhBox\"></span>" : "") +
+                                "<span class=\"vhKey\">" + escHtml(it.display || it.key) + "</span>" +
+                                "<span class=\"vhText\">" + escHtml(it.text) + "</span></div>";
+                };
+                var fnPaint = function () {
+                        var sHead = "";
+                        if (aItems.length && oLast) {
+                                sHead = "<div class=\"vhHead\">" + (o.multi ? "<span class=\"vhBox vhBoxHead\"></span>" : "") +
+                                        "<span class=\"vhKey\">" + escHtml(oLast.keyLabel || "编号") + "</span>" +
+                                        "<span class=\"vhText\">" + escHtml(oLast.textLabel || "") + "</span></div>";
+                        }
+                        oList.setContent("<div class=\"vhList\" role=\"listbox\">" + sHead + aItems.map(fnRowHtml).join("") + "</div>");
+                };
+                var fnMark = function () {
+                        var oDom = oList.getDomRef();
+                        if (!oDom) { return; }
+                        Array.prototype.forEach.call(oDom.querySelectorAll(".vhRow"), function (el) {
+                                var i = parseInt(el.getAttribute("data-i"), 10);
+                                el.classList.toggle("vhOn", i === iSel);
+                                el.classList.toggle("vhChk", !!o.multi && aChecked.indexOf((aItems[i] || {}).key) >= 0);
+                                if (i === iSel && el.scrollIntoView) { el.scrollIntoView({ block: "nearest" }); }
+                        });
+                };
+                var fnChoose = function (i) {
+                        var it = aItems[i];
+                        if (!it) { return; }
+                        if (!o.multi) {
+                                o.onPick([it.key]);
+                                oPop.close();
+                                return;
+                        }
+                        var k = aChecked.indexOf(it.key);
+                        if (k >= 0) { aChecked.splice(k, 1); } else { aChecked.push(it.key); }
+                        iSel = i;
+                        fnMark();
+                        fnFillSync();
+                };
+                var fnLoad = function (q) {
+                        var n = ++iReq;
+                        oStatus.setText(q ? "搜索中…" : "加载中…");
+                        Promise.resolve(o.load(q)).then(function (r) {
+                                if (n !== iReq || !oPop || oPop.isDestroyed()) { return; }
+                                oLast = r || {};
+                                aItems = (oLast.items || []).slice(0, 200);
+                                iSel = 0;
+                                fnPaint();
+                                var aBits = [oLast.message || (aItems.length ? "共 " + aItems.length + " 条" : "没有可选值")];
+                                if (aItems.length && oLast.source) {
+                                        aBits.push((VH_SOURCE[oLast.source] || oLast.source) + (oLast.sourceName ? " " + oLast.sourceName : ""));
+                                }
+                                oStatus.setText(aBits.join(" · "));
+                        }).catch(function (e) {
+                                if (n !== iReq || !oPop || oPop.isDestroyed()) { return; }
+                                aItems = [];
+                                fnPaint();
+                                oStatus.setText("取值失败：" + ((e && e.message) || e));
+                        });
+                };
+
+                // HTML 控件 setContent 会直接替换 DOM（不走重渲染），点击挂在外层容器上
+                var oListBox = new VBox({ items: [oList] }).addStyleClass("vhListBox");
+                oListBox.attachBrowserEvent("click", function (ev) {
+                        var el = ev.target.closest && ev.target.closest(".vhRow");
+                        if (el) { fnChoose(parseInt(el.getAttribute("data-i"), 10)); }
+                });
+                oSearch.attachLiveChange(function (e) {
+                        var v = e.getParameter("value") || "";
+                        clearTimeout(tDeb);
+                        tDeb = setTimeout(function () { fnLoad(v.trim()); }, 300);
+                });
+                oSearch.attachBrowserEvent("keydown", function (ev) {
+                        if (ev.isComposing || ev.keyCode === 229) { return; }
+                        if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+                                ev.preventDefault();
+                                if (!aItems.length) { return; }
+                                iSel = (iSel + (ev.key === "ArrowDown" ? 1 : -1) + aItems.length) % aItems.length;
+                                fnMark();
+                        } else if (ev.key === "Enter") {
+                                ev.preventDefault();
+                                fnChoose(iSel);
+                        }
+                });
+
+                var aFoot = [oStatus];
+                if (o.multi) {
+                        oFill = new Button({
+                                text: fnFillText(),
+                                type: "Emphasized",
+                                press: function () {
+                                        o.onPick(aChecked.slice());
+                                        oPop.close();
+                                }
+                        }).addStyleClass("vhFill");
+                        fnFillSync();
+                        aFoot.push(oFill);
+                }
+                oPop = new ResponsivePopover({
+                        showHeader: false,
+                        placement: "VerticalPreferredBottom",
+                        contentWidth: "26rem",
+                        horizontalScrolling: false,
+                        verticalScrolling: false,
+                        content: [new VBox({
+                                items: [
+                                        new Text({ text: o.title || "" }).addStyleClass("vhTitle"),
+                                        oSearch,
+                                        oListBox,
+                                        new HBox({ alignItems: "Center", justifyContent: "SpaceBetween", items: aFoot }).addStyleClass("vhFoot")
+                                ]
+                        }).addStyleClass("vhPanel")],
+                        afterOpen: function () { oSearch.focus(); },
+                        afterClose: function () {
+                                clearTimeout(tDeb);
+                                setTimeout(function () {
+                                        if (oPop && !oPop.isDestroyed()) { oPop.destroy(); }
+                                        if (oOpener && !oOpener.isDestroyed() && oOpener.focus) { oOpener.focus(); }
+                                }, 0);
+                        }
+                }).addStyleClass("vhPop");
+                fnPaint();
+                oPop.openBy(oOpener);
+                fnLoad("");
+                return oPop;
+        }
 
         /** ENUM 选项：enum_json 可以是 JSON 字符串或数组；坏数据返回 [] */
         function enumOptions(oP) {
@@ -185,7 +364,7 @@ sap.ui.define([
         }
 
         /** 参数控件：DATE → 日期选择器；范围 → 从/至两个输入；其余单输入（多值逗号分隔） */
-        function buildParam(oP, mVals, bMarkErr) {
+        function buildParam(oP, mVals, bMarkErr, oAsk) {
                 var sId = oP.param_id;
                 var bDate = String(oP.data_type || "").toUpperCase().indexOf("DAT") >= 0;
                 var bMulti = oP.multi_value === true;
@@ -199,9 +378,30 @@ sap.ui.define([
                 var fnMk = function (sV, sPh, iPart) {
                         iPart = iPart || 0;
                         // 先设日期格式再设值，避免 UI5 重置校验状态后把未完成的日期显示为空。
+                        var bVh = !bDate && hasValueHelp(oAsk, sId);
                         var oInput = bDate
                                 ? new DatePicker({ valueFormat: "yyyyMMdd", displayFormat: "yyyy-MM-dd", value: sV, placeholder: sPh || "选择日期", width: "100%" })
-                                : new Input({ value: sV, placeholder: sPh || (bMulti ? "可填多个，用逗号或空格分隔" : ""), width: "100%" });
+                                : new Input({ value: sV, placeholder: sPh || (bMulti ? "可填多个，用逗号或空格分隔" : ""), width: "100%",
+                                        showValueHelp: bVh, valueHelpIconSrc: "sap-icon://value-help" });
+                        if (bVh) {
+                                // 20261103：小方块按钮 / F4 → 搜索帮助弹层；多值（非范围）可勾选多个
+                                var bPickMulti = bMulti && !isRange(oP);
+                                oInput.addStyleClass("askVhInput");
+                                oInput.attachValueHelpRequest(function () {
+                                        openPicker(oInput, {
+                                                title: (oP.label || sId) + (bPickMulti ? " · 可多选" : ""),
+                                                multi: bPickMulti,
+                                                current: bPickMulti ? normMulti(oInput.getValue()).split(",").filter(Boolean) : [],
+                                                load: function (q) { return fnValueHelp(oAsk, sId, q); },
+                                                onPick: function (aKeys) {
+                                                        var sNew = bPickMulti ? aKeys.join(",") : (aKeys[0] || "");
+                                                        oInput.setValue(sNew);
+                                                        oInput.setValueState("None");
+                                                        fnSave(iPart, sNew);
+                                                }
+                                        });
+                                });
+                        }
                         oInput.attachChange(function (e) { fnSave(iPart, e.getParameter("value")); });
                         if (bDate) {
                                 // 日期选择器没有 liveChange；同时保存手工输入、尚未失焦的日期草稿。
@@ -423,7 +623,7 @@ sap.ui.define([
                         var oLay = layoutParams(oAsk.params.slice(0, 40));
                         var oFields = new VBox().addStyleClass("askFields");
                         oLay.enums.concat(oLay.shown).forEach(function (p) {
-                                var r = buildParam(p, oAsk.values, !!oAsk.error);
+                                var r = buildParam(p, oAsk.values, !!oAsk.error, oAsk);
                                 aRecs.push(r);
                                 oFields.addItem(r.cell);
                         });
@@ -445,7 +645,7 @@ sap.ui.define([
                                 var oMoreBox = new VBox().addStyleClass("askMoreBox");
                                 var iFilled = 0;
                                 oLay.more.forEach(function (p) {
-                                        var r = buildParam(p, oAsk.values, !!oAsk.error);
+                                        var r = buildParam(p, oAsk.values, !!oAsk.error, oAsk);
                                         aRecs.push(r);
                                         oMoreBox.addItem(r.cell);
                                         // 预填的默认值不算「已填」（不因为它自动展开）
@@ -655,5 +855,6 @@ sap.ui.define([
         }
 
         return { render: render, detectChoices: detectChoices, dateDisplay: dateDisplay, valueDisplay: valueDisplay, enumOptions: enumOptions,
-                mergeParamDefs: mergeParamDefs, layoutParams: layoutParams, groupBools: groupBools, defaultValueOf: defaultValueOf };
+                mergeParamDefs: mergeParamDefs, layoutParams: layoutParams, groupBools: groupBools, defaultValueOf: defaultValueOf,
+                setValueHelp: setValueHelp, hasValueHelp: hasValueHelp, openPicker: openPicker };
 });
