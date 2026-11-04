@@ -918,8 +918,15 @@ console.log('\n[18] 11.4 报表结果全量分析：RESULT_QUERY V1.0 / AGENT_SE
   check('parse_query：列名或标题都认；错列名回可用列清单；limit 受 RESULT_QUERY_MAX_OUT 约束',
     /norm\( ls_c-name \) = lv_n[\s\S]*norm\( ls_c-label \) = lv_n/.test(rqM.find_col || '') && /可用的列: \{ col_list\( is_ds \) \}/.test(rqM.parse_query || '') &&
     /'RESULT_QUERY_MAX_OUT'/.test(rqM.parse_query || ''));
+  check('V1.0.1 翻页：offset 解析；明细 / 分组都先跳过 offset 再取 limit；返回 total / more / next_offset',
+    /^\* V1\.0\.1\s+20261104/m.test(rqRaw) && /offset\s+TYPE i/.test(rq) && /iv_name = 'offset'/.test(rqM.parse_query || '') &&
+    /IF sy-tabix <= is_q-offset\.\s*CONTINUE\./.test(rqM.execute || '') && /DELETE es_out-rows FROM 1 TO lv_skip\./.test(rqM.execute || '') &&
+    /"next_offset":/.test(rqM.run || '') && /"more":/.test(rqM.run || '') && /"total":\{ ls_out-total \}/.test(rqM.run || ''));
+  check('V1.0.1 翻页不漏行：一页放不进回填上限时按 rows_sent 缩页，next_offset 按缩后的行数算',
+    /FIND REGEX '"rows_sent":\(\[0-9\]\+\)' IN lv_dsj SUBMATCHES lv_sent\./.test(rqM.run || '') &&
+    /DELETE es_ds-rows FROM lv_keep \+ 1\./.test(rqM.run || '') && /lv_next\) = ls_q-offset \+ lv_ret\./.test(rqM.run || ''));
   check('run：失败也回 ok:false + 原因；成功回 rows_scanned / rows_matched + 数据集（GUARD 上限内）',
-    /"ok":false/.test(rqM.run || '') && /"rows_scanned":/.test(rqM.run || '') && /gc_max_result_chars - 800/.test(rqM.run || ''));
+    /"ok":false/.test(rqM.run || '') && /"rows_scanned":/.test(rqM.run || '') && /gc_max_result_chars - 1000/.test(rqM.run || ''));
 
   const cbRaw = read('ZCL_AI_COMBO_SERVICE.abap'), cb = codeOnly(cbRaw);
   const cbPub = (cb.match(/PUBLIC SECTION\.([\s\S]*?)PRIVATE SECTION\./) || ['', ''])[1];

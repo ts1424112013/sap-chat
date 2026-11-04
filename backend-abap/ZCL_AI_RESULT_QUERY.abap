@@ -16,7 +16,8 @@
 *          "metrics":[{"column":"庫存","agg":"sum"}],
 *          "columns":["鴻海料號","庫存"],            (只在不分组、不聚合时用)
 *          "sort":{"column":"庫存","order":"desc"},
-*          "limit":10, "purpose":"库存最高前 10 料号"}
+*          "limit":10, "offset":0, "purpose":"库存最高前 10 料号"}
+*         offset = 跳过排序后的前几行(翻页; 返回里有 total / more / next_offset)
 *         op: eq ne gt ge lt le contains not_contains starts_with in not_in empty not_empty
 *         agg: sum avg max min count count_distinct(count 不给 column = 行数)
 * 配置:   ZAI_CHAT_CFG: RESULT_QUERY_ENABLED(N = 关工具, 默认开) /
@@ -27,7 +28,11 @@
 *         ZCL_AI_DATA_ANALYSIS_SERVICE(ty_dataset / build_datasets_json) / ZCL_AI_TASK_SERVICE
 * 安装:   SE24 -> 创建类 -> 源代码粘帖 (ABAP 7.50 语法, 755 适用)
 * V1.0    20261104: 首版
+* V1.0.1  20261104: 翻页 —— 新参数 offset(跳过排序后的前几行, 默认 0); 返回加 total / offset /
+*         returned / more / next_offset. 一页放不进回填模型的字符上限时, 这一页缩到模型实际看到的
+*         行数(前端表格同步), next_offset 按它算, 翻页不会漏行
 * ★ 重贴后核对标记: 有 METHOD context / run / execute / parse_query / sort_rows / load;
+*   ty_query 有 offset; run 内有 next_offset 与 "rows_sent":;
 *   execute 内有 count_distinct; context 内有 zcl_ai_combo_service=>group_json(
 *=======================================================================
 CLASS zcl_ai_result_query DEFINITION
@@ -98,6 +103,7 @@ CLASS zcl_ai_result_query DEFINITION
              sort_name TYPE string,
              sort_desc TYPE abap_bool,
              limit     TYPE i,
+             offset    TYPE i,          " V1.0.1: 跳过排序后的前几行(翻页)
              purpose   TYPE string,
              text      TYPE string,     " 规范化后的查询说明(步骤条 / 回给模型)
            END OF ty_query.
@@ -202,7 +208,10 @@ CLASS zcl_ai_result_query IMPLEMENTATION.
       && 'starts_with|in|not_in|empty|not_empty","value":"<值>","values":["<in 用>"]}],'
       && '"group_by":["<列>"],"metrics":[{"column":"<列>","agg":"sum|avg|max|min|count|count_distinct"}],'
       && '"columns":["<不分组时要返回的列, 不给=全部列>"],"sort":{"column":"<列或聚合列>","order":"desc|asc"},'
-      && '"limit":<返回行数, 默认 20>,"purpose":"<一句话说明, 作为结果标题>"}。'
+      && '"limit":<返回行数, 默认 20>,"offset":<跳过排序后的前几行, 翻页用, 默认 0>,'
+      && '"purpose":"<一句话说明, 作为结果标题>"}。'
+      && '返回里 total = 符合条件的总行数(分组时是总组数), more = true 表示后面还有; '
+      && '用户要"后面的 / 下一页"时, 用同样的条件再调一次, offset 填上次返回的 next_offset。'
       && '例: 库存最高前 10 料号 = {"group_by":["鴻海料號"],"metrics":[{"column":"庫存","agg":"sum"}],'
       && '"sort":{"column":"庫存","order":"desc"},"limit":10,"purpose":"库存最高前 10 料号"}; '
       && '只看明细排序 = {"columns":["鴻海料號","倉碼","庫存"],"sort":{"column":"庫存","order":"desc"},"limit":10}。'
@@ -596,6 +605,17 @@ CLASS zcl_ai_result_query IMPLEMENTATION.
       es_q-limit = lv_maxo.
     ENDIF.
 
+    " ---- offset(V1.0.1: 翻页) ----
+    DATA(lv_off) = lo->text( lo->child( iv_id = lv_root iv_name = 'offset' ) ).
+    IF lv_off IS INITIAL.
+      lv_off = lo->text( lo->child( iv_id = lv_root iv_name = 'skip' ) ).
+    ENDIF.
+    CONDENSE lv_off NO-GAPS.
+    es_q-offset = 0.
+    IF lv_off IS NOT INITIAL AND lv_off CO '0123456789' AND strlen( lv_off ) <= 7.
+      es_q-offset = lv_off.
+    ENDIF.
+
     es_q-purpose = lo->text( lo->child( iv_id = lv_root iv_name = 'purpose' ) ).
 
   ENDMETHOD.
@@ -812,7 +832,10 @@ CLASS zcl_ai_result_query IMPLEMENTATION.
         APPEND ls_col TO es_out-columns.
       ENDLOOP.
       LOOP AT ls_flt-rows INTO ls_row.
-        IF sy-tabix > is_q-limit.
+        IF sy-tabix <= is_q-offset.
+          CONTINUE.
+        ENDIF.
+        IF sy-tabix > is_q-offset + is_q-limit.
           EXIT.
         ENDIF.
         CLEAR ls_orow.
@@ -824,7 +847,7 @@ CLASS zcl_ai_result_query IMPLEMENTATION.
         APPEND ls_orow TO es_out-rows.
       ENDLOOP.
       es_out-total     = ev_matched.
-      es_out-truncated = xsdbool( ev_matched > lines( es_out-rows ) ).
+      es_out-truncated = xsdbool( ev_matched > is_q-offset + lines( es_out-rows ) ).
       RETURN.
     ENDIF.
 
@@ -979,11 +1002,16 @@ CLASS zcl_ai_result_query IMPLEMENTATION.
       sort_rows( EXPORTING iv_ci = lines( is_q-group_by ) + 1 iv_desc = abap_true CHANGING cs_ds = es_out ).
     ENDIF.
 
-    IF lv_total > is_q-limit.
+    " V1.0.1: 先跳过 offset, 再取前 limit
+    DATA(lv_skip) = nmin( val1 = is_q-offset val2 = lines( es_out-rows ) ).
+    IF lv_skip > 0.
+      DELETE es_out-rows FROM 1 TO lv_skip.
+    ENDIF.
+    IF lines( es_out-rows ) > is_q-limit.
       DELETE es_out-rows FROM is_q-limit + 1.
     ENDIF.
     es_out-total     = lv_total.
-    es_out-truncated = xsdbool( lv_total > lines( es_out-rows ) ).
+    es_out-truncated = xsdbool( lv_total > is_q-offset + lines( es_out-rows ) ).
 
   ENDMETHOD.
 
@@ -1184,7 +1212,10 @@ CLASS zcl_ai_result_query IMPLEMENTATION.
       lv_text = COND #( WHEN lv_text IS INITIAL THEN `` ELSE lv_text && `; ` ) &&
                 |按 { ls_q-sort_name } { COND string( WHEN ls_q-sort_desc = abap_true THEN `从大到小` ELSE `从小到大` ) }|.
     ENDIF.
-    lv_text = COND #( WHEN lv_text IS INITIAL THEN `` ELSE lv_text && `; ` ) && |取前 { ls_q-limit } 行|.
+    lv_text = COND #( WHEN lv_text IS INITIAL THEN `` ELSE lv_text && `; ` ) &&
+              COND string( WHEN ls_q-offset > 0
+                           THEN |跳过前 { ls_q-offset } 行, 取 { ls_q-limit } 行|
+                           ELSE |取前 { ls_q-limit } 行| ).
     ev_detail = lv_text.
 
     DATA(lv_name) = COND string( WHEN ls_q-purpose IS NOT INITIAL THEN ls_q-purpose
@@ -1192,22 +1223,60 @@ CLASS zcl_ai_result_query IMPLEMENTATION.
     es_ds = to_analysis( is_ds     = ls_out
                          iv_name   = lv_name
                          iv_source = |RESULT:{ zcl_ai_task_service=>short_id( iv_artifact_id ) }| ).
-    ev_label = |结果查询: { lv_name }, 扫描 { lines( ls_ds-rows ) } 行, 命中 { lv_match } 行, 返回 { lines( ls_out-rows ) } 行|.
 
     DATA: lv_res  TYPE string,
           lv_note TYPE string,
-          lv_dsj  TYPE string.
+          lv_dsj  TYPE string,
+          lv_sent TYPE string,
+          lv_keep TYPE i,
+          ls_feed TYPE zcl_ai_data_analysis_service=>ty_dataset.
     lv_res = |{ zcl_ai_task_service=>short_id( iv_artifact_id ) }「{ lv_label }」|.
     IF ls_ds-truncated = abap_true.
       lv_note = |来源已截断: 共 { ls_ds-total } 行, 只存了 { lines( ls_ds-rows ) } 行, 结论要说明是部分数据|.
       lv_note = |"note":{ js( lv_note ) },|.
     ENDIF.
+
+    " 回填模型: 只写这一页(总数 / 翻页另给); 一页放不进字符上限时, 这一页缩到模型实际看到的行数
+    " (前端表格同步), 翻页从模型没看到的那一行接着取, 不漏行
+    ls_feed = es_ds.
+    ls_feed-total_rows = lines( ls_feed-rows ).
+    ls_feed-truncated  = abap_false.
     lv_dsj = zcl_ai_data_analysis_service=>build_datasets_json(
-               it_datas     = VALUE #( ( es_ds ) )
-               iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 800 ).
+               it_datas     = VALUE #( ( ls_feed ) )
+               iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 1000 ).
+    FIND REGEX '"rows_sent":([0-9]+)' IN lv_dsj SUBMATCHES lv_sent.
+    IF sy-subrc = 0.
+      lv_keep = lv_sent.
+      IF lv_keep > 0 AND lv_keep < lines( es_ds-rows ).
+        DELETE es_ds-rows FROM lv_keep + 1.
+        DELETE ls_out-rows FROM lv_keep + 1.
+        ls_feed = es_ds.
+        ls_feed-total_rows = lines( ls_feed-rows ).
+        ls_feed-truncated  = abap_false.
+        lv_dsj = zcl_ai_data_analysis_service=>build_datasets_json(
+                   it_datas     = VALUE #( ( ls_feed ) )
+                   iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 1000 ).
+      ENDIF.
+    ENDIF.
+    es_ds-truncated = xsdbool( ls_out-total > ls_q-offset + lines( es_ds-rows ) ).
+
+    DATA(lv_ret)  = lines( es_ds-rows ).
+    DATA(lv_next) = ls_q-offset + lv_ret.
+    DATA(lv_more) = xsdbool( ls_out-total > lv_next ).
+    DATA(lv_page) = |"total":{ ls_out-total },"offset":{ ls_q-offset },"returned":{ lv_ret },| &&
+                    |"more":{ COND string( WHEN lv_more = abap_true THEN `true` ELSE `false` ) },|.
+    IF lv_more = abap_true.
+      lv_page = lv_page && |"next_offset":{ lv_next },|.
+    ENDIF.
+
+    ev_label = |结果查询: { lv_name }, 扫描 { lines( ls_ds-rows ) } 行, 命中 { lv_match } 行, | &&
+               COND string( WHEN ls_q-offset > 0
+                            THEN |返回第 { ls_q-offset + 1 }-{ lv_next } 行(共 { ls_out-total } 行)|
+                            ELSE |返回 { lv_ret } 行(共 { ls_out-total } 行)| ).
+
     ev_json = |\{"ok":true,"result":{ js( lv_res ) },| &&
               |"rows_scanned":{ lines( ls_ds-rows ) },"rows_matched":{ lv_match },| &&
-              |"output_rows":{ ls_out-total },"query":{ js( lv_text ) },| &&
+              lv_page && |"query":{ js( lv_text ) },| &&
               lv_note && |"dataset":{ lv_dsj }\}|.
 
   ENDMETHOD.
