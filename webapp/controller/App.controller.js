@@ -41,8 +41,9 @@ sap.ui.define([
         "zai/chat/controller/mixin/SkillPanel",
         "zai/chat/controller/mixin/ResultRestore",
         "zai/chat/controller/mixin/ComboPanel",
-        "zai/chat/controller/mixin/UserAccessPanel"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel) {
+        "zai/chat/controller/mixin/UserAccessPanel",
+        "zai/chat/controller/mixin/SchedulePanel"
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel) {
         "use strict";
 
         /**
@@ -163,6 +164,8 @@ sap.ui.define([
                                 modelList: [],
                                 isAdmin: false,         // 登录后由 _syncAdminUi 设置
                                 authPending: 0,         // 20261020：侧栏「权限审批」角标（待审批条数）
+                                schedAvail: false,      // 20261104：后端有定时任务（SEGW ScheduleSave）才显示侧栏入口
+                                schedUnread: 0,         // 20261104：有新结果的定时任务个数（侧栏角标）
                                 authPendingTip: ""
                         });
                         this.getView().setModel(oSettingsModel, "settings");
@@ -582,6 +585,8 @@ sap.ui.define([
                         this._cbxLoad();
                         // 20261020：侧栏「权限审批」待审批角标（仅 ADMIN 实际查询）
                         this._authWatchStart();
+                        // 20261104：定时任务（能力探测 + 未读角标 + 专属会话映射）
+                        this._scInit();
                         var oUser = ChatService.getAppUser();
                         // V16：侧栏底部用户信息（头像缩写取账号，SAP 账号均为拉丁字母）
                         var oSettings = this.getView().getModel("settings");
@@ -1805,9 +1810,12 @@ sap.ui.define([
                                                         { cls: "analysisTable" });
                                                 // V16：不自动画图 —— 工具条由用户选择；后端推荐的图形仅作提示
                                                 var oHint = that._chartHint(oAnalysis, oDs);
+                                                // 20261104：结果卡（有结果号的报表执行 / Fiori 结果）可以「设为定时」；
+                                                // 后端支不支持是异步探测的，按钮总是画出来，由 body.schedOn 控制显示（刷新后恢复的卡片也有）
+                                                var bSched = !!(oEntry && oEntry.localResult && oEntry.artifactId && iDs === 0 && !oEntry.combo);
                                                 s += Formatter.dataToolsHtml(iDs, oHint ? oRB.getText("chartSuggest",
                                                         [ChartRenderer.typeText(oHint.type)]) : "",
-                                                        bPreview ? oRB.getText("dgShowAll", [oDs.rows.length]) : "");
+                                                        bPreview ? oRB.getText("dgShowAll", [oDs.rows.length]) : "", bSched);
                                                 // 20261011：该表生成的图表就放在这张表下方
                                                 s += oEntry ? that._chartDeckHtml(oEntry, "ds:" + iDs) : "";
                                         }
@@ -3333,13 +3341,19 @@ sap.ui.define([
 
                         // V12/V13：Agent 会话标题行前置模式图标（对话会话保持原样）
                         var oTitleRow = new HBox({ alignItems: "Center" }).addStyleClass("sessTitleRow");
+                        // 20261104：定时任务的专属会话 = 时钟图标；有新结果 = 未读点
+                        var oSched = bAgent && this._scSessInfo ? this._scSessInfo(o.SessionId) : null;
                         if (bAgent) {
                                 oTitleRow.addItem(new sap.ui.core.Icon({
-                                        src: "sap-icon://lightbulb"
-                                }).addStyleClass("sessModeIcon"));
+                                        src: oSched ? "sap-icon://history" : "sap-icon://lightbulb",
+                                        tooltip: oSched ? "定时任务的专属会话" : ""
+                                }).addStyleClass("sessModeIcon" + (oSched ? " sessSchedIcon" : "")));
                         }
                         var oTitleText = new Text({ text: o.Title || o.SessionId, wrapping: true }).addStyleClass("sessItemTitle");
                         oTitleRow.addItem(oTitleText);
+                        if (oSched && oSched.unread) {
+                                oTitleRow.addItem(new Text({ text: "", tooltip: "有新结果" }).addStyleClass("sessSchedDot"));
+                        }
                         oBox.addItem(oTitleRow);
 
                         // V12：时间行；Agent 任务附带状态徽标（进行中/已完成/部分完成/失败）
@@ -3453,6 +3467,7 @@ sap.ui.define([
                         }
                         this._restoreWorkspaceBySession(oMeta);
                         this._loadHistoryFor(sSid, oMeta.Mode === "AGENT");
+                        this._scSeen(sSid);   // 20261104：定时任务专属会话 → 标记已看
                 },
 
                 /** 删除会话（20261025：先收起 + 5 秒内可撤销，替换原确认框；见 _deleteWithUndo） */
@@ -5192,7 +5207,9 @@ sap.ui.define([
                         if (!oDs) {
                                 return;
                         }
-                        if (sAct === "combo-add") {
+                        if (sAct === "sched-add") {
+                                this._scFromEntry(oEntry);   // 20261104
+                        } else if (sAct === "combo-add") {
                                 this._cbxAddFromEntry(oEntry, oDs, sDs !== null && oEntry.analysis ? parseInt(sDs, 10) : null);   // 20261031
                         } else if (sAct === "all") {
                                 this._openDataGrid(oDs);
@@ -5342,5 +5359,5 @@ sap.ui.define([
                 hasText: function (s) {
                         return !!(s && s.length);
                 }
-        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel));
+        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel));
 });

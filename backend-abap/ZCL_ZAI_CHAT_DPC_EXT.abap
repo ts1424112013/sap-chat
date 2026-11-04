@@ -171,6 +171,13 @@
 * V15.14 20261104(函数表参数粘贴数据, 设计: 功能计划书/RFC函数执行/05): STARTREPORTRUN 的
 *   ParamsJson 以 "@@ZAI_TEXT:" 开头时经 resolve_text 换回原文(粘贴的表太长, 前端先存长文本)
 *   ★ 重贴后核对标记: WHEN 'STARTREPORTRUN' 里有 lv_srun_pj = resolve_text( lv_srun_pj )
+* V15.15 20261104(定时任务, 设计: 功能计划书/定时任务/01-方案与开发计划 V1.1): 新增 4 个函数导入,
+*   都返回 GenericResult(经 auth_reply, ResultJson = ZCL_AI_SCHEDULE_SERVICE=>ty_reply):
+*   SCHEDULESAVE(POST; ScheduleJson 以 "@@ZAI_TEXT:" 开头时经 resolve_text 换回原文, ClientRequestId) /
+*   SCHEDULELIST(GET; Scope) / SCHEDULEACTION(POST; ScheduleId, Action, Note) / SCHEDULERUNS(GET; ScheduleId)
+*   SEGW: 4 个 Function Import, Return Type GenericResult(Complex Type, Cardinality 1), 参数全部 Edm.String
+*   先激活 ZCL_AI_SCHEDULE_SERVICE
+*   ★ 重贴后核对标记: 有 WHEN 'SCHEDULESAVE' / 'SCHEDULELIST' / 'SCHEDULEACTION' / 'SCHEDULERUNS'
 CLASS zcl_zai_chat_dpc_ext DEFINITION
   PUBLIC
   INHERITING FROM zcl_zai_chat_dpc
@@ -520,6 +527,42 @@ CLASS zcl_zai_chat_dpc_ext IMPLEMENTATION.
                               auth_reply( iv_error = ls_vhs-error iv_message = ls_vhs-message iv_data = ls_vhs ) )
                             CHANGING cr_data = er_data ).
         ENDIF.
+
+      " ---- V15.15: 定时任务(ZCL_AI_SCHEDULE_SERVICE) ----
+      WHEN 'SCHEDULESAVE'.
+        DATA(lv_sc_json) = v8_param( it_parameter = it_parameter iv_name = 'ScheduleJson' ).
+        IF find( val = lv_sc_json sub = gc_text_prefix ) = 0.
+          lv_sc_json = resolve_text( lv_sc_json ).
+        ENDIF.
+        DATA(ls_scs) = zcl_ai_schedule_service=>save_sched(
+                         iv_json       = lv_sc_json
+                         iv_request_id = v8_param( it_parameter = it_parameter iv_name = 'ClientRequestId' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_scs-error iv_message = ls_scs-message iv_data = ls_scs ) )
+                          CHANGING cr_data = er_data ).
+
+      WHEN 'SCHEDULELIST'.
+        DATA(ls_scl) = zcl_ai_schedule_service=>get_list(
+                         iv_scope = v8_param( it_parameter = it_parameter iv_name = 'Scope' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_scl-error iv_message = ls_scl-message iv_data = ls_scl ) )
+                          CHANGING cr_data = er_data ).
+
+      WHEN 'SCHEDULEACTION'.
+        DATA(ls_sca) = zcl_ai_schedule_service=>do_action(
+                         iv_sched_id = v8_param( it_parameter = it_parameter iv_name = 'ScheduleId' )
+                         iv_action   = v8_param( it_parameter = it_parameter iv_name = 'Action' )
+                         iv_note     = v8_param( it_parameter = it_parameter iv_name = 'Note' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_sca-error iv_message = ls_sca-message iv_data = ls_sca ) )
+                          CHANGING cr_data = er_data ).
+
+      WHEN 'SCHEDULERUNS'.
+        DATA(ls_scr) = zcl_ai_schedule_service=>get_runs(
+                         iv_sched_id = v8_param( it_parameter = it_parameter iv_name = 'ScheduleId' ) ).
+        copy_data_to_ref( EXPORTING is_data = to_generic_odata(
+                            auth_reply( iv_error = ls_scr-error iv_message = ls_scr-message iv_data = ls_scr ) )
+                          CHANGING cr_data = er_data ).
 
       WHEN 'ANALYZECODE'.
         DATA: ls_result TYPE zcl_ai_chat_service=>ty_analyze_result.

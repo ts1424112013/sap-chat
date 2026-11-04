@@ -963,5 +963,74 @@ console.log('\n[18] 11.4 报表结果全量分析：RESULT_QUERY V1.0 / AGENT_SE
   check('规则 4b 正则：「分析一下这张报表的数据」「这张报表的结果」「上面的数据」命中', ['分析一下这张报表的数据，并看下库存最高的前10项料号', '这张报表的结果', '上面的数据哪个工厂最多'].every((q) => re4b.test(q)));
 }
 
+
+// ---------------------------------------------------------------- 19) 定时任务
+console.log('\n[19] 定时任务：SCHEDULE_SERVICE V1.0 / ZAI_SCHED_RUNNER / DPC V15.15');
+{
+  const methodsOf = (code) => {
+    const m = {};
+    (code.match(/^\s*METHOD\s+\w+\.[\s\S]*?^\s*ENDMETHOD\./gim) || []).forEach((x) => { m[x.match(/METHOD\s+(\w+)\./i)[1].toLowerCase()] = x; });
+    return m;
+  };
+  const scRaw = read('ZCL_AI_SCHEDULE_SERVICE.abap'), sc = codeOnly(scRaw), scM = methodsOf(sc);
+  check('SCHEDULE_SERVICE V1.0：版本头、方法齐全、源码行不超过 255', /^\* V1\.0\s+20261104/m.test(scRaw) &&
+    ['save_sched', 'get_list', 'do_action', 'get_runs', 'run_one', 'resolve_params', 'resolve_token', 'due_on', 'next_run',
+      'create_job', 'create_jobs', 'drop_jobs', 'merge_dates', 'source_of_artifact', 'param_views', 'log_run'].every((k) => scM[k]) &&
+    scRaw.split('\n').every((l) => l.length <= 255));
+  check('UPDATE … SET 里不用宿主表达式 @( )（7.50 兼容，统一用宿主变量）',
+    !/UPDATE\s+\w+\s+SET[^.]*@\(/.test(sc));
+  check('不直接 LOOP AT 方法调用结果；不用 GET RUN TIME（长等待会溢出）', !/LOOP AT \w+\( /.test(sc) && !/GET RUN TIME/.test(sc));
+  check('作业：以当前用户建周期作业（PRDDAYS / PRDHOURS），步骤按名字动态 SUBMIT ZAI_SCHED_RUNNER',
+    /prddays\s+= lv_days/.test(scM.create_job || '') && /prdhours\s+= lv_hours/.test(scM.create_job || '') &&
+    /lv_prog = 'ZAI_SCHED_RUNNER'/.test(scM.create_job || '') && /SUBMIT \(lv_prog\)/.test(scM.create_job || ''));
+  check('没有释放权限（job_was_released 空）→ 删作业并如实说明', /lv_rel <> 'X'/.test(scM.create_job || '') &&
+    /BP_JOB_DELETE/.test(scM.create_job || '') && /S_BTCH_JOB RELE/.test(scM.create_job || ''));
+  check('run_one：只跑本人的定时任务；暂停 / 管理员停用 / 今天不该跑 → 直接结束',
+    /ls_db-owner <> sy-uname/.test(scM.run_one || '') && /ls_db-status = 'ADMIN_STOP'/.test(scM.run_one || '') &&
+    /due_on\( is_trig = ls_trig iv_date = sy-datum \) = abap_false/.test(scM.run_one || ''));
+  check('run_one：防重叠（running_since）、场景再核一遍、报表按保存的参数换算后提交（D5：不由模型定参数）',
+    /running_since IS NOT INITIAL/.test(scM.run_one || '') && /zcl_ai_access=>scene_ok\(/.test(scM.run_one || '') &&
+    /iv_params_json = ls_run-params_used/.test(scM.run_one || '') && /resolve_params\( iv_json = CONV string\( ls_db-params_json \)/.test(scM.run_one || ''));
+  check('run_one：报表执行轮询 get_run_status（等待上限 SCHED_WAIT_MIN），Fiori 同步 run 并在有指令时置 ANALYZED',
+    /WAIT UP TO 15 SECONDS/.test(scM.run_one || '') && /zcl_ai_report_service=>get_run_status\(/.test(scM.run_one || '') &&
+    /'SCHED_WAIT_MIN'/.test(scM.run_one || '') && /zcl_ai_fiori_report_service=>run\(/.test(scM.run_one || '') &&
+    /UPDATE zai_frpt_run SET analyzed = 'X'/.test(scM.run_one || ''));
+  check('run_one：有指令 → analyze_agent（聚焦本次结果），失败记 ANALYZE_ERR；写运行记录与上次运行时间',
+    /zcl_ai_agent_service=>analyze_agent\(/.test(scM.run_one || '') && /iv_focus_artifact_id = lv_art/.test(scM.run_one || '') &&
+    /'ANALYZE_ERR'/.test(scM.run_one || '') && /log_run\( is_db = ls_db is_run = ls_run \)/.test(scM.run_one || '') &&
+    /last_run_at\s+= @ls_run-started_at/.test(scM.run_one || ''));
+  const sv = scM.save_sched || '';
+  check('save_sched：开关 / 用户开通 / 名称 / 指令或数据来源至少一个 / 触发校验 / 每人上限',
+    /enabled\( \) = abap_false/.test(sv) && /user_ok\( \) = abap_false/.test(sv) && /请填写名称/.test(sv) &&
+    /指令和数据来源至少要有一个/.test(sv) && /parse_triggers\(/.test(sv) && /'SCHED_MAX_PER_USER'/.test(sv));
+  check('save_sched：没有数据来源时场景只能 自动 / 数据分析 / 代码分析；有来源时场景跟随来源（D5）',
+    /lv_scene = lv_src\./.test(sv) && /lv_scene <> 'AUTO' AND lv_scene <> 'DATA' AND lv_scene <> 'CODE'/.test(sv));
+  check('save_sched：数据来源只能来自本人的成功结果（source_of_artifact），参数只认日期（merge_dates），报表按今天换算后预校验',
+    /source_of_artifact\(/.test(sv) && /merge_dates\(/.test(sv) && /zcl_ai_report_service=>validate_params\(/.test(sv) &&
+    /report_ok\( iv_src_type = lv_src/.test(sv) && /ls_view-data_type <> 'DATE'/.test(scM.merge_dates || ''));
+  check('save_sched：新建建专属会话（AGENT）与任务；修改先删旧作业；状态 ACTIVE 才建作业，失败回滚',
+    /INSERT zai_chat_sess FROM/.test(sv) && /session_mode = 'AGENT'/.test(sv) && /zcl_ai_task_service=>pick_or_create\(/.test(sv) &&
+    /drop_jobs\( CONV string\( lv_id \) \)/.test(sv) && /create_jobs\(/.test(sv) && /DELETE FROM zai_schedule WHERE sched_id = @lv_id/.test(sv));
+  const da = scM.do_action || '';
+  check('do_action：PREFILL / PAUSE / RESUME / DELETE / RUNNOW / SEEN / ADMIN_STOP / ADMIN_RESUME；停用只有管理员，其余只认本人',
+    ['PREFILL', 'PAUSE', 'RESUME', 'DELETE', 'RUNNOW', 'SEEN', 'ADMIN_STOP', 'ADMIN_RESUME'].every((a) => da.indexOf("'" + a + "'") >= 0) &&
+    /rs-is_admin = abap_false/.test(da) && /ls_db-owner <> sy-uname/.test(da));
+  check('resolve_token：认 @TODAY / @TODAY-N（1-366）/ @WEEK_START / @MONTH_START / @MONTH_END / @LMONTH_START / @LMONTH_END / @YEAR_START',
+    ['@TODAY', '@WEEK_START', '@MONTH_START', '@MONTH_END', '@LMONTH_START', '@LMONTH_END', '@YEAR_START', '@TODAY-'].every((t) => (scM.resolve_token || '').indexOf("'" + t + "'") >= 0) &&
+    /BETWEEN 1 AND 366/.test(scM.resolve_token || ''));
+  check('星期基准 1900-01-01（周一），秒数基准 2020-01-01（不溢出）', /VALUE '19000101'/.test(scM.weekday || '') && /gc_base_date TYPE d VALUE '20200101'/.test(sc));
+  check('运行记录只留最近 SCHED_KEEP_RUNS 条', /'SCHED_KEEP_RUNS'/.test(scM.log_run || '') && /DELETE zai_sched_run FROM TABLE @lt_old/.test(scM.log_run || ''));
+
+  const rn = codeOnly(read('ZAI_SCHED_RUNNER.abap'));
+  check('ZAI_SCHED_RUNNER：参数 P_SCHED / P_TRIG，只调 run_one', /PARAMETERS: p_sched TYPE c LENGTH 32 OBLIGATORY/.test(rn) &&
+    /p_trig\s+TYPE c LENGTH 1/.test(rn) && /zcl_ai_schedule_service=>run_one\(/.test(rn) && !/SUBMIT|CALL FUNCTION/.test(rn));
+
+  const dpRaw2 = read('ZCL_ZAI_CHAT_DPC_EXT.abap'), dp2 = codeOnly(dpRaw2);
+  check('DPC V15.15：四个分支，ScheduleJson 长文本换回原文，经 auth_reply 返回', /^\* V15\.15 20261104/m.test(dpRaw2) &&
+    ["'SCHEDULESAVE'", "'SCHEDULELIST'", "'SCHEDULEACTION'", "'SCHEDULERUNS'"].every((w) => dp2.indexOf('WHEN ' + w) >= 0) &&
+    /lv_sc_json = resolve_text\( lv_sc_json \)/.test(dp2) && /zcl_ai_schedule_service=>save_sched\(/.test(dp2) &&
+    /iv_error = ls_scr-error/.test(dp2));
+}
+
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);

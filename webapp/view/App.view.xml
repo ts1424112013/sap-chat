@@ -70,6 +70,12 @@
 
                                                         <!-- 20261020：权限入口（会话列表与用户卡之间）：申请权限（所有人）/ 权限审批（仅 ADMIN，红色角标 = 待审批条数） -->
                                                         <VBox class="sideAuth">
+                                                                <!-- 20261104：定时任务（SchedulePanel；角标 = 有新结果的个数；后端没部署 ScheduleSave 时不显示） -->
+                                                                <HBox renderType="Bare" class="sideAuthRow" visible="{settings>/schedAvail}">
+                                                                        <Button icon="sap-icon://history" text="定时任务" type="Transparent" press=".onOpenSchedules" width="100%" class="sideAuthBtn"
+                                                                                tooltip="{= ${settings>/schedUnread} > 0 ? ${settings>/schedUnread} + ' 个定时任务有新结果' : '定时任务' }"/>
+                                                                        <Text text="{= ${settings>/schedUnread} > 99 ? '99+' : String(${settings>/schedUnread}) }" visible="{= ${settings>/schedUnread} > 0 }" class="sideAuthBadge sideSchedBadge"/>
+                                                                </HBox>
                                                                 <Button icon="sap-icon://key" text="{i18n>authApply}" type="Transparent" press=".onOpenAuth" width="100%" class="sideAuthBtn"/>
                                                                 <HBox renderType="Bare" class="sideAuthRow" visible="{settings>/isAdmin}">
                                                                         <Button icon="sap-icon://approvals" text="{i18n>authAdmin}" type="Transparent" press=".onOpenAuthApprove" width="100%"

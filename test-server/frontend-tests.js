@@ -711,6 +711,105 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   ChatService._taskApiAvailable = null;
   ChatService.setConfig({ mode: 'mock' });
 
+  console.log('\n━━ 定时任务（ScheduleData / ScheduleMockBackend / ChatService，20261104）');
+  const SD = load('zai/chat/utils/ScheduleData');
+  // 2026-11-05 是周四
+  check('星期：2026-11-05 是周四(3)、2026-11-09 是周一(0)', SD.weekday('20261105') === 3 && SD.weekday('20261109') === 0);
+  check('相对日期：今天 / 昨天 / N 天前', SD.resolveToken('@TODAY', '20261105') === '20261105' &&
+    SD.resolveToken('@TODAY-1', '20261105') === '20261104' && SD.resolveToken('@today-10', '20261105') === '20261026');
+  check('相对日期：本周一 / 本月首末 / 上月首末 / 今年第一天',
+    SD.resolveToken('@WEEK_START', '20261105') === '20261102' && SD.resolveToken('@MONTH_START', '20261105') === '20261101' &&
+    SD.resolveToken('@MONTH_END', '20261105') === '20261130' && SD.resolveToken('@LMONTH_START', '20261105') === '20261001' &&
+    SD.resolveToken('@LMONTH_END', '20261105') === '20261031' && SD.resolveToken('@YEAR_START', '20261105') === '20260101');
+  check('相对日期：跨年 / 闰年二月', SD.resolveToken('@LMONTH_START', '20260115') === '20251201' &&
+    SD.resolveToken('@LMONTH_END', '20240315') === '20240229' && SD.resolveToken('@MONTH_END', '20280210') === '20280229');
+  check('不认识的记号 → null；天数超过 366 → null；不是记号原样', SD.resolveToken('@TOMORROW', '20261105') === null &&
+    SD.resolveToken('@TODAY-400', '20261105') === null && SD.resolveToken('20260101', '20261105') === '20260101');
+  const scRp = SD.resolveParams({ p_werks: 'ABZ1', s_budat: '@LMONTH_START,@LMONTH_END', p_d: '@TODAY-1' }, '20261105');
+  check('参数换算：范围逐项、非日期原样', scRp.p_werks === 'ABZ1' && scRp.s_budat === '20261001,20261031' && scRp.p_d === '20261104', JSON.stringify(scRp));
+  check('界面状态 ↔ 值：N 天前 / 昨天 / 固定日期', SD.modeValue('N_DAYS', 7, '') === '@TODAY-7' && SD.dateMode('@TODAY-7').mode === 'N_DAYS' &&
+    SD.dateMode('@TODAY-1').mode === '@TODAY-1' && SD.dateMode('2026-11-01').fixed === '20261101' && SD.modeValue('', 0, '20261101') === '20261101');
+  check('每周：只在勾的星期跑', SD.dueOn({ freq: 'WEEKLY', weekdays: 'X X X  ' }, '20261102') && !SD.dueOn({ freq: 'WEEKLY', weekdays: 'X X X  ' }, '20261103'));
+  check('每月：31 号在 11 月按最后一天；99 = 最后一天', SD.dueOn({ freq: 'MONTHLY', monthDay: 31 }, '20261130') &&
+    !SD.dueOn({ freq: 'MONTHLY', monthDay: 31 }, '20261129') && SD.dueOn({ freq: 'MONTHLY', monthDay: 99 }, '20260228'));
+  const scNow = new Date(2026, 10, 5, 10, 0, 0);   // 周四 10:00
+  check('下次运行：每天 09:00 → 明天；每天 11:00 → 今天', SD.nextRun({ freq: 'DAILY', time: '0900' }, scNow) === '20261106090000' &&
+    SD.nextRun({ freq: 'DAILY', time: '11:00' }, scNow) === '20261105110000');
+  check('下次运行：工作日 09:00（周四 10 点）→ 周五；周五 10 点 → 下周一',
+    SD.nextRun({ freq: 'WEEKLY', time: '0900', weekdays: 'XXXXX  ' }, scNow) === '20261106090000' &&
+    SD.nextRun({ freq: 'WEEKLY', time: '0900', weekdays: 'XXXXX  ' }, new Date(2026, 10, 6, 10, 0, 0)) === '20261109090000');
+  check('下次运行：每 3 小时从 08:00 起（10:00）→ 11:00', SD.nextRun({ freq: 'HOURLY', time: '0800', everyHours: 3 }, scNow) === '20261105110000');
+  check('触发文字', SD.trigText({ freq: 'WEEKLY', time: '0900', weekdays: 'XXXXX  ' }) === '工作日 09:00' &&
+    SD.trigText({ freq: 'WEEKLY', time: '1730', weekdays: 'X X    ' }) === '每周一、三 17:30' &&
+    SD.trigText({ freq: 'MONTHLY', time: '0800', monthDay: 99 }) === '每月最后一天 08:00' &&
+    SD.trigText({ freq: 'HOURLY', time: '0800', everyHours: 2 }) === '每 2 小时(从 08:00 起)');
+  check('触发校验：时间格式 / 每周没勾 / 每 N 小时范围', SD.checkTrigger({ freq: 'DAILY', time: '25:00' }, 0) !== '' &&
+    SD.checkTrigger({ freq: 'WEEKLY', time: '0900', weekdays: '       ' }, 0) !== '' &&
+    SD.checkTrigger({ freq: 'HOURLY', time: '0900', everyHours: 0 }, 0) !== '' && SD.checkTrigger({ freq: 'DAILY', time: '09:00' }, 0) === '');
+
+  // 演示后端：新建（只有指令）→ 列表 → 立即运行 → 未读 → SEEN → 暂停 → 删除
+  ChatService.setConfig({ mode: 'mock' });
+  fakeWindow.localStorage.removeItem('zaiChat.mockSched.v1');
+  ChatService._oSchedMock = null;
+  check('演示模式：定时任务恒可用', await ChatService.scheduleAvailable());
+  let scErr = '';
+  try { await ChatService.scheduleSave({ name: '', instruction: 'x', triggers: [{ freq: 'DAILY', time: '0900' }] }); } catch (e) { scErr = e.message; }
+  check('没名称 → 拒绝', /名称/.test(scErr), scErr);
+  scErr = '';
+  try { await ChatService.scheduleSave({ name: 'A', instruction: 'x', scene: 'REPORT', triggers: [{ freq: 'DAILY', time: '0900' }] }); } catch (e) { scErr = e.message; }
+  check('没有数据来源时不能选报表执行场景（无人值守不让灵犀自己跑报表）', /场景只能选/.test(scErr), scErr);
+  const sc1 = (await ChatService.scheduleSave({ name: '每日简报', instruction: '统计昨天各工厂出货', scene: 'DATA',
+    triggers: [{ freq: 'WEEKLY', time: '09:00', weekdays: 'XXXXX  ' }, { freq: 'DAILY', time: '1700' }] })).item;
+  check('新建成功：两个触发、场景 DATA、有下次运行时间', sc1.schedId && sc1.triggers.length === 2 && sc1.scene === 'DATA' && /^\d{14}$/.test(sc1.nextRun), JSON.stringify(sc1));
+  const scPre = (await ChatService.scheduleAction('', 'PREFILL', 'ART123')).item;
+  check('设为定时（PREFILL）：带出数据来源、场景跟随来源、参数含日期', scPre.srcType === 'REPORT' && scPre.scene === 'REPORT' &&
+    scPre.params.some((p) => p.dataType === 'DATE'), JSON.stringify(scPre));
+  scErr = '';
+  try {
+    await ChatService.scheduleSave({ name: '库存', instruction: '', fromArtifactId: 'ART123', params: { p_werks: 'X999' }, triggers: [{ freq: 'DAILY', time: '0800' }] });
+  } catch (e) { scErr = e.message; }
+  check('数据来源的非日期参数不能改', /不能在这里修改/.test(scErr), scErr);
+  const sc2 = (await ChatService.scheduleSave({ name: '库存', instruction: '', fromArtifactId: 'ART123', params: { p_budat: '@TODAY-1' },
+    triggers: [{ freq: 'DAILY', time: '0800' }] })).item;
+  check('只跑报表（指令留空）+ 日期改成相对日期', sc2.srcType === 'REPORT' && sc2.params.filter((p) => p.paramId === 'p_budat')[0].value === '@TODAY-1');
+  await ChatService.scheduleAction(sc2.schedId, 'RUNNOW', '');
+  let scLst = (await ChatService.scheduleList('')).items;
+  const sc2b = scLst.filter((x) => x.schedId === sc2.schedId)[0];
+  const scRuns = (await ChatService.scheduleRuns(sc2.schedId)).runs;
+  check('立即运行：写运行记录（参数已按当天换算）、置未读', sc2b.unread === 'X' && scRuns.length === 1 && !/@TODAY/.test(scRuns[0].paramsUsed), JSON.stringify(scRuns[0]));
+  await ChatService.scheduleAction(sc2.schedId, 'SEEN', '');
+  scLst = (await ChatService.scheduleList('')).items;
+  check('SEEN 后不再未读', scLst.filter((x) => x.schedId === sc2.schedId)[0].unread === '');
+  const scp = (await ChatService.scheduleAction(sc1.schedId, 'PAUSE', '')).item;
+  check('暂停：状态 PAUSED、没有下次运行', scp.status === 'PAUSED' && !scp.nextRun);
+  await ChatService.scheduleAction(sc1.schedId, 'DELETE', '');
+  scLst = (await ChatService.scheduleList('')).items;
+  check('删除', scLst.length === 1 && scLst[0].schedId === sc2.schedId);
+
+  // 真实接口：参数名 / HTTP 方法
+  ChatService.setConfig({ mode: 'backend', host: '', path: '/p/' });
+  const scCalls = [];
+  const origTaskCall = ChatService._taskCall;
+  ChatService._taskCall = function (a, p, post) { scCalls.push({ a, p, post }); return Promise.resolve({ success: true, message: '', result: { items: [] } }); };
+  await ChatService.scheduleList('ALL');
+  await ChatService.scheduleAction('S1', 'RUNNOW', '');
+  await ChatService.scheduleRuns('S1');
+  await ChatService.scheduleSave({ name: 'A' }, 'R1');
+  check('四个 FI：List GET(Scope) / Action POST / Runs GET / Save POST(ScheduleJson, ClientRequestId)',
+    scCalls[0].a === 'ScheduleList' && scCalls[0].p.Scope === 'ALL' && !scCalls[0].post &&
+    scCalls[1].a === 'ScheduleAction' && scCalls[1].post && scCalls[1].p.Action === 'RUNNOW' &&
+    scCalls[2].a === 'ScheduleRuns' && !scCalls[2].post &&
+    scCalls[3].a === 'ScheduleSave' && scCalls[3].post && JSON.parse(scCalls[3].p.ScheduleJson).name === 'A' && scCalls[3].p.ClientRequestId === 'R1',
+    JSON.stringify(scCalls));
+  ChatService._taskCall = function () { return Promise.resolve({ success: false, message: '定时任务功能未开启(SCHED_ENABLED)', result: null }); };
+  scErr = '';
+  try { await ChatService.scheduleList(''); } catch (e) { scErr = e.message; }
+  check('后端失败：抛后端原话', /SCHED_ENABLED/.test(scErr), scErr);
+  ChatService._taskCall = origTaskCall;
+  const Fmt = load('zai/chat/utils/Formatter');
+  check('结果卡工具条：只有传了 bSched 才有「设为定时」', /sched-add/.test(Fmt.dataToolsHtml(0, '', '', true)) && !/sched-add/.test(Fmt.dataToolsHtml(0, '', '')));
+  ChatService.setConfig({ mode: 'mock' });
+
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

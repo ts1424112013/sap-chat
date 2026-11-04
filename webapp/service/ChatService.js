@@ -9,9 +9,10 @@ sap.ui.define([
         "zai/chat/service/AuthMockBackend",
         "zai/chat/service/FioriMockBackend",
         "zai/chat/service/ComboMockBackend",
+        "zai/chat/service/ScheduleMockBackend",
         "zai/chat/service/SkillService",
         "zai/chat/utils/UserAccess"
-], function (Log, ODataModel, Filter, FilterOperator, Sorter, TraceService, MockBackend, AuthMockBackend, FioriMockBackend, ComboMockBackend, SkillService, UserAccess) {
+], function (Log, ODataModel, Filter, FilterOperator, Sorter, TraceService, MockBackend, AuthMockBackend, FioriMockBackend, ComboMockBackend, ScheduleMockBackend, SkillService, UserAccess) {
         "use strict";
 
         /**
@@ -1067,6 +1068,67 @@ sap.ui.define([
                         return this._valueHelpCall(sReportId, sParamId, sQuery);
                 },
 
+                /* =================================================================
+                 * 20261104：定时任务（设计：功能计划书/定时任务/01-方案与开发计划 V1.1）
+                 * 四个 FI 都返回 GenericResult，ResultJson = ZCL_AI_SCHEDULE_SERVICE=>ty_reply（camelCase）：
+                 *   {message, error, isAdmin, item, items[], runs[]}；失败抛后端原话。
+                 * 后端 $metadata 没有 ScheduleSave（SEGW 还没加）时不显示入口。
+                 * 演示模式走 ScheduleMockBackend。
+                 * ================================================================= */
+
+                /** 后端有没有部署定时任务 → Promise<boolean>；演示模式恒为 true */
+                scheduleAvailable: function () {
+                        if (this._sConfig.mode === "mock") {
+                                return Promise.resolve(true);
+                        }
+                        var that = this;
+                        var oModel = this._getModel();
+                        return Promise.resolve(oModel.metadataLoaded ? oModel.metadataLoaded(true) : null).then(function () {
+                                return that._fiHasParam("ScheduleSave", "ScheduleJson");
+                        }).catch(function () { return false; });
+                },
+
+                _schedCall: function (sAction, oParams, bPost) {
+                        if (this._sConfig.mode === "mock") {
+                                return this._mockSchedCall(sAction, oParams || {});
+                        }
+                        return this._taskCall(sAction, oParams || {}, bPost).then(function (o) {
+                                if (!o.success) {
+                                        throw new Error(o.message || "定时任务服务调用失败");
+                                }
+                                var r = o.result || {};
+                                if (!r.message && o.message) {
+                                        r.message = o.message;
+                                }
+                                return r;
+                        });
+                },
+
+                /** 列表（sScope = "ALL" 管理员看全部）→ {items, isAdmin, message} */
+                scheduleList: function (sScope) {
+                        return this._schedCall("ScheduleList", { Scope: sScope || "" }, false);
+                },
+
+                /** 新建 / 修改（oSched 里有 schedId 即修改）；内容长时先走长文本通道 → {item, message} */
+                scheduleSave: function (oSched, sRequestId) {
+                        var that = this;
+                        var sJson = JSON.stringify(oSched || {});
+                        var p = this._sConfig.mode === "mock" ? Promise.resolve(sJson) : this._prepareQuestion(sJson);
+                        return p.then(function (sArg) {
+                                return that._schedCall("ScheduleSave", { ScheduleJson: sArg, ClientRequestId: sRequestId || "" }, true);
+                        });
+                },
+
+                /** 操作：PAUSE / RESUME / DELETE / RUNNOW / SEEN / ADMIN_STOP / ADMIN_RESUME / PREFILL（sNote = 结果号）→ {item, message} */
+                scheduleAction: function (sId, sAction, sNote) {
+                        return this._schedCall("ScheduleAction", { ScheduleId: sId || "", Action: sAction, Note: sNote || "" }, true);
+                },
+
+                /** 最近的运行记录 → {runs} */
+                scheduleRuns: function (sId) {
+                        return this._schedCall("ScheduleRuns", { ScheduleId: sId }, false);
+                },
+
                 /**
                   * 幂等启动报表运行（后端 REPORT_EXEC_ENABLED 默认关闭）。
                   * @param {object} o {sessionId, taskId, reportId, paramsJson, clientRequestId}
@@ -2114,7 +2176,7 @@ sap.ui.define([
         };
 
         // 20261011（FE-09）：演示模式实现在 service/MockBackend（mixin，_mock* 等方法）
-        Object.assign(Service, MockBackend, AuthMockBackend, FioriMockBackend, ComboMockBackend, SkillService);
+        Object.assign(Service, MockBackend, AuthMockBackend, FioriMockBackend, ComboMockBackend, ScheduleMockBackend, SkillService);
 
         return Service;
 });

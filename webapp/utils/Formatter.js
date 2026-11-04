@@ -259,9 +259,10 @@ sap.ui.define([], function () {
                  * @param {string} [sDsIdx] 数据集下标（分析结果表格携带；Markdown 表格为空，按 DOM 位置定位）
                  * @param {string} [sHint] 右侧提示（后端推荐的图形）
                  * @param {string} [sAllText] 20261024：给了就加「查看全部」主按钮（data-act="all"）
+                 * @param {boolean} [bSched] 20261104：结果卡加「设为定时」（data-act="sched-add"）
                  * @returns {string} HTML（全部为常量标签，无动态文本）
                  */
-                dataToolsHtml: function (sDsIdx, sHint, sAllText) {
+                dataToolsHtml: function (sDsIdx, sHint, sAllText, bSched) {
                         var sDs = sDsIdx === undefined ? "" : ' data-ds="' + String(parseInt(sDsIdx, 10) || 0) + '"';
                         // 20261024：大结果集只画了预览时，最前面加「查看全部 N 行」（打开分页查看器），它当主按钮
                         return '<div class="dataTools"' + sDs + ">" +
@@ -270,6 +271,7 @@ sap.ui.define([], function () {
                                 '<button type="button" class="dtBtn" data-act="copy">复制表格</button>' +
                                 '<button type="button" class="dtBtn" data-act="csv">导出 CSV</button>' +
                                 '<button type="button" class="dtBtn dtCombo" data-act="combo-add" title="放进右侧组合分析，和别的结果一起看">加入组合</button>' +
+                                (bSched ? '<button type="button" class="dtBtn dtSched" data-act="sched-add" title="按这次的参数定时运行（日期可改成相对日期）">设为定时</button>' : "") +
                                 (sHint ? '<span class="dtHint">' + this.escapeHtml(sHint) + "</span>" : "") +
                                 "</div>";
                 },
