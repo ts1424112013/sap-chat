@@ -346,10 +346,12 @@ check('AGENT_SERVICE V15.6：analyze_agent 有可选参数 iv_request_id', /^\* 
   /CLASS-METHODS analyze_agent[\s\S]*?iv_request_id TYPE string OPTIONAL[\s\S]*?EXPORTING es_result/i.test(ag));
 const agCnt = (re) => (ag.match(re) || []).length;
 // 20261102 V15.14：call_function 分支多 2 处 sync（调用前写那句话、调用后收口）
-check('进度调用数：start 1 / sync 9 / finish 2', agCnt(/zcl_ai_agent_progress=>start\(/g) === 1 && agCnt(/zcl_ai_agent_progress=>sync\(/g) === 9 &&
+// V15.15(11.4): query_result 分支多 2 个 sync(工具前写那句话 + 执行后) —— 9 → 11
+check('进度调用数：start 1 / sync 11 / finish 2', agCnt(/zcl_ai_agent_progress=>start\(/g) === 1 && agCnt(/zcl_ai_agent_progress=>sync\(/g) === 11 &&
   agCnt(/zcl_ai_agent_progress=>finish\(/g) === 2, 'start ' + agCnt(/zcl_ai_agent_progress=>start\(/g) + ' / sync ' + agCnt(/zcl_ai_agent_progress=>sync\(/g) + ' / finish ' + agCnt(/zcl_ai_agent_progress=>finish\(/g));
 check('每轮调模型前写本轮占位（循环里 sync 在 zcl_ai_llm_client=>chat 之前）', /lv_round = lv_round \+ 1\.\s*zcl_ai_agent_progress=>sync\([\s\S]*?is_running = VALUE #\( phase = 'PLANNING'[\s\S]*?zcl_ai_llm_client=>chat\(/.test(ag));
-check('工具执行前写模型那句话 + 工具占位：数据分析在 execute_plan 前、call_function 在 call_sync 前、扁平参数工具在参数校验后', agCnt(/iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \)/g) === 3 &&
+check('工具执行前写模型那句话 + 工具占位：数据分析在 execute_plan 前、call_function 在 call_sync 前、query_result 在 run 前、扁平参数工具在参数校验后', agCnt(/iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \)/g) === 4 &&
+  /iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \) \)\.\s*GET RUN TIME FIELD lv_rq_t0\.\s*zcl_ai_result_query=>run\(/.test(ag) &&
   /iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \) \)\.\s*GET RUN TIME FIELD lv_cf_t0\.\s*zcl_ai_rfc_exec=>call_sync\(/.test(ag) &&
   /plan_running\([^)]*\) \)\.\s*lt_ds = zcl_ai_data_analysis_service=>execute_plan/.test(ag) && /CONTINUE\.\s*ENDIF\.\s*zcl_ai_agent_progress=>sync\([\s\S]*?kv_running\(/.test(ag));
 check('数据分析查询后带预览 sync（preview_of 按查询逐条）', /LOOP AT lt_ds INTO DATA\(ls_ds_prev\)\.[\s\S]*?preview_of\([\s\S]*?zcl_ai_agent_progress=>sync\( it_trace = lt_trace it_preview = lt_prog_prev \)/.test(ag));
@@ -887,6 +889,71 @@ console.log('\n[17] 函数表参数粘贴数据：RFC_EXEC V1.2 / SCANNER V1.3 /
   const dp = codeOnly(read('ZCL_ZAI_CHAT_DPC_EXT.abap'));
   check('DPC V15.14：StartReportRun 的 ParamsJson 是长文本引用时换回原文', /IF lv_srun_pj CP '@@ZAI_TEXT:\*'\.\s+lv_srun_pj = resolve_text\( lv_srun_pj \)\./.test(dp) &&
     /iv_params_json = lv_srun_pj/.test(dp));
+}
+
+
+// ---------------------------------------------------------------- 18) 11.4 报表结果全量分析
+console.log('\n[18] 11.4 报表结果全量分析：RESULT_QUERY V1.0 / AGENT_SERVICE V15.15 / COMBO V1.0.2 / REGISTRY V15.10 / ROUTER V1.0.7');
+{
+  const methodsOf = (code) => {
+    const m = {};
+    (code.match(/^\s*METHOD\s+\w+\.[\s\S]*?^\s*ENDMETHOD\./gim) || []).forEach((x) => { m[x.match(/METHOD\s+(\w+)\./i)[1].toLowerCase()] = x; });
+    return m;
+  };
+  const rqRaw = read('ZCL_AI_RESULT_QUERY.abap'), rq = codeOnly(rqRaw), rqM = methodsOf(rq);
+  check('RESULT_QUERY V1.0：版本头、方法齐全、源码行不超过 255', /^\* V1\.0\s+20261104/m.test(rqRaw) &&
+    ['enabled', 'tool_description', 'context', 'run', 'load', 'parse_query', 'execute', 'sort_rows', 'row_pass', 'compare'].every((k) => rqM[k]) &&
+    rqRaw.split('\n').every((l) => l.length <= 255));
+  check('RESULT_QUERY：读全量走 COMBO load_result（报表执行不要求 ANALYZE_ENABLED），同一请求按结果号缓存',
+    /zcl_ai_combo_service=>load_result\(/.test(rqM.load || '') && /iv_need_analyze TYPE abap_bool DEFAULT abap_false/.test(rq) &&
+    /lv_art = gv_cache_art AND gv_cache_art IS NOT INITIAL/.test(rqM.load || '') && /'REPORT_RESULT'[\s\S]*'FIORI_RESULT'/.test(rqM.load || ''));
+  check('context：行数少给全部明细；多则 compute_stats + group_json + 主要数值列全量排序的最大 / 最小行',
+    /ev_all\s+= abap_true\./.test(rqM.context || '') && /compute_stats\( ls_ds \)/.test(rqM.context || '') &&
+    /zcl_ai_combo_service=>group_json\(/.test(rqM.context || '') && /main_measure\( ls_ds \)/.test(rqM.context || '') &&
+    /iv_desc = abap_true[\s\S]*iv_desc = abap_false/.test(rqM.context || ''));
+  check('execute：筛选 → 明细排序取前 N / 分组聚合（sum avg max min count count_distinct），排序可按聚合的原列名',
+    ['SUM', 'AVG', 'MAX', 'MIN', 'COUNT', 'COUNT_DISTINCT'].every((a) => (rqM.execute || '').indexOf("'" + a + "'") > 0) &&
+    /row_pass\( is_row = ls_row it_filters = is_q-filters \)/.test(rqM.execute || '') &&
+    /LOOP AT is_q-metrics INTO ls_m WHERE ci = lv_src_ci\./.test(rqM.execute || '') && /DELETE es_out-rows FROM is_q-limit \+ 1\./.test(rqM.execute || ''));
+  check('parse_query：列名或标题都认；错列名回可用列清单；limit 受 RESULT_QUERY_MAX_OUT 约束',
+    /norm\( ls_c-name \) = lv_n[\s\S]*norm\( ls_c-label \) = lv_n/.test(rqM.find_col || '') && /可用的列: \{ col_list\( is_ds \) \}/.test(rqM.parse_query || '') &&
+    /'RESULT_QUERY_MAX_OUT'/.test(rqM.parse_query || ''));
+  check('run：失败也回 ok:false + 原因；成功回 rows_scanned / rows_matched + 数据集（GUARD 上限内）',
+    /"ok":false/.test(rqM.run || '') && /"rows_scanned":/.test(rqM.run || '') && /gc_max_result_chars - 800/.test(rqM.run || ''));
+
+  const cbRaw = read('ZCL_AI_COMBO_SERVICE.abap'), cb = codeOnly(cbRaw);
+  const cbPub = (cb.match(/PUBLIC SECTION\.([\s\S]*?)PRIVATE SECTION\./) || ['', ''])[1];
+  check('COMBO V1.0.2：load_result / auto_group / group_json / to_num / num_out 在公共区；ANALYZE_ENABLED 只在 iv_need_analyze = X 时要求',
+    /^\* V1\.0\.2\s+20261104/m.test(cbRaw) && ['load_result', 'auto_group', 'group_json', 'to_num', 'num_out'].every((k) => new RegExp('CLASS-METHODS ' + k + '\\b').test(cbPub)) &&
+    /IF lv_an <> 'X' AND iv_need_analyze = abap_true\./.test(cb) && /iv_need_analyze = iv_need_analyze/.test(cb));
+
+  const trRaw2 = read('ZCL_AI_TOOL_REGISTRY.abap'), tr2 = codeOnly(trRaw2);
+  const allow = (tr2.match(/METHOD get_tools_for_module\.[\s\S]*?ENDMETHOD\./) || [''])[0];
+  check('REGISTRY V15.10：注册 query_result（开关控制），不进任何模块白名单', /zcl_ai_result_query=>tool_description\( \)/.test(tr2) &&
+    /IF zcl_ai_result_query=>enabled\( \) = abap_true\./.test(tr2) && !/result_query/.test(allow));
+
+  const agRaw2 = read('ZCL_AI_AGENT_SERVICE.abap'), ag2 = codeOnly(agRaw2);
+  const bac = (ag2.match(/METHOD build_artifact_ctx\.[\s\S]*?ENDMETHOD\./) || [''])[0];
+  check('AGENT V15.15：build_artifact_ctx 用 RESULT_QUERY=>context，不再按 gc_art_chars 截断', /^\* V15\.15 20261104/m.test(agRaw2) &&
+    /zcl_ai_result_query=>context\(/.test(bac) && !/gc_art_chars/.test(bac) && /ev_all\s+= ev_all/.test(bac));
+  check('AGENT：三处 build_artifact_ctx 都取 ev_all 并记下 lv_art_id；Fiori 分析记 ls_fturn-artifact_id',
+    (ag2.match(/ev_all\s+= lv_art_all/g) || []).length === 3 && (ag2.match(/lv_art_id = (iv_focus_artifact_id|lv_art_latest)\./g) || []).length === 3 &&
+    /lv_art_id\s+= ls_fturn-artifact_id\./.test(ag2));
+  check('AGENT：query_result 在技能过滤之后加入；提示词白名单同步（iv_result_query = lv_rq_on）',
+    /filter_tools\( EXPORTING is_skill = ls_skill CHANGING ct_tools = lt_allowed_tools \)\.[\s\S]{0,400}DATA\(lv_rq_on\)/.test(ag2) &&
+    /iv_result_query = lv_rq_on/.test(ag2) && /ELSEIF ls_tool-tool_id = zcl_ai_result_query=>gc_tool\./.test(ag2));
+  check('AGENT：query_result 分支在扁平 kv 之前，结果号用 lv_art_id，数据集进 lt_datasets',
+    ag2.indexOf('IF ls_out-tool = zcl_ai_result_query=>gc_tool.') > 0 &&
+    ag2.indexOf('IF ls_out-tool = zcl_ai_result_query=>gc_tool.') < ag2.indexOf('zcl_ai_agent_guard=>parse_flat_json(') &&
+    /iv_artifact_id = lv_art_id/.test(ag2) && /APPEND ls_rq_ds TO lt_datasets\./.test(ag2));
+
+  const rtRaw = read('ZCL_AI_INTENT_ROUTER.abap'), rt = codeOnly(rtRaw);
+  check('ROUTER V1.0.7：规则 4b 认「这张报表的数据」；报表场景库存类问题有结果时按结果追问',
+    /^\* V1\.0\.7\s+20261104/m.test(rtRaw) && /这张\|这批/.test(rt) && /\(报表\|运行\)的\?\(结果\|数据\)/.test(rt) &&
+    /AND zcl_ai_report_service=>find_latest_artifact\( iv_session_id = iv_session_id \) IS NOT INITIAL\./.test(rt));
+  // 规则 4b 正则在 JS 里等价验证(ABAP POSIX 正则这里的写法与 JS 一致)
+  const re4b = /(这个|这份|这张|这批|这些|这次|本次|该|此|上面|上述|刚才|刚刚|前面|以上)的?(报表)?的?(运行)?的?(结果|数据)/;
+  check('规则 4b 正则：「分析一下这张报表的数据」「这张报表的结果」「上面的数据」命中', ['分析一下这张报表的数据，并看下库存最高的前10项料号', '这张报表的结果', '上面的数据哪个工厂最多'].every((q) => re4b.test(q)));
 }
 
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));

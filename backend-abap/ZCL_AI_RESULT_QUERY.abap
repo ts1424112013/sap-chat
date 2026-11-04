@@ -20,7 +20,7 @@
 *         op: eq ne gt ge lt le contains not_contains starts_with in not_in empty not_empty
 *         agg: sum avg max min count count_distinct(count 不给 column = 行数)
 * 配置:   ZAI_CHAT_CFG: RESULT_QUERY_ENABLED(N = 关工具, 默认开) /
-*         RESULT_QUERY_MAX_ROWS(20000, 读取上限) / RESULT_QUERY_MAX_OUT(100, 工具最多返回行数) /
+*         RESULT_QRY_MAX_ROWS(20000, 读取上限) / RESULT_QUERY_MAX_OUT(100, 工具最多返回行数) /
 *         RESULT_CTX_ALL_ROWS(150, 不超过就给全部明细) / RESULT_CTX_EDGE(10) /
 *         RESULT_CTX_GROUPS(30) / RESULT_CTX_CHARS(24000)
 * 依赖:   ZCL_AI_COMBO_SERVICE V1.0.2 / ZCL_AI_ODATA_SHAPER / ZCL_AI_FIORI_REPORT_SERVICE(compute_stats) /
@@ -278,7 +278,7 @@ CLASS zcl_ai_result_query IMPLEMENTATION.
     DATA lv_type_s TYPE string.
     zcl_ai_combo_service=>load_result(
       EXPORTING iv_artifact_id  = lv_art
-                iv_max_rows     = cfg_int( iv_key = 'RESULT_QUERY_MAX_ROWS' iv_default = 20000
+                iv_max_rows     = cfg_int( iv_key = 'RESULT_QRY_MAX_ROWS' iv_default = 20000
                                            iv_min = 100 iv_max = 100000 )
                 iv_need_analyze = iv_need_analyze
       IMPORTING es_ds           = es_ds
