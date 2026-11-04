@@ -46,6 +46,12 @@
 *   依赖: ZCL_AI_RFC_EXEC V1.1(先激活)
 *   ★ 重贴后核对标记: 有 gc_tool_call_func; get_tools 里有 zcl_ai_rfc_exec=>tool_description( );
 *     get_tools_for_module 的 DATA 分支有 APPEND gc_tool_call_func
+* V15.10 20261104(11.4 进度: 报表结果分析只看到前 8000 字符): 新工具 query_result ——
+*   在本轮正在分析的那一份报表执行 / Fiori 结果的全部存储行上筛选 / 分组 / 聚合 / 排序;
+*   说明 = ZCL_AI_RESULT_QUERY=>tool_description; 开关 RESULT_QUERY_ENABLED = N 时不注册。
+*   不进任何模块白名单: 只由 AGENT_SERVICE 在本轮定位到结果时加进可用工具(结果号由后端给)
+*   依赖: ZCL_AI_RESULT_QUERY V1.0(先激活)
+*   ★ 重贴后核对标记: get_tools 里有 zcl_ai_result_query=>tool_description( )
 *         sap_data_analysis  受控查询计划取数(能力目录白名单实体/字段),
 *                            args 直接承载计划 JSON 对象(不走扁平 kv),
 *                            解析/校验见 AGENT_GUARD.parse_analysis_plan,
@@ -214,6 +220,17 @@ CLASS zcl_ai_tool_registry IMPLEMENTATION.
       APPEND VALUE #(
         tool_id     = gc_tool_call_func
         description = lv_fn_desc
+        params      = lt_p
+        read_only   = abap_true ) TO rt_tools.
+    ENDIF.
+
+    " V15.10: query_result —— 当前结果的全量存储行查询(args 是嵌套对象, params 留空;
+    " 不进模块白名单, 由 AGENT_SERVICE 在定位到结果时加入)
+    IF zcl_ai_result_query=>enabled( ) = abap_true.
+      CLEAR lt_p.
+      APPEND VALUE #(
+        tool_id     = zcl_ai_result_query=>gc_tool
+        description = zcl_ai_result_query=>tool_description( )
         params      = lt_p
         read_only   = abap_true ) TO rt_tools.
     ENDIF.

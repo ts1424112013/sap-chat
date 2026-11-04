@@ -52,6 +52,11 @@
 *   确定性处理)。module_id 用 'FIORI'(不改 TASK_SERVICE 常量); 其余场景不变
 *   ★ 重贴后核对标记: apply_scene 内有 WHEN gc_scene_fiori; normalize_scene
 *   的 WHEN 列表含 gc_scene_fiori
+* V1.0.7  20261104(11.4 进度: "分析一下这张报表的数据, 并看下库存最高的前10项料号"被当成库存查询挡回):
+*   ① 规则 4b 指代词加 这张 / 这批 / 这次 / 本次, 报表与结果之间允许「的」; 兜底也认「报表的数据」;
+*   ② apply_scene 报表场景: 库存类意图(不是点名表)且会话里已有报表结果 → 按结果追问(ANALYZE_ARTIFACT),
+*     没有结果时仍提示换场景. 依赖 ZCL_AI_REPORT_SERVICE=>find_latest_artifact(已有)
+*   ★ 重贴后核对标记: 规则 4b 正则含「这张|这批」; apply_scene 报表分支有 find_latest_artifact(
 * ★ 重贴后核对标记: quick_route 中 "表+表名" 规则必须在执行/继续规则
 *   之前(防 "分析表 ZTEST_DATA" 因 Z 开头误判 REPORT); 偏移/长度
 *   已全部先落中间变量(§2.1-2); 规则 4b 在 TCode 块之后、规则 5 之前;
@@ -240,6 +245,19 @@ CLASS zcl_ai_intent_router IMPLEMENTATION.
         " ---- 报表执行: 只出报表意图; 结果分析不调工具 ----
         IF cs_intent-module_id = zcl_ai_task_service=>gc_mod_report.
           RETURN.   " 执行 / 查看 / 分析结果, 原样
+        ENDIF.
+        " V1.0.7(11.4 进度): 报表场景里带「库存 / 料号」字眼的问题, 会话里已有报表结果时
+        " 多半是在问这份结果(如"库存最高的前 10 项料号") → 落到下面的结果追问, 不再提示换场景
+        IF cs_intent-object_kind <> 'TABLE'
+           AND cs_intent-module_id = zcl_ai_task_service=>gc_mod_inventory
+           AND zcl_ai_report_service=>find_latest_artifact( iv_session_id = iv_session_id ) IS NOT INITIAL.
+          CLEAR cs_intent.
+          cs_intent-module_id   = zcl_ai_task_service=>gc_mod_report.
+          cs_intent-intent_code = gc_int_analyze_art.
+          cs_intent-action      = gc_act_analyze.
+          cs_intent-object_kind = 'ARTIFACT'.
+          cs_intent-reason      = |报表场景: 库存类问题按本会话报表结果追问|.
+          RETURN.
         ENDIF.
         IF cs_intent-object_kind = 'TABLE'
            OR cs_intent-module_id = zcl_ai_task_service=>gc_mod_inventory.
@@ -519,12 +537,13 @@ CLASS zcl_ai_intent_router IMPLEMENTATION.
     DATA(lv_refsrc) = lv_up.
     REPLACE ALL OCCURRENCES OF REGEX '数据库|数据元素|数据类型|数据字典' IN lv_refsrc WITH '#'.
     DATA(lv_ref_hit) = abap_false.
-    FIND REGEX '(这个|这份|这些|该|此|上面|上述|刚才|刚刚|前面|以上)的?(报表)?(运行)?(结果|数据)'
+    " V1.0.7: 加「这张 / 这批 / 这次 / 本次」, 报表与结果之间允许「的」(这张报表的数据)
+    FIND REGEX '(这个|这份|这张|这批|这些|这次|本次|该|此|上面|上述|刚才|刚刚|前面|以上)的?(报表)?的?(运行)?的?(结果|数据)'
       IN lv_refsrc.
     IF sy-subrc = 0.
       lv_ref_hit = abap_true.
     ELSE.
-      FIND REGEX '(报表|运行)的?结果' IN lv_refsrc.
+      FIND REGEX '(报表|运行)的?(结果|数据)' IN lv_refsrc.   " V1.0.7: 也认「报表的数据」
       IF sy-subrc = 0.
         lv_ref_hit = abap_true.
       ENDIF.

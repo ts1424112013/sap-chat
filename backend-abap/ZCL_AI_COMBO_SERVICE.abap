@@ -31,8 +31,13 @@
 * V1.0    20261031: 首版
 * V1.0.1  20261101: 来源核对加报表授权 ZCL_AI_ACCESS=>report_ok(按用户, 开关 RPT_ACL_ENABLED);
 *         没授权的来源整体拒绝并说明是哪一份. 依赖 ZCL_AI_ACCESS V1.0
+* V1.0.2  20261104(11.4 进度: 报表结果分析只看到前 8000 字符): 给 ZCL_AI_RESULT_QUERY 复用 ——
+*         ① 新公共方法 load_result: 读一份报表执行 / Fiori 结果的全部存储行(核对同组合来源;
+*            iv_need_analyze = 空 时报表执行结果不要求登记 ANALYZE_ENABLED, 与单份结果分析现状一致);
+*         ② auto_group / group_json / to_num / num_out 与类型 tt_str / tt_int 挪到公共区;
+*         ③ read_source / read_report_src 加可选参数 iv_need_analyze(默认 X, 组合行为不变)
 * ★ 重贴后核对标记: 有 METHOD create / get_result / is_combo / analysis_context /
-*   norm_key / read_report_src / read_fiori_src / combine_join; create 内有
+*   norm_key / read_report_src / read_fiori_src / combine_join / load_result; create 内有
 *   zcl_ai_task_service=>register_artifact( 与 INSERT zai_combo_data FROM TABLE
 *=======================================================================
 CLASS zcl_ai_combo_service DEFINITION
@@ -99,9 +104,44 @@ CLASS zcl_ai_combo_service DEFINITION
       IMPORTING iv        TYPE string
       RETURNING VALUE(rv) TYPE string.
 
+    " V1.0.2: 以下给 ZCL_AI_RESULT_QUERY 复用
+    TYPES tt_str TYPE STANDARD TABLE OF string WITH DEFAULT KEY.
+    TYPES tt_int TYPE STANDARD TABLE OF i WITH DEFAULT KEY.
+
+    " 读一份结果的全部存储行(最多 iv_max_rows 行). 核对: 本人的 + AVAILABLE + 运行 READY +
+    " 报表授权; iv_need_analyze = X 时还要求登记 ANALYZE_ENABLED = X(Fiori 结果总是要求)
+    CLASS-METHODS load_result
+      IMPORTING iv_artifact_id  TYPE string
+                iv_max_rows     TYPE i
+                iv_need_analyze TYPE abap_bool DEFAULT abap_true
+      EXPORTING es_ds           TYPE zcl_ai_odata_shaper=>ty_dataset
+                ev_type         TYPE string
+                ev_report_id    TYPE string
+                ev_label        TYPE string
+                ev_session_id   TYPE string
+                ev_error        TYPE string.
+    " 取值个数 2~50 的文字列, 优先 it_prefer, 最多 2 列
+    CLASS-METHODS auto_group
+      IMPORTING is_ds     TYPE zcl_ai_odata_shaper=>ty_dataset
+                it_prefer TYPE tt_int
+      RETURNING VALUE(rt) TYPE tt_int.
+    " 全量分组汇总 JSON(每组行数 + 各数值列合计, 前 iv_max 组, 其余并成「其他」)
+    CLASS-METHODS group_json
+      IMPORTING is_ds     TYPE zcl_ai_odata_shaper=>ty_dataset
+                it_by     TYPE tt_int
+                it_skip   TYPE tt_int     " 不当度量的列(关联列, 如工厂 1000 也是数字)
+                iv_max    TYPE i
+      RETURNING VALUE(rv) TYPE string.
+    CLASS-METHODS num_out
+      IMPORTING iv        TYPE decfloat34
+      RETURNING VALUE(rv) TYPE string.
+    CLASS-METHODS to_num
+      IMPORTING iv        TYPE string
+      EXPORTING ev_num    TYPE decfloat34
+                ev_ok     TYPE abap_bool.
+
   PRIVATE SECTION.
 
-    TYPES tt_str TYPE STANDARD TABLE OF string WITH DEFAULT KEY.
     TYPES: BEGIN OF ty_pair,
              a TYPE string,     " 主表列名
              b TYPE string,     " 该表列名
@@ -129,7 +169,6 @@ CLASS zcl_ai_combo_service DEFINITION
              sources  TYPE tt_src,
            END OF ty_spec.
     TYPES tt_ds TYPE STANDARD TABLE OF zcl_ai_odata_shaper=>ty_dataset WITH DEFAULT KEY.
-    TYPES tt_int TYPE STANDARD TABLE OF i WITH DEFAULT KEY.
 
     CLASS-METHODS user_ok
       RETURNING VALUE(rv) TYPE abap_bool.
@@ -144,13 +183,6 @@ CLASS zcl_ai_combo_service DEFINITION
     CLASS-METHODS js
       IMPORTING iv        TYPE string
       RETURNING VALUE(rv) TYPE string.
-    CLASS-METHODS num_out
-      IMPORTING iv        TYPE decfloat34
-      RETURNING VALUE(rv) TYPE string.
-    CLASS-METHODS to_num
-      IMPORTING iv        TYPE string
-      EXPORTING ev_num    TYPE decfloat34
-                ev_ok     TYPE abap_bool.
     CLASS-METHODS norm_label
       IMPORTING iv        TYPE string
       RETURNING VALUE(rv) TYPE string.
@@ -171,12 +203,14 @@ CLASS zcl_ai_combo_service DEFINITION
       IMPORTING iv_schema_json TYPE string
       RETURNING VALUE(rt)      TYPE zcl_ai_odata_shaper=>tt_column.
     CLASS-METHODS read_source
-      IMPORTING iv_max_rows TYPE i
+      IMPORTING iv_max_rows     TYPE i
+                iv_need_analyze TYPE abap_bool DEFAULT abap_true
       EXPORTING es_ds       TYPE zcl_ai_odata_shaper=>ty_dataset
                 ev_error    TYPE string
       CHANGING  cs_src      TYPE ty_src.
     CLASS-METHODS read_report_src
-      IMPORTING iv_max_rows TYPE i
+      IMPORTING iv_max_rows     TYPE i
+                iv_need_analyze TYPE abap_bool DEFAULT abap_true
       EXPORTING es_ds       TYPE zcl_ai_odata_shaper=>ty_dataset
                 ev_error    TYPE string
       CHANGING  cs_src      TYPE ty_src.
@@ -196,16 +230,6 @@ CLASS zcl_ai_combo_service DEFINITION
                 ev_matched TYPE i
                 ev_note    TYPE string
       CHANGING  ct_src     TYPE tt_src.
-    CLASS-METHODS auto_group
-      IMPORTING is_ds     TYPE zcl_ai_odata_shaper=>ty_dataset
-                it_prefer TYPE tt_int
-      RETURNING VALUE(rt) TYPE tt_int.
-    CLASS-METHODS group_json
-      IMPORTING is_ds     TYPE zcl_ai_odata_shaper=>ty_dataset
-                it_by     TYPE tt_int
-                it_skip   TYPE tt_int     " 不当度量的列(关联列, 如工厂 1000 也是数字)
-                iv_max    TYPE i
-      RETURNING VALUE(rv) TYPE string.
     CLASS-METHODS edge_json
       IMPORTING is_ds     TYPE zcl_ai_odata_shaper=>ty_dataset
                 iv_edge   TYPE i
@@ -538,7 +562,7 @@ CLASS zcl_ai_combo_service IMPLEMENTATION.
     cs_src-type = ls_art-artifact_type.   " 以后端登记为准, 不信前端声明
     CASE cs_src-type.
       WHEN 'REPORT_RESULT'.
-        read_report_src( EXPORTING iv_max_rows = iv_max_rows
+        read_report_src( EXPORTING iv_max_rows = iv_max_rows iv_need_analyze = iv_need_analyze
                          IMPORTING es_ds = es_ds ev_error = ev_error
                          CHANGING  cs_src = cs_src ).
       WHEN 'FIORI_RESULT'.
@@ -548,6 +572,25 @@ CLASS zcl_ai_combo_service IMPLEMENTATION.
       WHEN OTHERS.
         ev_error = |这类结果({ cs_src-type })不能参与组合, 只支持报表执行与 Fiori 报表的结果|.
     ENDCASE.
+
+  ENDMETHOD.
+
+
+  METHOD load_result.
+
+    " V1.0.2: 单份结果读全部存储行(ZCL_AI_RESULT_QUERY 用); 核对与组合来源相同
+    DATA ls_src TYPE ty_src.
+    CLEAR: es_ds, ev_type, ev_report_id, ev_label, ev_session_id, ev_error.
+    ls_src-artifact_id = to_upper( condense( iv_artifact_id ) ).
+    read_source( EXPORTING iv_max_rows     = iv_max_rows
+                           iv_need_analyze = iv_need_analyze
+                 IMPORTING es_ds           = es_ds
+                           ev_error        = ev_error
+                 CHANGING  cs_src          = ls_src ).
+    ev_type       = ls_src-type.
+    ev_report_id  = ls_src-report_id.
+    ev_label      = ls_src-name.
+    ev_session_id = ls_src-session_id.
 
   ENDMETHOD.
 
@@ -583,7 +626,7 @@ CLASS zcl_ai_combo_service IMPLEMENTATION.
     SELECT SINGLE analyze_enabled FROM zai_rpt_def
       WHERE report_id = @lv_rid
       INTO @DATA(lv_an).
-    IF lv_an <> 'X'.
+    IF lv_an <> 'X' AND iv_need_analyze = abap_true.   " V1.0.2: 单份结果分析不要求
       ev_error = |报表 { lv_rid } 未开放模型分析(登记 ANALYZE_ENABLED 为空)|.
       RETURN.
     ENDIF.
