@@ -71,6 +71,65 @@ sap.ui.define([
         return {
 
                 /* ---------------------------------------------------------
+                 * 20261105：参数卡草稿 —— 填到一半切换会话或刷新页面，卡片会按任务的待填参数重建，
+                 * 原来填过的值就没了。现在每次改动（300 ms 防抖）按 用户 + 任务号 存在本机，
+                 * _paramAsk 重建卡片时叠回去；提交 / 取数成功后删掉。最多留 30 张卡、14 天
+                 * --------------------------------------------------------- */
+
+                _askDraftKey: function () {
+                        return "zaiChat.askDraft.v1." + this._modelUserKey();
+                },
+
+                _askDraftAll: function () {
+                        try { return JSON.parse(window.localStorage.getItem(this._askDraftKey()) || "{}") || {}; } catch (e) { return {}; }
+                },
+
+                _askDraftWrite: function (o) {
+                        try { window.localStorage.setItem(this._askDraftKey(), JSON.stringify(o)); } catch (e) { /* 存不下：只是刷新后要重填 */ }
+                },
+
+                /** AskCard 每次改动都会调（setEditHook）；只存还没提交的参数卡 */
+                _askDraftSave: function (oAsk) {
+                        if (!oAsk || oAsk.kind !== "params" || oAsk.state !== "open" || !oAsk.taskId) {
+                                return;
+                        }
+                        var that = this;
+                        this._mDraftTimer = this._mDraftTimer || {};
+                        window.clearTimeout(this._mDraftTimer[oAsk.taskId]);
+                        this._mDraftTimer[oAsk.taskId] = window.setTimeout(function () {
+                                var o = that._askDraftAll();
+                                var iNow = Date.now();
+                                o[oAsk.taskId] = { values: jQuery.extend({}, oAsk.values || {}), paste: jQuery.extend({}, oAsk.paste || {}), at: iNow };
+                                Object.keys(o).forEach(function (k) {
+                                        if (!o[k] || iNow - (o[k].at || 0) > 14 * 86400000) { delete o[k]; }
+                                });
+                                var aIds = Object.keys(o).sort(function (a, b) { return (o[b].at || 0) - (o[a].at || 0); });
+                                aIds.slice(30).forEach(function (k) { delete o[k]; });
+                                that._askDraftWrite(o);
+                        }, 300);
+                },
+
+                /** 任务号 → {values, paste}（没有返回空对象） */
+                _askDraftOf: function (sTaskId) {
+                        var d = sTaskId ? this._askDraftAll()[sTaskId] : null;
+                        return { values: (d && d.values) || {}, paste: (d && d.paste) || {} };
+                },
+
+                _askDraftClear: function (sTaskId) {
+                        if (!sTaskId) {
+                                return;
+                        }
+                        if (this._mDraftTimer) {
+                                window.clearTimeout(this._mDraftTimer[sTaskId]);
+                        }
+                        var o = this._askDraftAll();
+                        if (o[sTaskId]) {
+                                delete o[sTaskId];
+                                this._askDraftWrite(o);
+                        }
+                },
+
+                /* ---------------------------------------------------------
                  * 本机记录（localStorage；读写失败 = 没有记录，不影响主流程）
                  * --------------------------------------------------------- */
 

@@ -48,6 +48,7 @@ sap.ui.define([
                                         return v ? (p.label || p.param_id) + " " + AskCard.valueDisplay(p, v) : "";
                                 }).filter(Boolean);
                                 oAsk.state = "done";
+                                that._askDraftClear(oAsk.taskId);   // 20261105：已取数，草稿作废
                                 oAsk.resultText = aSum.length
                                         ? oRB.getText("fioriFetchedWith", [aSum.join(oRB.getText("listSepComma"))])
                                         : oRB.getText("fioriFetched");

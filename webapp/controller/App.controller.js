@@ -94,6 +94,8 @@ sap.ui.define([
 
                 onInit: function () {
                         var that = this;
+                        // 20261105：参数卡填到一半切换会话 / 刷新，填过的值按任务存在本机，卡片重建时填回（ResultRestore._askDraft*）
+                        AskCard.setEditHook(this._askDraftSave.bind(this));
 
                         // ---------- 聊天数据模型 ----------
                         var oChatModel = new JSONModel({
@@ -4724,7 +4726,7 @@ sap.ui.define([
                                         title: oRB.getText("fioriParamsTitle"),
                                         subtitle: oPendingObj.report_name || oPendingObj.report_id || "",
                                         params: aPending,
-                                        values: jQuery.extend({}, oPendingObj.values || {}),
+                                        values: jQuery.extend({}, oPendingObj.values || {}, this._askDraftOf(oTask.taskId).values),   // 20261105：叠上本机草稿
                                         options: [
                                                 { key: "submit", label: oRB.getText("fioriSubmit"), desc: oRB.getText("fioriSubmitDesc") },
                                                 { key: "cancel", label: oRB.getText("fioriCancel"), desc: oRB.getText("fioriCancelDesc") }
@@ -4744,8 +4746,10 @@ sap.ui.define([
                                 title: oRB.getText("askParamsTitle"),
                                 subtitle: [oTask.tcode, oTask.reportId].filter(Boolean).join(" · "),
                                 params: aPending,
-                                // 20261105（联合分析 #01 报表接力）：后端预填的值（上一份结果带入的多值 + 同名参数）与来源说明
-                                values: jQuery.extend({}, (oPendingObj && oPendingObj.values) || {}),
+                                // 20261105（联合分析 #01 报表接力）：后端预填的值（上一份结果带入的多值 + 同名参数）与来源说明；
+                                // 20261105：再叠上本机草稿（用户填过的值优先）
+                                values: jQuery.extend({}, (oPendingObj && oPendingObj.values) || {}, this._askDraftOf(oTask.taskId).values),
+                                paste: jQuery.extend({}, this._askDraftOf(oTask.taskId).paste),
                                 prefill: (oPendingObj && oPendingObj.prefill) || null,
                                 options: [
                                         { key: "submit", label: oRB.getText("askSubmit"), desc: oRB.getText("askSubmitDesc") },
@@ -5082,6 +5086,7 @@ sap.ui.define([
                                 oAsk.state = "done";
                                 oAsk.resultText = aSum.length ? oRB.getText("askSubmittedWith", [aSum.join(oRB.getText("listSepComma"))]) : oRB.getText("askSubmitted");
                                 that._renderAsk(sUid);
+                                that._askDraftClear(oAsk.taskId);   // 20261105：已提交，草稿作废
                                 that._rlRemember(oRes.reportRunId, oAsk);   // 20261105 报表接力：记下来源结果，结果卡出「关联」按钮
                                 that._trackRun(sUid, oRes.reportRunId, oAsk.sessionId, oRes.shortId);
                         }).catch(function (oErr) {

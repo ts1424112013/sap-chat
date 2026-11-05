@@ -835,6 +835,21 @@ const countOf = (s, sub) => s.split(sub).length - 1;
     /attachBrowserEvent\("paste"/.test(askSrc) && /fnSet\(uniqVals\(fnVals\(\)\.concat\(splitMulti\(t\)\)\)\)/.test(askSrc));
   check('剪贴板按钮只在安全上下文显示（http 用 Ctrl+V）', /navigator\.clipboard\.readText &&[\s\S]{0,80}window\.isSecureContext/.test(askSrc));
 
+  console.log('\n━━ 参数卡草稿（切换会话 / 刷新后填过的值还在，20261105）');
+  check('AskCard：四处改动都通知控制器（输入框 / 单选组 / 复选框 / 表参数；多重选择走输入框那处）',
+    (fs.readFileSync(path.join(WEBAPP, 'utils/AskCard.js'), 'utf8').match(/fireEdit\(oAsk\);/g) || []).length === 4);
+  let iHook = 0;
+  AskCard.setEditHook(function () { iHook++; });
+  check('setEditHook 注册后可调用（不抛错）', typeof AskCard.setEditHook === 'function');
+  const ctlSrc = fs.readFileSync(path.join(WEBAPP, 'controller/App.controller.js'), 'utf8');
+  const rrSrc = fs.readFileSync(path.join(WEBAPP, 'controller/mixin/ResultRestore.js'), 'utf8');
+  const fpSrc = fs.readFileSync(path.join(WEBAPP, 'controller/mixin/FioriPanel.js'), 'utf8');
+  check('控制器：onInit 注册草稿；重建参数卡叠上草稿（报表 + Fiori）；提交 / 取数成功后删草稿',
+    /AskCard\.setEditHook\(this\._askDraftSave\.bind\(this\)\)/.test(ctlSrc) && (ctlSrc.match(/this\._askDraftOf\(oTask\.taskId\)\.values/g) || []).length === 2 &&
+    /that\._askDraftClear\(oAsk\.taskId\)/.test(ctlSrc) && /that\._askDraftClear\(oAsk\.taskId\)/.test(fpSrc));
+  check('草稿只存还没提交的参数卡，按 用户 + 任务号，最多 30 张、14 天', /oAsk\.kind !== "params" \|\| oAsk\.state !== "open" \|\| !oAsk\.taskId/.test(rrSrc) &&
+    /"zaiChat\.askDraft\.v1\." \+ this\._modelUserKey\(\)/.test(rrSrc) && /aIds\.slice\(30\)/.test(rrSrc) && /14 \* 86400000/.test(rrSrc));
+
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -44,6 +44,14 @@ sap.ui.define([
          * ================================================================= */
         var TBL_MAX_ROWS = 1000;
 
+        /** 20261105：参数卡有改动时通知控制器（存草稿，切换会话 / 刷新后填回）；控制器用 setEditHook 注册 */
+        var fnEditHook = null;
+        function fireEdit(oAsk) {
+                if (fnEditHook && oAsk) {
+                        try { fnEditHook(oAsk); } catch (e) { /* 存草稿失败不影响填写 */ }
+                }
+        }
+
         function isTable(oP) {
                 return String((oP && oP.data_type) || "").toUpperCase() === "TABLE";
         }
@@ -224,6 +232,7 @@ sap.ui.define([
                         oAsk.paste[sId] = v;
                         oRec.res = parsePaste(v, aCols, bSingle);
                         mVals[sId] = oRec.res.ok ? oRec.res.json : "";
+                        fireEdit(oAsk);
                         oTa.setValueState("None");
                         oPrev.setContent(pastePreviewHtml(oRec.res, aCols));
                 });
@@ -774,6 +783,7 @@ sap.ui.define([
                 var fnSave = function (iPart, sV) {
                         aDraft[iPart] = sV || "";
                         mVals[sId] = oRec.range ? (aDraft[0] || "") + "," + (aDraft[1] || "") : aDraft[0];
+                        fireEdit(oAsk);
                 };
                 var fnMk = function (sV, sPh, iPart) {
                         iPart = iPart || 0;
@@ -843,6 +853,7 @@ sap.ui.define([
                                                 }
                                                 mVals[sId] = oRec.enumBtns.filter(function (b) { return b.getPressed(); })
                                                         .map(function (b) { return b.data("key"); }).join(",");
+                                                fireEdit(oAsk);
                                         }
                                 }).data("key", o.key).addStyleClass("askEnumBtn");
                         });
@@ -885,7 +896,7 @@ sap.ui.define([
         }
 
         /** 20261024：复选框 → 开关胶囊（按下 = "X"）；同一张卡的开关集中放一行 */
-        function buildBool(oP, mVals) {
+        function buildBool(oP, mVals, oAsk) {
                 var sId = oP.param_id;
                 var oRec = { id: sId, label: oP.label || sId, required: false };
                 oRec.bool = new ToggleButton({
@@ -893,7 +904,7 @@ sap.ui.define([
                         icon: "sap-icon://accept",
                         pressed: mVals[sId] === "X",
                         tooltip: oP.help_text || oRec.label,
-                        press: function (e) { mVals[sId] = e.getParameter("pressed") ? "X" : ""; }
+                        press: function (e) { mVals[sId] = e.getParameter("pressed") ? "X" : ""; fireEdit(oAsk); }
                 }).addStyleClass("askEnumBtn askBoolBtn");
                 return oRec;
         }
@@ -1053,7 +1064,7 @@ sap.ui.define([
                         // 20261027（10.27 #04）：复选框按原选择屏的块分组，每块一行、块标题作行标签
                         var aBoolGroups = groupBools(oLay.bools);
                         aBoolGroups.forEach(function (g, i) {
-                                var aBoolRecs = g.params.map(function (p) { return buildBool(p, oAsk.values); });
+                                var aBoolRecs = g.params.map(function (p) { return buildBool(p, oAsk.values, oAsk); });
                                 aRecs = aRecs.concat(aBoolRecs);
                                 var oGrp = new VBox({
                                         items: [new Label({ text: g.label, wrapping: true, tooltip: g.label }).addStyleClass("askFieldLabel"),
@@ -1278,7 +1289,7 @@ sap.ui.define([
                 };
         }
 
-        return { splitMulti: splitMulti, uniqVals: uniqVals, render: render, detectChoices: detectChoices, dateDisplay: dateDisplay, valueDisplay: valueDisplay, enumOptions: enumOptions,
+        return { setEditHook: function (fn) { fnEditHook = fn; }, splitMulti: splitMulti, uniqVals: uniqVals, render: render, detectChoices: detectChoices, dateDisplay: dateDisplay, valueDisplay: valueDisplay, enumOptions: enumOptions,
                 mergeParamDefs: mergeParamDefs, layoutParams: layoutParams, groupBools: groupBools, defaultValueOf: defaultValueOf,
                 setValueHelp: setValueHelp, hasValueHelp: hasValueHelp, openPicker: openPicker,
                 isTable: isTable, parsePaste: parsePaste, parseTsv: parseTsv, pasteColsText: pasteColsText };
