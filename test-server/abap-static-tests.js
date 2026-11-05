@@ -347,10 +347,11 @@ check('AGENT_SERVICE V15.6：analyze_agent 有可选参数 iv_request_id', /^\* 
 const agCnt = (re) => (ag.match(re) || []).length;
 // 20261102 V15.14：call_function 分支多 2 处 sync（调用前写那句话、调用后收口）
 // V15.15(11.4): query_result 分支多 2 个 sync(工具前写那句话 + 执行后) —— 9 → 11
-check('进度调用数：start 1 / sync 13 / finish 2（V15.16 关联查表分支 +2）', agCnt(/zcl_ai_agent_progress=>start\(/g) === 1 && agCnt(/zcl_ai_agent_progress=>sync\(/g) === 13 &&
+check('进度调用数：start 1 / sync 15 / finish 2（V15.16 关联查表、V15.17 报表接力各 +2）', agCnt(/zcl_ai_agent_progress=>start\(/g) === 1 && agCnt(/zcl_ai_agent_progress=>sync\(/g) === 15 &&
   agCnt(/zcl_ai_agent_progress=>finish\(/g) === 2, 'start ' + agCnt(/zcl_ai_agent_progress=>start\(/g) + ' / sync ' + agCnt(/zcl_ai_agent_progress=>sync\(/g) + ' / finish ' + agCnt(/zcl_ai_agent_progress=>finish\(/g));
 check('每轮调模型前写本轮占位（循环里 sync 在 zcl_ai_llm_client=>chat 之前）', /lv_round = lv_round \+ 1\.\s*zcl_ai_agent_progress=>sync\([\s\S]*?is_running = VALUE #\( phase = 'PLANNING'[\s\S]*?zcl_ai_llm_client=>chat\(/.test(ag));
-check('工具执行前写模型那句话 + 工具占位：数据分析在 execute_plan 前、call_function 在 call_sync 前、query_result / lookup_by_result 在 run 前、扁平参数工具在参数校验后', agCnt(/iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \)/g) === 5 &&
+check('工具执行前写模型那句话 + 工具占位：数据分析在 execute_plan 前、call_function 在 call_sync 前、query_result / lookup_by_result 在 run 前、扁平参数工具在参数校验后', agCnt(/iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \)/g) === 6 &&
+  /iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \) \)\.\s*GET RUN TIME FIELD lv_rl_t0\.\s*zcl_ai_report_relay=>run\(/.test(ag) &&
   /iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \) \)\.\s*GET RUN TIME FIELD lv_lk_t0\.\s*zcl_ai_result_lookup=>run\(/.test(ag) &&
   /iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \) \)\.\s*GET RUN TIME FIELD lv_rq_t0\.\s*zcl_ai_result_query=>run\(/.test(ag) &&
   /iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \) \)\.\s*GET RUN TIME FIELD lv_cf_t0\.\s*zcl_ai_rfc_exec=>call_sync\(/.test(ag) &&
@@ -945,8 +946,8 @@ console.log('\n[18] 11.4 报表结果全量分析：RESULT_QUERY V1.0 / AGENT_SE
   const bac = (ag2.match(/METHOD build_artifact_ctx\.[\s\S]*?ENDMETHOD\./) || [''])[0];
   check('AGENT V15.15：build_artifact_ctx 用 RESULT_QUERY=>context，不再按 gc_art_chars 截断', /^\* V15\.15 20261104/m.test(agRaw2) &&
     /zcl_ai_result_query=>context\(/.test(bac) && !/gc_art_chars/.test(bac) && /ev_all\s+= ev_all/.test(bac));
-  check('AGENT：三处 build_artifact_ctx 都取 ev_all 并记下 lv_art_id；Fiori 分析记 ls_fturn-artifact_id',
-    (ag2.match(/ev_all\s+= lv_art_all/g) || []).length === 3 && (ag2.match(/lv_art_id = (iv_focus_artifact_id|lv_art_latest)\./g) || []).length === 3 &&
+  check('AGENT：五处 build_artifact_ctx 都取 ev_all 并记下 lv_art_id（V15.17 接力 +2）；Fiori 分析记 ls_fturn-artifact_id',
+    (ag2.match(/ev_all\s+= lv_art_all/g) || []).length === 5 && (ag2.match(/lv_art_id = (iv_focus_artifact_id|lv_art_latest|lv_rl_src)\./g) || []).length === 5 &&
     /lv_art_id\s+= ls_fturn-artifact_id\./.test(ag2));
   check('AGENT：query_result 在技能过滤之后加入；提示词白名单同步（iv_result_query = lv_rq_on）',
     /filter_tools\( EXPORTING is_skill = ls_skill CHANGING ct_tools = lt_allowed_tools \)\.[\s\S]{0,400}DATA\(lv_rq_on\)/.test(ag2) &&
@@ -1059,7 +1060,7 @@ console.log('\n[20] 联合分析：#00 自动场景按路由选工具 / #02 关�
   const rtRaw = read('ZCL_AI_INTENT_ROUTER.abap'), rt = codeOnly(rtRaw);
   const rep = (rt.match(/METHOD apply_scene\.[\s\S]*?WHEN gc_scene_data\./) || [''])[0];
   check('ROUTER V1.0.8：ty_intent 末尾加 lookup_ok；报表场景点名查表先问 RESULT_LOOKUP=>allowed，放行才改成结果追问',
-    /^\* V1\.0\.8\s+20261105/m.test(rtRaw) && /out_of_scene\s+TYPE abap_bool,\s+lookup_ok\s+TYPE abap_bool,\s+END OF ty_intent/.test(rt) &&
+    /^\* V1\.0\.8\s+20261105/m.test(rtRaw) && /out_of_scene\s+TYPE abap_bool,\s+lookup_ok\s+TYPE abap_bool,\s+(relay_ok\s+TYPE abap_bool,\s+)?END OF ty_intent/.test(rt) &&
     /zcl_ai_result_lookup=>allowed\( iv_session_id \) = abap_true/.test(rep) && /cs_intent-lookup_ok\s+= abap_true/.test(rep) &&
     rep.indexOf('zcl_ai_result_lookup=>allowed(') < rep.indexOf('cs_intent-out_of_scene = abap_true'));
 
@@ -1107,6 +1108,88 @@ console.log('\n[20] 联合分析：#00 自动场景按路由选工具 / #02 关�
   check('「可以去查表ZDPMMTLK 中的TLK58」「这些料号的COO…查表ZIDPMMTLK 中的TLK58」都认出表名',
     norm('可以去查表ZDPMMTLK 中的TLK58的这个栏位').match(reTab)[1] === 'ZDPMMTLK' &&
     norm('这些料号的COO分别是什么，可以去查表ZIDPMMTLK 中的TLK58的这个栏位').match(reTab)[1] === 'ZIDPMMTLK');
+}
+
+// ---------------------------------------------------------------- 21) 报表接力（11.5 #01）
+console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY V15.12 / AGENT V15.17（含 TCode 相近提示）');
+{
+  const methodsOf = (code) => {
+    const m = {};
+    (code.match(/^\s*METHOD\s+\w+\.[\s\S]*?^\s*ENDMETHOD\./gim) || []).forEach((x) => { m[x.match(/METHOD\s+(\w+)\./i)[1].toLowerCase()] = x; });
+    return m;
+  };
+  const rlRaw = read('ZCL_AI_REPORT_RELAY.abap'), rl = codeOnly(rlRaw), rlM = methodsOf(rl);
+  check('REPORT_RELAY V1.0：版本头、方法齐全、源码行不超过 255', /^\* V1\.0\s+20261105/m.test(rlRaw) &&
+    ['enabled', 'tool_description', 'run', 'merge_pending', 'source_params', 'cfg_int', 'js'].every((k) => rlM[k]) &&
+    rlRaw.split('\n').every((l) => l.length <= 255));
+  check('只预填不执行：没有 SUBMIT / start_run / INSERT / UPDATE / MODIFY / DELETE / COMMIT', !/\bSUBMIT\b|start_run|\bUPDATE\s+zai|\bMODIFY\b|\bDELETE\s+(FROM|zai)|COMMIT WORK/i.test(rl) &&
+    !/INSERT\s+(INTO\s+)?zai/i.test(rl));
+  check('开关 RPT_RELAY_ENABLED；目标报表核验登记 + report_ok；tcode 必须是路由认出的那张',
+    /'RPT_RELAY_ENABLED'\s*\) = 'X'/.test(rlM.enabled || '') && /get_def_by_tcode\( lv_tc \)/.test(rlM.run || '') &&
+    /zcl_ai_access=>report_ok\(/.test(rlM.run || '') && /lv_tc <> lv_want/.test(rlM.run || ''));
+  check('目标参数必须是多值或范围；值由后端从全部行取（load_dataset + prefilter_rows），按 norm_key 去重，上限 RELAY_MAX_VALUES',
+    /ls_p-multi_value = abap_false AND ls_p-range_allowed = abap_false/.test(rlM.run || '') &&
+    /zcl_ai_result_query=>load_dataset\(/.test(rlM.run || '') && /zcl_ai_result_query=>prefilter_rows\(/.test(rlM.run || '') &&
+    /zcl_ai_combo_service=>norm_key\( lv_cell \)/.test(rlM.run || '') && /'RELAY_MAX_VALUES'/.test(rlM.run || '') &&
+    /lv_cell CA ',\|'/.test(rlM.run || ''));
+  check('同名参数从来源运行带入（ZAI_ARTIFACT → ZAI_RPT_RUN.PARAMS_JSON，只读本人的）',
+    /SELECT SINGLE report_run_id FROM zai_artifact\s+WHERE artifact_id = @lv_art AND owner = @sy-uname/.test(rlM.source_params || '') &&
+    /SELECT SINGLE params_json FROM zai_rpt_run\s+WHERE report_run_id = @lv_run AND created_by = @sy-uname/.test(rlM.source_params || ''));
+  check('pending 拼 "values" / "prefill"（prefill 带 count / source_column / source_artifact）',
+    /"values":\\\{/.test(rlM.run || '') && /"prefill":\\\{/.test(rlM.run || '') &&
+    /"source_artifact":/.test(rlM.run || '') && /"count":/.test(rlM.run || '') && /rv = rv\(lv_last\) && `,` && iv_extra && `\}`\./.test(rlM.merge_pending || ''));
+  // merge_pending 的 JS 等价
+  const merge = (p, x) => (x && p.length >= 2 && p.endsWith('}')) ? p.slice(0, -1) + ',' + x + '}' : p;
+  const mp = merge('{"report_id":"R1","tcode":"ZDPMM159","params":[{"param_id":"MATNR"}]}', '"values":{"MATNR":"A,B"},"prefill":{"MATNR":{"count":2}}');
+  check('merge_pending 结果仍是合法 JSON，前端能读到 values / prefill', (() => { try { const o = JSON.parse(mp); return o.values.MATNR === 'A,B' && o.prefill.MATNR.count === 2 && o.params.length === 1; } catch (e) { return false; } })());
+
+  const rtRaw = read('ZCL_AI_INTENT_ROUTER.abap'), rt = codeOnly(rtRaw);
+  const rep = (rt.match(/METHOD apply_scene\.[\s\S]*?WHEN gc_scene_data\./) || [''])[0];
+  check('ROUTER V1.0.9：relay_ok 字段；报表分支第一段 = 开关 + 指代词 + 已登记 + 会话有结果',
+    /^\* V1\.0\.9\s+20261105/m.test(rtRaw) && /relay_ok\s+TYPE abap_bool,\s+END OF ty_intent/.test(rt) &&
+    /zcl_ai_report_relay=>enabled\( \) = abap_true/.test(rep) && /cs_intent-relay_ok\s+= abap_true/.test(rep) &&
+    rep.indexOf('zcl_ai_report_relay=>enabled(') < rep.indexOf('zcl_ai_result_lookup=>allowed(') &&
+    /get_def_by_tcode\( lv_tc \)/.test(rep) && /find_latest_artifact\( iv_session_id = iv_session_id \) IS NOT INITIAL/.test(rep));
+  const reRelay = /这些|以上|上面|上述|刚才|前面|依据|根据|带入|带进|塞进|赛进|放进|填进|代入/;
+  check('接力指代词：现场原话都命中，「执行 ZDPMM159」不命中',
+    ['这些料号的COO分别是什么，可以去执行ZDPMM159 ，然后把这些料号赛进去', '依据以上的结果，帮我在zdpmm159查下这些HH料號的coo欄位分别是多少'].every((q) => reRelay.test(q)) &&
+    !reRelay.test('执行 ZDPMM159'));
+
+  const trRaw = read('ZCL_AI_TOOL_REGISTRY.abap'), tr = codeOnly(trRaw);
+  const allow = (tr.match(/METHOD get_tools_for_module\.[\s\S]*?ENDMETHOD\./) || [''])[0];
+  check('REGISTRY V15.12：prefill_report 开关注册，不进任何模块白名单', /^\* V15\.12 20261105/m.test(trRaw) &&
+    /IF zcl_ai_report_relay=>enabled\( \) = abap_true\./.test(tr) && !/report_relay/.test(allow));
+
+  const agRaw = read('ZCL_AI_AGENT_SERVICE.abap'), ag = codeOnly(agRaw), agM = methodsOf(ag);
+  const aa = agM.analyze_agent || '';
+  check('AGENT V15.17：relay_ok 先定位来源结果（聚焦优先，否则最近一份），在 ANALYZE_ARTIFACT 分支之前；定位不到照旧出报表卡',
+    /^\* V15\.17 20261105/m.test(agRaw) && aa.indexOf('IF ls_route-relay_ok = abap_true.') > 0 &&
+    aa.indexOf('IF ls_route-relay_ok = abap_true.') < aa.indexOf('IF ls_route-intent_code = zcl_ai_intent_router=>gc_int_analyze_art.') &&
+    /lv_rl_src\) = zcl_ai_report_service=>find_latest_artifact\(/.test(aa) && /CLEAR: lv_art_id, lv_art_all, lv_art_err\./.test(aa));
+  check('AGENT：prefill_report 在技能过滤之后按 lv_rl_on 加入；提示词同步 iv_relay',
+    /DATA\(lv_rl_on\) = xsdbool\( lv_rl_tc IS NOT INITIAL AND lv_art_id IS NOT INITIAL/.test(aa) &&
+    aa.indexOf('DATA(lv_rl_on)') > aa.indexOf('CHANGING ct_tools = lt_allowed_tools )') && /iv_relay\s+= lv_rl_on/.test(aa) &&
+    /IF iv_relay = abap_true/.test(agM.build_protocol_prompt || '') && /ELSEIF ls_tool-tool_id = zcl_ai_report_relay=>gc_tool\./.test(agM.build_protocol_prompt || ''));
+  check('AGENT：prefill_report 分支在扁平 kv 之前；成功 → build_report_intro + merge_pending → EXIT 收口；失败回给模型',
+    aa.indexOf('IF ls_out-tool = zcl_ai_report_relay=>gc_tool.') > 0 &&
+    aa.indexOf('IF ls_out-tool = zcl_ai_report_relay=>gc_tool.') < aa.indexOf('zcl_ai_agent_guard=>parse_flat_json(') &&
+    /zcl_ai_report_relay=>run\(\s+EXPORTING iv_artifact_id = lv_art_id\s+iv_tcode\s+= lv_rl_tc/.test(aa) &&
+    /lv_rl_pending = zcl_ai_report_relay=>merge_pending\(/.test(aa) && /lv_rl_done\s+= abap_true\./.test(aa) &&
+    /iv_json = zcl_ai_agent_guard=>trim_result\( iv_text = lv_rl_json \)/.test(aa));
+  check('AGENT：接力出卡不做数据分析收口；末尾为目标报表建任务置 WAITING_INPUT 并返回 NeedsInput / PendingParamsJson',
+    /IF lv_answer IS NOT INITIAL AND lt_datasets IS NOT INITIAL AND lv_rl_done = abap_false\./.test(aa) &&
+    /IF lv_rl_done = abap_true AND lv_task_on = abap_true\./.test(aa) && /iv_pending = lv_rl_pending/.test(aa) &&
+    /es_result-needs_input\s+= 'X'\./.test(aa) && /es_result-pending_params_json = lv_rl_pending\./.test(aa) &&
+    aa.lastIndexOf('IF lv_rl_done = abap_true AND lv_task_on = abap_true.') > aa.lastIndexOf('es_result-artifact_refs_json = /ui2/cl_json=>serialize('));
+  check('build_report_intro：未登记时调 near_tcodes（只提示不替换）；near_tcodes 用 list_defs（已按授权过滤）、距离 ≤ 2、最多 3 个',
+    /DATA\(lv_near\) = near_tcodes\( iv_tcode \)\./.test(agM.build_report_intro || '') && /你要找的是不是/.test(agM.build_report_intro || '') &&
+    /zcl_ai_report_service=>list_defs\( \)/.test(agM.near_tcodes || '') && /iv_cap = 2/.test(agM.near_tcodes || '') &&
+    /lines\( lt_hit \) < 3/.test(agM.near_tcodes || ''));
+  // 编辑距离 JS 等价：现场三次拼错
+  const ed = (a, b) => { const d = Array.from({ length: a.length + 1 }, (_, i) => [i]); for (let j = 1; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[a.length][b.length]; };
+  check('编辑距离：ZIDPMM159 → ZDPMM159 = 1、ZDPMM139 → ZDPMM159 = 1（会提示）；ZIDPMMTLK → ZDPMM159 > 2（不提示）',
+    ed('ZIDPMM159', 'ZDPMM159') === 1 && ed('ZDPMM139', 'ZDPMM159') === 1 && ed('ZIDPMMTLK', 'ZDPMM159') > 2);
 }
 
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));

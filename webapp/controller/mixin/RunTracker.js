@@ -305,6 +305,11 @@ sap.ui.define([
                         var oEntry = this._buildEntry("assistant", sText, (oOpt && oOpt.time) || "", "");
                         oEntry.localResult = true;
                         oEntry.artifactId = sArt;
+                        // 20261105（报表接力）：这次运行是用上一份结果带参数提交的 → 记下来源（工具条出「关联」按钮）
+                        var oRl = this._rlOf ? this._rlOf(sRunId) : null;
+                        if (oRl) {
+                                oEntry.relay = oRl;
+                        }
                         if (oState.mode === "AGENT") {
                                 oEntry.sender = this._rb().getText("agentSender");
                         }

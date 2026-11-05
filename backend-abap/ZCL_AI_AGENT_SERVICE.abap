@@ -235,6 +235,19 @@
 *         ZCL_AI_TOOL_REGISTRY V15.11
 *   ★ 重贴后核对标记: 有 lv_lk_on 与 iv_lookup = lv_lk_on; 有 zcl_ai_result_lookup=>run(;
 *     「自动」分支有 IF ls_route-object_kind = 'TABLE'. 后跟 gc_dom_data
+* V15.17 20261105(功能计划书/联合分析/01 §5; 11.5 记录 #01): 报表接力 + TCode 相近提示 ——
+*   ① 路由置 relay_ok(报表场景点名已登记报表 + 指代上一份结果): 先定位来源结果(聚焦结果优先,
+*     否则会话最近一份)注入结果上下文, 可用工具 = query_result(明细没全进上下文时) + prefill_report;
+*     定位不到来源结果时照旧出报表卡
+*   ② 工具分发新分支 prefill_report: ZCL_AI_REPORT_RELAY=>run 算预填值 → build_report_intro 出参数卡
+*     → merge_pending 拼进 "values" / "prefill"; 成功即收口(回答 = 参数卡说明 + 带入说明),
+*     不再调模型、不做数据分析收口; 末尾为目标报表建 / 取任务置 WAITING_INPUT, 返回 NeedsInput +
+*     PendingParamsJson(和报表卡一样由用户在卡上提交, 聊天里不执行)
+*   ③ build_report_intro: 未登记时在用户有权限的已登记报表里找编辑距离 ≤ 2 的事务码, 提示"是不是 …"
+*   依赖: ZCL_AI_REPORT_RELAY V1.0 / ZCL_AI_INTENT_ROUTER V1.0.9 / ZCL_AI_TOOL_REGISTRY V15.12
+*   ★ 重贴后核对标记: 有 lv_rl_on 与 iv_relay = lv_rl_on; 有 zcl_ai_report_relay=>run( 与
+*     zcl_ai_report_relay=>merge_pending(; 数据分析收口条件有 AND lv_rl_done = abap_false;
+*     build_report_intro 有 METHOD near_tcodes 调用
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -375,6 +388,7 @@ CLASS zcl_ai_agent_service DEFINITION
                 is_skill        TYPE zcl_ai_skill_service=>ty_skill OPTIONAL
                 iv_result_query TYPE abap_bool DEFAULT abap_false   " V15.15: 加 query_result
                 iv_lookup       TYPE abap_bool DEFAULT abap_false   " V15.16: 加 lookup_by_result + describe_table
+                iv_relay        TYPE abap_bool DEFAULT abap_false   " V15.17: 加 prefill_report
       RETURNING VALUE(rv)       TYPE string.
 
     " 近期对话上下文(各截断 gc_ctx_chars 字符, 仅 user/assistant)
@@ -442,6 +456,17 @@ CLASS zcl_ai_agent_service DEFINITION
                 ev_answer     TYPE string
                 ev_pending    TYPE string   " 待填参数 JSON(PENDING_JSON 用)
                 ev_needs      TYPE abap_bool.
+
+    " V15.17: 未登记时的相近事务码(用户有权限的已登记报表里编辑距离 ≤ 2, 最多 3 个; 没有返回空)
+    CLASS-METHODS near_tcodes
+      IMPORTING iv_tcode  TYPE string
+      RETURNING VALUE(rv) TYPE string.
+    " V15.17: 两个串的编辑距离(超过 iv_cap 时返回 iv_cap + 1)
+    CLASS-METHODS edit_dist
+      IMPORTING iv_a      TYPE string
+                iv_b      TYPE string
+                iv_cap    TYPE i
+      RETURNING VALUE(rv) TYPE i.
 
     " V15(P1): 确定性收口(不调用模型的应答: 报表卡/追问/能力边界)。
     " 落会话正文+审计+任务回写, 填充 es_result 后由调用方 RETURN
@@ -639,6 +664,11 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           lv_art_mode TYPE abap_bool,
           lv_art_id   TYPE string,      " V15.15: 本轮定位到的报表执行 / Fiori 结果(query_result 只查它)
           lv_art_all  TYPE abap_bool.   " V15.15: X = 全部明细已在上下文(不需要 query_result)
+    " V15.17: 报表接力 —— 目标报表 / 已生成参数卡 / 拼好的 pending
+    DATA: lv_rl_tc      TYPE string,
+          lv_rl_done    TYPE abap_bool,
+          lv_rl_pending TYPE string.
+    CLEAR: lv_rl_tc, lv_rl_done, lv_rl_pending.
     CLEAR: lv_art_ctx, lv_art_task, lv_art_lbl, lv_art_err, lv_art_mode, lv_art_id, lv_art_all.
 
     " V15.4: Fiori 报表依赖任务层(参数卡、结果登记都挂在任务上); 未开时如实说明
@@ -833,6 +863,53 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
             es_result-pending_params_json = ls_fturn-pending_json.
           ENDIF.
           RETURN.
+        ENDIF.
+      ENDIF.
+
+      " ---- V15.17(11.5 #01): 报表接力 —— 先定位来源结果(聚焦结果优先, 否则会话最近一份) ----
+      " 定位到: 结果上下文进模型, 由模型用 prefill_report 预填目标报表参数卡; 定位不到: 照旧出报表卡
+      IF ls_route-relay_ok = abap_true.
+        IF iv_focus_artifact_id IS NOT INITIAL.
+          build_artifact_ctx( EXPORTING iv_artifact_id = iv_focus_artifact_id
+                                        iv_session_id  = iv_session_id
+                              IMPORTING ev_ctx         = lv_art_ctx
+                                        ev_task_id     = lv_art_task
+                                        ev_label       = lv_art_lbl
+                                        ev_error       = lv_art_err
+                                        ev_all         = lv_art_all ).
+          IF lv_art_ctx IS NOT INITIAL.
+            lv_art_id = iv_focus_artifact_id.
+          ENDIF.
+        ENDIF.
+        IF lv_art_ctx IS INITIAL.
+          DATA(lv_rl_src) = zcl_ai_report_service=>find_latest_artifact( iv_session_id = iv_session_id ).
+          IF lv_rl_src IS NOT INITIAL.
+            CLEAR lv_art_err.
+            build_artifact_ctx( EXPORTING iv_artifact_id = lv_rl_src
+                                          iv_session_id  = iv_session_id
+                                IMPORTING ev_ctx         = lv_art_ctx
+                                          ev_task_id     = lv_art_task
+                                          ev_label       = lv_art_lbl
+                                          ev_error       = lv_art_err
+                                          ev_all         = lv_art_all ).
+            IF lv_art_ctx IS NOT INITIAL.
+              lv_art_id = lv_rl_src.
+            ENDIF.
+          ENDIF.
+        ENDIF.
+        IF lv_art_ctx IS NOT INITIAL.
+          lv_rl_tc    = ls_route-object_value.
+          lv_art_mode = abap_true.
+          lv_domain   = zcl_ai_domain_cards=>gc_dom_general.
+          lv_art_ctx  = |{ lv_art_ctx }\n【本轮任务】用户要把这份结果里的值带进报表 { lv_rl_tc } 的参数: | &&
+                        |先确认用哪一列(需要筛选时带 filters), 再调用 prefill_report 预填参数卡; 不要罗列值, | &&
+                        |不要执行报表(由用户在参数卡上提交)。|.
+          IF lv_art_task IS NOT INITIAL.
+            ls_task = zcl_ai_task_service=>get_task_owned(
+                        iv_task_id = lv_art_task iv_session_id = iv_session_id ).
+          ENDIF.
+        ELSE.
+          CLEAR: lv_art_id, lv_art_all, lv_art_err.
         ENDIF.
       ENDIF.
 
@@ -1107,6 +1184,12 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         APPEND zcl_ai_tool_registry=>get_tool( zcl_ai_tool_registry=>gc_tool_describe_tab ) TO lt_allowed_tools.
       ENDIF.
     ENDIF.
+    " V15.17(11.5 #01): 报表接力 → 加 prefill_report
+    DATA(lv_rl_on) = xsdbool( lv_rl_tc IS NOT INITIAL AND lv_art_id IS NOT INITIAL
+                              AND zcl_ai_tool_registry=>is_registered( zcl_ai_report_relay=>gc_tool ) = abap_true ).
+    IF lv_rl_on = abap_true AND NOT line_exists( lt_allowed_tools[ tool_id = zcl_ai_report_relay=>gc_tool ] ).
+      APPEND zcl_ai_tool_registry=>get_tool( zcl_ai_report_relay=>gc_tool ) TO lt_allowed_tools.
+    ENDIF.
     DATA lv_run_id TYPE c LENGTH 32.
     CALL FUNCTION 'GUID_CREATE' IMPORTING ev_guid_32 = lv_run_id.
     GET RUN TIME FIELD lv_t0.
@@ -1133,7 +1216,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     ls_msg-content = build_protocol_prompt( iv_domain       = lv_domain
                                             is_skill        = ls_skill
                                             iv_result_query = lv_rq_on
-                                            iv_lookup       = lv_lk_on ).
+                                            iv_lookup       = lv_lk_on
+                                            iv_relay        = lv_rl_on ).
     APPEND ls_msg TO lt_messages.
 
     " V15(P1): 上下文按任务组装(01 计划 §6.1) —— 开启任务层且任务存在时,
@@ -1692,6 +1776,83 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         CONTINUE.
       ENDIF.
 
+      " ---- V15.17: prefill_report —— 把本轮那份结果的一列带进目标报表参数卡(只预填, 不执行) ----
+      " 成功即收口: 回答 = 参数卡说明 + 带入说明; 末尾为目标报表建任务并返回 NeedsInput / PendingParamsJson
+      IF ls_out-tool = zcl_ai_report_relay=>gc_tool.
+        DATA: lv_rl_json  TYPE string,
+              lv_rl_extra TYPE string,
+              lv_rl_note  TYPE string,
+              lv_rl_label TYPE string,
+              lv_rl_det   TYPE string,
+              lv_rl_err   TYPE string,
+              lv_rl_found TYPE abap_bool,
+              lv_rl_ans   TYPE string,
+              lv_rl_pend  TYPE string,
+              lv_rl_needs TYPE abap_bool,
+              lv_rl_t0    TYPE i,
+              lv_rl_t1    TYPE i.
+        CLEAR: lv_rl_json, lv_rl_extra, lv_rl_note, lv_rl_label, lv_rl_det, lv_rl_err,
+               lv_rl_found, lv_rl_ans, lv_rl_pend, lv_rl_needs.
+
+        zcl_ai_agent_progress=>sync(
+          it_trace = lt_trace
+          iv_note  = zcl_ai_agent_guard=>sanitize_summary( ls_out-summary ) ).
+        GET RUN TIME FIELD lv_rl_t0.
+        zcl_ai_report_relay=>run(
+          EXPORTING iv_artifact_id = lv_art_id
+                    iv_tcode       = lv_rl_tc
+                    iv_args_json   = zcl_ai_agent_guard=>extract_args_object( lv_content )
+          IMPORTING ev_json        = lv_rl_json
+                    ev_extra       = lv_rl_extra
+                    ev_note        = lv_rl_note
+                    ev_label       = lv_rl_label
+                    ev_detail      = lv_rl_det
+                    ev_error       = lv_rl_err ).
+        IF lv_rl_err IS INITIAL.
+          build_report_intro( EXPORTING iv_tcode   = lv_rl_tc
+                              IMPORTING ev_found   = lv_rl_found
+                                        ev_answer  = lv_rl_ans
+                                        ev_pending = lv_rl_pend
+                                        ev_needs   = lv_rl_needs ).
+        ENDIF.
+        GET RUN TIME FIELD lv_rl_t1.
+        APPEND VALUE #( phase      = 'EXECUTING'
+                        tool       = ls_out-tool
+                        label      = lv_rl_label
+                        status     = COND #( WHEN lv_rl_err IS INITIAL THEN 'OK' ELSE 'ERROR' )
+                        elapsed_ms = ( lv_rl_t1 - lv_rl_t0 ) / 1000
+                        rows       = 0
+                        detail     = lv_rl_det ) TO lt_trace.
+        zcl_ai_agent_progress=>sync( it_trace = lt_trace ).
+
+        IF lv_rl_err IS INITIAL.
+          " 参数卡就绪(或报表卡核验没通过: 如实回答卡片的说明) → 收口, 不再调模型
+          IF lv_rl_found = abap_true AND lv_rl_needs = abap_true AND lv_rl_pend IS NOT INITIAL.
+            lv_rl_pending = zcl_ai_report_relay=>merge_pending( iv_pending = lv_rl_pend iv_extra = lv_rl_extra ).
+            lv_rl_done    = abap_true.
+            lv_answer     = |{ lv_rl_ans }\n\n{ lv_rl_note }|.
+          ELSE.
+            lv_answer = lv_rl_ans.
+          ENDIF.
+          es_result-status = 'OK'.
+          APPEND VALUE #( phase = 'COMPOSING' label = '生成参数卡' status = 'OK' elapsed_ms = 0 ) TO lt_trace.
+          EXIT.
+        ENDIF.
+
+        CLEAR ls_msg.
+        ls_msg-role    = 'assistant'.
+        ls_msg-content = lv_content.
+        APPEND ls_msg TO lt_messages.
+
+        CLEAR ls_msg.
+        ls_msg-role    = 'user'.
+        ls_msg-content = zcl_ai_agent_guard=>wrap_tool_result(
+                           iv_tool = ls_out-tool
+                           iv_json = zcl_ai_agent_guard=>trim_result( iv_text = lv_rl_json ) ).
+        APPEND ls_msg TO lt_messages.
+        CONTINUE.
+      ENDIF.
+
       " ---- V15.16: lookup_by_result —— 用本轮那份结果的一列去表里批量查, 接回后筛选 / 分组(只读) ----
       " args 是嵌套对象; 结果号用后端定位的 lv_art_id, 关联值由后端从全部行取, 不经过模型
       IF ls_out-tool = zcl_ai_result_lookup=>gc_tool.
@@ -1979,7 +2140,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     " 本次运行产生了数据集且已有 final 回答 → 追加一次结构化分析调用
     " (受同一总预算约束, 至少 5s); 输出经 GUARD 清洗, 失败仅降级为纯
     " 数据集, 不推翻已生成的回答
-    IF lv_answer IS NOT INITIAL AND lt_datasets IS NOT INITIAL.
+    IF lv_answer IS NOT INITIAL AND lt_datasets IS NOT INITIAL AND lv_rl_done = abap_false.   " V15.17: 接力出卡不做分析收口
       GET RUN TIME FIELD lv_t1.
       DATA(lv_used_ms_ana) = ( lv_t1 - lv_t0 ) / 1000.
       DATA(lv_rest_s_ana) = ( lv_budget_ms - lv_used_ms_ana ) / 1000.
@@ -2200,6 +2361,35 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       IF lt_arts IS NOT INITIAL.
         es_result-artifact_refs_json = /ui2/cl_json=>serialize(
                                          data = lt_arts compress = abap_true ).
+      ENDIF.
+    ENDIF.
+
+    " ---------------- V15.17: 报表接力收口 —— 目标报表任务置 WAITING_INPUT, 返回预填好的参数卡 ----------------
+    " 同报表卡: 用户在卡上提交 StartReportRun(服务端再校验参数), 聊天里不执行
+    IF lv_rl_done = abap_true AND lv_task_on = abap_true.
+      DATA(ls_rl_pick) = zcl_ai_task_service=>pick_or_create(
+          iv_session_id = iv_session_id
+          iv_task_id    = ''
+          iv_module_id  = zcl_ai_task_service=>gc_mod_report
+          iv_intent     = zcl_ai_intent_router=>gc_int_run_analyze
+          iv_title      = |报表 { lv_rl_tc }| ).
+      IF ls_rl_pick-task_id IS NOT INITIAL.
+        DATA(ls_rl_task) = zcl_ai_task_service=>get_task_owned(
+                             iv_task_id = ls_rl_pick-task_id iv_session_id = iv_session_id ).
+        IF ls_rl_task-task_id IS NOT INITIAL.
+          zcl_ai_task_service=>update_status(
+            iv_task_id = ls_rl_task-task_id
+            iv_version = ls_rl_task-current_version
+            iv_status  = zcl_ai_task_service=>gc_st_waiting_input
+            iv_pending = lv_rl_pending ).
+          COMMIT WORK.
+          es_result-task_id             = ls_rl_task-task_id.
+          es_result-task_module         = zcl_ai_task_service=>gc_mod_report.
+          es_result-task_status         = zcl_ai_task_service=>gc_st_waiting_input.
+          es_result-needs_input         = 'X'.
+          es_result-pending_params_json = lv_rl_pending.
+          CLEAR es_result-artifact_refs_json.
+        ENDIF.
       ENDIF.
     ENDIF.
 
@@ -2555,6 +2745,10 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     IF iv_result_query = abap_true AND NOT line_exists( lt_tools[ tool_id = zcl_ai_result_query=>gc_tool ] ).
       APPEND zcl_ai_tool_registry=>get_tool( zcl_ai_result_query=>gc_tool ) TO lt_tools.
     ENDIF.
+    " V15.17: 同 analyze_agent 的 lv_rl_on
+    IF iv_relay = abap_true AND NOT line_exists( lt_tools[ tool_id = zcl_ai_report_relay=>gc_tool ] ).
+      APPEND zcl_ai_tool_registry=>get_tool( zcl_ai_report_relay=>gc_tool ) TO lt_tools.
+    ENDIF.
     " V15.16: 同 analyze_agent 的 lv_lk_on
     IF iv_lookup = abap_true.
       IF NOT line_exists( lt_tools[ tool_id = zcl_ai_result_lookup=>gc_tool ] ).
@@ -2576,6 +2770,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       ELSEIF ls_tool-tool_id = zcl_ai_result_query=>gc_tool.
         " V15.15: query_result 的 args 是嵌套对象(格式见工具描述)
         lv_tools = lv_tools && |- { ls_tool-tool_id }(args=\{filters, group_by, metrics, columns, sort, limit, purpose\}): { ls_tool-description }\n|.
+      ELSEIF ls_tool-tool_id = zcl_ai_report_relay=>gc_tool.
+        " V15.17: prefill_report 的 args 是嵌套对象(格式见工具描述)
+        lv_tools = lv_tools && |- { ls_tool-tool_id }(args=\{tcode, target_param, source_column, filters\}): { ls_tool-description }\n|.
       ELSEIF ls_tool-tool_id = zcl_ai_result_lookup=>gc_tool.
         " V15.16: lookup_by_result 的 args 是嵌套对象(格式见工具描述)
         lv_tools = lv_tools && |- { ls_tool-tool_id }(args=\{table, key_field, source_column, fields, conditions, | &&
@@ -2951,6 +3148,83 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD near_tcodes.
+
+    DATA: lt_hit TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
+          lv_d   TYPE i.
+    DATA(lv_in) = to_upper( condense( iv_tcode ) ).
+    IF lv_in IS INITIAL OR strlen( lv_in ) > 30.
+      RETURN.
+    ENDIF.
+    DATA(lt_defs) = zcl_ai_report_service=>list_defs( ).   " 已按授权过滤
+    DO 2 TIMES.
+      DATA(lv_want) = sy-index.
+      LOOP AT lt_defs INTO DATA(ls_d).
+        DATA(lv_tc) = to_upper( condense( ls_d-tcode ) ).
+        IF lv_tc IS INITIAL OR lv_tc = lv_in.
+          CONTINUE.
+        ENDIF.
+        lv_d = edit_dist( iv_a = lv_in iv_b = lv_tc iv_cap = 2 ).
+        IF lv_d = lv_want AND lines( lt_hit ) < 3.
+          APPEND |{ lv_tc }({ ls_d-report_name })| TO lt_hit.
+        ENDIF.
+      ENDLOOP.
+    ENDDO.
+    rv = concat_lines_of( table = lt_hit sep = ` / ` ).
+
+  ENDMETHOD.
+
+
+  METHOD edit_dist.
+
+    " 两行滚动的动态规划; 长度差超过上限直接返回
+    DATA: lt_prev TYPE STANDARD TABLE OF i WITH DEFAULT KEY,
+          lt_cur  TYPE STANDARD TABLE OF i WITH DEFAULT KEY,
+          lv_i    TYPE i,
+          lv_j    TYPE i,
+          lv_cost TYPE i,
+          lv_v    TYPE i,
+          lv_min  TYPE i.
+    DATA(lv_la) = strlen( iv_a ).
+    DATA(lv_lb) = strlen( iv_b ).
+    IF abs( lv_la - lv_lb ) > iv_cap.
+      rv = iv_cap + 1.
+      RETURN.
+    ENDIF.
+    DO lv_lb + 1 TIMES.
+      APPEND sy-index - 1 TO lt_prev.
+    ENDDO.
+    lv_i = 0.
+    WHILE lv_i < lv_la.
+      lv_i = lv_i + 1.
+      CLEAR lt_cur.
+      APPEND lv_i TO lt_cur.
+      lv_min = lv_i.
+      lv_j = 0.
+      WHILE lv_j < lv_lb.
+        lv_j = lv_j + 1.
+        DATA(lv_ia) = lv_i - 1.
+        DATA(lv_jb) = lv_j - 1.
+        lv_cost = COND #( WHEN iv_a+lv_ia(1) = iv_b+lv_jb(1) THEN 0 ELSE 1 ).
+        lv_v = nmin( val1 = lt_prev[ lv_j + 1 ] + 1
+                     val2 = lt_cur[ lv_j ] + 1
+                     val3 = lt_prev[ lv_j ] + lv_cost ).
+        APPEND lv_v TO lt_cur.
+        IF lv_v < lv_min.
+          lv_min = lv_v.
+        ENDIF.
+      ENDWHILE.
+      IF lv_min > iv_cap.
+        rv = iv_cap + 1.
+        RETURN.
+      ENDIF.
+      lt_prev = lt_cur.
+    ENDWHILE.
+    rv = lt_prev[ lv_lb + 1 ].
+
+  ENDMETHOD.
+
+
   METHOD build_report_intro.
 
     CLEAR: ev_found, ev_answer, ev_pending, ev_needs.
@@ -2971,6 +3245,11 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         |【报表未登记】事务代码 { iv_tcode } 未在系统报表登记表中, | &&
         |或已被停用。为避免误执行, 系统不会尝试运行未登记的报表。\n| &&
         |请先由管理员在报表登记中维护该报表(TCode/程序/参数/结果来源核验后启用)。|.
+      " V15.17(11.5 #01): 拼写相近的已登记报表(只提示, 不自动替换)
+      DATA(lv_near) = near_tcodes( iv_tcode ).
+      IF lv_near IS NOT INITIAL.
+        ev_answer = |{ ev_answer }\n你要找的是不是: { lv_near }?|.
+      ENDIF.
       RETURN.
     ENDIF.
 

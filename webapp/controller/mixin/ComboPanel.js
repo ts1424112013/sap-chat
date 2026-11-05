@@ -1008,6 +1008,114 @@ sap.ui.define([
                         }
                         this._restoreWorkspaceBySession(oMeta);
                         this._loadHistoryFor(sSid, oMeta.Mode === "AGENT");
+                },
+
+                /* ---------------------------------------------------------
+                 * 20261105 联合分析 #01 报表接力（功能计划书/联合分析/01 §5.4）
+                 *  · 参数卡里有"从上一份结果带入"的参数 → 提交时记下 运行号 → 来源结果（本机，最多 50 条）
+                 *  · 这次运行的结果卡工具条出「和结果 X 关联」→ 把来源结果和这份结果放进组合分析面板，
+                 *    关联模式、关联列预选好：来源那一列 = 这份结果里和带入值重合最多的一列
+                 * --------------------------------------------------------- */
+
+                _rlKey: function () {
+                        return "zaiChat.relay.v1." + this._modelUserKey();
+                },
+
+                _rlAll: function () {
+                        try { return JSON.parse(window.localStorage.getItem(this._rlKey()) || "{}") || {}; } catch (e) { return {}; }
+                },
+
+                /** 参数卡提交成功后调用：卡上有来源结果才记 */
+                _rlRemember: function (sRunId, oAsk) {
+                        var m = (oAsk && oAsk.prefill) || {};
+                        var sPid = Object.keys(m).filter(function (k) { return m[k] && m[k].source_artifact; })[0];
+                        if (!sRunId || !sPid) {
+                                return;
+                        }
+                        var p = m[sPid];
+                        var o = this._rlAll();
+                        o[sRunId] = {
+                                srcArt: String(p.source_artifact), srcCol: String(p.source_column || ""), srcShort: String(p.source_short || ""),
+                                srcLabel: String(p.source_label || ""), srcRun: String(p.source_run || ""), param: sPid, count: p.count || 0, at: Date.now()
+                        };
+                        var aIds = Object.keys(o).sort(function (a, b) { return (o[b].at || 0) - (o[a].at || 0); });
+                        aIds.slice(50).forEach(function (k) { delete o[k]; });
+                        try { window.localStorage.setItem(this._rlKey(), JSON.stringify(o)); } catch (e) { /* 存不下：只是刷新后没有「关联」按钮 */ }
+                },
+
+                /** 运行号 → 来源说明（没有返回 null） */
+                _rlOf: function (sRunId) {
+                        return (sRunId && this._rlAll()[sRunId]) || null;
+                },
+
+                /** 这份结果里和来源那一列重合最多的列（按 normKey 比；一列都没有重合返回 -1） */
+                _rlBestCol: function (oSrcDs, iSrc, oDs) {
+                        var mSrc = {};
+                        (oSrcDs.rows || []).forEach(function (r) {
+                                var k = ComboData.normKey(r[iSrc]);
+                                if (k) { mSrc[k] = true; }
+                        });
+                        var iBest = -1, nBest = 0;
+                        (oDs.columns || []).forEach(function (c, i) {
+                                var n = 0;
+                                (oDs.rows || []).forEach(function (r) {
+                                        if (mSrc[ComboData.normKey(r[i])]) { n++; }
+                                });
+                                if (n > nBest) { nBest = n; iBest = i; }
+                        });
+                        return iBest;
+                },
+
+                /** 「和结果 X 关联」：来源结果放第一位（主表），这份结果第二位，关联列预选 */
+                _cbxRelayJoin: function (oEntry) {
+                        var that = this;
+                        var r = oEntry && oEntry.relay;
+                        var oDs = oEntry && oEntry.analysis && (oEntry.analysis.datasets || [])[0];
+                        if (!r || !oDs) {
+                                return;
+                        }
+                        var c = this._cbx();
+                        var aRest = c.items.filter(function (it) { return it.art !== r.srcArt && it.art !== oEntry.artifactId; });
+                        if (aRest.length + 2 > MAX_ITEMS) {
+                                this._cbxOpen(true);
+                                MessageToast.show("组合里最多放 " + MAX_ITEMS + " 份结果，先移除几份");
+                                return;
+                        }
+                        MessageToast.show("正在取回结果 " + (r.srcShort || "") + "…");
+                        ChatService.getReportResult(r.srcArt).then(function (oRes) {
+                                if (!oRes || (!oRes.rowsJson && !oRes.schemaJson && !oRes.rowCount)) {
+                                        throw new Error((oRes && oRes.message) || "结果已失效");
+                                }
+                                var oSrcDs = that._rptDataset(oRes, r.srcRun);
+                                var oSess = that.getView().getModel("chat").getProperty("/currentSession") || {};
+                                var fnItem = function (sName, sArt, sRun, oD) {
+                                        return {
+                                                id: "x" + that._newSessionId().substring(0, 8), name: sName, sid: oSess.id || that._sMessagesSession || "",
+                                                sess: "", at: Formatter.formatTime(""), art: sArt, type: "REPORT_RESULT", run: sRun,
+                                                src: "relay:" + sArt, ds: oD, st: "ok"
+                                        };
+                                };
+                                var itSrc = fnItem(r.srcLabel || oSrcDs.name, r.srcArt, r.srcRun, oSrcDs);
+                                var itTgt = fnItem(oDs.name || "结果", oEntry.artifactId || "", String(oEntry.runId || ""), oDs);
+                                c.items = [itSrc, itTgt].concat(aRest);
+                                c.mode = "join";
+                                c.modeAuto = false;
+                                that._cbxResetKeys();
+                                var iA = ComboData.label ? (oSrcDs.columns || []).map(function (col, i) { return ComboData.label(col, i); }).indexOf(r.srcCol) : -1;
+                                if (iA < 0) {
+                                        iA = (oSrcDs.columns || []).map(function (col) { return col.name; }).indexOf(r.srcCol);
+                                }
+                                var iB = iA >= 0 ? that._rlBestCol(oSrcDs, iA, oDs) : -1;
+                                if (iA >= 0 && iB >= 0) {
+                                        c.keys[itTgt.id] = [{ a: iA, b: iB }];
+                                }
+                                c.open = true;
+                                that._cbxChanged(true);
+                                that._cbxFlash(itTgt.id);
+                                MessageToast.show(iB >= 0 ? "已放进组合分析，按「" + r.srcCol + "」关联" : "已放进组合分析，请在面板里选关联列");
+                        }).catch(function (e) {
+                                MessageToast.show("取不回来源结果：" + ((e && e.message) || String(e)));
+                        });
                 }
         };
 });

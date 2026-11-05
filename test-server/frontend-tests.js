@@ -810,6 +810,22 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   check('结果卡工具条：只有传了 bSched 才有「设为定时」', /sched-add/.test(Fmt.dataToolsHtml(0, '', '', true)) && !/sched-add/.test(Fmt.dataToolsHtml(0, '', '')));
   ChatService.setConfig({ mode: 'mock' });
 
+  console.log('\n━━ 联合分析 #01 报表接力（20261105）');
+  check('结果卡工具条：传了来源短号才有「和结果 X 关联」，文字转义', /data-act="relay-join"[^>]*>和结果 0050569C 关联/.test(Fmt.dataToolsHtml(0, '', '', false, '0050569C')) &&
+    !/relay-join/.test(Fmt.dataToolsHtml(0, '', '', true)) && Fmt.dataToolsHtml(0, '', '', false, '<b>').indexOf('&lt;b&gt;') > 0);
+  ['sap/m/VBox', 'sap/m/HBox', 'sap/m/Text', 'sap/m/Label', 'sap/m/Input', 'sap/m/DatePicker', 'sap/m/ToggleButton',
+    'sap/ui/core/Icon', 'sap/m/ResponsivePopover', 'sap/m/TextArea'].forEach((k) => { if (!registry[k]) { registry[k] = function () {}; } });
+  const AskCard = load('zai/chat/utils/AskCard');
+  const aMany = Array.from({ length: 1021 }, (_, i) => '1AM' + i).join(',');
+  const sShow = AskCard.valueDisplay({ multi_value: true, data_type: 'CHAR' }, aMany);
+  check('提交回显：上千个值只列前 5 个 + 总数；少量值照旧全列', /^1AM0、1AM1、1AM2、1AM3、1AM4 … 共 1021 个$/.test(sShow) &&
+    AskCard.valueDisplay({ multi_value: true, data_type: 'CHAR' }, 'A,B,C') === 'A、B、C', sShow);
+  check('范围参数不受影响', AskCard.valueDisplay({ range_allowed: true, data_type: 'DATE' }, '20261101,20261105') === '2026-11-01 ~ 2026-11-05');
+  check('合并参数定义：后端预填的值不会被登记默认值覆盖', (() => {
+    const r = AskCard.mergeParamDefs([{ param_id: 'MATNR', multi_value: true }], [{ PARAM_ID: 'MATNR', DEFAULT_TYPE: 'STATIC', DEFAULT_VALUE: 'X1' }], { MATNR: 'A,B' });
+    return r.values.MATNR === 'A,B';
+  })());
+
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

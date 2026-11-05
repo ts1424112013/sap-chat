@@ -1815,7 +1815,9 @@ sap.ui.define([
                                                 var bSched = !!(oEntry && oEntry.localResult && oEntry.artifactId && iDs === 0 && !oEntry.combo);
                                                 s += Formatter.dataToolsHtml(iDs, oHint ? oRB.getText("chartSuggest",
                                                         [ChartRenderer.typeText(oHint.type)]) : "",
-                                                        bPreview ? oRB.getText("dgShowAll", [oDs.rows.length]) : "", bSched);
+                                                        bPreview ? oRB.getText("dgShowAll", [oDs.rows.length]) : "", bSched,
+                                                        // 20261105（报表接力）：这份结果是从上一份结果带参数跑出来的 → 「和结果 X 关联」
+                                                        oEntry && oEntry.relay && iDs === 0 ? (oEntry.relay.srcShort || "上一份") : "");
                                                 // 20261011：该表生成的图表就放在这张表下方
                                                 s += oEntry ? that._chartDeckHtml(oEntry, "ds:" + iDs) : "";
                                         }
@@ -4742,7 +4744,9 @@ sap.ui.define([
                                 title: oRB.getText("askParamsTitle"),
                                 subtitle: [oTask.tcode, oTask.reportId].filter(Boolean).join(" · "),
                                 params: aPending,
-                                values: {},
+                                // 20261105（联合分析 #01 报表接力）：后端预填的值（上一份结果带入的多值 + 同名参数）与来源说明
+                                values: jQuery.extend({}, (oPendingObj && oPendingObj.values) || {}),
+                                prefill: (oPendingObj && oPendingObj.prefill) || null,
                                 options: [
                                         { key: "submit", label: oRB.getText("askSubmit"), desc: oRB.getText("askSubmitDesc") },
                                         { key: "cancel", label: oRB.getText("askCancel"), desc: oRB.getText("askCancelDesc") }
@@ -5078,6 +5082,7 @@ sap.ui.define([
                                 oAsk.state = "done";
                                 oAsk.resultText = aSum.length ? oRB.getText("askSubmittedWith", [aSum.join(oRB.getText("listSepComma"))]) : oRB.getText("askSubmitted");
                                 that._renderAsk(sUid);
+                                that._rlRemember(oRes.reportRunId, oAsk);   // 20261105 报表接力：记下来源结果，结果卡出「关联」按钮
                                 that._trackRun(sUid, oRes.reportRunId, oAsk.sessionId, oRes.shortId);
                         }).catch(function (oErr) {
                                 oAsk.state = "open";
@@ -5207,7 +5212,9 @@ sap.ui.define([
                         if (!oDs) {
                                 return;
                         }
-                        if (sAct === "sched-add") {
+                        if (sAct === "relay-join") {
+                                this._cbxRelayJoin(oEntry);   // 20261105 报表接力（ComboPanel）
+                        } else if (sAct === "sched-add") {
                                 this._scFromEntry(oEntry);   // 20261104
                         } else if (sAct === "combo-add") {
                                 this._cbxAddFromEntry(oEntry, oDs, sDs !== null && oEntry.analysis ? parseInt(sDs, 10) : null);   // 20261031

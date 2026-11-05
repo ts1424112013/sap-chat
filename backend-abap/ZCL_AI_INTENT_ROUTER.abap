@@ -63,6 +63,11 @@
 *   lookup_by_result 与 describe_table); 不满足时照旧提示换场景. ty_intent 末尾加 lookup_ok
 *   依赖: ZCL_AI_RESULT_LOOKUP V1.0(先激活)
 *   ★ 重贴后核对标记: ty_intent 有 lookup_ok; apply_scene 报表分支有 zcl_ai_result_lookup=>allowed(
+* V1.0.9  20261105(功能计划书/联合分析/01 §5.2; 11.5 记录 #01): 报表接力 —— 报表场景里点名一张已登记的报表,
+*   且问题指代上一份结果(这些 / 以上 / 根据 / 带入 / 塞进……), 会话里有报表结果, 开关 RPT_RELAY_ENABLED 打开
+*   → 报表意图带新字段 relay_ok(AGENT_SERVICE 据此先定位来源结果、让模型用 prefill_report 预填参数卡);
+*   其余照旧(出报表卡 / 未登记拒绝). ty_intent 末尾加 relay_ok. 依赖: ZCL_AI_REPORT_RELAY V1.0
+*   ★ 重贴后核对标记: ty_intent 有 relay_ok; apply_scene 报表分支第一段有 zcl_ai_report_relay=>enabled(
 * ★ 重贴后核对标记: quick_route 中 "表+表名" 规则必须在执行/继续规则
 *   之前(防 "分析表 ZTEST_DATA" 因 Z 开头误判 REPORT); 偏移/长度
 *   已全部先落中间变量(§2.1-2); 规则 4b 在 TCode 块之后、规则 5 之前;
@@ -114,6 +119,7 @@ CLASS zcl_ai_intent_router DEFINITION
              reason        TYPE string,
              out_of_scene  TYPE abap_bool,    " V1.0.5: 诉求不属于当前会话场景
              lookup_ok     TYPE abap_bool,    " V1.0.8: 报表场景查表已放行(关联查表)
+             relay_ok      TYPE abap_bool,    " V1.0.9: 报表接力(上一份结果 → 这张报表的参数)
            END OF ty_intent.
 
     " 确定性快捷路由(供 AGENT_SERVICE 在 match_domain 之后调用):
@@ -249,6 +255,25 @@ CLASS zcl_ai_intent_router IMPLEMENTATION.
     CASE iv_scene.
 
       WHEN gc_scene_report.
+        " ---- V1.0.9(11.5 #01): 报表接力 —— 点名已登记报表 + 指代上一份结果 + 会话有结果 ----
+        IF lv_tc IS NOT INITIAL AND zcl_ai_report_relay=>enabled( ) = abap_true.
+          FIND REGEX '这些|以上|上面|上述|刚才|前面|依据|根据|带入|带进|塞进|赛进|放进|填进|代入' IN iv_question.
+          IF sy-subrc = 0.
+            DATA(ls_rl_def) = zcl_ai_report_service=>get_def_by_tcode( lv_tc ).
+            IF ls_rl_def-report_id IS NOT INITIAL
+               AND zcl_ai_report_service=>find_latest_artifact( iv_session_id = iv_session_id ) IS NOT INITIAL.
+              CLEAR cs_intent.
+              cs_intent-module_id    = zcl_ai_task_service=>gc_mod_report.
+              cs_intent-intent_code  = gc_int_run_analyze.
+              cs_intent-action       = gc_act_execute.
+              cs_intent-object_kind  = 'TCODE'.
+              cs_intent-object_value = lv_tc.
+              cs_intent-relay_ok     = abap_true.
+              cs_intent-reason       = |报表场景: 用本会话报表结果给报表 { lv_tc } 预填参数|.
+              RETURN.
+            ENDIF.
+          ENDIF.
+        ENDIF.
         " ---- 报表执行: 只出报表意图; 结果分析不调工具 ----
         IF cs_intent-module_id = zcl_ai_task_service=>gc_mod_report.
           RETURN.   " 执行 / 查看 / 分析结果, 原样

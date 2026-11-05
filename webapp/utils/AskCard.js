@@ -575,7 +575,12 @@ sap.ui.define([
                                 return o ? o.text : k;
                         }).join("、");
                 }
-                return String(sVal || "").split(",").map(dateDisplay).join(isRange(oP) ? " ~ " : "、");
+                var aV = String(sVal || "").split(",");
+                // 20261105（报表接力）：带入了很多值时只列前 5 个，后面写总数（原来会把上千个值全贴进回显）
+                if (!isRange(oP) && aV.length > 20) {
+                        return aV.slice(0, 5).map(dateDisplay).join("、") + " … 共 " + aV.length + " 个";
+                }
+                return aV.map(dateDisplay).join(isRange(oP) ? " ~ " : "、");
         }
 
         /** 参数控件：DATE → 日期选择器；范围 → 从/至两个输入；其余单输入（多值逗号分隔） */
@@ -678,6 +683,35 @@ sap.ui.define([
                 } else {
                         oRec.input = fnMark(fnMk(sVal));
                         oCtl = oRec.input;
+                        // 20261105（联合分析 #01 报表接力）：上一份结果带入的多值收起显示（上千个值放进输入框没法看），
+                        // 「展开修改」换回输入框、「清空」去掉；提交仍读输入框的值
+                        var oPre = oAsk && oAsk.prefill && oAsk.prefill[String(sId).toUpperCase()];
+                        var iPreN = sVal ? normMulti(sVal).split(",").filter(Boolean).length : 0;
+                        if (oPre && oPre.count && bMulti && iPreN > 0) {
+                                var oInp = oRec.input;
+                                var oSum = new HBox({ alignItems: "Center" }).addStyleClass("askPrefill");
+                                var fnOpen = function (bClear) {
+                                        if (bClear) {
+                                                oInp.setValue("");
+                                                mVals[sId] = "";
+                                        }
+                                        oSum.setVisible(false);
+                                        oInp.setVisible(true);
+                                };
+                                oSum.addItem(new Text({
+                                        text: "已带入 " + iPreN + " 个值" + (oPre.source_short || oPre.source_column
+                                                ? "（来自结果 " + (oPre.source_short || "") + (oPre.source_column ? "「" + oPre.source_column + "」" : "") + "）" : "")
+                                }).addStyleClass("askPrefillText"));
+                                oSum.addItem(new Button({ text: "展开修改", type: "Transparent", press: function () { fnOpen(false); } }).addStyleClass("askPrefillBtn"));
+                                oSum.addItem(new Button({ text: "清空", type: "Transparent", press: function () { fnOpen(true); } }).addStyleClass("askPrefillBtn"));
+                                oInp.setVisible(false);
+                                oCtl = new VBox({ items: [oSum, oInp] });
+                        }
+                }
+                // 20261105：从上一次运行沿用的同名参数，说明里标出来
+                var oCarry = oAsk && oAsk.prefill && oAsk.prefill[String(sId).toUpperCase()];
+                if (oCarry && oCarry.carried && !oP.help_text) {
+                        oP = Object.assign({}, oP, { help_text: "沿用上一次运行的值" });
                 }
                 var oCell = new VBox({
                         items: [new Label({ text: oRec.label, required: oRec.required, wrapping: true }).addStyleClass("askFieldLabel"), oCtl]

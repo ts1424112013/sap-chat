@@ -586,7 +586,13 @@ sap.ui.define([], function () {
                   * data_type / multi_value / range_allowed（不带选项和默认值），前端再按目录定义补齐（_enrichReportAsk）。
                   */
                 _mockReportAgent: function (oPayload) {
-                        var m = /执行\s*([A-Za-z0-9_]{3,20})/.exec(String(oPayload.question || ""));
+                        var sQ = String(oPayload.question || "");
+                        var m = /执行\s*([A-Za-z0-9_]{3,20})/.exec(sQ);
+                        // 20261105（联合分析 #01 报表接力，演示）：点名报表 + 指代上一份结果 → 参数卡预填一列演示值
+                        var bRelay = /这些|以上|上面|上述|依据|根据|带入|带进|塞进|赛进|放进|填进|代入/.test(sQ);
+                        if (bRelay) {
+                                m = /(Z[A-Za-z0-9_]{2,19})/i.exec(sQ) || m;
+                        }
                         if (!m) {
                                 return null;
                         }
@@ -611,13 +617,33 @@ sap.ui.define([], function () {
                                                         (p.MULTI_VALUE ? ", 支持多值" : p.RANGE_ALLOWED ? ", 支持范围" : "") + ")";
                                         }).join("\n") + "\n\n(演示模式: 不会提交后台作业。)";
                         }
-                        var sPending = bCard ? JSON.stringify({
+                        var oPend = bCard ? {
                                 report_id: oDef.REPORT_ID, tcode: oDef.TCODE,
                                 params: aP.map(function (p) {
                                         return { param_id: p.PARAM_ID, label: p.DISPLAY_LABEL || p.PARAM_ID, required: !!p.REQUIRED,
                                                 data_type: p.DATA_TYPE || "CHAR", multi_value: !!p.MULTI_VALUE, range_allowed: !!p.RANGE_ALLOWED };
                                 })
-                        }) : "";
+                        } : null;
+                        // 演示的接力：第一个非必填的多值文字参数带入 37 个演示值；必填的工厂当作"沿用上一次运行"
+                        var oRlP = bRelay && oPend ? aP.filter(function (p) { return p.MULTI_VALUE && !p.REQUIRED && p.DATA_TYPE === "CHAR"; })[0] : null;
+                        if (oRlP) {
+                                var aVals = [];
+                                for (var iV = 1; iV <= 37; iV++) { aVals.push("1AM" + ("0000" + (iV * 37)).slice(-5)); }
+                                oPend.values = {};
+                                oPend.prefill = {};
+                                oPend.values[oRlP.PARAM_ID] = aVals.join(",");
+                                oPend.prefill[oRlP.PARAM_ID] = { count: aVals.length, source_column: "鴻海料號", source_artifact: "DEMOART0050569C",
+                                        source_short: "0050569C", source_label: "成品可用庫存報表", source_run: "DEMORUN" };
+                                var oPlant = aP.filter(function (p) { return p.REQUIRED && /PLANT|WERKS/.test(p.PARAM_ID); })[0];
+                                if (oPlant) {
+                                        oPend.values[oPlant.PARAM_ID] = "HHZZ";
+                                        oPend.prefill[oPlant.PARAM_ID] = { carried: true };
+                                }
+                                sAnswer += "\n\n已从结果 0050569C「成品可用庫存報表」的「鴻海料號」列带入 37 个值到参数「" +
+                                        (oRlP.DISPLAY_LABEL || oRlP.PARAM_ID) + "」" + (oPlant ? "; 同名参数 " + (oPlant.DISPLAY_LABEL || oPlant.PARAM_ID) + " 沿用上一次运行的值" : "") +
+                                        "。请核对参数卡后提交。（演示数据）";
+                        }
+                        var sPending = oPend ? JSON.stringify(oPend) : "";
                         return new Promise(function (fnResolve) {
                                 setTimeout(function () {
                                         var oStore = Service._mockStore();
