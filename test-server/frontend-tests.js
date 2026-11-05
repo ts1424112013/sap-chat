@@ -826,6 +826,15 @@ const countOf = (s, sub) => s.split(sub).length - 1;
     return r.values.MATNR === 'A,B';
   })());
 
+  console.log('\n━━ 多重选择（仿 SAP GUI，20261105）');
+  check('Excel 一列（\\r\\n）、Tab、中英文逗号、分号、空格都拆成单个值', JSON.stringify(AskCard.splitMulti('HHZZ\r\nHHCD\r\n\r\nHHTJ\t1001，1002;1003 1004')) ===
+    JSON.stringify(['HHZZ', 'HHCD', 'HHTJ', '1001', '1002', '1003', '1004']));
+  check('去重保持先后顺序', JSON.stringify(AskCard.uniqVals(['C1', 'C2', 'C1', 'C3', 'C2'])) === JSON.stringify(['C1', 'C2', 'C3']));
+  const askSrc = fs.readFileSync(path.join(WEBAPP, 'utils/AskCard.js'), 'utf8');
+  check('多值参数（非范围、非日期）才有多重选择按钮；粘贴含换行时接管并入已有值', /if \(bMulti && !bDate\) \{\s+oCtl = buildMulti\(/.test(askSrc) &&
+    /attachBrowserEvent\("paste"/.test(askSrc) && /fnSet\(uniqVals\(fnVals\(\)\.concat\(splitMulti\(t\)\)\)\)/.test(askSrc));
+  check('剪贴板按钮只在安全上下文显示（http 用 Ctrl+V）', /navigator\.clipboard\.readText &&[\s\S]{0,80}window\.isSecureContext/.test(askSrc));
+
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -416,6 +416,183 @@ sap.ui.define([
                 return oPop;
         }
 
+        /** 20261105（多重选择）：值多于这么多个就收起成一行「已填 N 个值」 */
+        var MULTI_FOLD = 5;
+
+        /** 多值文本 → 值数组（换行 / Tab / 逗号 / 分号 / 顿号 / 空格都算分隔，与 normMulti 同口径） */
+        function splitMulti(s) {
+                return normMulti(s).split(",").filter(Boolean);
+        }
+
+        /** 去重（保持先后顺序） */
+        function uniqVals(a) {
+                var m = Object.create(null);
+                return (a || []).filter(function (v) {
+                        if (m[v]) { return false; }
+                        m[v] = true;
+                        return true;
+                });
+        }
+
+        /**
+          * 20261105：多重选择面板（仿 SAP GUI「多重选择」的单值页）：一个大文本框，每行一个值，
+          * 可以直接从 Excel 粘贴一整列；实时显示个数、去掉重复。只有单值（后端多值参数不支持排除 / 多段范围）。
+          * @param {sap.ui.core.Control} oOpener 打开它的按钮
+          * @param {object} o {title, values: string[], onDone: fn(string[])}
+          */
+        function openMultiPanel(oOpener, o) {
+                var oPop;
+                var oOk;
+                var oTa = new TextArea({
+                        value: (o.values || []).join("\n"),
+                        rows: 12,
+                        width: "100%",
+                        placeholder: "每行一个值，可以直接从 Excel 粘贴一整列\n也可以用逗号或空格分隔"
+                }).addStyleClass("mvArea");
+                var oStatus = new Text({ text: "" }).addStyleClass("vhStatus");
+                var fnParse = function () {
+                        var aAll = splitMulti(oTa.getValue());
+                        return { all: aAll.length, vals: uniqVals(aAll) };
+                };
+                var fnSync = function () {
+                        var r = fnParse();
+                        oStatus.setText(r.vals.length
+                                ? "共 " + r.vals.length + " 个值" + (r.all > r.vals.length ? "（去掉重复 " + (r.all - r.vals.length) + " 个）" : "")
+                                : "还没有值");
+                        oOk.setText(r.vals.length ? "确定（" + r.vals.length + "）" : "确定");
+                };
+                oTa.attachLiveChange(function () { fnSync(); });
+                oOk = new Button({
+                        text: "确定",
+                        type: "Emphasized",
+                        press: function () {
+                                o.onDone(fnParse().vals);
+                                oPop.close();
+                        }
+                }).addStyleClass("vhFill");
+                var aBtns = [new Button({
+                        text: "清空",
+                        type: "Transparent",
+                        press: function () {
+                                oTa.setValue("");
+                                fnSync();
+                                oTa.focus();
+                        }
+                }).addStyleClass("mvBtn")];
+                // 剪贴板接口只在 https / localhost 可用；http 访问时不显示，用 Ctrl+V 粘进文本框即可
+                if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.readText &&
+                                typeof window !== "undefined" && window.isSecureContext) {
+                        aBtns.push(new Button({
+                                text: "从剪贴板粘贴",
+                                type: "Transparent",
+                                press: function () {
+                                        navigator.clipboard.readText().then(function (t) {
+                                                var sOld = oTa.getValue();
+                                                oTa.setValue(sOld && t ? sOld.replace(/\s+$/, "") + "\n" + t : (sOld || t || ""));
+                                                fnSync();
+                                        }).catch(function () {
+                                                oStatus.setText("浏览器不允许读剪贴板，请在框里按 Ctrl+V 粘贴");
+                                        });
+                                }
+                        }).addStyleClass("mvBtn"));
+                }
+                aBtns.push(oOk);
+                oPop = new ResponsivePopover({
+                        showHeader: false,
+                        placement: "VerticalPreferredBottom",
+                        contentWidth: "24rem",
+                        horizontalScrolling: false,
+                        verticalScrolling: false,
+                        content: [new VBox({
+                                items: [
+                                        new Text({ text: o.title || "多重选择" }).addStyleClass("vhTitle"),
+                                        oTa,
+                                        new HBox({ alignItems: "Center", justifyContent: "SpaceBetween", items: [
+                                                oStatus,
+                                                new HBox({ alignItems: "Center", items: aBtns }).addStyleClass("mvBtns")
+                                        ] }).addStyleClass("vhFoot")
+                                ]
+                        }).addStyleClass("vhPanel mvPanel")],
+                        afterOpen: function () { oTa.focus(); },
+                        afterClose: function () {
+                                setTimeout(function () {
+                                        if (oPop && !oPop.isDestroyed()) { oPop.destroy(); }
+                                }, 0);
+                        }
+                }).addStyleClass("vhPop");
+                fnSync();
+                oPop.openBy(oOpener);
+                return oPop;
+        }
+
+        /**
+          * 20261105：多值参数控件 = 输入框 +「多重选择」按钮；值多了收起成一行。
+          * 输入框粘贴含换行 / Tab 的内容（Excel 一列）时拆成多个值并入已有的值。
+          * @returns {sap.ui.core.Control} 放进字段格子的控件（oRec.input 仍是提交时读值的输入框）
+          */
+        function buildMulti(oP, oRec, mVals, oAsk, fnSave) {
+                var sId = oP.param_id;
+                var oInp = oRec.input;
+                var oPre = oAsk && oAsk.prefill && oAsk.prefill[String(sId).toUpperCase()];
+                var bFromPre = !!(oPre && oPre.count);
+                var oSumText = new Text({ text: "" }).addStyleClass("askPrefillText");
+                var oSum = new HBox({ alignItems: "Center" }).addStyleClass("askPrefill");
+                var oBtn;
+                var fnVals = function () {
+                        return uniqVals(splitMulti(oInp.getValue()));
+                };
+                var fnSync = function () {
+                        var n = fnVals().length;
+                        var bFold = n > MULTI_FOLD || (bFromPre && n > 0);
+                        oSumText.setText((bFromPre ? "已带入 " : "已填 ") + n + " 个值" +
+                                (bFromPre && (oPre.source_short || oPre.source_column)
+                                        ? "（来自结果 " + (oPre.source_short || "") + (oPre.source_column ? "「" + oPre.source_column + "」" : "") + "）" : ""));
+                        oSum.setVisible(bFold);
+                        oInp.setVisible(!bFold);
+                        oBtn.setVisible(!bFold);
+                        oBtn.setText(n > 1 ? String(n) : "");
+                };
+                var fnSet = function (aVals) {
+                        var sNew = aVals.join(",");
+                        oInp.setValue(sNew);
+                        oInp.setValueState("None");
+                        fnSave(0, sNew);
+                        bFromPre = false;
+                        fnSync();
+                };
+                var fnOpen = function (oBy) {
+                        openMultiPanel(oBy, {
+                                title: (oP.label || sId) + " · 多重选择",
+                                values: fnVals(),
+                                onDone: fnSet
+                        });
+                };
+                oBtn = new Button({
+                        icon: "sap-icon://multi-select",
+                        tooltip: "多重选择：粘贴或编辑多个值（可直接粘贴 Excel 一列）",
+                        type: "Transparent",
+                        press: function (e) { fnOpen(e.getSource()); }
+                }).addStyleClass("askMultiBtn");
+                var oEdit = new Button({ text: "编辑", type: "Transparent", press: function (e) { fnOpen(e.getSource()); } }).addStyleClass("askPrefillBtn");
+                oSum.addItem(oSumText);
+                oSum.addItem(oEdit);
+                oSum.addItem(new Button({ text: "清空", type: "Transparent", press: function () { fnSet([]); oInp.focus(); } }).addStyleClass("askPrefillBtn"));
+                // Excel 一列粘进来时浏览器会把换行吞掉、值粘成一串 —— 自己接管：拆开、并入已有的值、去重
+                oInp.attachBrowserEvent("paste", function (e) {
+                        var oEv = e.originalEvent || e;
+                        var t = oEv && oEv.clipboardData ? oEv.clipboardData.getData("text") : "";
+                        if (!t || !/[\r\n\t]/.test(t.replace(/[\r\n]+$/, ""))) {
+                                return;
+                        }
+                        e.preventDefault();
+                        fnSet(uniqVals(fnVals().concat(splitMulti(t))));
+                });
+                oInp.attachChange(function () { fnSync(); });
+                var oRow = new HBox({ alignItems: "Center", items: [oInp, oBtn] }).addStyleClass("askMultiRow");
+                fnSync();
+                return new VBox({ items: [oSum, oRow] }).addStyleClass("askMultiBox");
+        }
+
         /** ENUM 选项：enum_json 可以是 JSON 字符串或数组；坏数据返回 [] */
         function enumOptions(oP) {
                 var a = oP && oP.enum_json;
@@ -683,29 +860,13 @@ sap.ui.define([
                 } else {
                         oRec.input = fnMark(fnMk(sVal));
                         oCtl = oRec.input;
-                        // 20261105（联合分析 #01 报表接力）：上一份结果带入的多值收起显示（上千个值放进输入框没法看），
-                        // 「展开修改」换回输入框、「清空」去掉；提交仍读输入框的值
-                        var oPre = oAsk && oAsk.prefill && oAsk.prefill[String(sId).toUpperCase()];
-                        var iPreN = sVal ? normMulti(sVal).split(",").filter(Boolean).length : 0;
-                        if (oPre && oPre.count && bMulti && iPreN > 0) {
-                                var oInp = oRec.input;
-                                var oSum = new HBox({ alignItems: "Center" }).addStyleClass("askPrefill");
-                                var fnOpen = function (bClear) {
-                                        if (bClear) {
-                                                oInp.setValue("");
-                                                mVals[sId] = "";
-                                        }
-                                        oSum.setVisible(false);
-                                        oInp.setVisible(true);
-                                };
-                                oSum.addItem(new Text({
-                                        text: "已带入 " + iPreN + " 个值" + (oPre.source_short || oPre.source_column
-                                                ? "（来自结果 " + (oPre.source_short || "") + (oPre.source_column ? "「" + oPre.source_column + "」" : "") + "）" : "")
-                                }).addStyleClass("askPrefillText"));
-                                oSum.addItem(new Button({ text: "展开修改", type: "Transparent", press: function () { fnOpen(false); } }).addStyleClass("askPrefillBtn"));
-                                oSum.addItem(new Button({ text: "清空", type: "Transparent", press: function () { fnOpen(true); } }).addStyleClass("askPrefillBtn"));
-                                oInp.setVisible(false);
-                                oCtl = new VBox({ items: [oSum, oInp] });
+                        // 20261105（多重选择，仿 SAP GUI）：多值参数 ——
+                        //  · 直接往输入框粘贴 Excel 一列（换行 / Tab 分隔）也能拆成多个值（原来换行被浏览器吞掉、值粘成一串）
+                        //  · 右侧「多重选择」按钮 → 粘贴面板：每行一个值，实时计数、去重
+                        //  · 值多了（超过 MULTI_FOLD 个，或上一份结果带入的）收起成一行「已填 N 个值」，「编辑」开面板、「清空」去掉
+                        //  提交读的仍是输入框的值
+                        if (bMulti && !bDate) {
+                                oCtl = buildMulti(oP, oRec, mVals, oAsk, fnSave);
                         }
                 }
                 // 20261105：从上一次运行沿用的同名参数，说明里标出来
@@ -1117,7 +1278,7 @@ sap.ui.define([
                 };
         }
 
-        return { render: render, detectChoices: detectChoices, dateDisplay: dateDisplay, valueDisplay: valueDisplay, enumOptions: enumOptions,
+        return { splitMulti: splitMulti, uniqVals: uniqVals, render: render, detectChoices: detectChoices, dateDisplay: dateDisplay, valueDisplay: valueDisplay, enumOptions: enumOptions,
                 mergeParamDefs: mergeParamDefs, layoutParams: layoutParams, groupBools: groupBools, defaultValueOf: defaultValueOf,
                 setValueHelp: setValueHelp, hasValueHelp: hasValueHelp, openPicker: openPicker,
                 isTable: isTable, parsePaste: parsePaste, parseTsv: parseTsv, pasteColsText: pasteColsText };

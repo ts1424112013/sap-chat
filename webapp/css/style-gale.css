@@ -2272,3 +2272,27 @@ body.schedOn .dataTools .dtSched { display: inline-block !important; }
 .askPrefillBtn .sapMBtnContent bdi { font-size: .76rem; color: var(--accent) !important; }
 .askPrefillBtn:hover .sapMBtnInner { background: var(--surface, #fff) !important; }
 .dtBtn.dtRelay { border-color: var(--accent) !important; color: var(--accent) !important; }
+
+/* —— 20261105 多重选择（仿 SAP GUI）：多值参数 = 输入框 + 右侧方块按钮；粘贴面板 —— */
+.askMultiBox { min-width: 0; width: 100%; }
+.askMultiRow { gap: .35rem; width: 100%; }
+.askMultiRow > .sapMFlexItem:first-child { flex: 1 1 auto; min-width: 0; }
+.askMultiRow > .sapMFlexItem:last-child { flex: 0 0 auto; }
+.askMultiBtn .sapMBtnInner { min-width: 2.25rem !important; height: 2.25rem !important; padding: 0 .45rem !important;
+        border: 1px solid var(--line-strong, var(--line)) !important; border-radius: 9px !important; background: var(--surface, #fff) !important; }
+.askMultiBtn .sapMBtnContent { display: inline-flex; align-items: center; gap: .25rem; }
+.askMultiBtn .sapMBtnIcon { color: var(--sub) !important; font-size: .95rem; margin: 0 !important; }
+.askMultiBtn .sapMBtnContent bdi { font-size: .72rem; font-weight: 600; color: var(--accent) !important; font-variant-numeric: tabular-nums; }
+.askMultiBtn:hover .sapMBtnInner { border-color: var(--accent) !important; background: var(--accent-soft) !important; }
+.askMultiBtn:hover .sapMBtnIcon { color: var(--accent) !important; }
+.mvPanel { gap: .5rem; }
+.mvArea { width: 100%; }
+.mvArea .sapMInputBaseContentWrapper { border-radius: 9px !important; }
+.mvArea textarea { font-family: ui-monospace, "SF Mono", Consolas, monospace !important; font-size: .8rem !important; line-height: 1.5 !important; min-height: 14rem; }
+.mvBtns { gap: .25rem; }
+.mvBtn .sapMBtnInner { border: 0 !important; background: transparent !important; border-radius: 9px !important; }
+.mvBtn .sapMBtnContent bdi { font-size: .78rem; color: var(--sub) !important; }
+.mvBtn:hover .sapMBtnInner { background: var(--hover) !important; }
+.mvBtn:hover .sapMBtnContent bdi { color: var(--text) !important; }
+[data-theme="dark"] .askMultiBtn .sapMBtnInner { background: var(--bg) !important; }
+[data-theme="dark"] .vhPop .mvArea textarea { color: var(--text) !important; }
