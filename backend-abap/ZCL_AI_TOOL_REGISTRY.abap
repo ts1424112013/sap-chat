@@ -52,6 +52,11 @@
 *   不进任何模块白名单: 只由 AGENT_SERVICE 在本轮定位到结果时加进可用工具(结果号由后端给)
 *   依赖: ZCL_AI_RESULT_QUERY V1.0(先激活)
 *   ★ 重贴后核对标记: get_tools 里有 zcl_ai_result_query=>tool_description( )
+* V15.11 20261105(功能计划书/联合分析/01 §4): 新工具 lookup_by_result —— 报表场景里用当前结果的一列
+*   去指定表批量查、接回后筛选 / 分组; 说明 = ZCL_AI_RESULT_LOOKUP=>tool_description;
+*   开关 RPT_TABLE_LOOKUP = X 才注册. 不进任何模块白名单: 只由 AGENT_SERVICE 在路由放行(lookup_ok)
+*   且本轮定位到结果时加进可用工具. 依赖: ZCL_AI_RESULT_LOOKUP V1.0(先激活)
+*   ★ 重贴后核对标记: get_tools 里有 zcl_ai_result_lookup=>tool_description( )
 *         sap_data_analysis  受控查询计划取数(能力目录白名单实体/字段),
 *                            args 直接承载计划 JSON 对象(不走扁平 kv),
 *                            解析/校验见 AGENT_GUARD.parse_analysis_plan,
@@ -231,6 +236,17 @@ CLASS zcl_ai_tool_registry IMPLEMENTATION.
       APPEND VALUE #(
         tool_id     = zcl_ai_result_query=>gc_tool
         description = zcl_ai_result_query=>tool_description( )
+        params      = lt_p
+        read_only   = abap_true ) TO rt_tools.
+    ENDIF.
+
+    " V15.11: lookup_by_result —— 当前结果关联查表(args 是嵌套对象, params 留空;
+    " 不进模块白名单, 由 AGENT_SERVICE 在路由放行且定位到结果时加入)
+    IF zcl_ai_result_lookup=>enabled( ) = abap_true.
+      CLEAR lt_p.
+      APPEND VALUE #(
+        tool_id     = zcl_ai_result_lookup=>gc_tool
+        description = zcl_ai_result_lookup=>tool_description( )
         params      = lt_p
         read_only   = abap_true ) TO rt_tools.
     ENDIF.

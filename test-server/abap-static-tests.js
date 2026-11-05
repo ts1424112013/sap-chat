@@ -347,10 +347,11 @@ check('AGENT_SERVICE V15.6：analyze_agent 有可选参数 iv_request_id', /^\* 
 const agCnt = (re) => (ag.match(re) || []).length;
 // 20261102 V15.14：call_function 分支多 2 处 sync（调用前写那句话、调用后收口）
 // V15.15(11.4): query_result 分支多 2 个 sync(工具前写那句话 + 执行后) —— 9 → 11
-check('进度调用数：start 1 / sync 11 / finish 2', agCnt(/zcl_ai_agent_progress=>start\(/g) === 1 && agCnt(/zcl_ai_agent_progress=>sync\(/g) === 11 &&
+check('进度调用数：start 1 / sync 13 / finish 2（V15.16 关联查表分支 +2）', agCnt(/zcl_ai_agent_progress=>start\(/g) === 1 && agCnt(/zcl_ai_agent_progress=>sync\(/g) === 13 &&
   agCnt(/zcl_ai_agent_progress=>finish\(/g) === 2, 'start ' + agCnt(/zcl_ai_agent_progress=>start\(/g) + ' / sync ' + agCnt(/zcl_ai_agent_progress=>sync\(/g) + ' / finish ' + agCnt(/zcl_ai_agent_progress=>finish\(/g));
 check('每轮调模型前写本轮占位（循环里 sync 在 zcl_ai_llm_client=>chat 之前）', /lv_round = lv_round \+ 1\.\s*zcl_ai_agent_progress=>sync\([\s\S]*?is_running = VALUE #\( phase = 'PLANNING'[\s\S]*?zcl_ai_llm_client=>chat\(/.test(ag));
-check('工具执行前写模型那句话 + 工具占位：数据分析在 execute_plan 前、call_function 在 call_sync 前、query_result 在 run 前、扁平参数工具在参数校验后', agCnt(/iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \)/g) === 4 &&
+check('工具执行前写模型那句话 + 工具占位：数据分析在 execute_plan 前、call_function 在 call_sync 前、query_result / lookup_by_result 在 run 前、扁平参数工具在参数校验后', agCnt(/iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \)/g) === 5 &&
+  /iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \) \)\.\s*GET RUN TIME FIELD lv_lk_t0\.\s*zcl_ai_result_lookup=>run\(/.test(ag) &&
   /iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \) \)\.\s*GET RUN TIME FIELD lv_rq_t0\.\s*zcl_ai_result_query=>run\(/.test(ag) &&
   /iv_note\s+= zcl_ai_agent_guard=>sanitize_summary\( ls_out-summary \) \)\.\s*GET RUN TIME FIELD lv_cf_t0\.\s*zcl_ai_rfc_exec=>call_sync\(/.test(ag) &&
   /plan_running\([^)]*\) \)\.\s*lt_ds = zcl_ai_data_analysis_service=>execute_plan/.test(ag) && /CONTINUE\.\s*ENDIF\.\s*zcl_ai_agent_progress=>sync\([\s\S]*?kv_running\(/.test(ag));
@@ -921,12 +922,13 @@ console.log('\n[18] 11.4 报表结果全量分析：RESULT_QUERY V1.0 / AGENT_SE
   check('V1.0.1 翻页：offset 解析；明细 / 分组都先跳过 offset 再取 limit；返回 total / more / next_offset',
     /^\* V1\.0\.1\s+20261104/m.test(rqRaw) && /offset\s+TYPE i/.test(rq) && /iv_name = 'offset'/.test(rqM.parse_query || '') &&
     /IF sy-tabix <= is_q-offset\.\s*CONTINUE\./.test(rqM.execute || '') && /DELETE es_out-rows FROM 1 TO lv_skip\./.test(rqM.execute || '') &&
-    /"next_offset":/.test(rqM.run || '') && /"more":/.test(rqM.run || '') && /"total":\{ ls_out-total \}/.test(rqM.run || ''));
+    /"next_offset":/.test(rqM.query_dataset || '') && /"more":/.test(rqM.query_dataset || '') && /"total":\{ ls_out-total \}/.test(rqM.query_dataset || ''));
   check('V1.0.1 翻页不漏行：一页放不进回填上限时按 rows_sent 缩页，next_offset 按缩后的行数算',
-    /FIND REGEX '"rows_sent":\(\[0-9\]\+\)' IN lv_dsj SUBMATCHES lv_sent\./.test(rqM.run || '') &&
-    /DELETE es_ds-rows FROM lv_keep \+ 1\./.test(rqM.run || '') && /lv_next\) = ls_q-offset \+ lv_ret\./.test(rqM.run || ''));
-  check('run：失败也回 ok:false + 原因；成功回 rows_scanned / rows_matched + 数据集（GUARD 上限内）',
-    /"ok":false/.test(rqM.run || '') && /"rows_scanned":/.test(rqM.run || '') && /gc_max_result_chars - 1000/.test(rqM.run || ''));
+    /FIND REGEX '"rows_sent":\(\[0-9\]\+\)' IN lv_dsj SUBMATCHES lv_sent\./.test(rqM.query_dataset || '') &&
+    /DELETE es_ds-rows FROM lv_keep \+ 1\./.test(rqM.query_dataset || '') && /lv_next\) = ls_q-offset \+ lv_ret\./.test(rqM.query_dataset || ''));
+  check('run / query_dataset：失败也回 ok:false + 原因；成功回 rows_scanned / rows_matched + 数据集（GUARD 上限内）',
+    /"ok":false/.test(rqM.run || '') && /"ok":false/.test(rqM.query_dataset || '') && /"rows_scanned":/.test(rqM.query_dataset || '') &&
+    /gc_max_result_chars - 1000/.test(rqM.query_dataset || ''));
 
   const cbRaw = read('ZCL_AI_COMBO_SERVICE.abap'), cb = codeOnly(cbRaw);
   const cbPub = (cb.match(/PUBLIC SECTION\.([\s\S]*?)PRIVATE SECTION\./) || ['', ''])[1];
@@ -1030,6 +1032,81 @@ console.log('\n[19] 定时任务：SCHEDULE_SERVICE V1.0 / ZAI_SCHED_RUNNER / DP
     ["'SCHEDULESAVE'", "'SCHEDULELIST'", "'SCHEDULEACTION'", "'SCHEDULERUNS'"].every((w) => dp2.indexOf('WHEN ' + w) >= 0) &&
     /lv_sc_json = resolve_text\( lv_sc_json \)/.test(dp2) && /zcl_ai_schedule_service=>save_sched\(/.test(dp2) &&
     /iv_error = ls_scr-error/.test(dp2));
+}
+
+// ---------------------------------------------------------------- 20) 联合分析（11.5 #00 / #02）
+console.log('\n[20] 联合分析：#00 自动场景按路由选工具 / #02 关联查表 RESULT_LOOKUP V1.0 / RESULT_QUERY V1.1 / ROUTER V1.0.8 / REGISTRY V15.11 / AGENT V15.16');
+{
+  const methodsOf = (code) => {
+    const m = {};
+    (code.match(/^\s*METHOD\s+\w+\.[\s\S]*?^\s*ENDMETHOD\./gim) || []).forEach((x) => { m[x.match(/METHOD\s+(\w+)\./i)[1].toLowerCase()] = x; });
+    return m;
+  };
+  const agRaw = read('ZCL_AI_AGENT_SERVICE.abap'), ag = codeOnly(agRaw);
+  check('AGENT V15.16 #00：「自动」场景路由认出 TABLE / MATERIAL 时工具域跟着路由（在 auto_deny 之后）', /^\* V15\.16 20261105/m.test(agRaw) &&
+    /IF ls_route-object_kind = 'TABLE'\.\s+lv_domain = zcl_ai_domain_cards=>gc_dom_data\.\s+ELSEIF ls_route-object_kind = 'MATERIAL'\.\s+lv_domain = zcl_ai_domain_cards=>gc_dom_inventory\./.test(ag) &&
+    ag.indexOf('lv_auto_deny IS NOT INITIAL') < ag.indexOf("IF ls_route-object_kind = 'TABLE'."));
+  check('AGENT #02：lookup_ok + lv_art_id 才加 lookup_by_result 与 describe_table（技能过滤之后）；提示词同步 iv_lookup',
+    /DATA\(lv_lk_on\) = xsdbool\( ls_route-lookup_ok = abap_true AND lv_art_id IS NOT INITIAL/.test(ag) &&
+    ag.indexOf('DATA(lv_lk_on)') > ag.indexOf('CHANGING ct_tools = lt_allowed_tools )') &&
+    /iv_lookup\s+= lv_lk_on/.test(ag) && /IF iv_lookup = abap_true\./.test(ag) &&
+    /ELSEIF ls_tool-tool_id = zcl_ai_result_lookup=>gc_tool\./.test(ag));
+  check('AGENT #02：lookup_by_result 分支在扁平 kv 之前，结果号用 lv_art_id，数据集进 lt_datasets',
+    ag.indexOf('IF ls_out-tool = zcl_ai_result_lookup=>gc_tool.') > ag.indexOf('IF ls_out-tool = zcl_ai_result_query=>gc_tool.') &&
+    ag.indexOf('IF ls_out-tool = zcl_ai_result_lookup=>gc_tool.') < ag.indexOf('zcl_ai_agent_guard=>parse_flat_json(') &&
+    /zcl_ai_result_lookup=>run\(\s+EXPORTING iv_artifact_id = lv_art_id/.test(ag) && /APPEND ls_lk_ds TO lt_datasets\./.test(ag));
+
+  const rtRaw = read('ZCL_AI_INTENT_ROUTER.abap'), rt = codeOnly(rtRaw);
+  const rep = (rt.match(/METHOD apply_scene\.[\s\S]*?WHEN gc_scene_data\./) || [''])[0];
+  check('ROUTER V1.0.8：ty_intent 末尾加 lookup_ok；报表场景点名查表先问 RESULT_LOOKUP=>allowed，放行才改成结果追问',
+    /^\* V1\.0\.8\s+20261105/m.test(rtRaw) && /out_of_scene\s+TYPE abap_bool,\s+lookup_ok\s+TYPE abap_bool,\s+END OF ty_intent/.test(rt) &&
+    /zcl_ai_result_lookup=>allowed\( iv_session_id \) = abap_true/.test(rep) && /cs_intent-lookup_ok\s+= abap_true/.test(rep) &&
+    rep.indexOf('zcl_ai_result_lookup=>allowed(') < rep.indexOf('cs_intent-out_of_scene = abap_true'));
+
+  const trRaw = read('ZCL_AI_TOOL_REGISTRY.abap'), tr = codeOnly(trRaw);
+  const allow = (tr.match(/METHOD get_tools_for_module\.[\s\S]*?ENDMETHOD\./) || [''])[0];
+  check('REGISTRY V15.11：lookup_by_result 开关注册，不进任何模块白名单', /^\* V15\.11 20261105/m.test(trRaw) &&
+    /IF zcl_ai_result_lookup=>enabled\( \) = abap_true\./.test(tr) && /zcl_ai_result_lookup=>tool_description\( \)/.test(tr) && !/result_lookup/.test(allow));
+
+  const rqRaw = read('ZCL_AI_RESULT_QUERY.abap'), rq = codeOnly(rqRaw), rqM = methodsOf(rq);
+  const rqPub = (rq.match(/PUBLIC SECTION\.([\s\S]*?)PRIVATE SECTION\./) || ['', ''])[1];
+  check('RESULT_QUERY V1.1：run = load + query_dataset；query_dataset / load_dataset / prefilter_rows / find_col / col_list 公开',
+    /^\* V1\.1\s+20261105/m.test(rqRaw) && ['query_dataset', 'load_dataset', 'prefilter_rows', 'find_col', 'col_list'].every((k) => new RegExp('CLASS-METHODS ' + k + '\\b').test(rqPub)) &&
+    /query_dataset\( EXPORTING is_ds\s+= ls_ds/.test(rqM.run || '') && !/parse_query\(/.test(rqM.run || '') &&
+    /lv_note && iv_extra && \|"dataset":/.test(rqM.query_dataset || ''));
+  check('prefilter_rows：整份 args 按列核对，只用前 iv_max_ci 列上的筛选', /parse_query\( EXPORTING is_ds = is_schema/.test(rqM.prefilter_rows || '') &&
+    /WHERE ci <= iv_max_ci/.test(rqM.prefilter_rows || '') && /row_pass\( is_row = ls_row it_filters = lt_f \)/.test(rqM.prefilter_rows || ''));
+
+  const lkRaw = read('ZCL_AI_RESULT_LOOKUP.abap'), lk = codeOnly(lkRaw), lkM = methodsOf(lk);
+  check('RESULT_LOOKUP V1.0：版本头、方法齐全、源码行不超过 255', /^\* V1\.0\s+20261105/m.test(lkRaw) &&
+    ['enabled', 'allowed', 'tool_description', 'run', 'prepare', 'field_info', 'to_internal', 'out_text', 'quote', 'safe_name', 'sql_user_ok'].every((k) => lkM[k]) &&
+    lkRaw.split('\n').every((l) => l.length <= 255));
+  check('放行：开关 RPT_TABLE_LOOKUP + 数据分析场景 + SQL 开关与用户 + 会话有报表结果；prepare 再核一遍',
+    /'RPT_TABLE_LOOKUP'\s*\) = 'X'/.test(lkM.enabled || '') && /scene_ok\( 'DATA' \)/.test(lkM.allowed || '') &&
+    /zcl_ai_sql_guard=>is_enabled\( \)/.test(lkM.allowed || '') && /sql_user_ok\( \)/.test(lkM.allowed || '') &&
+    /find_latest_artifact\(/.test(lkM.allowed || '') && /scene_ok\( 'DATA' \)/.test(lkM.prepare || '') && /enabled\( \) = abap_false/.test(lkM.prepare || ''));
+  check('查表核对：敏感表、透明表 / 视图、VIEW_AUTHORITY_CHECK；字段只认 DDIC，名字过字符集',
+    /zcl_ai_sql_guard=>is_sensitive\( lv_tab \)/.test(lkM.prepare || '') && /tabclass IN \( 'TRANSP', 'VIEW' \)/.test(lkM.prepare || '') &&
+    /'VIEW_AUTHORITY_CHECK'/.test(lkM.prepare || '') && /READ TABLE it_dd INTO DATA\(ls_d\) WITH KEY fieldname = lv_nm\./.test(lkM.field_info || '') &&
+    /'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_\/'/.test(lkM.safe_name || ''));
+  check('只读：SELECT ( 只在 prepare；没有 INSERT / UPDATE / DELETE / MODIFY / COMMIT', (lk.match(/SELECT \(/g) || []).length === 1 &&
+    /SELECT \(/.test(lkM.prepare || '') && !/\b(INSERT|UPDATE|DELETE|MODIFY)\s+(\w+\s+FROM|\(|zai_)/i.test(lk.replace(/INSERT VALUE #|INSERT ls_hit INTO TABLE/g, '')) && !/COMMIT WORK/.test(lk));
+  check('取数：值转内部格式后用 quote 写字面量；分批（LOOKUP_BATCH）；关联值上限 LOOKUP_MAX_KEYS、读表上限 LOOKUP_MAX_ROWS',
+    /APPEND quote\( lv_ik \) TO lt_q\./.test(lkM.prepare || '') && /'LOOKUP_BATCH'/.test(lkM.prepare || '') &&
+    /'LOOKUP_MAX_KEYS'/.test(lkM.prepare || '') && /'LOOKUP_MAX_ROWS'/.test(lkM.prepare || '') &&
+    /CONVERSION_EXIT_\{ is_fld-convexit \}_INPUT/.test(lkM.to_internal || '') && /REPLACE ALL OCCURRENCES OF `'` IN rv WITH `''`/.test(lkM.quote || ''));
+  check('接回：关联值按 COMBO norm_key 对齐；原结果列上的 filters 先筛行；最后交给 RESULT_QUERY=>query_dataset',
+    (lkM.prepare.match(/zcl_ai_combo_service=>norm_key\(/g) || []).length >= 2 && /zcl_ai_result_query=>prefilter_rows\(/.test(lkM.prepare || '') &&
+    /zcl_ai_result_query=>query_dataset\(/.test(lkM.run || '') && /iv_extra\s+= lv_extra/.test(lkM.run || ''));
+  // 动态 WHERE 字面量转义在 JS 里等价验证
+  const quote = (v) => "'" + v.replace(/'/g, "''") + "'";
+  check('quote：单引号写成两个（防字面量越界）', quote("A'B") === "'A''B'" && quote("1AM-01") === "'1AM-01'");
+  // 路由正则：两次被挡的原话都能认成 TABLE（表名规则先于 TCode）
+  const reTab = /表[\s:：]*([A-Z][A-Z0-9_]{2,29})/;
+  const norm = (q) => q.toUpperCase().replace(/报表|图表|列表|表格|表单/g, '#');
+  check('「可以去查表ZDPMMTLK 中的TLK58」「这些料号的COO…查表ZIDPMMTLK 中的TLK58」都认出表名',
+    norm('可以去查表ZDPMMTLK 中的TLK58的这个栏位').match(reTab)[1] === 'ZDPMMTLK' &&
+    norm('这些料号的COO分别是什么，可以去查表ZIDPMMTLK 中的TLK58的这个栏位').match(reTab)[1] === 'ZIDPMMTLK');
 }
 
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));

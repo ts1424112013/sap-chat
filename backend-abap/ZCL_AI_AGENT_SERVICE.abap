@@ -224,6 +224,17 @@
 *   依赖: ZCL_AI_RESULT_QUERY V1.0 / ZCL_AI_TOOL_REGISTRY V15.10 / ZCL_AI_COMBO_SERVICE V1.0.2
 *   ★ 重贴后核对标记: 有 zcl_ai_result_query=>context( 与 zcl_ai_result_query=>run(;
 *     有 lv_rq_on 与 iv_result_query = lv_rq_on
+* V15.16 20261105(功能计划书/联合分析/01; 11.5 记录 #00 / #02):
+*   ① #00「自动」场景: 路由认出对象时工具域跟着路由走(TABLE → DATA, MATERIAL → INVENTORY);
+*     原来只按 match_domain 关键词, "这些料号……查表 X" 只拿到库存工具, 模型回答"只能查库存"
+*   ② #02 报表场景关联查表: 路由置 lookup_ok 且本轮定位到结果(lv_art_id) → 可用工具加
+*     lookup_by_result + describe_table(技能过滤之后加; build_protocol_prompt 新参数 iv_lookup 同步);
+*     工具分发新分支 lookup_by_result(在 query_result 之后、扁平 kv 之前): ZCL_AI_RESULT_LOOKUP=>run,
+*     结果号用 lv_art_id, 数据集进 lt_datasets
+*   依赖: ZCL_AI_RESULT_LOOKUP V1.0 / ZCL_AI_RESULT_QUERY V1.1 / ZCL_AI_INTENT_ROUTER V1.0.8 /
+*         ZCL_AI_TOOL_REGISTRY V15.11
+*   ★ 重贴后核对标记: 有 lv_lk_on 与 iv_lookup = lv_lk_on; 有 zcl_ai_result_lookup=>run(;
+*     「自动」分支有 IF ls_route-object_kind = 'TABLE'. 后跟 gc_dom_data
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -363,6 +374,7 @@ CLASS zcl_ai_agent_service DEFINITION
       IMPORTING iv_domain       TYPE string
                 is_skill        TYPE zcl_ai_skill_service=>ty_skill OPTIONAL
                 iv_result_query TYPE abap_bool DEFAULT abap_false   " V15.15: 加 query_result
+                iv_lookup       TYPE abap_bool DEFAULT abap_false   " V15.16: 加 lookup_by_result + describe_table
       RETURNING VALUE(rv)       TYPE string.
 
     " 近期对话上下文(各截断 gc_ctx_chars 字符, 仅 user/assistant)
@@ -747,6 +759,13 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
             IMPORTING es_result     = es_result ).
           RETURN.
         ENDIF.
+        " V15.16(11.5 #00): 路由已认出对象时, 工具域跟着路由走(原来只按 match_domain 关键词:
+        " "这些料号……查表 X" 因含「料号」只拿到库存工具, 模型回答"只能查库存")
+        IF ls_route-object_kind = 'TABLE'.
+          lv_domain = zcl_ai_domain_cards=>gc_dom_data.
+        ELSEIF ls_route-object_kind = 'MATERIAL'.
+          lv_domain = zcl_ai_domain_cards=>gc_dom_inventory.
+        ENDIF.
       ENDIF.
 
       " ---- V15.4: Fiori 报表场景(确定性处理; 只有用户同意后结果数据才进模型) ----
@@ -1077,6 +1096,17 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     IF lv_rq_on = abap_true AND NOT line_exists( lt_allowed_tools[ tool_id = zcl_ai_result_query=>gc_tool ] ).
       APPEND zcl_ai_tool_registry=>get_tool( zcl_ai_result_query=>gc_tool ) TO lt_allowed_tools.
     ENDIF.
+    " V15.16(11.5 #02): 报表场景点名查表且已放行(路由 lookup_ok) → 加关联查表 + 读表结构
+    DATA(lv_lk_on) = xsdbool( ls_route-lookup_ok = abap_true AND lv_art_id IS NOT INITIAL
+                              AND zcl_ai_tool_registry=>is_registered( zcl_ai_result_lookup=>gc_tool ) = abap_true ).
+    IF lv_lk_on = abap_true.
+      IF NOT line_exists( lt_allowed_tools[ tool_id = zcl_ai_result_lookup=>gc_tool ] ).
+        APPEND zcl_ai_tool_registry=>get_tool( zcl_ai_result_lookup=>gc_tool ) TO lt_allowed_tools.
+      ENDIF.
+      IF NOT line_exists( lt_allowed_tools[ tool_id = zcl_ai_tool_registry=>gc_tool_describe_tab ] ).
+        APPEND zcl_ai_tool_registry=>get_tool( zcl_ai_tool_registry=>gc_tool_describe_tab ) TO lt_allowed_tools.
+      ENDIF.
+    ENDIF.
     DATA lv_run_id TYPE c LENGTH 32.
     CALL FUNCTION 'GUID_CREATE' IMPORTING ev_guid_32 = lv_run_id.
     GET RUN TIME FIELD lv_t0.
@@ -1102,7 +1132,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     ENDIF.
     ls_msg-content = build_protocol_prompt( iv_domain       = lv_domain
                                             is_skill        = ls_skill
-                                            iv_result_query = lv_rq_on ).
+                                            iv_result_query = lv_rq_on
+                                            iv_lookup       = lv_lk_on ).
     APPEND ls_msg TO lt_messages.
 
     " V15(P1): 上下文按任务组装(01 计划 §6.1) —— 开启任务层且任务存在时,
@@ -1657,6 +1688,58 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         ls_msg-content = zcl_ai_agent_guard=>wrap_tool_result(
                            iv_tool = ls_out-tool
                            iv_json = zcl_ai_agent_guard=>trim_result( iv_text = lv_rq_json ) ).
+        APPEND ls_msg TO lt_messages.
+        CONTINUE.
+      ENDIF.
+
+      " ---- V15.16: lookup_by_result —— 用本轮那份结果的一列去表里批量查, 接回后筛选 / 分组(只读) ----
+      " args 是嵌套对象; 结果号用后端定位的 lv_art_id, 关联值由后端从全部行取, 不经过模型
+      IF ls_out-tool = zcl_ai_result_lookup=>gc_tool.
+        DATA: lv_lk_json  TYPE string,
+              lv_lk_label TYPE string,
+              lv_lk_det   TYPE string,
+              lv_lk_err   TYPE string,
+              lv_lk_t0    TYPE i,
+              lv_lk_t1    TYPE i,
+              ls_lk_ds    TYPE zcl_ai_data_analysis_service=>ty_dataset.
+        CLEAR: lv_lk_json, lv_lk_label, lv_lk_det, lv_lk_err, ls_lk_ds.
+
+        zcl_ai_agent_progress=>sync(
+          it_trace = lt_trace
+          iv_note  = zcl_ai_agent_guard=>sanitize_summary( ls_out-summary ) ).
+        GET RUN TIME FIELD lv_lk_t0.
+        zcl_ai_result_lookup=>run(
+          EXPORTING iv_artifact_id = lv_art_id
+                    iv_args_json   = zcl_ai_agent_guard=>extract_args_object( lv_content )
+          IMPORTING ev_json        = lv_lk_json
+                    es_ds          = ls_lk_ds
+                    ev_label       = lv_lk_label
+                    ev_detail      = lv_lk_det
+                    ev_error       = lv_lk_err ).
+        GET RUN TIME FIELD lv_lk_t1.
+        IF lv_lk_err IS INITIAL.
+          ls_lk_ds-elapsed_ms = ( lv_lk_t1 - lv_lk_t0 ) / 1000.
+          APPEND ls_lk_ds TO lt_datasets.   " 前端表格 / 图表 / CSV
+        ENDIF.
+        APPEND VALUE #( phase      = 'EXECUTING'
+                        tool       = ls_out-tool
+                        label      = lv_lk_label
+                        status     = COND #( WHEN lv_lk_err IS INITIAL THEN 'OK' ELSE 'ERROR' )
+                        elapsed_ms = ( lv_lk_t1 - lv_lk_t0 ) / 1000
+                        rows       = ls_lk_ds-total_rows
+                        detail     = lv_lk_det ) TO lt_trace.
+        zcl_ai_agent_progress=>sync( it_trace = lt_trace ).
+
+        CLEAR ls_msg.
+        ls_msg-role    = 'assistant'.
+        ls_msg-content = lv_content.
+        APPEND ls_msg TO lt_messages.
+
+        CLEAR ls_msg.
+        ls_msg-role    = 'user'.
+        ls_msg-content = zcl_ai_agent_guard=>wrap_tool_result(
+                           iv_tool = ls_out-tool
+                           iv_json = zcl_ai_agent_guard=>trim_result( iv_text = lv_lk_json ) ).
         APPEND ls_msg TO lt_messages.
         CONTINUE.
       ENDIF.
@@ -2472,6 +2555,15 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     IF iv_result_query = abap_true AND NOT line_exists( lt_tools[ tool_id = zcl_ai_result_query=>gc_tool ] ).
       APPEND zcl_ai_tool_registry=>get_tool( zcl_ai_result_query=>gc_tool ) TO lt_tools.
     ENDIF.
+    " V15.16: 同 analyze_agent 的 lv_lk_on
+    IF iv_lookup = abap_true.
+      IF NOT line_exists( lt_tools[ tool_id = zcl_ai_result_lookup=>gc_tool ] ).
+        APPEND zcl_ai_tool_registry=>get_tool( zcl_ai_result_lookup=>gc_tool ) TO lt_tools.
+      ENDIF.
+      IF NOT line_exists( lt_tools[ tool_id = zcl_ai_tool_registry=>gc_tool_describe_tab ] ).
+        APPEND zcl_ai_tool_registry=>get_tool( zcl_ai_tool_registry=>gc_tool_describe_tab ) TO lt_tools.
+      ENDIF.
+    ENDIF.
 
     LOOP AT lt_tools INTO DATA(ls_tool).
       IF ls_tool-tool_id = zcl_ai_tool_registry=>gc_tool_data_analysis.
@@ -2484,6 +2576,10 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       ELSEIF ls_tool-tool_id = zcl_ai_result_query=>gc_tool.
         " V15.15: query_result 的 args 是嵌套对象(格式见工具描述)
         lv_tools = lv_tools && |- { ls_tool-tool_id }(args=\{filters, group_by, metrics, columns, sort, limit, purpose\}): { ls_tool-description }\n|.
+      ELSEIF ls_tool-tool_id = zcl_ai_result_lookup=>gc_tool.
+        " V15.16: lookup_by_result 的 args 是嵌套对象(格式见工具描述)
+        lv_tools = lv_tools && |- { ls_tool-tool_id }(args=\{table, key_field, source_column, fields, conditions, | &&
+                   |filters, group_by, metrics, sort, limit, purpose\}): { ls_tool-description }\n|.
       ELSE.
         CLEAR lv_params.
         LOOP AT ls_tool-params INTO DATA(ls_p).

@@ -57,6 +57,12 @@
 *   ② apply_scene 报表场景: 库存类意图(不是点名表)且会话里已有报表结果 → 按结果追问(ANALYZE_ARTIFACT),
 *     没有结果时仍提示换场景. 依赖 ZCL_AI_REPORT_SERVICE=>find_latest_artifact(已有)
 *   ★ 重贴后核对标记: 规则 4b 正则含「这张|这批」; apply_scene 报表分支有 find_latest_artifact(
+* V1.0.8  20261105(功能计划书/联合分析/01 §4.3; 11.5 记录 #02): 报表场景点名查表时, 满足
+*   ZCL_AI_RESULT_LOOKUP=>allowed(开关 RPT_TABLE_LOOKUP + 数据分析场景 + SQL 开关与用户 + 会话有报表结果)
+*   → 不再提示换场景, 改成结果追问(ANALYZE_ARTIFACT)并置新字段 lookup_ok(AGENT_SERVICE 据此加
+*   lookup_by_result 与 describe_table); 不满足时照旧提示换场景. ty_intent 末尾加 lookup_ok
+*   依赖: ZCL_AI_RESULT_LOOKUP V1.0(先激活)
+*   ★ 重贴后核对标记: ty_intent 有 lookup_ok; apply_scene 报表分支有 zcl_ai_result_lookup=>allowed(
 * ★ 重贴后核对标记: quick_route 中 "表+表名" 规则必须在执行/继续规则
 *   之前(防 "分析表 ZTEST_DATA" 因 Z 开头误判 REPORT); 偏移/长度
 *   已全部先落中间变量(§2.1-2); 规则 4b 在 TCode 块之后、规则 5 之前;
@@ -107,6 +113,7 @@ CLASS zcl_ai_intent_router DEFINITION
              needs_clarify TYPE abap_bool,
              reason        TYPE string,
              out_of_scene  TYPE abap_bool,    " V1.0.5: 诉求不属于当前会话场景
+             lookup_ok     TYPE abap_bool,    " V1.0.8: 报表场景查表已放行(关联查表)
            END OF ty_intent.
 
     " 确定性快捷路由(供 AGENT_SERVICE 在 match_domain 之后调用):
@@ -257,6 +264,19 @@ CLASS zcl_ai_intent_router IMPLEMENTATION.
           cs_intent-action      = gc_act_analyze.
           cs_intent-object_kind = 'ARTIFACT'.
           cs_intent-reason      = |报表场景: 库存类问题按本会话报表结果追问|.
+          RETURN.
+        ENDIF.
+        " V1.0.8(11.5 #02): 点名查表且已放行关联查表 → 按结果追问, 由模型用 lookup_by_result 关联
+        IF cs_intent-object_kind = 'TABLE'
+           AND zcl_ai_result_lookup=>allowed( iv_session_id ) = abap_true.
+          DATA(lv_lk_tab) = cs_intent-object_value.
+          CLEAR cs_intent.
+          cs_intent-module_id   = zcl_ai_task_service=>gc_mod_report.
+          cs_intent-intent_code = gc_int_analyze_art.
+          cs_intent-action      = gc_act_analyze.
+          cs_intent-object_kind = 'ARTIFACT'.
+          cs_intent-lookup_ok   = abap_true.
+          cs_intent-reason      = |报表场景: 用本会话报表结果关联查表 { lv_lk_tab }|.
           RETURN.
         ENDIF.
         IF cs_intent-object_kind = 'TABLE'

@@ -31,8 +31,13 @@
 * V1.0.1  20261104: 翻页 —— 新参数 offset(跳过排序后的前几行, 默认 0); 返回加 total / offset /
 *         returned / more / next_offset. 一页放不进回填模型的字符上限时, 这一页缩到模型实际看到的
 *         行数(前端表格同步), next_offset 按它算, 翻页不会漏行
-* ★ 重贴后核对标记: 有 METHOD context / run / execute / parse_query / sort_rows / load;
-*   ty_query 有 offset; run 内有 next_offset 与 "rows_sent":;
+* V1.1    20261105(功能计划书/联合分析/01 §4): 给关联查表 ZCL_AI_RESULT_LOOKUP 复用 ——
+*         ① run 的查询主体挪到新公共方法 query_dataset(传入任意数据集; run = load + query_dataset,
+*            行为不变); 新可选参数 iv_extra = 插在 "dataset" 前的 JSON 片段(以逗号结尾)
+*         ② 新公共方法 load_dataset(= load) / prefilter_rows(只按前 iv_max_ci 列上的筛选条件先筛行)
+*         ③ find_col / col_list 挪到公共区
+* ★ 重贴后核对标记: 有 METHOD context / run / query_dataset / load_dataset / prefilter_rows /
+*   execute / parse_query / sort_rows / load; ty_query 有 offset; query_dataset 内有 next_offset 与 "rows_sent":;
 *   execute 内有 count_distinct; context 内有 zcl_ai_combo_service=>group_json(
 *=======================================================================
 CLASS zcl_ai_result_query DEFINITION
@@ -76,6 +81,50 @@ CLASS zcl_ai_result_query DEFINITION
                 ev_label        TYPE string
                 ev_detail       TYPE string
                 ev_error        TYPE string.
+
+    " V1.1: 在给定数据集上执行一次查询(args 同 query_result); run = load + 本方法
+    " iv_res_text = 回给模型的结果说明; iv_source = 数据集来源标记; iv_label = 默认标题前缀;
+    " iv_extra = 插在 "dataset" 之前的 JSON 片段(必须以逗号结尾, 可空)
+    CLASS-METHODS query_dataset
+      IMPORTING is_ds        TYPE zcl_ai_odata_shaper=>ty_dataset
+                iv_args_json TYPE string
+                iv_res_text  TYPE string
+                iv_source    TYPE string
+                iv_label     TYPE string
+                iv_extra     TYPE string OPTIONAL
+      EXPORTING ev_json      TYPE string
+                es_ds        TYPE zcl_ai_data_analysis_service=>ty_dataset
+                ev_label     TYPE string
+                ev_detail    TYPE string
+                ev_error     TYPE string.
+
+    " V1.1: 读一份结果的全部存储行(核对同 query_result; 同一请求按结果号缓存)
+    CLASS-METHODS load_dataset
+      IMPORTING iv_artifact_id  TYPE string
+                iv_need_analyze TYPE abap_bool DEFAULT abap_false
+      EXPORTING es_ds           TYPE zcl_ai_odata_shaper=>ty_dataset
+                ev_label        TYPE string
+                ev_report_id    TYPE string
+                ev_session_id   TYPE string
+                ev_error        TYPE string.
+
+    " V1.1: 按 args 里的 filters 先筛行 —— 整个 args 按 is_schema 的列核对(错列名照常报错),
+    " 但只用落在前 iv_max_ci 列上的筛选条件(关联查表: 原结果的列在前, 查回的字段在后)
+    CLASS-METHODS prefilter_rows
+      IMPORTING is_schema    TYPE zcl_ai_odata_shaper=>ty_dataset
+                iv_args_json TYPE string
+                iv_max_ci    TYPE i
+      EXPORTING ev_error     TYPE string
+      CHANGING  ct_rows      TYPE zcl_ai_odata_shaper=>tt_row.
+
+    " 列名或列标题 → 列下标(没有 = 0); V1.1 起公开
+    CLASS-METHODS find_col
+      IMPORTING is_ds     TYPE zcl_ai_odata_shaper=>ty_dataset
+                iv_name   TYPE string
+      RETURNING VALUE(rv) TYPE i.
+    CLASS-METHODS col_list
+      IMPORTING is_ds     TYPE zcl_ai_odata_shaper=>ty_dataset
+      RETURNING VALUE(rv) TYPE string.
 
   PRIVATE SECTION.
 
@@ -134,14 +183,6 @@ CLASS zcl_ai_result_query DEFINITION
                 ev_report_id    TYPE string
                 ev_session_id   TYPE string
                 ev_error        TYPE string.
-    " 列名或列标题 → 列下标(没有 = 0)
-    CLASS-METHODS find_col
-      IMPORTING is_ds     TYPE zcl_ai_odata_shaper=>ty_dataset
-                iv_name   TYPE string
-      RETURNING VALUE(rv) TYPE i.
-    CLASS-METHODS col_list
-      IMPORTING is_ds     TYPE zcl_ai_odata_shaper=>ty_dataset
-      RETURNING VALUE(rv) TYPE string.
     CLASS-METHODS col_label
       IMPORTING is_ds     TYPE zcl_ai_odata_shaper=>ty_dataset
                 iv_ci     TYPE i
@@ -1078,6 +1119,45 @@ CLASS zcl_ai_result_query IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD load_dataset.
+    load( EXPORTING iv_artifact_id  = iv_artifact_id
+                    iv_need_analyze = iv_need_analyze
+          IMPORTING es_ds           = es_ds
+                    ev_label        = ev_label
+                    ev_report_id    = ev_report_id
+                    ev_session_id   = ev_session_id
+                    ev_error        = ev_error ).
+  ENDMETHOD.
+
+
+  METHOD prefilter_rows.
+
+    DATA: ls_q    TYPE ty_query,
+          lt_f    TYPE tt_filter,
+          ls_row  TYPE zcl_ai_odata_shaper=>ty_row,
+          lt_keep TYPE zcl_ai_odata_shaper=>tt_row.
+    CLEAR ev_error.
+    parse_query( EXPORTING is_ds = is_schema iv_json = iv_args_json
+                 IMPORTING es_q = ls_q ev_error = ev_error ).
+    IF ev_error IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+    LOOP AT ls_q-filters INTO DATA(ls_f) WHERE ci <= iv_max_ci.
+      APPEND ls_f TO lt_f.
+    ENDLOOP.
+    IF lt_f IS INITIAL.
+      RETURN.
+    ENDIF.
+    LOOP AT ct_rows INTO ls_row.
+      IF row_pass( is_row = ls_row it_filters = lt_f ) = abap_true.
+        APPEND ls_row TO lt_keep.
+      ENDIF.
+    ENDLOOP.
+    ct_rows = lt_keep.
+
+  ENDMETHOD.
+
+
   METHOD context.
 
     DATA: ls_ds    TYPE zcl_ai_odata_shaper=>ty_dataset,
@@ -1170,12 +1250,9 @@ CLASS zcl_ai_result_query IMPLEMENTATION.
   METHOD run.
 
     DATA: ls_ds    TYPE zcl_ai_odata_shaper=>ty_dataset,
-          ls_q     TYPE ty_query,
-          ls_out   TYPE zcl_ai_odata_shaper=>ty_dataset,
           lv_label TYPE string,
           lv_rid   TYPE string,
-          lv_sess  TYPE string,
-          lv_match TYPE i.
+          lv_sess  TYPE string.
     CLEAR: ev_json, es_ds, ev_label, ev_detail, ev_error.
 
     IF enabled( ) = abap_false.
@@ -1190,12 +1267,39 @@ CLASS zcl_ai_result_query IMPLEMENTATION.
                       ev_session_id   = lv_sess
                       ev_error        = ev_error ).
     ENDIF.
-    IF ev_error IS INITIAL.
-      parse_query( EXPORTING is_ds = ls_ds iv_json = iv_args_json
-                   IMPORTING es_q = ls_q ev_error = ev_error ).
+    IF ev_error IS NOT INITIAL.
+      ev_label = |结果查询失败: { ev_error }|.
+      ev_json  = |\{"ok":false,"error":{ js( ev_error ) },| &&
+                 |"hint":"改正 args 后可以再调一次, 或直接 action=final 如实说明"\}|.
+      RETURN.
     ENDIF.
+
+    " V1.1: 查询主体挪到 query_dataset(关联查表 ZCL_AI_RESULT_LOOKUP 复用)
+    query_dataset( EXPORTING is_ds       = ls_ds
+                             iv_args_json = iv_args_json
+                             iv_res_text  = |{ zcl_ai_task_service=>short_id( iv_artifact_id ) }「{ lv_label }」|
+                             iv_source    = |RESULT:{ zcl_ai_task_service=>short_id( iv_artifact_id ) }|
+                             iv_label     = lv_label
+                   IMPORTING ev_json      = ev_json
+                             es_ds        = es_ds
+                             ev_label     = ev_label
+                             ev_detail    = ev_detail
+                             ev_error     = ev_error ).
+
+  ENDMETHOD.
+
+
+  METHOD query_dataset.
+
+    DATA: ls_q     TYPE ty_query,
+          ls_out   TYPE zcl_ai_odata_shaper=>ty_dataset,
+          lv_match TYPE i.
+    CLEAR: ev_json, es_ds, ev_label, ev_detail, ev_error.
+
+    parse_query( EXPORTING is_ds = is_ds iv_json = iv_args_json
+                 IMPORTING es_q = ls_q ev_error = ev_error ).
     IF ev_error IS INITIAL.
-      execute( EXPORTING is_ds = ls_ds is_q = ls_q
+      execute( EXPORTING is_ds = is_ds is_q = ls_q
                IMPORTING es_out = ls_out ev_matched = lv_match ev_error = ev_error ).
     ENDIF.
 
@@ -1219,10 +1323,10 @@ CLASS zcl_ai_result_query IMPLEMENTATION.
     ev_detail = lv_text.
 
     DATA(lv_name) = COND string( WHEN ls_q-purpose IS NOT INITIAL THEN ls_q-purpose
-                                 ELSE |{ lv_label } 查询| ).
+                                 ELSE |{ iv_label } 查询| ).
     es_ds = to_analysis( is_ds     = ls_out
                          iv_name   = lv_name
-                         iv_source = |RESULT:{ zcl_ai_task_service=>short_id( iv_artifact_id ) }| ).
+                         iv_source = iv_source ).
 
     DATA: lv_res  TYPE string,
           lv_note TYPE string,
@@ -1230,9 +1334,9 @@ CLASS zcl_ai_result_query IMPLEMENTATION.
           lv_sent TYPE string,
           lv_keep TYPE i,
           ls_feed TYPE zcl_ai_data_analysis_service=>ty_dataset.
-    lv_res = |{ zcl_ai_task_service=>short_id( iv_artifact_id ) }「{ lv_label }」|.
-    IF ls_ds-truncated = abap_true.
-      lv_note = |来源已截断: 共 { ls_ds-total } 行, 只存了 { lines( ls_ds-rows ) } 行, 结论要说明是部分数据|.
+    lv_res = iv_res_text.
+    IF is_ds-truncated = abap_true.
+      lv_note = |来源已截断: 共 { is_ds-total } 行, 只存了 { lines( is_ds-rows ) } 行, 结论要说明是部分数据|.
       lv_note = |"note":{ js( lv_note ) },|.
     ENDIF.
 
@@ -1269,15 +1373,15 @@ CLASS zcl_ai_result_query IMPLEMENTATION.
       lv_page = lv_page && |"next_offset":{ lv_next },|.
     ENDIF.
 
-    ev_label = |结果查询: { lv_name }, 扫描 { lines( ls_ds-rows ) } 行, 命中 { lv_match } 行, | &&
+    ev_label = |结果查询: { lv_name }, 扫描 { lines( is_ds-rows ) } 行, 命中 { lv_match } 行, | &&
                COND string( WHEN ls_q-offset > 0
                             THEN |返回第 { ls_q-offset + 1 }-{ lv_next } 行(共 { ls_out-total } 行)|
                             ELSE |返回 { lv_ret } 行(共 { ls_out-total } 行)| ).
 
     ev_json = |\{"ok":true,"result":{ js( lv_res ) },| &&
-              |"rows_scanned":{ lines( ls_ds-rows ) },"rows_matched":{ lv_match },| &&
+              |"rows_scanned":{ lines( is_ds-rows ) },"rows_matched":{ lv_match },| &&
               lv_page && |"query":{ js( lv_text ) },| &&
-              lv_note && |"dataset":{ lv_dsj }\}|.
+              lv_note && iv_extra && |"dataset":{ lv_dsj }\}|.
 
   ENDMETHOD.
 
