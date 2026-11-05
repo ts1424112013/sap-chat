@@ -69,9 +69,13 @@ sap.ui.define([], function () {
         /** 「报表执行」目录演示清单（与真实 ReportDefinitions 一样用大写键） */
         var TCODE_DEFS = [
                 { REPORT_ID: "ZDPMM702", TCODE: "ZDPMM702", NAME: "MIH 需求报表", DESCRIPTION: "按工厂、机种汇总 MIH 需求（程序 ZRMM_IDP_0702）", EXEC_ENABLED: "X",
-                  PARAMS: [{ PARAM_ID: "WERKS", REF_FIELD: "T001W-WERKS" }, { PARAM_ID: "MODEL", REF_FIELD: "ZMODEL" }] },
+                  // 20261105：按真实选择屏补齐（SELECT-OPTIONS = 多值），参数卡才有「多重选择」
+                  PARAMS: [{ PARAM_ID: "WERKS", REF_FIELD: "T001W-WERKS", DISPLAY_LABEL: "工厂", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 10 },
+                        { PARAM_ID: "MODEL", REF_FIELD: "ZMODEL", DISPLAY_LABEL: "机种", DATA_TYPE: "CHAR", TYPE_LENGTH: 18, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 20 }] },
                 { REPORT_ID: "ZDPMM455", TCODE: "ZDPMM455", NAME: "物料收发汇总", DESCRIPTION: "按期间汇总物料收发数量（演示）", EXEC_ENABLED: "X",
-                  PARAMS: [{ PARAM_ID: "WERKS", REF_FIELD: "T001W-WERKS" }, { PARAM_ID: "BUDAT" }, { PARAM_ID: "MATNR", REF_FIELD: "MARA-MATNR" }] },
+                  PARAMS: [{ PARAM_ID: "WERKS", REF_FIELD: "T001W-WERKS", DISPLAY_LABEL: "工厂", DATA_TYPE: "CHAR", TYPE_LENGTH: 4, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 10 },
+                        { PARAM_ID: "BUDAT", DISPLAY_LABEL: "过账日期", DATA_TYPE: "DATE", TYPE_LENGTH: 8, RANGE_ALLOWED: true, SEL_KIND: "S", SORT_NO: 20 },
+                        { PARAM_ID: "MATNR", REF_FIELD: "MARA-MATNR", DISPLAY_LABEL: "物料", DATA_TYPE: "CHAR", TYPE_LENGTH: 40, MULTI_VALUE: true, SEL_KIND: "S", SORT_NO: 30 }] },
                 // 20261102（RFC 函数执行）：函数模块登记（REPORT_KIND = FUNC，调用名 = 函数名），参数是扫描接口后的样子
                 { REPORT_ID: "Z_AI_DEMO_PO_OPEN", TCODE: "Z_AI_DEMO_PO_OPEN", PROGNAME: "Z_AI_DEMO_PO_OPEN", REPORT_KIND: "FUNC", RESULT_REF: "ET_ITEMS",
                   NAME: "未清采购订单（函数）", DESCRIPTION: "函数模块 Z_AI_DEMO_PO_OPEN(函数组 ZAI_DEMO, 远程启用)（演示）", EXEC_ENABLED: "X",
