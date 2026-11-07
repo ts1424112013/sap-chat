@@ -98,7 +98,14 @@ const server = http.createServer(async (req, res) => {
     const bad = checkHeaders(req, false);
     if (bad.length) return send(res, 400, { ok: false, message: bad.join("；") });
     const runId = "R" + Date.now().toString(36);
-    runs.set(runId, { modelCalls: 0, toolCalls: 0, question: data.question });
+    runs.set(runId, { modelCalls: 0, toolCalls: 0, question: data.question, focus: data.focusArtifactId || "" });
+    if (String(data.question || "").includes("场景四")) {
+      // Fiori 场景的确定性回答：SAP 直接给回答和参数卡，浏览器不该再调模型
+      return send(res, 200, { runId, model: "mock-model", tools: [], limits: { recursionLimit: 80 }, systemPrompt: "",
+        answer: "【Fiori 报表 测试】请在参数卡里填写后取数",
+        card: { tool: "fiori", taskId: "F1", taskModule: "FIORI", taskStatus: "WAITING_INPUT", needsInput: true,
+          pendingParamsJson: JSON.stringify({ kind: "FIORI", report_id: "FR1", report_name: "测试", params: [] }), answer: "x" } });
+    }
     if (String(data.question || "").includes("场景三")) {
       return send(res, 200, { runId, model: "mock-model", tools: [...SAP_TOOLS, ...RPT_TOOLS], skills: SAP_SKILLS, export: true,
         limits: { recursionLimit: 80 }, systemPrompt: "场景：REPORT（模拟）" });
@@ -166,7 +173,8 @@ const server = http.createServer(async (req, res) => {
     const bad = checkHeaders(req, true);
     if (bad.length || data.runId !== req.headers["x-lingxi-run"]) return send(res, 400, { ok: false, message: bad.join("；") || "运行号不一致" });
     runs.get(data.runId).toolCalls++;
-    if (data.tool === "list_results") return send(res, 200, { ok: true, content: JSON.stringify({ results: [{ id: "ART1", label: "库存结果", rows: 1 }] }) });
+    if (data.tool === "list_results") return send(res, 200, { ok: true, content: JSON.stringify({ results: [{ id: "ART1", label: "库存结果", rows: 1 }] }),
+      datasets: [{ name: "库存结果", status: "OK", total_rows: 1, columns: [{ name: "MATNR", label: "物料", numeric: false }], rows: [["M1"]] }] });
     if (data.tool === "open_report") {
       return send(res, 200, { ok: true, content: "参数卡已生成", card: {
         tool: "open_report", taskId: "T1", taskModule: "REPORT", taskStatus: "WAITING_INPUT", needsInput: true,

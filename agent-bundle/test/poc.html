@@ -109,6 +109,13 @@ async function main() {
     check("参数卡交回界面", r3.card && r3.card.taskId === "T1" && /请填参数/.test(r3.answer), r3.answer);
     check("参数卡写回会话", run3.status === "OK" && /请填参数/.test(run3.answer || ""));
     check("技能事件", ev3.some(e => e.type === "skill" && e.name === "库存盘点"));
+    check("工具带回的数据集交给界面", Array.isArray(r3.datasets) && r3.datasets.length === 1 && r3.datasets[0].name === "库存结果");
+    // ---- 场景四：SAP 确定性回答（Fiori 参数卡），不调模型 ----
+    const r4 = await LingxiAgent.run({ question: "场景四", context: { focusArtifactId: "FA1" }, sap: { base: "/sap/bc/zai_agent" }, onEvent: e => events.push(e) });
+    const runs4 = await (await fetch("/__runs")).json();
+    const run4 = Object.values(runs4).find(x => x.question === "场景四") || {};
+    check("确定性回答：不调模型、直接带回参数卡", run4.modelCalls === 0 && r4.card && r4.card.taskModule === "FIORI" && /Fiori 报表/.test(r4.answer), JSON.stringify({ calls: run4.modelCalls, a: r4.answer }));
+    check("确定性回答写回会话；聚焦结果号带到 SAP", run4.status === "OK" && run4.focus === "FA1");
     $("state").textContent = checks.every(c => c.ok) ? "全部通过" : "有失败";
   } catch (e) {
     check("运行", false, (e && e.stack) || e);

@@ -19,7 +19,7 @@ import {
 } from "./folder-backend.js";
 import { ReadonlyMemBackend, skillFiles } from "./readonly-backend.js";
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
 export const MEMORY_FILE = "/灵犀记忆.md";
 /** SAP 管理员维护的技能（只读，SAP /run/start 下发） */
 export const SAP_SKILL_DIR = "/SAP技能/";
@@ -60,12 +60,14 @@ function rid() {
  * 把 SAP 返回的工具清单包装成 LangChain 工具；执行时再交给 SAP 校验。
  * 工具结果带 card（报表参数卡）时交给 onCard：引擎随即结束本次运行，由界面显示参数卡。
  */
-function buildSapTools(client, run, emit, signal, onCard) {
+function buildSapTools(client, run, emit, signal, onCard, onDatasets) {
   return (run.tools || []).map(t => tool(
     async (args) => {
       const requestId = rid();
       const r = await client.execTool({ runId: run.runId, tool: t.name, args: args || {}, requestId }, { signal });
       if (r && r.display) emit({ type: "display", tool: t.name, display: r.display });
+      // 数据集（查数 / 结果查询 / 数据分析 / 函数）直接交给界面画表格和图表，不经过模型
+      if (r && Array.isArray(r.datasets) && r.datasets.length && onDatasets) onDatasets(t.name, r.datasets);
       if (r && r.ok === false) return `工具执行失败：${r.message || "未知原因"}`;
       if (r && r.card && typeof r.card === "object") {
         onCard(r.card);
@@ -157,10 +159,23 @@ export async function run(o) {
   const runInfo = await client.startRun({
     sessionId: ctx.sessionId || "", scene: ctx.scene || "", modelId: ctx.modelId || "",
     question: o.question, think: !!ctx.think, skillId: ctx.skillId || "",
+    focusArtifactId: ctx.focusArtifactId || "",
     folder: o.folderBackend ? o.folderBackend.name : (o.folder ? o.folder.name : "")
   }, { signal: o.signal });
   if (!runInfo || !runInfo.runId) throw new SapAgentError("SAP 没有返回运行号", 0, runInfo);
   emit({ type: "run", runId: runInfo.runId, model: runInfo.model, tools: (runInfo.tools || []).map(t => t.name) });
+
+  // SAP 已经给出确定性回答（Fiori 报表参数卡 / 候选清单 / 闸门提示）：不调模型，直接收尾
+  if (runInfo.answer) {
+    const det = { answer: String(runInfo.answer), card: runInfo.card && typeof runInfo.card === "object" ? runInfo.card : null };
+    if (det.card) track({ type: "card", tool: det.card.tool || "", taskId: det.card.taskId || "" });
+    try {
+      await client.finishRun({ runId: runInfo.runId, status: "OK", answer: det.answer, message: "", trace: trace.slice(-200), skillsUsed: [] });
+    } catch (e) { emit({ type: "warn", message: "运行结果未能写回 SAP 会话：" + e.message }); }
+    emit({ type: "phase", phase: "done", status: "OK" });
+    return { answer: det.answer, runId: runInfo.runId, trace, card: det.card, skills: [], datasets: [], deterministic: true,
+      changes: [], elapsedMs: Date.now() - started, folder: o.folderBackend || null };
+  }
 
   // 文件夹后端：调用方可传入同一个实例跨多轮复用（撤回要用到之前的修改记录）
   let folderBackend = o.folderBackend || (o.folder ? new FolderBackend(o.folder) : null);
@@ -237,7 +252,12 @@ export async function run(o) {
     inner.abort(new Error("lingxi-card"));
   };
 
-  const tools = buildSapTools(client, runInfo, emit, inner.signal, onCard);
+  const datasets = [];
+  const onDatasets = (toolName, list) => {
+    for (const d of list) if (d && typeof d === "object" && datasets.length < 8) datasets.push(d);
+    track({ type: "datasets", tool: toolName, count: list.length });
+  };
+  const tools = buildSapTools(client, runInfo, emit, inner.signal, onCard, onDatasets);
   const canExport = !!(folderBackend && runInfo.export);
   if (canExport) tools.push(buildExportTool(client, runInfo, folderBackend, inner.signal));
 
@@ -333,7 +353,7 @@ export async function run(o) {
   emit({ type: "phase", phase: "done", status });
   if (status !== "OK") throw Object.assign(new Error(errorMsg || status), { status, trace, runId: runInfo.runId });
   return {
-    answer, runId: runInfo.runId, trace, card,
+    answer, runId: runInfo.runId, trace, card, datasets,
     skills: [...skillsUsed.values()],
     changes: folderBackend ? folderBackend.changes.slice() : [], elapsedMs: Date.now() - started, folder: folderBackend
   };
