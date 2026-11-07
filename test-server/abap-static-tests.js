@@ -1239,8 +1239,48 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
   check('openai_body：顶层字段白名单、model / stream / max_tokens 由 SAP 写，缺 messages 拒绝',
     /\|messages\|tools\|tool_choice\|temperature\|top_p\|stop\|response_format\|parallel_tool_calls\|/.test(lcRaw2) &&
     /value = 'model'/.test(ob) && /value = 'stream'/.test(ob) && /value = 'max_tokens'/.test(ob) && /缺少 messages/.test(ob));
-  const keys = ['BROWSER_AGENT_ON', 'BROWSER_AGENT_USERS', 'BRUN_MAX_MODEL', 'BRUN_MAX_TOOL', 'BRUN_MAX_BODY_KB', 'BRUN_TTL_MIN'];
+  const keys = ['BROWSER_AGENT_ON', 'BROWSER_AGENT_USERS', 'BRUN_MAX_MODEL', 'BRUN_MAX_TOOL', 'BRUN_MAX_BODY_KB', 'BRUN_TTL_MIN',
+    'BRUN_EXPORT_ROWS', 'BRUN_EXPORT_KB'];
   check('新配置键都 ≤ 20 字符（CFGKEY CHAR 20）', keys.every((k) => k.length <= 20 && agRaw2.includes("'" + k + "'")));
+
+  /* ---- 20261107 浏览器 Agent M2：报表 + 结果 + 技能 + 存到文件夹（AGENT_SERVICE V15.19 / HTTP V1.1） ---- */
+  console.log('\n━━ 浏览器 Agent M2：AGENT_SERVICE V15.19 / ZCL_AI_AGENT_HTTP V1.1');
+  const be = methodOf(ag2, 'browser_export'), ba = methodOf(ag2, 'brun_art'), bc = methodOf(ag2, 'brun_card');
+  check('V15.19：browser_export / brun_art / brun_results / brun_card / brun_add_tool / csv_cell 都在，analyze_agent 仍未改',
+    /^\* V15\.19 20261107/m.test(agRaw2) && be && ba && methodOf(ag2, 'brun_results') && bc && methodOf(ag2, 'brun_add_tool') &&
+    methodOf(ag2, 'csv_cell') && !/zai_brun|browser_|brun_/.test(methodOf(ag2, 'analyze_agent')));
+  check('browser_start：结果工具只在本会话有可用结果时下发；报表参数卡要 读取能力 + 自动/报表执行场景 + 报表场景权限',
+    /FROM zai_artifact\s+WHERE session_id = @iv_session_id AND owner = @sy-uname AND status = 'AVAILABLE'/.test(bs) &&
+    /lv_res_on = abap_true/.test(bs) && /zcl_ai_report_service=>read_enabled\( \) = abap_true/.test(bs) &&
+    /zcl_ai_access=>scene_ok\( zcl_ai_intent_router=>gc_scene_report \)/.test(bs) &&
+    /zcl_ai_result_lookup=>allowed\( iv_session_id \)/.test(bs) && /zcl_ai_report_relay=>enabled\( \)/.test(bs));
+  check('browser_start：技能清单走 skill_service=>list（开关 / 可见性 / 场景同下拉），手动选的不重复，最多 30 个；运行号记 SKILL_ID',
+    /zcl_ai_skill_service=>list\(/.test(bs) && /ls_sk-id = ls_skill-id/.test(bs) && /lv_sk_n > 30/.test(bs) &&
+    /ls_run-skill_id\s+= ls_skill-id/.test(bs) && /es_start-skills_json/.test(bs) && /es_start-export\s+= lv_res_on/.test(bs));
+  check('browser_tool：报表 / 结果工具先于扁平 kv 处理；除 list_results / open_report 外结果号都过 brun_art',
+    bt.indexOf("lv_tool = 'list_results'") > -1 && bt.indexOf("lv_tool = 'list_results'") < bt.indexOf('parse_flat_json(') &&
+    /IF lv_tool <> 'list_results' AND lv_tool <> 'open_report'\.\s*lv_rerr = brun_art\(/.test(bt));
+  check('browser_tool：出卡前过 build_report_intro（登记 + 授权），不出卡时原因交给模型；prefill 合并预填值',
+    /build_report_intro\( EXPORTING iv_tcode\s+= lv_rtc/.test(bt) && /lv_i_found = abap_false OR lv_i_needs = abap_false/.test(bt) &&
+    /zcl_ai_report_relay=>merge_pending\(/.test(bt) && /ev_card = brun_card\(/.test(bt));
+  check('brun_art：本人 + 本运行会话 + AVAILABLE',
+    /owner\s+= @sy-uname/.test(ba) && /session_id\s+= @is_run-session_id/.test(ba) && /lv_st <> 'AVAILABLE'/.test(ba));
+  check('brun_card：任务层开才出卡；任务置 WAITING_INPUT 带 pending；任务号记进 ZAI_BRUN',
+    /task_enabled\( \) = abap_false/.test(bc) && /iv_status\s+= zcl_ai_task_service=>gc_st_waiting_input/.test(bc) &&
+    /iv_pending = iv_pending/.test(bc) && /UPDATE zai_brun SET task_id = @lv_tid/.test(bc) && /"needsInput":true/.test(bc));
+  check('browser_finish：参数卡任务关联本轮问答；技能逐个 resolve 再 audit，第一条用运行号',
+    /zcl_ai_task_service=>attach_messages\(/.test(bf) && /zcl_ai_skill_service=>resolve\(/.test(bf) &&
+    /zcl_ai_skill_service=>audit\(/.test(bf) && /lv_aud_id = ls_run-run_id/.test(bf));
+  check('browser_export：运行号校验 + 只限有结果工具的运行 + 计工具次数 + brun_art + load_dataset；行数 / 大小有上限',
+    /brun_get\(/.test(be) && /NS ',list_results,'/.test(be) && /SET tool_calls = tool_calls \+ 1/.test(be) &&
+    /brun_art\(/.test(be) && /zcl_ai_result_query=>load_dataset\(/.test(be) && /ev_trunc = abap_true/.test(be));
+  check('csv_cell：含逗号 / 引号 / 换行加引号，引号翻倍',
+    /CA \|,"\\r\\n\|/.test(methodOf(ag2, 'csv_cell')) && /WITH `""`/.test(methodOf(ag2, 'csv_cell')));
+  check('json_text：单独的回车也转义', /cr_lf\(1\) IN rv WITH '\\r'/.test(methodOf(ag2, 'json_text')));
+  check('HTTP V1.1：/results/export 校验运行号；工具结果带 card；收尾传 skillsUsed；开始回 skills / export',
+    /^\*\s+V1\.1 20261107/m.test(httpRaw) && hr.includes("'/results/export'") &&
+    /ls_exp-run_id <> server->request->get_header_field\( 'x-lingxi-run' \)/.test(hr) && /,"card":\{ lv_card \}/.test(hr) &&
+    /it_skills\s+= ls_fin-skills_used/.test(hr) && /"skills":/.test(hr) && /"export":/.test(hr));
 }
 
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));

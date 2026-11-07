@@ -8,8 +8,10 @@
 *              → { runId, model, tools:[{name,description,parameters}], systemPrompt, limits }
 *         POST /chat/completions  OpenAI 兼容请求体; 头 X-Lingxi-Run = 运行号
 *              → 网关响应原文(SAP 用自己的模型配置与密钥转发, 透传 tools / tool_calls)
-*         POST /tools/exec        { runId, tool, args:{…}, requestId } → { ok, content, message }
-*         POST /run/finish        { runId, status, answer, message } → { ok }
+*         POST /tools/exec        { runId, tool, args:{…}, requestId } → { ok, content, message, card? }
+*              card = 报表参数卡(open_report / prefill_report), 浏览器拿到即结束运行
+*         POST /run/finish        { runId, status, answer, message, skillsUsed } → { ok }
+*         POST /results/export    { runId, resultId } → { ok, label, rows, columns, truncated, csv }(V1.1)
 *
 * 安全:   ① 只收 POST; ② 必须带 X-Lingxi-Agent: 1(跨站表单发不出自定义头; 跨站 fetch
 *           带它会触发预检, 本节点不回 CORS 头 → 浏览器拦下);
@@ -20,8 +22,10 @@
 *         处理程序列表填本类; 登录方式与灵犀 BSP 应用一致 → 激活
 * 依赖:   ZCL_AI_AGENT_SERVICE V15.18 / ZCL_AI_LLM_CLIENT V1.7 / ZAI_BRUN
 * 版本:   V1.0 20261107 首版
+*         V1.1 20261107 浏览器 Agent M2: /run/start 回 skills / export; /tools/exec 回 card;
+*              /run/finish 收 skillsUsed; 新路径 /results/export(依赖 ZCL_AI_AGENT_SERVICE V15.19)
 *         ★ 重贴后核对标记: INTERFACES if_http_extension; handle_request 里有
-*           WHEN '/run/start' / '/chat/completions' / '/tools/exec' / '/run/finish'
+*           WHEN '/run/start' / '/chat/completions' / '/tools/exec' / '/results/export' / '/run/finish'
 *=======================================================================
 CLASS zcl_ai_agent_http DEFINITION
   PUBLIC
@@ -48,11 +52,16 @@ CLASS zcl_ai_agent_http DEFINITION
              request_id TYPE string,
            END OF ty_tool_req.
     TYPES: BEGIN OF ty_finish_req,
-             run_id  TYPE string,
-             status  TYPE string,
-             answer  TYPE string,
-             message TYPE string,
+             run_id      TYPE string,
+             status      TYPE string,
+             answer      TYPE string,
+             message     TYPE string,
+             skills_used TYPE string_table,   " V1.1: 模型读过的 SAP 技能编号
            END OF ty_finish_req.
+    TYPES: BEGIN OF ty_export_req,
+             run_id    TYPE string,
+             result_id TYPE string,
+           END OF ty_export_req.
 
     " 写 JSON 响应
     CLASS-METHODS reply
@@ -139,6 +148,8 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
             reply( io_server = server iv_code = 200
                    iv_json = |\{"ok":true,"runId":{ jstr( ls_out-run_id ) },"model":{ jstr( ls_out-model ) },| &&
                              |"tools":{ ls_out-tools_json },"systemPrompt":{ jstr( ls_out-system ) },| &&
+                             |"skills":{ COND string( WHEN ls_out-skills_json IS INITIAL THEN `[]` ELSE ls_out-skills_json ) },| &&
+                             |"export":{ COND string( WHEN ls_out-export = abap_true THEN `true` ELSE `false` ) },| &&
                              |"limits":\{"maxModelCalls":{ ls_out-max_model },"maxToolCalls":{ ls_out-max_tool },| &&
                              |"recursionLimit":{ ( ls_out-max_model + ls_out-max_tool ) * 2 + 10 }\}\}| ).
 
@@ -170,7 +181,8 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
             ENDIF.
             DATA: lv_ok      TYPE abap_bool,
                   lv_content TYPE string,
-                  lv_msg     TYPE string.
+                  lv_msg     TYPE string,
+                  lv_card    TYPE string.
             zcl_ai_agent_service=>browser_tool(
               EXPORTING iv_run_id  = ls_tool-run_id
                         iv_tool    = ls_tool-tool
@@ -178,14 +190,51 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
               IMPORTING ev_ok      = lv_ok
                         ev_content = lv_content
                         ev_message = lv_msg
-                        ev_http    = lv_http ).
+                        ev_http    = lv_http
+                        ev_card    = lv_card ).
             COMMIT WORK.
             IF lv_http <> 200.
               fail( io_server = server iv_code = lv_http iv_msg = lv_msg ).
             ELSE.
               reply( io_server = server iv_code = 200
                      iv_json = |\{"ok":{ COND string( WHEN lv_ok = abap_true THEN `true` ELSE `false` ) },| &&
-                               |"content":{ jstr( lv_content ) },"message":{ jstr( lv_msg ) }\}| ).
+                               |"content":{ jstr( lv_content ) },"message":{ jstr( lv_msg ) }| &&
+                               COND string( WHEN lv_card IS NOT INITIAL THEN |,"card":{ lv_card }| ) && |\}| ).
+            ENDIF.
+
+          " ---------------- V1.1: 把一份报表结果导出成 CSV(浏览器写进用户文件夹) ----------------
+          WHEN '/results/export'.
+            DATA ls_exp TYPE ty_export_req.
+            parse( EXPORTING iv_json = lv_body CHANGING cs_data = ls_exp ).
+            IF ls_exp-run_id <> server->request->get_header_field( 'x-lingxi-run' ).
+              fail( io_server = server iv_code = 400 iv_msg = '运行号不一致' ).
+              RETURN.
+            ENDIF.
+            DATA: lv_csv   TYPE string,
+                  lv_label TYPE string,
+                  lv_rows  TYPE i,
+                  lv_cols  TYPE i,
+                  lv_trunc TYPE abap_bool.
+            zcl_ai_agent_service=>browser_export(
+              EXPORTING iv_run_id    = ls_exp-run_id
+                        iv_result_id = ls_exp-result_id
+              IMPORTING ev_csv       = lv_csv
+                        ev_label     = lv_label
+                        ev_rows      = lv_rows
+                        ev_cols      = lv_cols
+                        ev_trunc     = lv_trunc
+                        ev_error     = lv_err
+                        ev_http      = lv_http ).
+            COMMIT WORK.
+            IF lv_http <> 200.
+              fail( io_server = server iv_code = lv_http iv_msg = lv_err ).
+            ELSEIF lv_err IS NOT INITIAL.
+              reply( io_server = server iv_code = 200 iv_json = |\{"ok":false,"message":{ jstr( lv_err ) }\}| ).
+            ELSE.
+              reply( io_server = server iv_code = 200
+                     iv_json = |\{"ok":true,"label":{ jstr( lv_label ) },"rows":{ lv_rows },"columns":{ lv_cols },| &&
+                               |"truncated":{ COND string( WHEN lv_trunc = abap_true THEN `true` ELSE `false` ) },| &&
+                               |"csv":{ jstr( lv_csv ) }\}| ).
             ENDIF.
 
           " ---------------- 结束运行(写回会话) ----------------
@@ -197,6 +246,7 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                         iv_status  = ls_fin-status
                         iv_answer  = ls_fin-answer
                         iv_message = ls_fin-message
+                        it_skills  = ls_fin-skills_used
               IMPORTING ev_error   = lv_err
                         ev_http    = lv_http ).
             IF lv_err IS NOT INITIAL.

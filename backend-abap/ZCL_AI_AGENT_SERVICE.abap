@@ -262,6 +262,20 @@
 *   依赖: ZAI_BRUN(SE11 新表)/ ZCL_AI_LLM_CLIENT V1.7
 *   ★ 重贴后核对标记: PUBLIC 有 browser_start / browser_model / browser_tool / browser_finish 与
 *     ty_brun_start; PRIVATE 有 brun_get / brun_cfg; browser_model 里有 zcl_ai_llm_client=>forward_openai(
+* V15.19 20261107(浏览器 Agent M2: 报表 + 技能 + 存到文件夹): 只改 browser_* 方法, analyze_agent 未改动。
+*   ① browser_start: 本会话有可用结果 → 加 list_results / read_result / query_result / lookup_by_result(各自开关);
+*     自动 / 报表执行场景 + 报表读取开 + 有报表场景 → 加 open_report, 有结果时再加 prefill_report;
+*     系统说明列出可用报表(list_defs, 已按授权过滤); 返回 skills_json(技能下拉同口径, 最多 30 个,
+*     手动选的那个除外)与 export(有结果才可导出); ZAI_BRUN 记 SKILL_ID
+*   ② browser_tool: 报表 / 结果工具参数是嵌套 JSON, 不走扁平 kv; 结果号由模型给, 每次 brun_art 核对
+*     本人 + 本会话 + AVAILABLE; open_report / prefill_report 过 build_report_intro(登记 + 授权 + 参数)后
+*     brun_card 建报表任务置 WAITING_INPUT、任务号记进 ZAI_BRUN-TASK_ID, ev_card 回浏览器(浏览器随即结束运行,
+*     参数仍由用户在卡上提交 StartReportRun, 聊天里不执行)
+*   ③ browser_finish: 有 TASK_ID 时本轮问答归入任务; 技能审计 = 手动选的 + it_skills(模型读过的), 逐个 resolve 再 audit
+*   ④ 新 PUBLIC browser_export: 结果整份转 CSV(BRUN_EXPORT_ROWS 默认 20000 行 / BRUN_EXPORT_KB 默认 8000), 计入工具次数
+*   依赖: ZAI_BRUN 加字段 SKILL_ID CHAR 32 / TASK_ID CHAR 32; ZCL_AI_AGENT_HTTP V1.1
+*   ★ 重贴后核对标记: PUBLIC 有 browser_export 与 ty_brun_start-skills_json; PRIVATE 有 brun_art / brun_results /
+*     brun_card / brun_add_tool / csv_cell; browser_tool 里有 brun_card( 与 zcl_ai_result_query=>run(
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -353,6 +367,8 @@ CLASS zcl_ai_agent_service DEFINITION
              system     TYPE string,   " 场景说明 + 领域卡 + 技能做法
              max_model  TYPE i,        " 本次运行模型调用上限
              max_tool   TYPE i,        " 本次运行工具调用上限
+             skills_json TYPE string,  " V15.19: 可让模型自己选用的技能 [{id,name,description,body}]
+             export     TYPE abap_bool, " V15.19: X = 本会话有报表结果, 浏览器可以导出到文件夹
            END OF ty_brun_start.
 
     " 开始一次运行: 校验开通 / 开关 / 会话 / 场景 / 技能 / 模型, 建会话头, 返回可用工具
@@ -376,6 +392,7 @@ CLASS zcl_ai_agent_service DEFINITION
                 ev_error  TYPE string.
 
     " 执行一个工具(ev_ok = 空时 ev_message 是给模型看的失败原因; ev_http <> 200 = 请求本身被拒)
+    " V15.19: ev_card = 报表参数卡 JSON(open_report / prefill_report 成功时), 浏览器拿到即结束运行
     CLASS-METHODS browser_tool
       IMPORTING iv_run_id  TYPE string
                 iv_tool    TYPE string
@@ -383,16 +400,32 @@ CLASS zcl_ai_agent_service DEFINITION
       EXPORTING ev_ok      TYPE abap_bool
                 ev_content TYPE string
                 ev_message TYPE string
-                ev_http    TYPE i.
+                ev_http    TYPE i
+                ev_card    TYPE string.
 
     " 结束运行: 问答写回会话
+    " V15.19: it_skills = 浏览器里模型读过的 SAP 技能编号(只审计能用的); 有参数卡任务时本轮问答归入任务
     CLASS-METHODS browser_finish
       IMPORTING iv_run_id  TYPE string
                 iv_status  TYPE string
                 iv_answer  TYPE string
                 iv_message TYPE string OPTIONAL
+                it_skills  TYPE string_table OPTIONAL
       EXPORTING ev_error   TYPE string
                 ev_http    TYPE i.
+
+    " V15.19: 把一份报表结果整份导出成 CSV(浏览器写进用户选的文件夹; 数据不经过模型)
+    " ev_error 非空且 ev_http = 200 = 给模型看的失败原因; ev_http <> 200 = 请求本身被拒
+    CLASS-METHODS browser_export
+      IMPORTING iv_run_id    TYPE string
+                iv_result_id TYPE string
+      EXPORTING ev_csv       TYPE string
+                ev_label     TYPE string
+                ev_rows      TYPE i
+                ev_cols      TYPE i
+                ev_trunc     TYPE abap_bool
+                ev_error     TYPE string
+                ev_http      TYPE i.
 
   PRIVATE SECTION.
 
@@ -406,6 +439,40 @@ CLASS zcl_ai_agent_service DEFINITION
     " V15.18: 读 ZAI_CHAT_CFG 文本配置(去空格; 没有返回空)
     CLASS-METHODS brun_cfg
       IMPORTING iv_key    TYPE string
+      RETURNING VALUE(rv) TYPE string.
+
+    " V15.19: 结果号核对 —— 本人 + 本运行的会话 + AVAILABLE(返回空 = 通过, 否则是给模型看的原因)
+    CLASS-METHODS brun_art
+      IMPORTING is_run          TYPE zai_brun
+                iv_result_id    TYPE string
+      RETURNING VALUE(rv_error) TYPE string.
+
+    " V15.19: 本会话的报表结果清单(list_results 的返回)
+    CLASS-METHODS brun_results
+      IMPORTING iv_session_id TYPE string
+      RETURNING VALUE(rv)     TYPE string.
+
+    " V15.19: 报表参数卡 —— 建 / 取报表任务置 WAITING_INPUT, 任务号记进 ZAI_BRUN, 返回给浏览器的卡片 JSON
+    " (任务层没开或取不到任务返回空)
+    CLASS-METHODS brun_card
+      IMPORTING is_run      TYPE zai_brun
+                iv_tool     TYPE string
+                iv_tcode    TYPE string
+                iv_answer   TYPE string
+                iv_pending  TYPE string
+      RETURNING VALUE(rv)   TYPE string.
+
+    " V15.19: 往浏览器工具清单里加一个工具(JSON Schema 原样给)
+    CLASS-METHODS brun_add_tool
+      IMPORTING iv_name   TYPE string
+                iv_desc   TYPE string
+                iv_params TYPE string
+      CHANGING  cv_json   TYPE string
+                cv_csv    TYPE string.
+
+    " V15.19: CSV 单元格(含逗号 / 引号 / 换行时加引号)
+    CLASS-METHODS csv_cell
+      IMPORTING iv        TYPE string
       RETURNING VALUE(rv) TYPE string.
 
     " 读 Agent 模型配置: AGENT_MODEL 指定 → 该模型; 否则第一条启用模型
@@ -2749,6 +2816,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf IN rv WITH '\n'.
     REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>newline IN rv WITH '\n'.
     REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>horizontal_tab IN rv WITH '\t'.
+    " V15.19: 单独的回车(技能正文 / 报表说明里可能有)也要转义, 否则 JSON 不合法
+    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf(1) IN rv WITH '\r'.
 
   ENDMETHOD.
 
@@ -3709,6 +3778,89 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                       |"parameters":\{"type":"object","properties":\{{ lv_props }\},"required":[{ lv_req }]\}\}|.
       lv_tools_csv = |{ lv_tools_csv }{ COND string( WHEN lv_tools_csv IS NOT INITIAL THEN `,` ) }{ ls_tool-tool_id }|.
     ENDLOOP.
+
+    " ---- 7b. V15.19 报表 / 结果工具(浏览器引擎专用; 和原 Agent 一样不受技能工具子集限制) ----
+    " 报表参数卡: 报表读取能力开 + 自动 / 报表执行场景 + 用户有报表场景; 每次出卡仍过 build_report_intro(登记 + 授权)
+    " 结果工具: 本会话有可用结果; 结果号由模型给, 每次调用都核对本人 + 本会话 + AVAILABLE(brun_art)
+    DATA(lv_rpt_on) = xsdbool( zcl_ai_report_service=>read_enabled( ) = abap_true
+                               AND ( lv_scene = zcl_ai_intent_router=>gc_scene_auto
+                                     OR lv_scene = zcl_ai_intent_router=>gc_scene_report )
+                               AND zcl_ai_access=>scene_ok( zcl_ai_intent_router=>gc_scene_report ) = abap_true ).
+    SELECT COUNT(*) FROM zai_artifact
+      WHERE session_id = @iv_session_id AND owner = @sy-uname AND status = 'AVAILABLE'
+      INTO @DATA(lv_art_n).
+    DATA(lv_res_on) = xsdbool( lv_art_n > 0 ).
+    DATA(lv_rq_ok)  = xsdbool( lv_res_on = abap_true AND zcl_ai_result_query=>enabled( ) = abap_true ).
+    DATA(lv_lk_ok)  = xsdbool( lv_res_on = abap_true AND zcl_ai_result_lookup=>allowed( iv_session_id ) = abap_true ).
+    DATA(lv_rl_ok)  = xsdbool( lv_res_on = abap_true AND lv_rpt_on = abap_true AND zcl_ai_report_relay=>enabled( ) = abap_true ).
+    DATA(lv_q_props) =
+      `"filters":{"type":"array","items":{"type":"object"},"description":"[{column,op,value,values}]"},` &&
+      `"group_by":{"type":"array","items":{"type":"string"}},` &&
+      `"metrics":{"type":"array","items":{"type":"object"},"description":"[{column,agg}]"},` &&
+      `"columns":{"type":"array","items":{"type":"string"}},` &&
+      `"sort":{"type":"object","description":"{column,order}"},` &&
+      `"limit":{"type":"integer"},"offset":{"type":"integer"},"purpose":{"type":"string"}`.
+    DATA(lv_rid_prop) = `"result_id":{"type":"string","description":"结果号(list_results 返回的 id)"}`.
+    IF lv_res_on = abap_true.
+      brun_add_tool( EXPORTING iv_name   = `list_results`
+                               iv_desc   = `列出本会话里可以分析的报表结果(结果号、名称、报表、行数、时间), 最新在前。` &&
+                                           `用户说"这个结果 / 上面的报表 / 刚才的数据"时先调它找结果号。`
+                               iv_params = `{"type":"object","properties":{}}`
+                     CHANGING  cv_json   = lv_tools_json
+                               cv_csv    = lv_tools_csv ).
+      brun_add_tool( EXPORTING iv_name   = `read_result`
+                               iv_desc   = `读一份报表结果的概况: 列、总行数、后端统计和举例行(行数少时给全部明细)。` &&
+                                           `要排名、汇总、筛选计数时接着用 query_result, 不要用举例行推算全量结论。`
+                               iv_params = |\{"type":"object","properties":\{{ lv_rid_prop }\},"required":["result_id"]\}|
+                     CHANGING  cv_json   = lv_tools_json
+                               cv_csv    = lv_tools_csv ).
+    ENDIF.
+    IF lv_rq_ok = abap_true.
+      DATA(lv_q_desc) = zcl_ai_result_query=>tool_description( ).
+      REPLACE ALL OCCURRENCES OF `不需要也不能指定结果号` IN lv_q_desc WITH `结果号用参数 result_id 指定`.
+      brun_add_tool( EXPORTING iv_name   = zcl_ai_result_query=>gc_tool
+                               iv_desc   = |result_id = list_results 的结果号(必填), 其余参数直接放在同一层。{ lv_q_desc }|
+                               iv_params = |\{"type":"object","properties":\{{ lv_rid_prop },{ lv_q_props }\},"required":["result_id"]\}|
+                     CHANGING  cv_json   = lv_tools_json
+                               cv_csv    = lv_tools_csv ).
+    ENDIF.
+    IF lv_lk_ok = abap_true.
+      DATA(lv_k_desc) = zcl_ai_result_lookup=>tool_description( ).
+      REPLACE ALL OCCURRENCES OF `不需要也不能指定结果号` IN lv_k_desc WITH `结果号用参数 result_id 指定`.
+      brun_add_tool( EXPORTING iv_name   = zcl_ai_result_lookup=>gc_tool
+                               iv_desc   = |result_id = list_results 的结果号(必填), 其余参数直接放在同一层。{ lv_k_desc }|
+                               iv_params = |\{"type":"object","properties":\{{ lv_rid_prop },| &&
+                                           |"table":\{"type":"string"\},"key_field":\{"type":"string"\},"source_column":\{"type":"string"\},| &&
+                                           |"fields":\{"type":"array","items":\{"type":"string"\}\},| &&
+                                           |"conditions":\{"type":"array","items":\{"type":"object"\}\},{ lv_q_props }\},| &&
+                                           |"required":["result_id","table","key_field","source_column","fields"]\}|
+                     CHANGING  cv_json   = lv_tools_json
+                               cv_csv    = lv_tools_csv ).
+    ENDIF.
+    IF lv_rpt_on = abap_true.
+      brun_add_tool( EXPORTING iv_name   = `open_report`
+                               iv_desc   = `打开一张已登记报表的参数卡给用户填写(只出参数卡, 不执行; 用户在卡上核对后提交后台运行, ` &&
+                                           `结果出来后可以接着分析)。用户要"执行 / 跑 / 查"某张报表时用; 可用的报表见系统说明。` &&
+                                           `调用成功后本次运行立即结束, 不要再调用其他工具。`
+                               iv_params = `{"type":"object","properties":{"tcode":{"type":"string","description":"报表事务码"}},"required":["tcode"]}`
+                     CHANGING  cv_json   = lv_tools_json
+                               cv_csv    = lv_tools_csv ).
+    ENDIF.
+    IF lv_rl_ok = abap_true.
+      DATA(lv_r_desc) = zcl_ai_report_relay=>tool_description( ).
+      REPLACE ALL OCCURRENCES OF `只能用本轮正在分析的这一份结果` IN lv_r_desc WITH `结果号用参数 result_id 指定`.
+      REPLACE ALL OCCURRENCES OF `直接 action=final 用一两句话说明带入了什么、请用户核对参数卡后提交` IN lv_r_desc
+        WITH `本次运行立即结束`.
+      brun_add_tool( EXPORTING iv_name   = zcl_ai_report_relay=>gc_tool
+                               iv_desc   = |result_id = list_results 的结果号(必填)。{ lv_r_desc }|
+                               iv_params = |\{"type":"object","properties":\{{ lv_rid_prop },| &&
+                                           |"tcode":\{"type":"string"\},"target_param":\{"type":"string"\},"source_column":\{"type":"string"\},| &&
+                                           |"filters":\{"type":"array","items":\{"type":"object"\}\}\},| &&
+                                           |"required":["result_id","tcode","target_param","source_column"]\}|
+                     CHANGING  cv_json   = lv_tools_json
+                               cv_csv    = lv_tools_csv ).
+    ENDIF.
+
     IF strlen( lv_tools_csv ) > 1000.
       ev_http  = 500.
       ev_error = '可用工具清单超长(ZAI_BRUN-TOOLS 为 1000 字符)'.
@@ -3728,9 +3880,39 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       lv_sys = |{ lv_sys }\n\n【SQL 约定】调用 run_sql 前, SQL 里的每张表都要先用 describe_table 确认字段; | &&
                |只读查询, 结果只回填前 { zcl_ai_sql_executor=>gc_llm_rows } 行, 回答里要说明总行数。|.
     ENDIF.
-    IF lv_scene = zcl_ai_intent_router=>gc_scene_report OR lv_scene = zcl_ai_intent_router=>gc_scene_fiori.
-      lv_sys = |{ lv_sys }\n\n【说明】报表执行 / Fiori 报表的参数卡与后台作业目前只在原 Agent 里可用; | &&
-               |用户要执行报表时, 请提醒他关掉输入框下方的「新引擎」再问。|.
+    " V15.19: 报表执行已接入(open_report 出参数卡); Fiori 报表取数仍只在原 Agent
+    IF lv_scene = zcl_ai_intent_router=>gc_scene_fiori.
+      lv_sys = |{ lv_sys }\n\n【说明】Fiori 报表的参数卡与取数目前只在原 Agent 里可用; | &&
+               |用户要查 Fiori 报表时, 请提醒他关掉输入框下方的「新引擎」再问。已有的 Fiori 结果可以用结果工具分析。|.
+    ENDIF.
+    IF lv_rpt_on = abap_true.
+      DATA lv_rpt_list TYPE string.
+      DATA lv_rpt_n TYPE i.
+      DATA(lt_rdefs) = zcl_ai_report_service=>list_defs( ).   " 已按报表授权过滤
+      LOOP AT lt_rdefs INTO DATA(ls_rdef).
+        lv_rpt_n = lv_rpt_n + 1.
+        IF lv_rpt_n > 80.
+          lv_rpt_list = |{ lv_rpt_list }\n- ……(还有更多, 用户点名的事务码直接用 open_report 试)|.
+          EXIT.
+        ENDIF.
+        lv_rpt_list = |{ lv_rpt_list }\n- { ls_rdef-tcode }: { ls_rdef-report_name }| &&
+                      COND string( WHEN ls_rdef-exec_enabled = abap_true THEN `` ELSE `(暂未开放执行)` ).
+      ENDLOOP.
+      IF lv_rpt_list IS INITIAL.
+        lv_rpt_list = |\n(暂无你可以用的已登记报表)|.
+      ENDIF.
+      lv_sys = |{ lv_sys }\n\n【报表】用户要执行 / 跑某张报表时调用 open_report 打开参数卡; 参数由用户在卡上核对后提交后台运行, | &&
+               |你不能直接执行报表, 也不要编造报表结果。可用的报表:{ lv_rpt_list }|.
+    ELSEIF lv_scene = zcl_ai_intent_router=>gc_scene_report.
+      lv_sys = |{ lv_sys }\n\n【说明】报表读取能力未开启(REPORT_READ_ENABLED)或你没有报表场景权限, 不能打开报表参数卡; 如实告诉用户。|.
+    ENDIF.
+    IF lv_res_on = abap_true.
+      lv_sys = |{ lv_sys }\n\n【报表结果】本会话已有 { lv_art_n } 份报表结果。用户问"这个结果 / 上面的报表 / 刚才的数据"时, | &&
+               |先 list_results 找结果号, 再 read_result 看概况| &&
+               COND string( WHEN lv_rq_ok = abap_true THEN `; 排名 / 汇总 / 筛选计数用 query_result(后端在全部行上算)` ) &&
+               COND string( WHEN lv_lk_ok = abap_true THEN `; 拿结果里的值去别的表查字段用 lookup_by_result` ) &&
+               COND string( WHEN lv_rl_ok = abap_true THEN `; 把结果里某列的值带进另一张报表的参数用 prefill_report` ) &&
+               |。所有数字都要来自工具结果, 不要用举例行推算全量结论。|.
     ENDIF.
 
     " ---- 9. 运行号 ----
@@ -3748,6 +3930,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     ls_run-model_id   = ls_cfg-model_id.
     ls_run-think      = COND #( WHEN iv_think = 'X' OR iv_think = 'N' THEN iv_think ).
     ls_run-tools      = lv_tools_csv.
+    ls_run-skill_id   = ls_skill-id.
     ls_run-status     = 'RUNNING'.
     ls_run-question   = iv_question.
     ls_run-created_at = lv_now.
@@ -3765,6 +3948,34 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     es_start-system     = lv_sys.
     es_start-max_model  = read_cfg_int( iv_key = 'BRUN_MAX_MODEL' iv_default = 40 iv_min = 5 iv_max = 200 ).
     es_start-max_tool   = read_cfg_int( iv_key = 'BRUN_MAX_TOOL' iv_default = 60 iv_min = 5 iv_max = 300 ).
+    es_start-export     = lv_res_on.
+
+    " ---- 10. V15.19 可让模型自己选用的技能(同技能下拉: 开关 + 公开 / 管理员 + 适用场景; 已选的那个已在系统说明里) ----
+    " 只下发名字 / 说明 / 正文; 技能的工具子集只对用户手动选的技能生效(自动选用只影响做法, 不扩展也不收窄工具)
+    DATA: ls_slist TYPE zcl_ai_skill_service=>ty_list,
+          lv_serr  TYPE string,
+          lv_sk_js TYPE string,
+          lv_sk_n  TYPE i.
+    zcl_ai_skill_service=>list( EXPORTING iv_scene      = lv_scene
+                                          iv_session_id = iv_session_id
+                                          iv_task_id    = ``
+                                IMPORTING es_list       = ls_slist
+                                          ev_error      = lv_serr ).
+    IF lv_serr IS INITIAL AND ls_slist-enabled = abap_true.
+      LOOP AT ls_slist-skills INTO DATA(ls_sk).
+        IF ls_sk-id = ls_skill-id OR ls_sk-body IS INITIAL.
+          CONTINUE.
+        ENDIF.
+        lv_sk_n = lv_sk_n + 1.
+        IF lv_sk_n > 30.
+          EXIT.
+        ENDIF.
+        lv_sk_js = |{ lv_sk_js }{ COND string( WHEN lv_sk_js IS NOT INITIAL THEN `,` ) }| &&
+                   |\{"id":"{ json_text( ls_sk-id ) }","name":"{ json_text( ls_sk-name ) }",| &&
+                   |"description":"{ json_text( ls_sk-description ) }","body":"{ json_text( ls_sk-body ) }"\}|.
+      ENDLOOP.
+    ENDIF.
+    es_start-skills_json = |[{ lv_sk_js }]|.
 
   ENDMETHOD.
 
@@ -3833,7 +4044,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
   METHOD browser_tool.
 
-    CLEAR: ev_ok, ev_content, ev_message.
+    CLEAR: ev_ok, ev_content, ev_message, ev_card.
     ev_http = 200.
     DATA: ls_run  TYPE zai_brun,
           lv_err  TYPE string,
@@ -3865,6 +4076,143 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       RETURN.
     ENDIF.
     COMMIT WORK.
+
+    " ---- V15.19: 报表 / 结果工具(参数是嵌套 JSON, 不走扁平 kv; 结果号每次核对本人 + 本会话 + AVAILABLE) ----
+    IF lv_tool = 'list_results' OR lv_tool = 'read_result' OR lv_tool = 'open_report'
+       OR lv_tool = zcl_ai_result_query=>gc_tool OR lv_tool = zcl_ai_result_lookup=>gc_tool
+       OR lv_tool = zcl_ai_report_relay=>gc_tool.
+      TYPES: BEGIN OF lty_rargs,
+               result_id TYPE string,
+               tcode     TYPE string,
+             END OF lty_rargs.
+      DATA: ls_ra   TYPE lty_rargs,
+            lv_rj   TYPE string,
+            lv_rerr TYPE string.
+      TRY.
+          /ui2/cl_json=>deserialize( EXPORTING json = COND #( WHEN iv_args IS INITIAL THEN `{}` ELSE iv_args )
+                                     CHANGING  data = ls_ra ).
+        CATCH cx_root.
+          CLEAR ls_ra.
+      ENDTRY.
+      DATA(lv_rid) = condense( ls_ra-result_id ).
+      DATA(lv_rtc) = to_upper( condense( ls_ra-tcode ) ).
+      IF lv_tool <> 'list_results' AND lv_tool <> 'open_report'.
+        lv_rerr = brun_art( is_run = ls_run iv_result_id = lv_rid ).
+        IF lv_rerr IS NOT INITIAL.
+          ev_ok      = abap_true.
+          ev_content = |\{"ok":false,"error":"{ json_text( lv_rerr ) }"\}|.
+          RETURN.
+        ENDIF.
+      ENDIF.
+      DATA(lv_rcap) = zcl_ai_agent_guard=>gc_max_result_chars.
+
+      CASE lv_tool.
+        WHEN 'list_results'.
+          lv_rj = brun_results( CONV string( ls_run-session_id ) ).
+
+        WHEN 'read_result'.
+          DATA: lv_c_task TYPE string,
+                lv_c_lbl  TYPE string,
+                lv_c_all  TYPE abap_bool.
+          build_artifact_ctx( EXPORTING iv_artifact_id = lv_rid
+                                        iv_session_id  = CONV string( ls_run-session_id )
+                              IMPORTING ev_ctx         = lv_rj
+                                        ev_task_id     = lv_c_task
+                                        ev_label       = lv_c_lbl
+                                        ev_error       = lv_rerr
+                                        ev_all         = lv_c_all ).
+          IF lv_rerr IS NOT INITIAL.
+            lv_rj = |\{"ok":false,"error":"{ json_text( lv_rerr ) }"\}|.
+          ENDIF.
+          lv_rcap = 16000.
+
+        WHEN zcl_ai_result_query=>gc_tool OR zcl_ai_result_lookup=>gc_tool.
+          DATA: ls_r_ds  TYPE zcl_ai_data_analysis_service=>ty_dataset,
+                lv_r_lbl TYPE string,
+                lv_r_det TYPE string.
+          IF lv_tool = zcl_ai_result_query=>gc_tool.
+            zcl_ai_result_query=>run( EXPORTING iv_artifact_id = lv_rid
+                                                iv_args_json   = iv_args
+                                      IMPORTING ev_json        = lv_rj
+                                                es_ds          = ls_r_ds
+                                                ev_label       = lv_r_lbl
+                                                ev_detail      = lv_r_det
+                                                ev_error       = lv_rerr ).
+          ELSE.
+            zcl_ai_result_lookup=>run( EXPORTING iv_artifact_id = lv_rid
+                                                 iv_args_json   = iv_args
+                                       IMPORTING ev_json        = lv_rj
+                                                 es_ds          = ls_r_ds
+                                                 ev_label       = lv_r_lbl
+                                                 ev_detail      = lv_r_det
+                                                 ev_error       = lv_rerr ).
+          ENDIF.
+          IF lv_rj IS INITIAL AND lv_rerr IS NOT INITIAL.
+            lv_rj = |\{"ok":false,"error":"{ json_text( lv_rerr ) }"\}|.
+          ENDIF.
+
+        WHEN OTHERS.   " open_report / prefill_report: 出参数卡(和原 Agent 同一个 build_report_intro: 登记 + 授权 + 参数)
+          IF lv_rtc IS INITIAL OR strlen( lv_rtc ) > 40.
+            ev_ok      = abap_true.
+            ev_content = `{"ok":false,"error":"缺少报表事务码 tcode"}`.
+            RETURN.
+          ENDIF.
+          DATA: lv_rl_extra TYPE string,
+                lv_rl_note  TYPE string,
+                lv_rl_lbl   TYPE string,
+                lv_rl_det   TYPE string.
+          IF lv_tool = zcl_ai_report_relay=>gc_tool.
+            zcl_ai_report_relay=>run( EXPORTING iv_artifact_id = lv_rid
+                                                iv_tcode       = lv_rtc
+                                                iv_args_json   = iv_args
+                                      IMPORTING ev_json        = lv_rj
+                                                ev_extra       = lv_rl_extra
+                                                ev_note        = lv_rl_note
+                                                ev_label       = lv_rl_lbl
+                                                ev_detail      = lv_rl_det
+                                                ev_error       = lv_rerr ).
+            IF lv_rerr IS NOT INITIAL.
+              ev_ok      = abap_true.
+              ev_content = zcl_ai_agent_guard=>trim_result(
+                             iv_text = COND #( WHEN lv_rj IS NOT INITIAL THEN lv_rj
+                                               ELSE |\{"ok":false,"error":"{ json_text( lv_rerr ) }"\}| ) ).
+              RETURN.
+            ENDIF.
+          ENDIF.
+          DATA: lv_i_found TYPE abap_bool,
+                lv_i_ans   TYPE string,
+                lv_i_pend  TYPE string,
+                lv_i_needs TYPE abap_bool.
+          build_report_intro( EXPORTING iv_tcode   = lv_rtc
+                              IMPORTING ev_found   = lv_i_found
+                                        ev_answer  = lv_i_ans
+                                        ev_pending = lv_i_pend
+                                        ev_needs   = lv_i_needs ).
+          IF lv_i_found = abap_false OR lv_i_needs = abap_false OR lv_i_pend IS INITIAL.
+            " 未登记 / 没授权 / 能力未开 / 没登记参数: 说明交给模型如实转告, 不出卡
+            ev_ok      = abap_true.
+            ev_content = |\{"ok":false,"error":"{ json_text( lv_i_ans ) }"\}|.
+            RETURN.
+          ENDIF.
+          IF lv_tool = zcl_ai_report_relay=>gc_tool.
+            lv_i_pend = zcl_ai_report_relay=>merge_pending( iv_pending = lv_i_pend iv_extra = lv_rl_extra ).
+            lv_i_ans  = |{ lv_i_ans }\n\n{ lv_rl_note }|.
+          ENDIF.
+          ev_card = brun_card( is_run    = ls_run
+                               iv_tool   = lv_tool
+                               iv_tcode  = lv_rtc
+                               iv_answer = lv_i_ans
+                               iv_pending = lv_i_pend ).
+          ev_ok      = abap_true.
+          ev_content = COND #( WHEN ev_card IS NOT INITIAL THEN `{"ok":true,"card":true}`
+                               ELSE `{"ok":false,"error":"报表任务没有建成(任务层未开启 TASK_CONTEXT_ENABLED, 或本会话有多个同类任务), 请让用户切回原引擎执行报表"}` ).
+          RETURN.
+      ENDCASE.
+
+      ev_ok      = abap_true.
+      ev_content = zcl_ai_agent_guard=>trim_result( iv_text = lv_rj iv_max = lv_rcap ).
+      RETURN.
+    ENDIF.
 
     " ---- 参数: 与原 Agent 同一套解析与 Schema 校验 ----
     DATA: lt_kv   TYPE zcl_ai_agent_guard=>tt_kv,
@@ -4029,6 +4377,152 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     UPDATE zai_brun SET status = @lv_status, finished_at = @lv_now
       WHERE run_id = @ls_run-run_id.
 
+    " ---- V15.19: 本轮问答序号(save_chat 刚写入 MAX-1 / MAX) ----
+    SELECT MAX( msg_seq ) FROM zai_chat_msg
+      WHERE session_id = @ls_run-session_id
+      INTO @DATA(lv_max_seq).
+    DATA lv_seq TYPE i.
+    lv_seq = COND #( WHEN sy-subrc = 0 THEN lv_max_seq ELSE 0 ).
+
+    " 出过参数卡: 本轮问答归入那个报表任务(同原 Agent 的 finish_det)
+    IF ls_run-task_id IS NOT INITIAL AND lv_seq >= 2.
+      zcl_ai_task_service=>attach_messages(
+        iv_task_id    = CONV string( ls_run-task_id )
+        iv_session_id = CONV string( ls_run-session_id )
+        it_msgs       = VALUE #( ( msg_seq = lv_seq - 1 role = 'user' )
+                                 ( msg_seq = lv_seq     role = 'assistant' ) ) ).
+    ENDIF.
+
+    " 技能审计: 用户手动选的 + 模型在浏览器里读过的(重新 resolve: 只记当前用户能用、适用本场景的;
+    " ZAI_SKILL_USE 主键只有 RUN_ID → 第一条用本运行号, 其余各用新 GUID)
+    DATA lt_sk TYPE string_table.
+    IF ls_run-skill_id IS NOT INITIAL.
+      APPEND CONV string( ls_run-skill_id ) TO lt_sk.
+    ENDIF.
+    LOOP AT it_skills INTO DATA(lv_sk_in).
+      DATA(lv_sk_id) = to_upper( condense( lv_sk_in ) ).
+      IF lv_sk_id IS NOT INITIAL AND strlen( lv_sk_id ) <= 32 AND lines( lt_sk ) < 10
+         AND NOT line_exists( lt_sk[ table_line = lv_sk_id ] ).
+        APPEND lv_sk_id TO lt_sk.
+      ENDIF.
+    ENDLOOP.
+    DATA: ls_sk_use  TYPE zcl_ai_skill_service=>ty_skill,
+          lv_sk_err  TYPE string,
+          lv_aud_id  TYPE c LENGTH 32,
+          lv_aud_n   TYPE i.
+    LOOP AT lt_sk INTO DATA(lv_sk_one).
+      CLEAR: ls_sk_use, lv_sk_err.
+      zcl_ai_skill_service=>resolve( EXPORTING iv_id         = lv_sk_one
+                                               iv_scene      = CONV string( ls_run-scene )
+                                               iv_session_id = CONV string( ls_run-session_id )
+                                               iv_task_id    = ``
+                                     IMPORTING es_skill      = ls_sk_use
+                                               ev_error      = lv_sk_err ).
+      IF lv_sk_err IS NOT INITIAL OR ls_sk_use-id IS INITIAL.
+        CONTINUE.
+      ENDIF.
+      IF lv_aud_n = 0.
+        lv_aud_id = ls_run-run_id.
+      ELSE.
+        CALL FUNCTION 'GUID_CREATE' IMPORTING ev_guid_32 = lv_aud_id.
+      ENDIF.
+      zcl_ai_skill_service=>audit( iv_run_id     = CONV string( lv_aud_id )
+                                   iv_session_id = CONV string( ls_run-session_id )
+                                   iv_task_id    = CONV string( ls_run-task_id )
+                                   is_skill      = ls_sk_use
+                                   iv_user_seq   = nmax( val1 = lv_seq - 1 val2 = 0 ) ).
+      lv_aud_n = lv_aud_n + 1.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+  METHOD browser_export.
+
+    CLEAR: ev_csv, ev_label, ev_rows, ev_cols, ev_trunc, ev_error.
+    ev_http = 200.
+    DATA: ls_run  TYPE zai_brun,
+          lv_http TYPE i.
+    brun_get( EXPORTING iv_run_id = iv_run_id
+              IMPORTING es_run    = ls_run
+                        ev_error  = ev_error
+                        ev_http   = lv_http ).
+    IF ev_error IS NOT INITIAL.
+      ev_http = lv_http.
+      RETURN.
+    ENDIF.
+    " 只有开始时下发了结果工具(本会话有结果)的运行才能导出
+    IF |,{ ls_run-tools },| NS ',list_results,'.
+      ev_http  = 403.
+      ev_error = '这次运行没有报表结果可以导出'.
+      RETURN.
+    ENDIF.
+    DATA(lv_max) = read_cfg_int( iv_key = 'BRUN_MAX_TOOL' iv_default = 60 iv_min = 5 iv_max = 300 ).
+    UPDATE zai_brun SET tool_calls = tool_calls + 1
+      WHERE run_id = @ls_run-run_id AND userid = @sy-uname
+        AND status = 'RUNNING' AND tool_calls < @lv_max.
+    IF sy-dbcnt = 0.
+      ev_http  = 429.
+      ev_error = |这次运行的工具调用已达上限({ lv_max } 次)|.
+      RETURN.
+    ENDIF.
+    COMMIT WORK.
+
+    DATA(lv_rid) = condense( iv_result_id ).
+    ev_error = brun_art( is_run = ls_run iv_result_id = lv_rid ).
+    IF ev_error IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+
+    " 全部存储行(核对同 query_result: 本人 + AVAILABLE + 运行 READY + 报表授权)
+    DATA: ls_ds   TYPE zcl_ai_odata_shaper=>ty_dataset,
+          lv_rpt  TYPE string,
+          lv_sess TYPE string.
+    zcl_ai_result_query=>load_dataset( EXPORTING iv_artifact_id = lv_rid
+                                       IMPORTING es_ds          = ls_ds
+                                                 ev_label       = ev_label
+                                                 ev_report_id   = lv_rpt
+                                                 ev_session_id  = lv_sess
+                                                 ev_error       = ev_error ).
+    IF ev_error IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+
+    DATA(lv_max_rows) = read_cfg_int( iv_key = 'BRUN_EXPORT_ROWS' iv_default = 20000 iv_min = 100 iv_max = 200000 ).
+    DATA(lv_max_kb)   = read_cfg_int( iv_key = 'BRUN_EXPORT_KB' iv_default = 8000 iv_min = 100 iv_max = 50000 ).
+    DATA lt_lines TYPE string_table.
+    DATA lv_line TYPE string.
+    DATA lv_bytes TYPE i.
+    DATA lv_ci TYPE i.
+    CLEAR: lv_line, lv_ci.
+    LOOP AT ls_ds-columns INTO DATA(ls_col).
+      DATA(lv_head) = csv_cell( COND #( WHEN ls_col-label IS NOT INITIAL THEN ls_col-label ELSE ls_col-name ) ).
+      lv_line = COND #( WHEN lv_ci = 0 THEN lv_head ELSE |{ lv_line },{ lv_head }| ).
+      lv_ci = lv_ci + 1.
+    ENDLOOP.
+    APPEND lv_line TO lt_lines.
+    lv_bytes = strlen( lv_line ) + 1.
+    ev_cols = lines( ls_ds-columns ).
+    LOOP AT ls_ds-rows INTO DATA(ls_row).
+      IF ev_rows >= lv_max_rows OR lv_bytes > lv_max_kb * 1024.
+        ev_trunc = abap_true.
+        EXIT.
+      ENDIF.
+      CLEAR: lv_line, lv_ci.
+      LOOP AT ls_row-cells INTO DATA(lv_cell).
+        DATA(lv_cv) = csv_cell( lv_cell ).
+        lv_line = COND #( WHEN lv_ci = 0 THEN lv_cv ELSE |{ lv_line },{ lv_cv }| ).
+        lv_ci = lv_ci + 1.
+      ENDLOOP.
+      APPEND lv_line TO lt_lines.
+      lv_bytes = lv_bytes + strlen( lv_line ) + 1.
+      ev_rows = ev_rows + 1.
+    ENDLOOP.
+    IF ls_ds-truncated = abap_true.
+      ev_trunc = abap_true.   " 存储时就已截断(报表结果本身超过保存上限)
+    ENDIF.
+    ev_csv = concat_lines_of( table = lt_lines sep = cl_abap_char_utilities=>cr_lf ) && cl_abap_char_utilities=>cr_lf.
+
   ENDMETHOD.
 
 
@@ -4076,6 +4570,116 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       INTO @DATA(lv_val).
     IF sy-subrc = 0.
       rv = condense( CONV string( lv_val ) ).
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD brun_art.
+
+    CLEAR rv_error.
+    IF iv_result_id IS INITIAL OR strlen( iv_result_id ) > 32.
+      rv_error = '缺少结果号 result_id(先用 list_results 查本会话的结果)'.
+      RETURN.
+    ENDIF.
+    SELECT SINGLE status FROM zai_artifact
+      WHERE artifact_id = @iv_result_id
+        AND owner       = @sy-uname
+        AND session_id  = @is_run-session_id
+      INTO @DATA(lv_st).
+    IF sy-subrc <> 0.
+      rv_error = |结果 { iv_result_id } 不存在或不属于当前会话(先用 list_results 查本会话的结果)|.
+      RETURN.
+    ENDIF.
+    IF lv_st <> 'AVAILABLE'.
+      rv_error = |结果 { iv_result_id } 当前不可用(状态 { lv_st }), 可以请用户重新执行报表|.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD brun_results.
+
+    SELECT artifact_id, artifact_type, display_label, row_count, report_run_id, created_at
+      FROM zai_artifact
+      WHERE session_id = @iv_session_id
+        AND owner      = @sy-uname
+        AND status     = 'AVAILABLE'
+      ORDER BY created_at DESCENDING
+      INTO TABLE @DATA(lt_a)
+      UP TO 20 ROWS.
+    DATA lv_items TYPE string.
+    DATA lv_tc TYPE string.
+    LOOP AT lt_a INTO DATA(ls_a).
+      CLEAR lv_tc.
+      IF ls_a-report_run_id IS NOT INITIAL.
+        SELECT SINGLE tcode FROM zai_rpt_run
+          WHERE report_run_id = @ls_a-report_run_id
+          INTO @DATA(lv_run_tc).
+        IF sy-subrc = 0.
+          lv_tc = lv_run_tc.
+        ENDIF.
+      ENDIF.
+      lv_items = |{ lv_items }{ COND string( WHEN lv_items IS NOT INITIAL THEN `,` ) }| &&
+                 |\{"id":"{ ls_a-artifact_id }","label":"{ json_text( CONV string( ls_a-display_label ) ) }",| &&
+                 |"report":"{ json_text( lv_tc ) }","type":"{ ls_a-artifact_type }",| &&
+                 |"rows":{ ls_a-row_count },"created_at":"{ ls_a-created_at }"\}|.
+    ENDLOOP.
+    rv = |\{"ok":true,"count":{ lines( lt_a ) },"results":[{ lv_items }]\}|.
+
+  ENDMETHOD.
+
+
+  METHOD brun_card.
+
+    CLEAR rv.
+    IF zcl_ai_task_service=>task_enabled( ) = abap_false.
+      RETURN.
+    ENDIF.
+    DATA(lv_sess) = CONV string( is_run-session_id ).
+    DATA(ls_pick) = zcl_ai_task_service=>pick_or_create(
+                      iv_session_id = lv_sess
+                      iv_task_id    = ''
+                      iv_module_id  = zcl_ai_task_service=>gc_mod_report
+                      iv_intent     = zcl_ai_intent_router=>gc_int_run_analyze
+                      iv_title      = |报表 { iv_tcode }| ).
+    IF ls_pick-task_id IS INITIAL.
+      RETURN.
+    ENDIF.
+    DATA(ls_task) = zcl_ai_task_service=>get_task_owned( iv_task_id = ls_pick-task_id iv_session_id = lv_sess ).
+    IF ls_task-task_id IS INITIAL.
+      RETURN.
+    ENDIF.
+    zcl_ai_task_service=>update_status( iv_task_id = ls_task-task_id
+                                        iv_version = ls_task-current_version
+                                        iv_status  = zcl_ai_task_service=>gc_st_waiting_input
+                                        iv_pending = iv_pending ).
+    DATA lv_tid TYPE zai_brun-task_id.
+    lv_tid = ls_task-task_id.
+    UPDATE zai_brun SET task_id = @lv_tid WHERE run_id = @is_run-run_id.
+    COMMIT WORK.
+    rv = |\{"tool":"{ iv_tool }","taskId":"{ json_text( ls_task-task_id ) }",| &&
+         |"taskModule":"{ zcl_ai_task_service=>gc_mod_report }","taskStatus":"{ zcl_ai_task_service=>gc_st_waiting_input }",| &&
+         |"needsInput":true,"pendingParamsJson":"{ json_text( iv_pending ) }","answer":"{ json_text( iv_answer ) }"\}|.
+
+  ENDMETHOD.
+
+
+  METHOD brun_add_tool.
+
+    cv_json = |{ cv_json }{ COND string( WHEN cv_json IS NOT INITIAL THEN `,` ) }| &&
+              |\{"name":"{ iv_name }","description":"{ json_text( iv_desc ) }","parameters":{ iv_params }\}|.
+    cv_csv  = |{ cv_csv }{ COND string( WHEN cv_csv IS NOT INITIAL THEN `,` ) }{ iv_name }|.
+
+  ENDMETHOD.
+
+
+  METHOD csv_cell.
+
+    rv = iv.
+    IF rv CA |,"\r\n|.
+      REPLACE ALL OCCURRENCES OF `"` IN rv WITH `""`.
+      rv = |"{ rv }"|.
     ENDIF.
 
   ENDMETHOD.
