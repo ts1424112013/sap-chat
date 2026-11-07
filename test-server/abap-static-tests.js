@@ -1218,7 +1218,7 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     /zcl_ai_access=>scene_ok\( lv_scene \)/.test(bs) && /zcl_ai_skill_service=>resolve\(/.test(bs) &&
     /read_agent_model\(/.test(bs) && /model_type = 'OLLAMA'/.test(bs) && /INSERT zai_brun FROM/.test(bs));
   check('browser_start：工具 = 场景候选 ∩ 技能 ∩ 本期只读白名单（不含 sap_data_analysis / call_function / 报表类）',
-    /get_tools_for_domain\( lv_domain \)/.test(bs) && /filter_tools\(/.test(bs) && /lc_supported NS/.test(bs) &&
+    /get_tools_for_domain\( lv_dom1 \)/.test(bs) && /filter_tools\(/.test(bs) && /lc_supported NS/.test(bs) &&
     !/sap_data_analysis|call_function|prefill_report|query_result/.test((bs.match(/lc_supported TYPE string\s+VALUE `([^`]*)`/) || [, ''])[1]));
   check('browser_model：先校验运行号，模型调用次数原子 +1（超上限 429）且立即提交，再 forward_openai',
     /brun_get\(/.test(bm) && /SET model_calls = model_calls \+ 1/.test(bm) && /model_calls < @lv_max/.test(bm) &&
@@ -1259,7 +1259,7 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     /ls_run-skill_id\s+= ls_skill-id/.test(bs) && /es_start-skills_json/.test(bs) && /es_start-export\s+= lv_res_on/.test(bs));
   check('browser_tool：报表 / 结果工具先于扁平 kv 处理；除 list_results / open_report 外结果号都过 brun_art',
     bt.indexOf("lv_tool = 'list_results'") > -1 && bt.indexOf("lv_tool = 'list_results'") < bt.indexOf('parse_flat_json(') &&
-    /IF lv_tool <> 'list_results' AND lv_tool <> 'open_report'\.\s*lv_rerr = brun_art\(/.test(bt));
+    /IF lv_tool <> 'list_results' AND lv_tool <> 'open_report' AND lv_tool <> 'open_fiori_report'\.\s*lv_rerr = brun_art\(/.test(bt));
   check('browser_tool：出卡前过 build_report_intro（登记 + 授权），不出卡时原因交给模型；prefill 合并预填值',
     /build_report_intro\( EXPORTING iv_tcode\s+= lv_rtc/.test(bt) && /lv_i_found = abap_false OR lv_i_needs = abap_false/.test(bt) &&
     /zcl_ai_report_relay=>merge_pending\(/.test(bt) && /ev_card = brun_card\(/.test(bt));
@@ -1299,6 +1299,19 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     /iv_module\s+= zcl_ai_fiori_report_service=>gc_module/.test(bs));
   check('brun_art：Fiori 结果要求用户已「交给模型分析」（ANALYZED = X），导出不要求',
     /FROM zai_frpt_run/.test(ba) && /lv_an <> 'X'/.test(ba) && /iv_for_model = abap_false/.test(be));
+  /* ---- 20261108 场景只作权限（AGENT_SERVICE V15.23） ---- */
+  check('V15.23：工具域 = 开放的全部场景（数据 → 数据 + 库存；代码 → 代码；通用总有），去重；报表参数卡只看报表权限',
+    /^\* V15\.23 20261108/m.test(agRaw2) && /APPEND zcl_ai_domain_cards=>gc_dom_general TO lt_doms/.test(bs) &&
+    /scene_ok\( zcl_ai_intent_router=>gc_scene_data \) = abap_true\.\s*APPEND zcl_ai_domain_cards=>gc_dom_data\s+TO lt_doms/.test(bs) &&
+    /NOT line_exists\( lt_tools\[ tool_id = ls_dt-tool_id \] \)/.test(bs) &&
+    !/lv_scene = zcl_ai_intent_router=>gc_scene_auto\s+OR lv_scene = zcl_ai_intent_router=>gc_scene_report/.test(bs));
+  check('V15.23：Fiori 有权限时「选择报表」或聚焦 Fiori 结果才走 agent_turn（聚焦只认 ANALYZE）；open_fiori_report 出 FIORI 卡',
+    /lv_fiori_on = abap_true AND \( lv_scene = zcl_ai_intent_router=>gc_scene_fiori OR lv_fpick = abap_true OR lv_ffocus = abap_true \)/.test(bs) &&
+    /CLEAR ls_fturn\./.test(bs) && /`open_fiori_report`/.test(bs) &&
+    /WHEN 'open_fiori_report'\./.test(bt) && /\|选择报表：\{ lv_fname \}\|/.test(bt) && /iv_module\s+= zcl_ai_fiori_report_service=>gc_module/.test(bt));
+  check('V15.23：技能清单 = 开放的各场景合并去重',
+    /SPLIT zcl_ai_access=>gc_scenes AT ',' INTO TABLE lt_scn/.test(bs) && /NOT line_exists\( lt_sk_all\[ id = ls_sk1-id \] \)/.test(bs));
+
   /* ---- 20261108 界面改版：过程记录（AGENT_SERVICE V15.22 / HTTP V1.4） ---- */
   const bst = methodOf(ag2, 'browser_steps');
   check('V15.22：收尾写 ZAI_BSTEP（先删本运行旧记录、最多 200 步、按会话 + 回复消息序号）；browser_steps 只限本人会话',

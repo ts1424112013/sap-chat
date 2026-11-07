@@ -295,6 +295,13 @@
 *   写新表 ZAI_BSTEP(运行号 + 序号; 会话 + 回复消息序号; 最多 200 步, 只存类型 / 工具 / 参数摘要 / 一句话结果 / 状态 / 耗时);
 *   新 PUBLIC browser_steps(只限本人会话)供刷新 / 重开会话时画回过程
 *   ★ 重贴后核对标记: browser_finish 有 INSERT zai_bstep FROM; 有 METHOD browser_steps
+* V15.23 20261108(新引擎场景只作权限, 用户不再选场景): 只改 browser_start / browser_tool —
+*   ① 工具 = 用户开放的全部场景的域合在一起(数据分析 → 数据 + 库存; 代码分析 → 代码; 通用总有), 不再看会话场景;
+*     报表参数卡只看报表执行权限; 系统说明写明开放了哪些能力、列出可用的 Fiori 报表
+*   ② Fiori: 有权限时「选择报表：xxx」或聚焦 Fiori 结果才走 agent_turn(聚焦时只认 ANALYZE); 新工具 open_fiori_report
+*   ③ 技能清单 = 开放的各场景的技能合在一起(去重)
+*   旧的场景会话照常可用(Fiori 场景会话仍全部走 agent_turn)
+*   ★ 重贴后核对标记: browser_start 有 lt_doms 与 open_fiori_report; browser_tool 有 WHEN 'open_fiori_report'
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -3746,21 +3753,19 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    " ---- 4. 领域(同 analyze_agent 的场景映射) ----
+    " ---- 4. V15.23 场景只作权限: 工具域 = 用户开放的全部场景(数据分析 → 数据 + 库存; 代码分析 → 代码; 通用总有) ----
+    " 领域卡只给一张提示(按问题关键字, 且那个域开放), 其余能力由模型按问题自己挑工具
+    DATA lt_doms TYPE string_table.
+    APPEND zcl_ai_domain_cards=>gc_dom_general TO lt_doms.
+    IF zcl_ai_access=>scene_ok( zcl_ai_intent_router=>gc_scene_data ) = abap_true.
+      APPEND zcl_ai_domain_cards=>gc_dom_data      TO lt_doms.
+      APPEND zcl_ai_domain_cards=>gc_dom_inventory TO lt_doms.
+    ENDIF.
+    IF zcl_ai_access=>scene_ok( zcl_ai_intent_router=>gc_scene_code ) = abap_true.
+      APPEND zcl_ai_domain_cards=>gc_dom_code TO lt_doms.
+    ENDIF.
     DATA(lv_domain) = zcl_ai_domain_cards=>match_domain( iv_question ).
-    CASE lv_scene.
-      WHEN zcl_ai_intent_router=>gc_scene_report OR zcl_ai_intent_router=>gc_scene_fiori.
-        lv_domain = zcl_ai_domain_cards=>gc_dom_general.
-      WHEN zcl_ai_intent_router=>gc_scene_data.
-        lv_domain = zcl_ai_domain_cards=>gc_dom_data.
-      WHEN zcl_ai_intent_router=>gc_scene_inventory.
-        lv_domain = zcl_ai_domain_cards=>gc_dom_inventory.
-      WHEN zcl_ai_intent_router=>gc_scene_code.
-        lv_domain = zcl_ai_domain_cards=>gc_dom_code.
-    ENDCASE.
-    IF lv_scene = zcl_ai_intent_router=>gc_scene_auto
-       AND ( lv_domain = zcl_ai_domain_cards=>gc_dom_data OR lv_domain = zcl_ai_domain_cards=>gc_dom_inventory )
-       AND zcl_ai_access=>scene_ok( zcl_ai_intent_router=>gc_scene_data ) = abap_false.
+    IF NOT line_exists( lt_doms[ table_line = lv_domain ] ).
       lv_domain = zcl_ai_domain_cards=>gc_dom_general.
     ENDIF.
 
@@ -3804,18 +3809,49 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     " ---- 6b. V15.20 Fiori 报表场景: 和原 Agent 一样先走确定性的 agent_turn ----
     " CARD(出参数卡) / ANSWER(候选清单、闸门提示、场景说明)→ 不调模型, 浏览器直接显示;
     " ANALYZE(用户已同意 → agent_turn 已置 ANALYZED)→ 结果上下文进系统说明, 模型照常分析
+    " V15.23 场景只作权限: 不再要求会话是 Fiori 场景 —— 有 Fiori 权限时, 下面两种情况才走 agent_turn:
+    "   ① 目录点选「选择报表：xxx」→ 参数卡 / 未找到 / 无权限都直接回答;
+    "   ② 前端聚焦的是一份 Fiori 结果(「交给模型分析」按钮或紧接着追问)→ 只认 ANALYZE(用户同意), 其余交给模型
+    " 旧的 Fiori 场景会话照旧全部走 agent_turn
     DATA ls_fturn TYPE zcl_ai_fiori_report_service=>ty_turn.
-    IF lv_scene = zcl_ai_intent_router=>gc_scene_fiori.
+    DATA(lv_fiori_on) = xsdbool( zcl_ai_fiori_report_service=>enabled( ) = abap_true
+                                 AND zcl_ai_access=>scene_ok( zcl_ai_intent_router=>gc_scene_fiori ) = abap_true ).
+    DATA(lv_fpick) = abap_false.
+    FIND REGEX '^\s*选择报表\s*(:|：)' IN iv_question.
+    IF sy-subrc = 0.
+      lv_fpick = abap_true.
+    ENDIF.
+    DATA(lv_ffocus) = abap_false.
+    IF iv_focus_artifact_id IS NOT INITIAL AND strlen( iv_focus_artifact_id ) <= 32.
+      SELECT SINGLE artifact_type FROM zai_artifact
+        WHERE artifact_id = @iv_focus_artifact_id AND owner = @sy-uname AND session_id = @iv_session_id
+        INTO @DATA(lv_fatype).
+      lv_ffocus = xsdbool( sy-subrc = 0 AND lv_fatype = zcl_ai_fiori_report_service=>gc_art_type ).
+    ENDIF.
+    IF lv_fiori_on = abap_true AND ( lv_scene = zcl_ai_intent_router=>gc_scene_fiori OR lv_fpick = abap_true OR lv_ffocus = abap_true ).
       ls_fturn = zcl_ai_fiori_report_service=>agent_turn( iv_session_id        = iv_session_id
                                                           iv_question          = iv_question
                                                           iv_focus_artifact_id = iv_focus_artifact_id ).
       COMMIT WORK.   " agent_turn 可能已写 ANALYZED
+      IF lv_scene <> zcl_ai_intent_router=>gc_scene_fiori AND lv_fpick = abap_false
+         AND ls_fturn-kind <> zcl_ai_fiori_report_service=>gc_turn_analyze.
+        CLEAR ls_fturn.   " 只是聚焦了 Fiori 结果、不是要分析它: 交给模型
+      ENDIF.
     ENDIF.
 
     " ---- 7. 工具 = 场景候选 ∩ 技能 ∩ 浏览器引擎本期支持的只读工具 ----
     CONSTANTS lc_supported TYPE string
       VALUE `,search_tables,describe_table,run_sql,read_program_source,resolve_material,get_stock_snapshot,get_daily_movement,get_batch_stock,`.
-    DATA(lt_tools) = zcl_ai_tool_registry=>get_tools_for_domain( lv_domain ).
+    " V15.23: 开放的各个域的工具合在一起(去重)
+    DATA lt_tools TYPE zcl_ai_tool_registry=>tt_tools.
+    LOOP AT lt_doms INTO DATA(lv_dom1).
+      DATA(lt_dtools) = zcl_ai_tool_registry=>get_tools_for_domain( lv_dom1 ).
+      LOOP AT lt_dtools INTO DATA(ls_dt).
+        IF NOT line_exists( lt_tools[ tool_id = ls_dt-tool_id ] ).
+          APPEND ls_dt TO lt_tools.
+        ENDIF.
+      ENDLOOP.
+    ENDLOOP.
     zcl_ai_skill_service=>filter_tools( EXPORTING is_skill = ls_skill CHANGING ct_tools = lt_tools ).
     DATA: lv_tools_json TYPE string,
           lv_tools_csv  TYPE string.
@@ -3868,9 +3904,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     " ---- 7b. V15.19 报表 / 结果工具(浏览器引擎专用; 和原 Agent 一样不受技能工具子集限制) ----
     " 报表参数卡: 报表读取能力开 + 自动 / 报表执行场景 + 用户有报表场景; 每次出卡仍过 build_report_intro(登记 + 授权)
     " 结果工具: 本会话有可用结果; 结果号由模型给, 每次调用都核对本人 + 本会话 + AVAILABLE(brun_art)
+    " V15.23: 不再看会话场景, 只看用户有没有报表执行权限
     DATA(lv_rpt_on) = xsdbool( zcl_ai_report_service=>read_enabled( ) = abap_true
-                               AND ( lv_scene = zcl_ai_intent_router=>gc_scene_auto
-                                     OR lv_scene = zcl_ai_intent_router=>gc_scene_report )
                                AND zcl_ai_access=>scene_ok( zcl_ai_intent_router=>gc_scene_report ) = abap_true ).
     SELECT COUNT(*) FROM zai_artifact
       WHERE session_id = @iv_session_id AND owner = @sy-uname AND status = 'AVAILABLE'
@@ -3947,6 +3982,17 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                                cv_csv    = lv_tools_csv ).
     ENDIF.
 
+    " V15.23: Fiori 报表参数卡工具(场景只作权限后, 任何会话里都能打开 Fiori 报表; 取数与「交给模型分析」闸门不变)
+    IF lv_fiori_on = abap_true.
+      brun_add_tool( EXPORTING iv_name   = `open_fiori_report`
+                               iv_desc   = `打开一张 Fiori 报表的参数卡给用户填写(只出参数卡; 用户点「取数」后实时取数, ` &&
+                                           `数据要用户点「交给模型分析」才会给你)。report_name 必须是系统说明里 Fiori 报表清单中的名称原文。` &&
+                                           `调用成功后本次运行立即结束, 不要再调用其他工具。`
+                               iv_params = `{"type":"object","properties":{"report_name":{"type":"string","description":"Fiori 报表名称(清单原文)"}},"required":["report_name"]}`
+                     CHANGING  cv_json   = lv_tools_json
+                               cv_csv    = lv_tools_csv ).
+    ENDIF.
+
     IF strlen( lv_tools_csv ) > 1000.
       ev_http  = 500.
       ev_error = '可用工具清单超长(ZAI_BRUN-TOOLS 为 1000 字符)'.
@@ -3954,7 +4000,36 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     ENDIF.
 
     " ---- 8. 系统说明(场景 + 领域卡 + 技能做法 + 本引擎的工具约定) ----
-    DATA(lv_sys) = |当前场景: { lv_scene }。|.
+    " V15.23: 场景只作权限 —— 告诉模型这个用户开放了哪些能力(工具已按它下发)
+    DATA lv_caps TYPE string.
+    lv_caps = COND #( WHEN lv_rpt_on = abap_true THEN `报表执行` ).
+    IF lv_fiori_on = abap_true.
+      lv_caps = |{ lv_caps }{ COND string( WHEN lv_caps IS NOT INITIAL THEN `、` ) }Fiori 报表|.
+    ENDIF.
+    IF zcl_ai_access=>scene_ok( zcl_ai_intent_router=>gc_scene_data ) = abap_true.
+      lv_caps = |{ lv_caps }{ COND string( WHEN lv_caps IS NOT INITIAL THEN `、` ) }数据分析(查表 / SQL / 库存)|.
+    ENDIF.
+    IF zcl_ai_access=>scene_ok( zcl_ai_intent_router=>gc_scene_code ) = abap_true.
+      lv_caps = |{ lv_caps }{ COND string( WHEN lv_caps IS NOT INITIAL THEN `、` ) }代码分析|.
+    ENDIF.
+    DATA(lv_sys) = |这个用户开放的能力: { COND string( WHEN lv_caps IS INITIAL THEN `只有通用问答` ELSE lv_caps ) }。| &&
+                   |用户问到没开放的能力时, 如实说明需要管理员开通, 不要绕路。|.
+    IF lv_fiori_on = abap_true.
+      DATA(ls_fdefs) = zcl_ai_fiori_report_service=>list_defs( ).   " 已按报表授权过滤
+      DATA lv_flist TYPE string.
+      DATA lv_fn TYPE i.
+      LOOP AT ls_fdefs-reports INTO DATA(ls_fd).
+        lv_fn = lv_fn + 1.
+        IF lv_fn > 60.
+          EXIT.
+        ENDIF.
+        lv_flist = |{ lv_flist }\n- { ls_fd-report_name }{ COND string( WHEN ls_fd-description IS NOT INITIAL THEN `: ` && ls_fd-description ) }|.
+      ENDLOOP.
+      IF lv_flist IS NOT INITIAL.
+        lv_sys = |{ lv_sys }\n\n【Fiori 报表】用户要查 Fiori 报表时调用 open_fiori_report(报表名用下面清单的原文)打开参数卡; | &&
+                 |取数后数据要用户点「交给模型分析」才会给你。可用的 Fiori 报表:{ lv_flist }|.
+      ENDIF.
+    ENDIF.
     DATA(lv_card) = zcl_ai_domain_cards=>get_card( lv_domain ).
     IF lv_card IS NOT INITIAL.
       lv_sys = |{ lv_sys }\n\n{ lv_card }|.
@@ -4057,13 +4132,30 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           lv_serr  TYPE string,
           lv_sk_js TYPE string,
           lv_sk_n  TYPE i.
-    zcl_ai_skill_service=>list( EXPORTING iv_scene      = lv_scene
-                                          iv_session_id = iv_session_id
-                                          iv_task_id    = ``
-                                IMPORTING es_list       = ls_slist
-                                          ev_error      = lv_serr ).
-    IF lv_serr IS INITIAL AND ls_slist-enabled = abap_true.
-      LOOP AT ls_slist-skills INTO DATA(ls_sk).
+    " V15.23 场景只作权限: 用户开放的各场景的技能合在一起(按编号去重)
+    DATA lt_sk_all TYPE zcl_ai_skill_service=>tt_skills.
+    DATA lt_scn TYPE string_table.
+    SPLIT zcl_ai_access=>gc_scenes AT ',' INTO TABLE lt_scn.
+    LOOP AT lt_scn INTO DATA(lv_scn).
+      IF zcl_ai_access=>scene_ok( lv_scn ) = abap_false.
+        CONTINUE.
+      ENDIF.
+      CLEAR: ls_slist, lv_serr.
+      zcl_ai_skill_service=>list( EXPORTING iv_scene      = lv_scn
+                                            iv_session_id = iv_session_id
+                                            iv_task_id    = ``
+                                  IMPORTING es_list       = ls_slist
+                                            ev_error      = lv_serr ).
+      IF lv_serr IS INITIAL AND ls_slist-enabled = abap_true.
+        LOOP AT ls_slist-skills INTO DATA(ls_sk1).
+          IF NOT line_exists( lt_sk_all[ id = ls_sk1-id ] ).
+            APPEND ls_sk1 TO lt_sk_all.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+    ENDLOOP.
+    IF lt_sk_all IS NOT INITIAL.
+      LOOP AT lt_sk_all INTO DATA(ls_sk).
         IF ls_sk-id = ls_skill-id OR ls_sk-body IS INITIAL.
           CONTINUE.
         ENDIF.
@@ -4183,12 +4275,13 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     COMMIT WORK.
 
     " ---- V15.19: 报表 / 结果工具(参数是嵌套 JSON, 不走扁平 kv; 结果号每次核对本人 + 本会话 + AVAILABLE) ----
-    IF lv_tool = 'list_results' OR lv_tool = 'read_result' OR lv_tool = 'open_report'
+    IF lv_tool = 'list_results' OR lv_tool = 'read_result' OR lv_tool = 'open_report' OR lv_tool = 'open_fiori_report'
        OR lv_tool = zcl_ai_result_query=>gc_tool OR lv_tool = zcl_ai_result_lookup=>gc_tool
        OR lv_tool = zcl_ai_report_relay=>gc_tool.
       TYPES: BEGIN OF lty_rargs,
-               result_id TYPE string,
-               tcode     TYPE string,
+               result_id   TYPE string,
+               tcode       TYPE string,
+               report_name TYPE string,
              END OF lty_rargs.
       DATA: ls_ra   TYPE lty_rargs,
             lv_rj   TYPE string,
@@ -4201,7 +4294,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       ENDTRY.
       DATA(lv_rid) = condense( ls_ra-result_id ).
       DATA(lv_rtc) = to_upper( condense( ls_ra-tcode ) ).
-      IF lv_tool <> 'list_results' AND lv_tool <> 'open_report'.
+      IF lv_tool <> 'list_results' AND lv_tool <> 'open_report' AND lv_tool <> 'open_fiori_report'.
         lv_rerr = brun_art( is_run = ls_run iv_result_id = lv_rid ).
         IF lv_rerr IS NOT INITIAL.
           ev_ok      = abap_true.
@@ -4258,6 +4351,32 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           IF lv_rerr IS INITIAL.
             ev_datasets = brun_ds_json( VALUE #( ( ls_r_ds ) ) ).   " V15.20: 界面表格 / 图表
           ENDIF.
+
+        WHEN 'open_fiori_report'.
+          " V15.23: 走原 Agent 同一个 agent_turn(「选择报表：名称」): 按名称精确找、核对授权、出 FIORI 参数卡
+          DATA(lv_fname) = condense( ls_ra-report_name ).
+          IF lv_fname IS INITIAL OR strlen( lv_fname ) > 120.
+            ev_ok      = abap_true.
+            ev_content = `{"ok":false,"error":"缺少 Fiori 报表名称 report_name(用系统说明里清单的原文)"}`.
+            RETURN.
+          ENDIF.
+          DATA(ls_ft) = zcl_ai_fiori_report_service=>agent_turn( iv_session_id = CONV string( ls_run-session_id )
+                                                                 iv_question   = |选择报表：{ lv_fname }| ).
+          IF ls_ft-kind <> zcl_ai_fiori_report_service=>gc_turn_card OR ls_ft-pending_json IS INITIAL.
+            ev_ok      = abap_true.
+            ev_content = |\{"ok":false,"error":"{ json_text( ls_ft-answer ) }"\}|.
+            RETURN.
+          ENDIF.
+          ev_card = brun_card( is_run     = ls_run
+                               iv_tool    = lv_tool
+                               iv_tcode   = ls_ft-report_name
+                               iv_answer  = ls_ft-answer
+                               iv_pending = ls_ft-pending_json
+                               iv_module  = zcl_ai_fiori_report_service=>gc_module ).
+          ev_ok      = abap_true.
+          ev_content = COND #( WHEN ev_card IS NOT INITIAL THEN `{"ok":true,"card":true}`
+                               ELSE `{"ok":false,"error":"Fiori 报表任务没有建成(任务层未开启 TASK_CONTEXT_ENABLED)"}` ).
+          RETURN.
 
         WHEN OTHERS.   " open_report / prefill_report: 出参数卡(和原 Agent 同一个 build_report_intro: 登记 + 授权 + 参数)
           IF lv_rtc IS INITIAL OR strlen( lv_rtc ) > 40.
