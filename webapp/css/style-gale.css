@@ -2346,3 +2346,111 @@ body.schedOn .dataTools .dtSched { display: inline-block !important; }
 [data-theme="dark"] .baConfirmDialog .sapMTitle,
 [data-theme="dark"] .baConfirmDialog .sapMDialogTitleGroup .sapMBarChild { color: var(--text) !important; }
 [data-theme="dark"] .baConfirm { color: var(--text); }
+
+/* =====================================================================
+ * 20261108 新引擎过程时间线（RunTimeline，界面改版方案 V1.1）
+ * Claude Code 的结构和节奏、正常界面的排版；等宽只用于路径 / 参数 / 数据
+ * ===================================================================== */
+.rt {
+        --rt-ok: #16A34A; --rt-err: #DC2626; --rt-wait: #B45309; --rt-ok-bg: rgba(22, 163, 74, .10); --rt-wait-bg: rgba(245, 165, 36, .12);
+        --rt-mono: ui-monospace, "SF Mono", Consolas, monospace;
+        margin: .1rem 0 .7rem; font-size: .9rem; line-height: 1.65; color: var(--text);
+        display: block; width: 100%; box-sizing: border-box;
+        /* 运行中回答还是空的，消息列会跟着内容变窄：给时间线一个最小宽度，宽度不跳 */
+        min-width: min(40rem, calc(var(--content-max) - 4rem));
+}
+[data-theme="dark"] .rt { --rt-ok: #4ADE80; --rt-err: #F87171; --rt-wait: #FBBF24; --rt-ok-bg: rgba(74, 222, 128, .12); --rt-wait-bg: rgba(251, 191, 36, .12); }
+.rt svg { width: 16px; height: 16px; flex: none; }
+.rt b { font-weight: 600; }
+.rtSub { color: var(--sub); font-size: .8rem; }
+.rtHead { display: flex; align-items: center; gap: .45rem; cursor: pointer; color: var(--text-2); font-size: .82rem;
+        padding: .25rem .5rem; margin: 0 -.5rem .2rem; border-radius: 8px; user-select: none; }
+.rtHead:hover { background: var(--hover); }
+.rtHead .rtChev { margin-left: auto; transition: transform .2s; }
+.rtCollapsed .rtHead .rtChev { transform: rotate(-90deg); }
+.rtBody { display: flex; flex-direction: column; gap: .1rem; }
+.rtSay { margin: .55rem 0 .25rem; color: var(--text); }
+.rtTool { animation: rtIn .28s ease-out; }
+@keyframes rtIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.rtToolRow { display: flex; align-items: center; gap: .5rem; padding: .22rem .5rem; margin: 0 -.5rem; border-radius: 8px; min-width: 0; }
+.rtToolRow[data-rt] { cursor: pointer; }
+.rtToolRow[data-rt]:hover { background: var(--hover); }
+.rtIco { display: inline-flex; color: var(--sub); }
+.rtStOK .rtIco { color: var(--rt-ok); }
+.rtStERROR .rtIco, .rtStSTOPPED .rtIco { color: var(--rt-err); }
+.rtStRUNNING .rtIco { color: var(--accent); }
+.rtArg { color: var(--text-2); font-size: .84rem; font-family: var(--rt-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.rtMs { margin-left: auto; color: var(--sub); font-size: .75rem; opacity: 0; transition: opacity .15s; white-space: nowrap; }
+.rtToolRow:hover .rtMs { opacity: 1; }
+.rtChev { color: var(--sub); transition: transform .2s; }
+.rtOpen > .rtToolRow .rtChev, .rtOpen > .rtThinkHead .rtChev { transform: rotate(180deg); }
+.rtSum { margin: 0 0 .15rem 1.55rem; color: var(--text-2); font-size: .84rem; }
+.rtStERROR .rtSum { color: var(--rt-err); }
+.rtDet { margin: .25rem 0 .4rem 1.55rem; padding: .5rem .7rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: .8rem; }
+.rtDet pre { margin: .15rem 0 .4rem; font-family: var(--rt-mono); font-size: .76rem; white-space: pre-wrap; word-break: break-all; max-height: 16rem; overflow: auto; color: var(--text-2); }
+.rtDetLabel { color: var(--sub); font-size: .74rem; }
+.rtDs { margin: .3rem 0 .4rem 1.55rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: .45rem .65rem; }
+.rtDsHead { display: flex; align-items: baseline; gap: .5rem; font-size: .82rem; }
+.rtDsGo, .rtDsLink { margin-left: auto; color: var(--accent); cursor: pointer; font-size: .78rem; }
+.rtDsLink { display: block; margin: .1rem 0 .3rem 1.55rem; }
+.rtDsGo:hover, .rtDsLink:hover { text-decoration: underline; }
+.rtDsTb { width: 100%; border-collapse: collapse; margin-top: .3rem; font-size: .78rem; }
+.rtDsTb th, .rtDsTb td { padding: .18rem .4rem; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 12rem; }
+.rtDsTb th { color: var(--sub); font-weight: 400; }
+.rtDsTb td { font-family: var(--rt-mono); }
+.rtDsTb .rtNum { text-align: right; }
+.rtDsTb tr:last-child td { border-bottom: 0; }
+.rtNote { display: flex; align-items: center; gap: .5rem; color: var(--text-2); font-size: .84rem; margin: .1rem 0; }
+.rtNote svg { color: var(--sub); }
+.rtNote.rtErr, .rtNote.rtErr svg { color: var(--rt-err); }
+.rtNote.rtOk svg { color: var(--rt-ok); }
+.rtSkill svg { color: var(--accent); }
+.rtThinkHead { display: inline-flex; align-items: center; gap: .45rem; color: var(--sub); font-size: .8rem; cursor: pointer;
+        padding: .1rem .5rem; margin: 0 -.5rem; border-radius: 8px; }
+.rtThinkHead:hover { background: var(--hover); }
+.rtThinkBody { margin: .2rem 0 .4rem 1.55rem; padding-left: .7rem; border-left: 2px solid var(--line); color: var(--text-2); font-size: .82rem; white-space: pre-wrap; }
+/* 确认面板 */
+.rtAsk { margin: .35rem 0 .45rem 1.55rem; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); overflow: hidden; animation: rtIn .28s ease-out; }
+.rtAskHead { padding: .55rem .8rem .3rem; display: flex; flex-direction: column; }
+.rtAskDiff { padding: 0 .8rem .5rem; }
+.rtAskDiff .baDiff { max-height: 14rem; margin: .25rem 0 0; }
+.rtAskDiff .baDiffNote { font-size: .76rem; color: var(--sub); }
+.rtOpt { display: flex; align-items: center; gap: .6rem; padding: .45rem .8rem; border-top: 1px solid var(--line); cursor: pointer; transition: background .12s; }
+.rtOpt:hover, .rtOpt:focus { background: var(--hover); outline: none; }
+.rtKey { width: 1.25rem; height: 1.25rem; border-radius: 6px; border: 1px solid var(--line-strong); display: inline-flex; align-items: center; justify-content: center;
+        font-size: .74rem; color: var(--text-2); background: var(--bg); flex: none; }
+.rtOpt:hover .rtKey { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+/* 计划：固定在过程最下面（紧挨状态行） */
+.rtPlan { margin: .55rem 0 .15rem; padding: .5rem .7rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.rtPlanHead { display: flex; align-items: center; gap: .5rem; margin-bottom: .2rem; }
+.rtPlanHead svg { color: var(--rt-ok); }
+.rtPlanBar { flex: 1; max-width: 8rem; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; margin-left: auto; }
+.rtPlanBar i { display: block; height: 100%; background: var(--rt-ok); transition: width .4s; }
+.rtTodo { display: flex; align-items: center; gap: .55rem; padding: .08rem 0 .08rem .2rem; font-size: .86rem; color: var(--text-2); }
+.rtCk { width: 15px; height: 15px; border-radius: 5px; border: 1.5px solid var(--line-strong); display: inline-flex; align-items: center; justify-content: center; flex: none; transition: all .25s; }
+.rtCk svg { width: 11px; height: 11px; }
+.rtTodoCur { color: var(--text); font-weight: 500; }
+.rtTodoCur .rtCk { border-color: var(--accent); }
+.rtTodoDone { color: var(--sub); text-decoration: line-through; }
+.rtTodoDone .rtCk { background: var(--rt-ok); border-color: var(--rt-ok); color: #fff; }
+/* 状态行 */
+.rtStatus { display: flex; align-items: center; gap: .5rem; margin-top: .45rem; font-size: .84rem; color: var(--text-2); }
+.rtStatus svg { color: var(--accent); }
+.rtWait, .rtWait svg { color: var(--rt-wait); }
+.rtTimer, .rtHint { color: var(--sub); font-size: .78rem; }
+.rtHint { margin-left: auto; }
+.rtShim { background: linear-gradient(90deg, var(--text-2) 0%, var(--text) 45%, var(--text-2) 90%); background-size: 200% 100%;
+        -webkit-background-clip: text; background-clip: text; color: transparent; animation: rtSh 1.8s linear infinite; }
+@keyframes rtSh { to { background-position: -200% 0; } }
+.rtSpin { animation: rtRot 1s linear infinite; }
+@keyframes rtRot { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .rtSpin, .rtShim, .rtTool, .rtAsk { animation: none; } .rtShim { color: var(--text-2); } }
+/* 输入框下的信息栏 */
+.rtInfo { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .9rem; padding: .3rem .25rem 0; font-size: .74rem; color: var(--sub); }
+.rtInfoEng { color: var(--text-2); }
+.rtInfoPlan { color: var(--text-2); max-width: 22rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rtInfoRun { color: var(--accent); margin-left: auto; }
+.rtMeter { display: inline-block; width: 46px; height: 4px; border-radius: 2px; background: var(--line); vertical-align: middle; overflow: hidden; }
+.rtMeter b { display: block; height: 100%; background: var(--accent); }
+/* 首页场景：新引擎时只显示当前场景 + 其他场景 */
+.sceneMore { opacity: .85; }

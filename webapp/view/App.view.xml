@@ -362,6 +362,9 @@
                                                                                         <Button id="sendBtn" icon="sap-icon://paper-plane" press=".onSend" type="Emphasized" tooltip="{i18n>send}" class="sendBtn"/>
                                                                                 </HBox>
                                                                         </HBox>
+                                                                        <!-- 20261108（界面改版）：新引擎信息栏（模型 · 文件夹 · 上下文 · 次数 · 计划进度），RunTimeline._rtInfo 生成 -->
+                                                                        <core:HTML content="{chat>/ba/infoHtml}" preferDOM="false" sanitizeContent="false"
+                                                                                visible="{= ${chat>/workspaceMode} === 'AGENT' &amp;&amp; !!${chat>/ba/on} &amp;&amp; !!${chat>/ba/infoHtml} }"/>
                                                                 </VBox>
                                                         </HBox>
                                                 </VBox>

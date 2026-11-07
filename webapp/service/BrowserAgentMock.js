@@ -179,6 +179,23 @@ sap.ui.define([], function () {
 		return iStep === 0 ? [call("call_function", { "function": "Z_AI_DEMO_PO_OPEN", purpose: "工厂 1000 未清采购", params: { IV_WERKS: "1000" } })] : null;
 	}
 
+	/** 演示的节点说明：开始时说打算、要写文件前说为什么（其余步骤不说，同真实提示词的规则） */
+	function narrate(sKind, iStep, calls) {
+		var sTool = calls && calls[0] && calls[0]["function"] && calls[0]["function"].name;
+		if (sTool === "save_result_to_folder") {
+			return "排好了。写文件前请你确认：";
+		}
+		if (iStep !== 0) {
+			return "";
+		}
+		return ({
+			RESULT: "先找本会话里的库存结果，在全部行上排出前 10，再看要不要存成 CSV。",
+			PLAN: "按受控查询计划统计物料类型分布。",
+			FUNC: "用登记的函数查工厂 1000 的未清采购。",
+			REPORT: "打开报表的参数卡，参数由你确认后提交。"
+		})[sKind] || "";
+	}
+
 	function demoCsv() {
 		var cell = function (v) {
 			v = String(v);
@@ -305,7 +322,7 @@ sap.ui.define([], function () {
 								tools: aTools,
 								skills: aSkills,
 								"export": true,
-								limits: { recursionLimit: 60 },
+								limits: { recursionLimit: 60, maxModelCalls: 40, maxToolCalls: 60, contextTokens: 256000 },
 								systemPrompt: "场景：" + scene + "（演示）" + (aDefs.length ? "\n可用的报表：" +
 									aDefs.map(function (d) { return d.TCODE + " " + d.NAME; }).join("；") : "")
 							};
@@ -367,8 +384,20 @@ sap.ui.define([], function () {
 						return { ok: true, label: "成品可用庫存報表（演示）", rows: DEMO_ROWS.length, columns: DEMO_COLS.length, truncated: false, csv: demoCsv() };
 					});
 				},
-				finishRun: function () {
+				finishRun: function (p) {
+					// 演示：精简过程记录存在本机（按会话），重开会话时画回来；真实环境存在 SAP（ZAI_BSTEP）
+					try {
+						var k = "lingxi-mock-steps:" + (o.sessionId || "");
+						var a = JSON.parse(window.localStorage.getItem(k) || "[]");
+						a.push({ msgSeq: 0, answerHead: String((p && p.answer) || "").slice(0, 60), steps: (p && p.steps) || [] });
+						window.localStorage.setItem(k, JSON.stringify(a.slice(-50)));
+					} catch (e) { /* 存不了就算了 */ }
 					return Promise.resolve({ ok: true });
+				},
+				getSteps: function (p) {
+					var a = [];
+					try { a = JSON.parse(window.localStorage.getItem("lingxi-mock-steps:" + ((p && p.sessionId) || "")) || "[]"); } catch (e) { a = []; }
+					return Promise.resolve({ runs: a });
 				},
 				modelFetch: function () {
 					return function (url, init) {
@@ -414,8 +443,9 @@ sap.ui.define([], function () {
 							return fnResp({
 								id: "mock-" + Date.now(), object: "chat.completion", created: Math.floor(Date.now() / 1000), model: "mock",
 								choices: [{ index: 0, finish_reason: calls ? "tool_calls" : "stop",
-									message: calls ? { role: "assistant", content: "", tool_calls: calls } : { role: "assistant", content: sText } }],
-								usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+									message: calls ? { role: "assistant", content: narrate(sKind, iStep, calls), tool_calls: calls } : { role: "assistant", content: sText } }],
+								// 演示：按请求体大小粗估用量（界面的上下文用量条）
+								usage: { prompt_tokens: Math.round(((init && init.body) || "").length / 2.5), completion_tokens: 40, total_tokens: 0 }
 							});
 						});
 					};

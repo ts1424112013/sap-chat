@@ -43,8 +43,9 @@ sap.ui.define([
         "zai/chat/controller/mixin/ComboPanel",
         "zai/chat/controller/mixin/UserAccessPanel",
         "zai/chat/controller/mixin/SchedulePanel",
-        "zai/chat/controller/mixin/BrowserAgentPanel"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel, BrowserAgentPanel) {
+        "zai/chat/controller/mixin/BrowserAgentPanel",
+        "zai/chat/controller/mixin/RunTimeline"
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel, BrowserAgentPanel, RunTimeline) {
         "use strict";
 
         /**
@@ -1159,7 +1160,14 @@ sap.ui.define([
                         oPending.streaming = true;
                         oPending.waiting = true;          // V16：等待计时（两模式通用）
                         oPending.elapsedText = "";
-                        if (bAgent) {
+                        // 20261108（界面改版）：新引擎的过程画在时间线里（RunTimeline，tlHtml），不用原 Agent 的思考卡
+                        var bBrowserRun = bAgent && this._baActive && this._baActive();
+                        if (bBrowserRun) {
+                                oPending.sender = oRB.getText("agentSender");
+                                oPending.tl = true;
+                                oPending.requestPending = true;
+                                oPending.tlHtml = "";
+                        } else if (bAgent) {
                                 oPending.sender = oRB.getText("agentSender");
                                 oPending.agentThinking = true;
                                 oPending.requestPending = true;
@@ -1257,7 +1265,7 @@ sap.ui.define([
                         // 20261028：本轮编号同时用来查运行进度（边跑边看，_startLive）
                         var sCid = bAgent ? this._newSessionId() : "";
                         // 20261107：Agent 工作区开了「浏览器引擎」→ 在浏览器里跑 Deep Agents（BrowserAgentPanel._baSend，结果同形）
-                        var bBrowser = bAgent && this._baActive();
+                        var bBrowser = bBrowserRun;
                         var oSendArgs = {
                                 mode: oCfg.mode,
                                 agentType: oCfg.agentType,
@@ -2845,7 +2853,7 @@ sap.ui.define([
                                         oHeadLeft.addItem(new Text({
                                                 text: "{= ${i18n>thinkingWait} + (${chat>elapsedText} ? ' · ' + ${chat>elapsedText} : '…') }",
                                                 // 20261029：有思考区时由思考区显示「正在思考 · N 秒」，标题行不再重复
-                                                visible: "{= !!${chat>streaming} && ${chat>raw} === '' && !${chat>thinkHtml} }"
+                                                visible: "{= !!${chat>streaming} && ${chat>raw} === '' && !${chat>thinkHtml} && !${chat>tl} }"
                                         }).addStyleClass("headThinking"));
                                 }
                                 oHeadLeft.addItem(new Text({ text: "{chat>time}" }).addStyleClass("bubbleTime aiHeadTime"));
@@ -2864,7 +2872,7 @@ sap.ui.define([
                                 // 运行中：动态阶段文案（_startThinkingTicker 轮换，thinkingLabel 绑定刷新）；
                                 // 完成后：后端 TraceJson 的真实阶段摘要（✓ 阶段 · 耗时），可折叠。
                                 // 只展示阶段/友好摘要/状态/耗时；SQL 单独折叠，不展示思维链、Prompt 或密钥
-                                if (oEntry.agentThinking || oEntry.thinking) {
+                                if (!oEntry.tl && (oEntry.agentThinking || oEntry.thinking)) {
                                         // V16 运行中：图标 + 阶段文案 + 实时计时 + 流动进度条
                                         var oLiveHead = new HBox({ alignItems: "Center" }).addStyleClass("agentThinkingHeader");
                                         oLiveHead.addItem(new sap.ui.core.Icon({ src: "sap-icon://synchronize" }).addStyleClass("thinkIcon thinkSpin"));
@@ -2872,7 +2880,7 @@ sap.ui.define([
                                                 .addStyleClass("agentThinkingTitle"));
                                         oLiveHead.addItem(new Text({ text: "{chat>elapsedText}" })
                                                 .addStyleClass("agentThinkingPhase"));
-                                        var oLiveCard = new VBox({ visible: "{chat>requestPending}" })
+                                        var oLiveCard = new VBox({ visible: "{= !!${chat>requestPending} && !${chat>tl} }" })
                                                 .addStyleClass("agentThinkingCard agentThinkingLive");
                                         oLiveCard.addItem(oLiveHead);
                                         // 20261028：拿到真实步骤（AgentProgress）后，流动进度条换成步骤列表（_liveHtml）
@@ -2958,12 +2966,21 @@ sap.ui.define([
                                                 oFoldIcon.setSrc(bOpen ? "sap-icon://navigation-down-arrow" : "sap-icon://navigation-right-arrow");
                                         });
                                         var oDoneCard = new VBox({
-                                                visible: "{= !${chat>requestPending} }"
+                                                visible: "{= !${chat>requestPending} && !${chat>tlHtml} }"
                                         }).addStyleClass("agentThinkingCard agentDoneCard");
                                         oDoneCard.addItem(oDoneHead);
                                         oDoneCard.addItem(oStepsWrap);
                                         oCol.addItem(oDoneCard);
                                 }
+
+                                // 20261108（界面改版）：新引擎的过程时间线（RunTimeline._rtHtml）；所有 AI 条目都挂，
+                                // 列表复用控件时靠 tlHtml 是否为空决定显示（刷新后恢复的过程也走这里）
+                                oCol.addItem(new HTML({
+                                        content: "{chat>tlHtml}",
+                                        visible: "{= !!${chat>tlHtml} }",
+                                        preferDOM: false,
+                                        sanitizeContent: false
+                                }));
 
                                 // 20261029：思考过程（模型开了思考才有）—— 正文上方，可折叠；内容先转义，标签由 _thinkHtml 构造
                                 this._bindThinkToggle();
@@ -5378,5 +5395,5 @@ sap.ui.define([
                 hasText: function (s) {
                         return !!(s && s.length);
                 }
-        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel, BrowserAgentPanel));
+        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel, BrowserAgentPanel, RunTimeline));
 });

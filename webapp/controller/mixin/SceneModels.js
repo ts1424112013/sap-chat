@@ -115,6 +115,27 @@ sap.ui.define([
                                 sCur = aVis[0].key;
                                 oChat0.setProperty("/currentSession/agentType", sCur);
                         }
+                        // 20261108（界面改版）：新引擎会按问题自己挑工具 —— 只显示当前场景，其余收进「其他场景」下拉
+                        if (this._baActive && this._baActive() && aVis.length > 1) {
+                                var dCur = this._sceneDef(sCur);
+                                oBox.addItem(new Button({ text: dCur.text, icon: dCur.icon, type: "Transparent", tooltip: dCur.sub })
+                                        .addStyleClass("sceneBtn sceneOn" + (dCur.key === "AUTO" ? " sceneAuto" : "")));
+                                oBox.addItem(new Button({
+                                        text: "其他场景", icon: "sap-icon://slim-arrow-down", iconFirst: false, type: "Transparent",
+                                        tooltip: "指定场景：场景决定 SAP 开放哪些工具；不指定时新引擎按问题自己挑",
+                                        press: function (oEv) {
+                                                var oSheet = new sap.m.ActionSheet({ placement: "Bottom", showCancelButton: false });
+                                                aVis.filter(function (o) { return o.key !== sCur; }).forEach(function (o) {
+                                                        var d = that._sceneDef(o.key);
+                                                        oSheet.addButton(new Button({ text: d.text, icon: d.icon, tooltip: d.sub,
+                                                                press: function () { that._onScenePick(d.key); that._renderScenePicker(); } }));
+                                                });
+                                                oSheet.attachAfterClose(function () { oSheet.destroy(); });
+                                                oSheet.openBy(oEv.getSource());
+                                        }
+                                }).addStyleClass("sceneBtn sceneMore"));
+                                return;
+                        }
                         aVis.map(function (o) { return that._sceneDef(o.key); }).forEach(function (d) {
                                 oBox.addItem(new Button({
                                         text: d.text,
@@ -228,6 +249,10 @@ sap.ui.define([
                         var sCur = oChat.getProperty("/currentModel") || "";
                         var oHit = (oChat.getProperty("/models") || []).filter(function (m) { return m.ModelId === sCur; })[0];
                         oChat.setProperty("/currentModelName", oHit ? oHit.ModelName : this._rb().getText("modelPickEmpty"));
+                        // 20261108：新引擎信息栏里的模型名跟着变（不在运行中时）
+                        if (this._rtInfo && !(this._rtActiveUid && this._rtActiveUid())) {
+                                this._rtInfo(null);
+                        }
                 },
 
                 onOpenModelPicker: function (oEvent) {

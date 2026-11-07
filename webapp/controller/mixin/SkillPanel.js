@@ -119,8 +119,11 @@ sap.ui.define([
             m.setProperty("/hint", sHint); m.setProperty("/hintKind", sKind); m.setProperty("/hintVisible", !!sHint);
             m.setProperty("/canViewBody", bValid && !!s.body);
             if (!bValid) { m.setProperty("/bodyOpen", false); }
-            m.setProperty("/label", s ? s.name : "技能");
-            m.setProperty("/tooltip", sStatus || (s ? "换一个技能" : "选一种做法，Agent 按它来回答（输入框里打 / 也能打开）"));
+            // 20261108（界面改版）：新引擎会自己读相关技能 —— 手动选是「可选指定」
+            var bBa = !!(this._baActive && this._baActive());
+            m.setProperty("/label", s ? s.name : (bBa ? "指定技能" : "技能"));
+            m.setProperty("/tooltip", sStatus || (s ? "换一个技能" : (bBa ? "可选：指定一种做法；不指定时新引擎会自己读相关的技能"
+                : "选一种做法，Agent 按它来回答（输入框里打 / 也能打开）")));
             m.setProperty("/canPick", canPick);
             var bOpen = !!(this._skillPopover && this._skillPopover.isOpen());
             ["skillSlotHero", "skillSlotDock"].forEach(function (id) {

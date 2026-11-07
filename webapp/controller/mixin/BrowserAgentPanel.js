@@ -70,8 +70,13 @@ sap.ui.define([
 			var bMock = ChatService.getMode() === "mock";
 			BrowserAgentService.useMock = bMock;
 			var bAvail = BrowserAgentService.available();
-			var bOn = false;
-			try { bOn = window.localStorage.getItem(PREF_KEY + sUser) === "X"; } catch (e) { /* 无本地存储 */ }
+			// 用户在设置里开 / 关过（X / N）按用户的；没动过按 config.js 的 browserAgent.defaultOn
+			var oCfgBa = (window.ZAI_CONFIG && window.ZAI_CONFIG.browserAgent) || {};
+			var bOn = oCfgBa.defaultOn === true;
+			try {
+				var sPref = window.localStorage.getItem(PREF_KEY + sUser);
+				if (sPref === "X" || sPref === "N") { bOn = sPref === "X"; }
+			} catch (e) { /* 无本地存储 */ }
 			oChat.setProperty("/ba", {
 				available: bAvail,
 				on: bAvail && bOn,
@@ -84,6 +89,9 @@ sap.ui.define([
 			this._sBaUser = sUser;
 			if (bAvail && bOn) {
 				this._baWarm();
+			}
+			if (this._rtInfo) {
+				this._rtInfo(null);
 			}
 		},
 
@@ -104,6 +112,11 @@ sap.ui.define([
 			oChat.setProperty("/ba/folderName", oInfo ? oInfo.name : "");
 			oChat.setProperty("/ba/folderState", oInfo ? (oInfo.permission === "granted" ? "granted" : "prompt") : "none");
 			oChat.setProperty("/ba/changes", oInfo ? oInfo.changes : 0);
+			if (this._rtInfo) {
+				var mRt = this._mRt || {}, sCur = this._sMessagesSession;
+				var oLast = Object.keys(mRt).map(function (k) { return mRt[k]; }).filter(function (x) { return x.sid === sCur && x.limits; }).pop();
+				this._rtInfo(oLast || null);
+			}
 			var sState = oInfo ? (oInfo.permission === "granted" ? "granted" : "prompt") : "none";
 			["baFolderHero", "baFolderDock"].forEach(function (sId) {
 				var oBtn = this.byId(sId);
@@ -120,11 +133,28 @@ sap.ui.define([
 			return !!(o.available && o.on);
 		},
 
+		/** 设置里的「新引擎」开关 */
+		onBaSwitch: function (oEvent) {
+			this._baSetOn(!!oEvent.getParameter("state"));
+		},
+
 		onToggleBrowserAgent: function (oEvent) {
-			var bOn = !!oEvent.getParameter("pressed");
+			this._baSetOn(!!oEvent.getParameter("pressed"));
+		},
+
+		_baSetOn: function (bOn) {
 			var oChat = this.getView().getModel("chat");
 			oChat.setProperty("/ba/on", bOn);
-			try { window.localStorage.setItem(PREF_KEY + (this._sBaUser || ""), bOn ? "X" : ""); } catch (e) { /* ignore */ }
+			try { window.localStorage.setItem(PREF_KEY + (this._sBaUser || ""), bOn ? "X" : "N"); } catch (e) { /* ignore */ }
+			if (this._rtInfo) {
+				this._rtInfo(null);
+			}
+			if (this._renderScenePicker) {
+				this._renderScenePicker();
+			}
+			if (this._paintSkill) {
+				this._paintSkill();
+			}
 			if (bOn) {
 				this._baWarm();
 				MessageToast.show(oChat.getProperty("/ba/mock")
@@ -137,7 +167,9 @@ sap.ui.define([
 
 		// 视图格式化
 		fmtBaVisible: function (sWorkspace, bAvail) {
-			return sWorkspace === "AGENT" && !!bAvail;
+			// 20261108：开关默认只在设置里；config.browserAgent.toggleInInput = true 时输入框下也放一个
+			var oCfgBa = (window.ZAI_CONFIG && window.ZAI_CONFIG.browserAgent) || {};
+			return sWorkspace === "AGENT" && !!bAvail && oCfgBa.toggleInInput === true;
 		},
 		fmtBaFolderVisible: function (sWorkspace, bAvail, bOn, bFs) {
 			return sWorkspace === "AGENT" && !!bAvail && !!bOn && !!bFs;
@@ -268,9 +300,8 @@ sap.ui.define([
 		_baSend: function (p, oPending) {
 			var that = this;
 			var sUid = oPending.uid;
-			this._mLive = this._mLive || {};
-			this._bindLiveToggle();
-			var oLive = this._mLive[sUid] = { cid: "", sid: p.sessionId, timer: 0, stopped: false, fails: 0, n: 0, seen: {}, browser: true };
+			// 20261108（界面改版）：过程画在时间线里（RunTimeline），确认就地完成
+			this._rtStart(sUid, p.sessionId);
 			var oAbort = new AbortController();
 			this._baAbort = oAbort;
 			return BrowserAgentService.send({
@@ -296,14 +327,15 @@ sap.ui.define([
 						return ChatService._fioriMockAnalysis(oRun, p.question);
 					} : null
 				} : null,
-				onSteps: function (aSteps) {
-					if (!oLive.stopped) {
-						that._applyLive(sUid, aSteps, false, oLive);
-					}
+				onEvent: function (e) {
+					that._rtEvent(sUid, e);
 				},
-				confirm: this._baConfirm.bind(this)
+				confirm: function (req) {
+					return that._rtConfirm(sUid, req);
+				}
 			}).then(function (r) {
 				that._baSyncFolder(BrowserAgentService.folderInfo());
+				that._rtFinish(sUid, r && r.status === "STOPPED" ? "STOPPED" : "OK");
 				// 数据集 → 和原 Agent 一样的 analysis（表格 / 图表 / 导出 / 加入组合）
 				if (r && r.analysisRaw) {
 					r.analysis = ChatService._sanitizeAnalysis ? ChatService._sanitizeAnalysis(r.analysisRaw) : null;
@@ -316,6 +348,7 @@ sap.ui.define([
 				return r;
 			}, function (e) {
 				that._baSyncFolder(BrowserAgentService.folderInfo());
+				that._rtFinish(sUid, oAbort.signal.aborted ? "STOPPED" : "ERROR");
 				throw e;
 			}).then(function (r) {
 				if (that._baAbort === oAbort) { that._baAbort = null; }
@@ -330,6 +363,11 @@ sap.ui.define([
 		_baStop: function () {
 			if (this._fnBaDlgCancel) {
 				this._fnBaDlgCancel();   // 还开着的确认框按「不要改」收掉
+			}
+			// 时间线里还在等确认的面板也按「不要」收掉，引擎才能停下来
+			var sRt = this._rtActiveUid && this._rtActiveUid();
+			if (sRt && this._mRt[sRt].ask) {
+				this._rtPick(sRt, 2);
 			}
 			if (this._baAbort) {
 				this._baAbort.abort(new Error("用户停止"));

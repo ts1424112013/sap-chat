@@ -37,23 +37,6 @@ sap.ui.define([
 		return { enabled: c.enabled !== false, path: c.path || "/sap/bc/zai_agent" };
 	}
 
-	/** 一个工具调用的参数挑几个给人看（路径、关键字、表名…），长值截短 */
-	function argChips(oArgs) {
-		var a = [];
-		Object.keys(oArgs || {}).forEach(function (k) {
-			if (a.length >= 4 || k === "content" || k === "old_string" || k === "new_string" || k === "todos") {
-				return;
-			}
-			var v = oArgs[k];
-			if (v === null || v === undefined || v === "") {
-				return;
-			}
-			v = typeof v === "string" ? v : JSON.stringify(v);
-			a.push([k, v.length > 60 ? v.slice(0, 57) + "…" : v]);
-		});
-		return a;
-	}
-
 	function mainArg(sTool, oArgs) {
 		var o = oArgs || {};
 		return o.file_path || o.path || o.pattern || o.keyword || o.description || o.table || o.tabname ||
@@ -65,6 +48,32 @@ sap.ui.define([
 		_oFolder: null,        // { handle, backend, name, permission }
 		_sUserKey: "",
 		useMock: false,
+
+		/** 工具的中文名（时间线、步骤用） */
+		toolLabel: function (sTool) {
+			return TOOL_LABEL[sTool] || sTool || "";
+		},
+
+		/**
+		 * 会话里新引擎各轮的精简过程记录（刷新 / 重开会话时画回来）。
+		 * @returns {Promise<Array<{msgSeq:number, answerHead:string, steps:Array}>>} 拿不到时返回 []
+		 */
+		getSteps: function (sSessionId, oOpt) {
+			var that = this;
+			if (!sSessionId || !this.available()) {
+				return Promise.resolve([]);
+			}
+			return this.load().then(function (LA) {
+				var o = oOpt || {};
+				var client = that.useMock ? BrowserAgentMock.createClient({ sessionId: sSessionId })
+					: LA.createSapClient({ base: cfg().path, authHeader: o.authHeader ? o.authHeader() : "" });
+				return client.getSteps ? client.getSteps({ sessionId: sSessionId }) : { runs: [] };
+			}).then(function (r) {
+				return (r && Array.isArray(r.runs)) ? r.runs : [];
+			}).catch(function () {
+				return [];   // SAP 还没部署 /run/steps 等：不影响历史显示
+			});
+		},
 
 		/** 浏览器条件：安全上下文（HTTPS / localhost）；配置可关 */
 		available: function () {
@@ -196,8 +205,8 @@ sap.ui.define([
 		 * @param {Array<{role,content}>} o.history
 		 * @param {string} o.sessionId / o.scene / o.modelId / o.skillId / o.focusArtifactId
 		 * @param {boolean} o.think
-		 * @param {function(Array)} o.onSteps 每有变化推一次完整步骤列表（_applyLive 格式）
-		 * @param {function(object):Promise} o.confirm 改文件确认 {action,path,before,after} → {approved}
+		 * @param {function(object)} o.onEvent 引擎事件（原样转发，RunTimeline 据此画过程）
+		 * @param {function(object):Promise} o.confirm 改文件确认 {action,path,before,after} → {approved, always}
 		 * @param {AbortSignal} o.signal
 		 * @param {function():string} o.authHeader 本地开发经代理时的 Basic 头（部署在 SAP 时为空，走登录 Cookie）
 		 * @param {object} [o.mock] 演示模式的目录数据（reportDefs / skills），见 BrowserAgentMock.createClient
@@ -207,83 +216,29 @@ sap.ui.define([
 			var that = this;
 			var t0 = Date.now();
 			return this.load().then(function (LA) {
+					// 20261108（界面改版）：过程由控制器的 RunTimeline 按引擎事件画；这里只原样转发事件，
+				// 另外记下工具步骤（给结果的 trace / 轮数）和改动的文件（回答末尾列出）
 				var aSteps = [];
 				var mById = {};
-				var iSeq = 0;
-				var oPlan = null;
 				var aChanges = [];
 				var iTools = 0;
-				var push = function () {
-					if (o.onSteps) {
-						o.onSteps(aSteps.slice());
-					}
-				};
-				var addStep = function (st) {
-					st.seq = ++iSeq;
-					aSteps.push(st);
-					return st;
-				};
 				var onEvent = function (e) {
-					switch (e.type) {
-					case "todos":
-						var sPlan = (e.todos || []).map(function (t) {
-							return (t.status === "completed" ? "✓ " : t.status === "in_progress" ? "▸ " : "○ ") + t.content;
-						}).join("　");
-						if (!oPlan) {
-							oPlan = addStep({ phase: "NOTE", status: "OK", label: "" });
-						}
-						oPlan.label = "计划　" + sPlan;
-						break;
-					case "tool_start":
+					if (e.type === "tool_start") {
 						iTools++;
-						mById[e.id] = addStep({
-							phase: "EXECUTING", status: "RUNNING", tool: e.tool,
-							toolLabel: TOOL_LABEL[e.tool] || e.tool,
-							label: mainArg(e.tool, e.args),
-							args: argChips(e.args), t: Date.now()
-						});
-						break;
-					case "tool_end":
-						var st = mById[e.id];
-						if (st) {
-							st.status = e.ok ? "OK" : "ERROR";
-							st.elapsedMs = Date.now() - st.t;
-						}
-						break;
-					case "confirm":
-						addStep({ phase: "NOTE", status: "OK", label: "等你确认：" + e.action + " " + e.path });
-						break;
-					case "confirmed":
-						addStep({ phase: "NOTE", status: "OK", label: (e.approved ? "已同意：" : "已拒绝：") + e.action + " " + e.path });
-						break;
-					case "file_changed":
+						mById[e.id] = { phase: "EXECUTING", status: "RUNNING", tool: e.tool, toolLabel: TOOL_LABEL[e.tool] || e.tool,
+							label: e.arg || mainArg(e.tool, e.args), t: Date.now() };
+						aSteps.push(mById[e.id]);
+					} else if (e.type === "tool_end" && mById[e.id]) {
+						mById[e.id].status = e.ok ? "OK" : "ERROR";
+						mById[e.id].elapsedMs = Date.now() - mById[e.id].t;
+					} else if (e.type === "card") {
+						aSteps.forEach(function (s) { if (s.status === "RUNNING") { s.status = "OK"; s.elapsedMs = Date.now() - s.t; } });
+					} else if (e.type === "file_changed") {
 						aChanges.push({ action: e.action, path: e.path, backup: e.backup });
-						break;
-					case "thinking":
-						if (e.text && e.text.trim()) {
-							addStep({ phase: "NOTE", status: "OK", label: e.text.trim().slice(0, 300) });
-						}
-						break;
-					case "compacted":
-						addStep({ phase: "NOTE", status: "OK", label: "对话较长，已自动压缩（早期内容总结成一段，原文留在本次运行的草稿里）" });
-						break;
-					case "skill":
-						addStep({ phase: "NOTE", status: "OK", label: "使用技能：" + e.name + (e.source === "FOLDER" ? "（文件夹）" : "") });
-						break;
-					case "card":
-						// 参数卡出来引擎就停了，这一步的工具没有 tool_end：在这里收口
-						aSteps.forEach(function (s) {
-							if (s.status === "RUNNING" && (!e.tool || s.tool === e.tool)) {
-								s.status = "OK";
-								s.elapsedMs = Date.now() - s.t;
-							}
-						});
-						addStep({ phase: "NOTE", status: "OK", label: "参数卡已生成，请在下面核对参数后提交" });
-						break;
-					default:
-						return;
 					}
-					push();
+					if (o.onEvent) {
+						try { o.onEvent(e); } catch (x) { /* 界面错误不打断运行 */ }
+					}
 				};
 
 				var oFB = that._folderBackend(LA);

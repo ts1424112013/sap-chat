@@ -48,6 +48,10 @@ window.ZAI_CONFIG = {
          * 需要 HTTPS 打开页面；用户在输入框下自己打开开关，是否允许使用由 SAP 端判断 */
         browserAgent: {
                 enabled: true,
-                path: "/sap/bc/zai_agent"
+                path: "/sap/bc/zai_agent",
+                /* 20261108（界面改版）：用户没在设置里开 / 关过时的默认值。SAP 上验证稳定后改成 true，大家默认用新引擎 */
+                defaultOn: false,
+                /* 20261108：「新引擎」开关放在输入框下（true）还是只在设置里（false，默认） */
+                toggleInInput: false
         }
 };
