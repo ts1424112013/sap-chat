@@ -291,6 +291,10 @@
 *   浏览器按中文实际比例换算后提前压缩对话; browser_model 的请求体上限默认改为跟上下文走(≈ token × 4 字节,
 *   256K → 1000 KB, 原固定 1500 KB), 超限消息带 "maximum context length", 浏览器认得并压缩后重试
 *   ★ 重贴后核对标记: ty_brun_start 有 ctx_tokens; browser_model 有 lv_ctx_tok * 4 DIV 1024
+* V15.22 20261108(新引擎界面改版): 过程记录 —— PUBLIC 新类型 ty_bstep_in / tt_bstep_in; browser_finish 新参数 it_steps,
+*   写新表 ZAI_BSTEP(运行号 + 序号; 会话 + 回复消息序号; 最多 200 步, 只存类型 / 工具 / 参数摘要 / 一句话结果 / 状态 / 耗时);
+*   新 PUBLIC browser_steps(只限本人会话)供刷新 / 重开会话时画回过程
+*   ★ 重贴后核对标记: browser_finish 有 INSERT zai_bstep FROM; 有 METHOD browser_steps
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -423,16 +427,39 @@ CLASS zcl_ai_agent_service DEFINITION
                 ev_card    TYPE string
                 ev_datasets TYPE string.   " V15.20: 本次工具产出的数据集 JSON 数组(界面表格 / 图表用, 不回模型)
 
+    " V15.22: 浏览器交来的一步精简过程记录(引擎 compactSteps; 键名同 JSON: k / tool / arg / sum / st / ms / ds / dn / text)
+    TYPES: BEGIN OF ty_bstep_in,
+             k    TYPE string,   " say / plan / tool / skill / note / card / think
+             tool TYPE string,
+             arg  TYPE string,
+             sum  TYPE string,
+             st   TYPE string,
+             ms   TYPE i,
+             ds   TYPE i,
+             dn   TYPE i,
+             text TYPE string,
+           END OF ty_bstep_in.
+    TYPES tt_bstep_in TYPE STANDARD TABLE OF ty_bstep_in WITH DEFAULT KEY.
+
     " 结束运行: 问答写回会话
     " V15.19: it_skills = 浏览器里模型读过的 SAP 技能编号(只审计能用的); 有参数卡任务时本轮问答归入任务
+    " V15.22: it_steps = 精简过程记录, 写进 ZAI_BSTEP(按会话 + 回复的消息序号), 刷新 / 重开会话时画回来
     CLASS-METHODS browser_finish
       IMPORTING iv_run_id  TYPE string
                 iv_status  TYPE string
                 iv_answer  TYPE string
                 iv_message TYPE string OPTIONAL
                 it_skills  TYPE string_table OPTIONAL
+                it_steps   TYPE tt_bstep_in OPTIONAL
       EXPORTING ev_error   TYPE string
                 ev_http    TYPE i.
+
+    " V15.22: 会话里新引擎各轮的过程记录 → {"runs":[{"msgSeq":n,"steps":[…]}]}(只限本人的会话)
+    CLASS-METHODS browser_steps
+      IMPORTING iv_session_id TYPE string
+      EXPORTING ev_json       TYPE string
+                ev_error      TYPE string
+                ev_http       TYPE i.
 
     " V15.19: 把一份报表结果整份导出成 CSV(浏览器写进用户选的文件夹; 数据不经过模型)
     " ev_error 非空且 ev_http = 200 = 给模型看的失败原因; ev_http <> 200 = 请求本身被拒
@@ -4607,6 +4634,82 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                                    iv_user_seq   = nmax( val1 = lv_seq - 1 val2 = 0 ) ).
       lv_aud_n = lv_aud_n + 1.
     ENDLOOP.
+
+    " ---- V15.22: 精简过程记录 → ZAI_BSTEP(最多 200 步; 只存类型 / 工具 / 参数摘要 / 一句话结果 / 状态 / 耗时, 不存全文) ----
+    DATA: ls_bs TYPE zai_bstep,
+          lv_bn TYPE i.
+    DELETE FROM zai_bstep WHERE run_id = @ls_run-run_id.
+    LOOP AT it_steps INTO DATA(ls_in).
+      lv_bn = lv_bn + 1.
+      IF lv_bn > 200.
+        EXIT.
+      ENDIF.
+      CLEAR ls_bs.
+      ls_bs-mandt      = sy-mandt.
+      ls_bs-run_id     = ls_run-run_id.
+      ls_bs-seq        = lv_bn.
+      ls_bs-session_id = ls_run-session_id.
+      ls_bs-msg_seq    = lv_seq.
+      ls_bs-userid     = sy-uname.
+      ls_bs-kind       = to_upper( substring( val = ls_in-k len = nmin( val1 = strlen( ls_in-k ) val2 = 10 ) ) ).
+      ls_bs-tool       = substring( val = ls_in-tool len = nmin( val1 = strlen( ls_in-tool ) val2 = 40 ) ).
+      ls_bs-target     = substring( val = ls_in-arg len = nmin( val1 = strlen( ls_in-arg ) val2 = 512 ) ).
+      ls_bs-summary    = substring( val = ls_in-sum len = nmin( val1 = strlen( ls_in-sum ) val2 = 512 ) ).
+      ls_bs-status     = to_upper( substring( val = ls_in-st len = nmin( val1 = strlen( ls_in-st ) val2 = 10 ) ) ).
+      ls_bs-ms         = ls_in-ms.
+      ls_bs-ds_idx     = ls_in-ds.
+      ls_bs-ds_cnt     = ls_in-dn.
+      ls_bs-text       = substring( val = ls_in-text len = nmin( val1 = strlen( ls_in-text ) val2 = 1333 ) ).
+      ls_bs-created_at = lv_now.
+      INSERT zai_bstep FROM @ls_bs.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+  METHOD browser_steps.
+
+    CLEAR: ev_json, ev_error.
+    ev_http = 200.
+    IF iv_session_id IS INITIAL OR strlen( iv_session_id ) > 32.
+      ev_http  = 400.
+      ev_error = '缺少会话 ID'.
+      RETURN.
+    ENDIF.
+    SELECT SINGLE created_by FROM zai_chat_sess WHERE session_id = @iv_session_id INTO @DATA(lv_owner).
+    IF sy-subrc <> 0 OR lv_owner <> sy-uname.
+      ev_http  = 403.
+      ev_error = '该会话不属于当前用户'.
+      RETURN.
+    ENDIF.
+    SELECT * FROM zai_bstep
+      WHERE session_id = @iv_session_id AND userid = @sy-uname
+      ORDER BY msg_seq, run_id, seq
+      INTO TABLE @DATA(lt_bs)
+      UP TO 5000 ROWS.
+
+    DATA: lv_runs TYPE string,
+          lv_cur  TYPE zai_bstep-run_id,
+          lv_st   TYPE string.
+    LOOP AT lt_bs INTO DATA(ls_bs).
+      IF ls_bs-run_id <> lv_cur.
+        IF lv_cur IS NOT INITIAL.
+          lv_runs = |{ lv_runs }{ lv_st }]\}|.
+        ENDIF.
+        lv_runs = |{ lv_runs }{ COND string( WHEN lv_cur IS NOT INITIAL THEN `,` ) }\{"msgSeq":{ ls_bs-msg_seq },"steps":[|.
+        lv_cur = ls_bs-run_id.
+        CLEAR lv_st.
+      ENDIF.
+      lv_st = |{ lv_st }{ COND string( WHEN lv_st IS NOT INITIAL THEN `,` ) }| &&
+              |\{"k":"{ to_lower( condense( CONV string( ls_bs-kind ) ) ) }","tool":"{ json_text( CONV string( ls_bs-tool ) ) }",| &&
+              |"arg":"{ json_text( CONV string( ls_bs-target ) ) }","sum":"{ json_text( CONV string( ls_bs-summary ) ) }",| &&
+              |"st":"{ condense( CONV string( ls_bs-status ) ) }","ms":{ ls_bs-ms },"ds":{ ls_bs-ds_idx },"dn":{ ls_bs-ds_cnt },| &&
+              |"text":"{ json_text( CONV string( ls_bs-text ) ) }"\}|.
+    ENDLOOP.
+    IF lv_cur IS NOT INITIAL.
+      lv_runs = |{ lv_runs }{ lv_st }]\}|.
+    ENDIF.
+    ev_json = |\{"ok":true,"runs":[{ lv_runs }]\}|.
 
   ENDMETHOD.
 

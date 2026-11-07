@@ -1299,6 +1299,16 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     /iv_module\s+= zcl_ai_fiori_report_service=>gc_module/.test(bs));
   check('brun_art：Fiori 结果要求用户已「交给模型分析」（ANALYZED = X），导出不要求',
     /FROM zai_frpt_run/.test(ba) && /lv_an <> 'X'/.test(ba) && /iv_for_model = abap_false/.test(be));
+  /* ---- 20261108 界面改版：过程记录（AGENT_SERVICE V15.22 / HTTP V1.4） ---- */
+  const bst = methodOf(ag2, 'browser_steps');
+  check('V15.22：收尾写 ZAI_BSTEP（先删本运行旧记录、最多 200 步、按会话 + 回复消息序号）；browser_steps 只限本人会话',
+    /^\* V15\.22 20261108/m.test(agRaw2) && /DELETE FROM zai_bstep WHERE run_id = @ls_run-run_id/.test(bf) && /lv_bn > 200/.test(bf) &&
+    /ls_bs-msg_seq\s+= lv_seq/.test(bf) && /INSERT zai_bstep FROM @ls_bs/.test(bf) &&
+    bst && /lv_owner <> sy-uname/.test(bst) && /userid = @sy-uname/.test(bst) && /UP TO 5000 ROWS/.test(bst));
+  check('HTTP V1.4：/run/finish 传 it_steps；新路径 /run/steps',
+    /^\*\s+V1\.4 20261108/m.test(httpRaw) && /it_steps\s+= ls_fin-steps/.test(hr) && hr.includes("'/run/steps'") &&
+    /zcl_ai_agent_service=>browser_steps\(/.test(hr));
+
   /* ---- 20261108 上下文超长（AGENT_SERVICE V15.21 / HTTP V1.3） ---- */
   check('V15.21：上下文上限 BRUN_CTX_TOKENS 下发；请求体上限默认跟上下文走，超限消息带 maximum context length',
     /^\* V15\.21 20261108/m.test(agRaw2) && /es_start-ctx_tokens = read_cfg_int\( iv_key = 'BRUN_CTX_TOKENS'/.test(bs) &&

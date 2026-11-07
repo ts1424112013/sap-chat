@@ -28,8 +28,9 @@
 *              /tools/exec 回 datasets(界面表格 / 图表)(依赖 ZCL_AI_AGENT_SERVICE V15.20)
 *         V1.3 20261108 /run/start 的 limits 多回 contextTokens(浏览器据此决定何时压缩对话)
 *              (依赖 ZCL_AI_AGENT_SERVICE V15.21)
+*         V1.4 20261108 /run/finish 收 steps(精简过程记录); 新路径 /run/steps(依赖 ZCL_AI_AGENT_SERVICE V15.22)
 *         ★ 重贴后核对标记: INTERFACES if_http_extension; handle_request 里有
-*           WHEN '/run/start' / '/chat/completions' / '/tools/exec' / '/results/export' / '/run/finish'
+*           WHEN '/run/start' / '/chat/completions' / '/tools/exec' / '/results/export' / '/run/finish' / '/run/steps'
 *=======================================================================
 CLASS zcl_ai_agent_http DEFINITION
   PUBLIC
@@ -62,7 +63,11 @@ CLASS zcl_ai_agent_http DEFINITION
              answer      TYPE string,
              message     TYPE string,
              skills_used TYPE string_table,   " V1.1: 模型读过的 SAP 技能编号
+             steps       TYPE zcl_ai_agent_service=>tt_bstep_in,   " V1.4: 精简过程记录
            END OF ty_finish_req.
+    TYPES: BEGIN OF ty_steps_req,
+             session_id TYPE string,
+           END OF ty_steps_req.
     TYPES: BEGIN OF ty_export_req,
              run_id    TYPE string,
              result_id TYPE string,
@@ -259,6 +264,7 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                         iv_answer  = ls_fin-answer
                         iv_message = ls_fin-message
                         it_skills  = ls_fin-skills_used
+                        it_steps   = ls_fin-steps
               IMPORTING ev_error   = lv_err
                         ev_http    = lv_http ).
             IF lv_err IS NOT INITIAL.
@@ -268,6 +274,22 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
             ENDIF.
             COMMIT WORK.
             reply( io_server = server iv_code = 200 iv_json = '{"ok":true}' ).
+
+          " ---------------- V1.4: 会话里新引擎各轮的过程记录(刷新 / 重开会话时画回来) ----------------
+          WHEN '/run/steps'.
+            DATA: ls_sreq TYPE ty_steps_req,
+                  lv_sjs  TYPE string.
+            parse( EXPORTING iv_json = lv_body CHANGING cs_data = ls_sreq ).
+            zcl_ai_agent_service=>browser_steps(
+              EXPORTING iv_session_id = ls_sreq-session_id
+              IMPORTING ev_json       = lv_sjs
+                        ev_error      = lv_err
+                        ev_http       = lv_http ).
+            IF lv_err IS NOT INITIAL.
+              fail( io_server = server iv_code = lv_http iv_msg = lv_err ).
+            ELSE.
+              reply( io_server = server iv_code = 200 iv_json = lv_sjs ).
+            ENDIF.
 
           WHEN OTHERS.
             fail( io_server = server iv_code = 404 iv_msg = |未知路径 { lv_path }| ).
