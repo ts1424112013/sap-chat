@@ -1,8 +1,9 @@
 sap.ui.define([
         "zai/chat/utils/Toast",
         "zai/chat/service/ChatService",
-        "zai/chat/utils/ReportCatalog"
-], function (MessageToast, ChatService, ReportCatalog) {
+        "zai/chat/utils/ReportCatalog",
+        "zai/chat/utils/UserAccess"
+], function (MessageToast, ChatService, ReportCatalog, UserAccess) {
         "use strict";
 
         /**
@@ -52,29 +53,44 @@ sap.ui.define([
                         }
                         var bAgent = this.getView().getModel("chat").getProperty("/workspaceMode") === "AGENT";
                         var sScene = bAgent ? this._curScene() : "";
-                        var bShow = this._catScene(sScene);
-                        oHost.setVisible(bShow);
-                        if (!bShow) {
+                        // 20261108：新引擎里场景只作权限 —— 首页同时放用户开放的「报表执行」「Fiori 报表」两个目录
+                        var aScenes = [];
+                        if (bAgent && this._baActive && this._baActive()) {
+                                var aAllow = ChatService.allowedScenes ? ChatService.allowedScenes() : null;
+                                aScenes = CAT_SCENES.filter(function (k) { return UserAccess.sceneOk(aAllow, k); });
+                        } else if (this._catScene(sScene)) {
+                                aScenes = [sScene];
+                        }
+                        oHost.setVisible(aScenes.length > 0);
+                        if (!aScenes.length) {
                                 return;
                         }
+                        var that = this;
                         this._mCat = this._mCat || {};
-                        var oCat = this._mCat[sScene];
-                        if (!oCat) {
-                                oCat = this._mCat[sScene] = { cfg: this._catCfg(sScene), loaded: false, loading: false };
-                                oCat.ctl = ReportCatalog.create(oCat.cfg);
-                        }
-                        if (oHost.getItems()[0] !== oCat.ctl) {
+                        var aCtl = aScenes.map(function (k) {
+                                var oCat = that._mCat[k];
+                                if (!oCat) {
+                                        oCat = that._mCat[k] = { cfg: that._catCfg(k), loaded: false, loading: false };
+                                        oCat.ctl = ReportCatalog.create(oCat.cfg);
+                                }
+                                return oCat;
+                        });
+                        var aNow = oHost.getItems();
+                        if (aNow.length !== aCtl.length || aCtl.some(function (c, i) { return aNow[i] !== c.ctl; })) {
                                 oHost.removeAllItems();   // 不销毁：另一个场景的目录留在缓存里
-                                oHost.addItem(oCat.ctl);
+                                aCtl.forEach(function (c) { oHost.addItem(c.ctl); });
                         }
                         // 收起 / 展开是全局偏好：另一个场景里改过的，切过来时跟上
                         var bFold = this._catFolded();
-                        if (oCat.ctl.data("catState").collapsed !== bFold) {
-                                ReportCatalog.update(oCat.ctl, { collapsed: bFold });
-                        }
-                        if (!oCat.loaded && !oCat.loading) {
-                                this._catLoad(sScene);
-                        }
+                        aScenes.forEach(function (k, i) {
+                                var oCat = aCtl[i];
+                                if (oCat.ctl.data("catState").collapsed !== bFold) {
+                                        ReportCatalog.update(oCat.ctl, { collapsed: bFold });
+                                }
+                                if (!oCat.loaded && !oCat.loading) {
+                                        that._catLoad(k);
+                                }
+                        });
                 },
 
                 /** 20261020：目录默认收起；用户展开过就记住（本地，两个场景共用） */
@@ -104,7 +120,8 @@ sap.ui.define([
                                 collapsed: this._catFolded(),
                                 onToggle: this._catOnToggle.bind(this),
                                 texts: {
-                                        title: oRB.getText("catTitle"),
+                                        // 20261108：新引擎首页同时放两个目录 → 标题分开写
+                                        title: (this._baActive && this._baActive()) ? (bF ? "Fiori 报表目录" : "报表执行目录") : oRB.getText("catTitle"),
                                         count: oRB.getText("catCount"),
                                         searchPh: oRB.getText(bF ? "catSearchPhFiori" : "catSearchPhReport"),
                                         footNote: oRB.getText(bF ? "catFootFiori" : "catFootReport"),
@@ -208,7 +225,8 @@ sap.ui.define([
                                 MessageToast.show(this._rb().getText("busyWait"));
                                 return;
                         }
-                        if (this._curScene() !== sScene) {
+                        var bBa = !!(this._baActive && this._baActive());
+                        if (!bBa && this._curScene() !== sScene) {
                                 return;   // 目录属于另一个场景（理论上不会出现：容器只放当前场景的目录）
                         }
                         var sText = sScene === "FIORI"
@@ -217,7 +235,7 @@ sap.ui.define([
                         var oCtx = oChat.getProperty("/currentSession") || {};
                         this._executeSend({
                                 mode: "AGENT",
-                                agentType: oCtx.agentType || sScene,
+                                agentType: bBa ? (oCtx.agentType || "AUTO") : (oCtx.agentType || sScene),
                                 displayText: sText,
                                 meta: "",
                                 question: sText,

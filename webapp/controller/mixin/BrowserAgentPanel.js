@@ -72,13 +72,15 @@ sap.ui.define([
 			var bAvail = BrowserAgentService.available();
 			// 用户在设置里开 / 关过（X / N）按用户的；没动过按 config.js 的 browserAgent.defaultOn
 			var oCfgBa = (window.ZAI_CONFIG && window.ZAI_CONFIG.browserAgent) || {};
-			var bOn = oCfgBa.defaultOn === true;
+			var bOnly = oCfgBa.only !== false;   // 20261108：默认 Agent 只用新引擎，不给开关
+			var bOn = bOnly || oCfgBa.defaultOn === true;
 			try {
 				var sPref = window.localStorage.getItem(PREF_KEY + sUser);
-				if (sPref === "X" || sPref === "N") { bOn = sPref === "X"; }
+				if (!bOnly && (sPref === "X" || sPref === "N")) { bOn = sPref === "X"; }
 			} catch (e) { /* 无本地存储 */ }
 			oChat.setProperty("/ba", {
 				available: bAvail,
+				only: bOnly,
 				on: bAvail && bOn,
 				mock: bMock,
 				folderSupported: BrowserAgentService.folderSupported(),
@@ -320,9 +322,14 @@ sap.ui.define([
 					reportDefs: function () { return ChatService._mockReportDefs ? ChatService._mockReportDefs() : null; },
 					skills: function () { return ChatService.getSkills ? ChatService.getSkills({ scene: p.scene, sessionId: p.sessionId }) : null; },
 					// Fiori 场景同原 Agent 的演示：先走确定性的一轮（参数卡 / 候选 / 闸门 / 同意分析）
-					fioriTurn: ChatService._fioriTurn ? function () {
-						return ChatService._fioriTurn({ sessionId: p.sessionId, question: p.question, focusedArtifactId: p.focusedArtifactId || "" });
+					fioriTurn: ChatService._fioriTurn ? function (sQ) {
+						return ChatService._fioriTurn({ sessionId: p.sessionId, question: sQ || p.question, focusedArtifactId: p.focusedArtifactId || "" });
 					} : null,
+					// 20261108：场景只作权限后，聚焦的是不是 Fiori 结果（是才走「交给模型分析」的确定性一轮）
+					isFioriResult: function (sId) {
+						var st = ChatService._mockFioriState ? ChatService._mockFioriState() : null;
+						return !!(sId && st && st.runs && st.runs[sId]);
+					},
 					fioriAnalysis: ChatService._fioriMockAnalysis ? function (oRun) {
 						return ChatService._fioriMockAnalysis(oRun, p.question);
 					} : null

@@ -51,7 +51,8 @@ sap.ui.define([
         _syncSkills: function (force) {
             var m = this._skillModel(), p = this._skillContext(), key = this._skillKey(p), that = this;
             var agent = this._wsMode() === "AGENT";
-            m.setProperty("/visible", agent);
+            // 20261108：新引擎里模型会自己读相关技能（SAP 下发用户开放的全部场景的技能），不再手动选
+            m.setProperty("/visible", agent && !(this._baActive && this._baActive()));
             if (!agent) { if (this._skillPopover) { this._skillPopover.close(); } return; }
             if (this._skillActiveKey === key && !force) { this._paintSkill(); return; }
             this._skillActiveKey = key;

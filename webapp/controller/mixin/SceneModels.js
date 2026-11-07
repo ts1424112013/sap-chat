@@ -103,7 +103,17 @@ sap.ui.define([
                         }
                         oBox.destroyItems();
                         var bAgent = this.getView().getModel("chat").getProperty("/workspaceMode") === "AGENT";
-                        oBox.setVisible(bAgent);
+                        // 20261108：新引擎里场景只作权限，用户不再选 —— 不显示场景按钮，新会话一律「自动」
+                        var bBa = bAgent && this._baActive && this._baActive();
+                        oBox.setVisible(bAgent && !bBa);
+                        if (bBa) {
+                                var oChatBa = this.getView().getModel("chat");
+                                if (!(oChatBa.getProperty("/messages") || []).length && this._curScene() !== "AUTO") {
+                                        oChatBa.setProperty("/currentSession/agentType", "AUTO");
+                                        if (this._applyWorkspaceChrome) { this._applyWorkspaceChrome(); }
+                                }
+                                return;
+                        }
                         if (!bAgent) {
                                 return;
                         }

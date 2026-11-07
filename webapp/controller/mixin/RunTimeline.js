@@ -197,7 +197,9 @@ sap.ui.define([
 			s.items.forEach(function (x) {
 				if (x.k === "tool" && x.st === "RUNNING") { x.st = s.status === "OK" ? "OK" : "STOPPED"; x.ms = Date.now() - x.t; }
 			});
-			if (s.status === "OK") { s.model++; }   // 最后给出回答的那一轮
+			// 最后给出回答的那一轮（SAP 直接回答的——如 Fiori 参数卡——没有调模型，不计）
+			var bDet = !s.tool && !s.items.some(function (x) { return x.k === "say"; });
+			if (s.status === "OK" && !bDet) { s.model++; }
 			s.ms = Date.now() - s.t0;
 			s.collapsed = this._rtPrefCollapse();
 			this._rtRender(sUid);
@@ -251,7 +253,7 @@ sap.ui.define([
 			var nSteps = s.items.filter(function (x) { return x.k === "tool"; }).length;
 			var h = '<div class="rt' + (bRun ? " rtRunning" : "") + (s.collapsed ? " rtCollapsed" : "") + '" data-rtuid="' + esc(s.uid) + '">';
 			if (!bRun) {
-				var aMeta = [nSteps + " 步"];
+				var aMeta = nSteps ? [nSteps + " 步"] : [];
 				if (s.ms) { aMeta.push(secs(s.ms)); }
 				if (s.status === "STOPPED") { aMeta.push("已停止"); }
 				if (s.status === "ERROR") { aMeta.push("出错"); }

@@ -49,7 +49,10 @@ window.ZAI_CONFIG = {
         browserAgent: {
                 enabled: true,
                 path: "/sap/bc/zai_agent",
-                /* 20261108（界面改版）：用户没在设置里开 / 关过时的默认值。SAP 上验证稳定后改成 true，大家默认用新引擎 */
+                /* 20261108：Agent 只用新引擎（覆盖原引擎）；浏览器跑不了新引擎时（非 HTTPS 等）才退回原 Agent。
+                 * 改成 false 恢复「设置里开关、默认用 defaultOn」的做法 */
+                only: true,
+                /* only = false 时：用户没在设置里开 / 关过时的默认值 */
                 defaultOn: false,
                 /* 20261108：「新引擎」开关放在输入框下（true）还是只在设置里（false，默认） */
                 toggleInInput: false

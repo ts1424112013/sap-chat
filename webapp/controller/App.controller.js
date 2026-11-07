@@ -2158,8 +2158,10 @@ sap.ui.define([
                         oChat.setProperty("/histLabel",
                                 oRB.getText(sMode === "AGENT" ? "histAgent" : "histChat"));
                         this._syncHeroGreeting();
+                        // 20261108：新引擎里场景只作权限 —— 提示改成「直接说要做什么」
+                        var bBaHint = sMode === "AGENT" && this._baActive && this._baActive() && (!oScene || oScene.key === "AUTO");
                         oChat.setProperty("/heroModeHint", sMode === "AGENT"
-                                ? (oScene ? oScene.sub : oRB.getText("agentHeroSub")) : oRB.getText("heroChatHint"));
+                                ? (bBaHint ? oRB.getText("agentHeroSubBa") : (oScene ? oScene.sub : oRB.getText("agentHeroSub"))) : oRB.getText("heroChatHint"));
                         var sAgentPh = bScene && oScene.ph ? oScene.ph : oRB.getText("agentInputPh");
                         oChat.setProperty("/heroPh",
                                 sMode === "AGENT" ? sAgentPh : oRB.getText("heroPlaceholder"));
@@ -3801,7 +3803,7 @@ sap.ui.define([
                         // 20261020：「报表执行」「Fiori 报表」首页是报表目录（CatalogPanel），不再放示例按钮
                         this._renderCatalog();
                         if (bAgent && this._skillHeroCards(oField)) { return; }
-                        var aList = (bAgent && this._catScene(oSc.key)) ? [] : bAgent
+                        var aList = (bAgent && (this._catScene(oSc.key) || (this._baActive && this._baActive()))) ? [] : bAgent
                                 ? ((oSc && oSc.chips.length)
                                         ? oSc.chips.map(function (s) { return { title: s, prompt: s }; })
                                         : [1, 2, 3, 4].map(function (i) {

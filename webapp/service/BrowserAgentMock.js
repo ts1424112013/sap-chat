@@ -247,8 +247,14 @@ sap.ui.define([], function () {
 				root: root,
 				startRun: function (p) {
 					sQuestion = (p && p.question) || "";
-					// Fiori 场景：同 SAP，先走确定性的一轮；不是「同意分析」就直接回答（不调模型）
-					var oT = scene === "FIORI" && mock.fioriTurn ? mock.fioriTurn() : null;
+					// Fiori：同 SAP V15.23 —— Fiori 场景会话、目录点选「选择报表：…」、或聚焦 Fiori 结果时先走确定性的一轮；
+					// 只是聚焦了 Fiori 结果时只认「同意分析」，其余交给模型
+					var bPick = /^\s*选择报表\s*[:：]/.test(sQuestion);
+					var bFocus = !!(p && p.focusArtifactId && mock.isFioriResult && mock.isFioriResult(p.focusArtifactId));
+					var oT = (scene === "FIORI" || bPick || bFocus) && mock.fioriTurn ? mock.fioriTurn() : null;
+					if (oT && scene !== "FIORI" && !bPick && oT.kind !== "ANALYZE") {
+						oT = null;
+					}
 					if (oT && oT.kind !== "ANALYZE") {
 						var bCard = oT.kind === "CARD" && oT.pending;
 						return wait(200).then(function () {
@@ -309,6 +315,12 @@ sap.ui.define([], function () {
 								parameters: { type: "object", properties: { "function": { type: "string" }, purpose: { type: "string" }, params: { type: "object" } }, required: ["function"] }
 							});
 						}
+						if (mock.fioriTurn) {
+							aTools.push({
+								name: "open_fiori_report", description: "打开 Fiori 报表参数卡",
+								parameters: { type: "object", properties: { report_name: { type: "string" } }, required: ["report_name"] }
+							});
+						}
 						if (bRptScene) {
 							aTools.push({
 								name: "open_report", description: "打开报表参数卡",
@@ -349,6 +361,15 @@ sap.ui.define([], function () {
 							return { ok: true, content: JSON.stringify({ ok: true, datasets: [DS_PLAN] }), datasets: [DS_PLAN] };
 						case "call_function":
 							return { ok: true, content: JSON.stringify({ ok: true, "function": "Z_AI_DEMO_PO_OPEN", dataset: DS_FUNC }), datasets: [DS_FUNC] };
+						case "open_fiori_report":
+							var oFt = mock.fioriTurn ? mock.fioriTurn("选择报表：" + (a.report_name || "")) : null;
+							if (!oFt || oFt.kind !== "CARD" || !oFt.pending) {
+								return { ok: true, content: JSON.stringify({ ok: false, error: (oFt && oFt.answer) || "没有找到这张 Fiori 报表" }) };
+							}
+							return { ok: true, content: "{\"ok\":true,\"card\":true}", card: {
+								tool: "open_fiori_report", taskId: "FTASK" + String(o.sessionId || "").substring(0, 8),
+								taskModule: "FIORI", taskStatus: "WAITING_INPUT", needsInput: true, pendingParamsJson: oFt.pending, answer: oFt.answer
+							} };
 						case "open_report":
 							var sTc = String(a.tcode || "").toUpperCase();
 							var d = aDefs.filter(function (x) { return x.TCODE === sTc; })[0];

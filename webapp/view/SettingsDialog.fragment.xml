@@ -62,7 +62,7 @@
                                         <!-- ========== 连接 ========== -->
                                         <VBox renderType="Bare" class="apvPane" visible="{= ${settings>/setTab} === 'connection' }">
                                                 <!-- 20261108（界面改版）：新引擎开关从输入框移到这里（按账号记在本机） -->
-                                                <VBox class="codeAclCard baSetCard" visible="{= !!${chat>/ba/available} }">
+                                                <VBox class="codeAclCard baSetCard" visible="{= !!${chat>/ba/available} &amp;&amp; !${chat>/ba/only} }">
                                                         <HBox alignItems="Center">
                                                                 <Title level="H5" text="新引擎（浏览器 Agent）" class="codeAclTitle"/>
                                                                 <ToolbarSpacer/>
