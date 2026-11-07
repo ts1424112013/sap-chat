@@ -20,7 +20,7 @@ import {
 import { ReadonlyMemBackend, skillFiles } from "./readonly-backend.js";
 import { summarizeStep, mainArg } from "./step-summary.js";
 
-export const VERSION = "0.5.0";
+export const VERSION = "0.6.0";
 export const MEMORY_FILE = "/灵犀记忆.md";
 /** SAP 管理员维护的技能（只读，SAP /run/start 下发） */
 export const SAP_SKILL_DIR = "/SAP技能/";
@@ -80,6 +80,11 @@ const NO_FOLDER_PROMPT = `用户没有授权本地文件夹；文件工具只能
 
 const SKILL_PROMPT = `技能是做某类事的固定做法：技能清单里有和当前问题相关的，先用 read_file 读它的 SKILL.md，再按做法执行；不相关就不读。`;
 
+const ASK_PROMPT = `不清楚就先问，不要猜：
+- 这几种情况先用 ask_user 问用户：要用哪张报表 / 哪一列 / 哪个条件有两种以上说得通的理解；条件缺了而且猜错会让结果差很多（如期间、工厂、口径）；要做的事和用户原话对不上。
+- 一次只问一个问题，给 2~4 个具体候选（如列名、报表名），候选写短；问题里说清为什么要问。
+- 能从对话、结果、技能、系统说明里确定的不要问；同一件事不要反复问；用户说「你定」时按最常见的做法做并在回答里说明。`;
+
 const EXPORT_PROMPT = `用户要把报表结果存到文件夹（导出、另存、存成 CSV / Excel）时，用 save_result_to_folder：数据由 SAP 直接写进文件，不经过你，不要自己拼表格内容再 write_file。`;
 
 function clip(s, n = MAX_TOOL_CHARS) {
@@ -118,6 +123,48 @@ function buildSapTools(client, run, emit, signal, onCard, onDatasets) {
       schema: t.parameters && typeof t.parameters === "object" ? t.parameters : { type: "object", properties: {} }
     }
   ));
+}
+
+/**
+ * 问用户（只在浏览器里，不经过 SAP）：界面在过程里弹出候选按钮，等用户点。
+ * 用户选「我直接说」时调 onOther 结束本次运行（问题本身就是这次的回答），等用户在输入框里补充。
+ */
+function buildAskTool(ask, track, signal, onOther) {
+  return tool(
+    async ({ question, options }) => {
+      const q = String(question || "").trim().slice(0, 300);
+      const opts = (Array.isArray(options) ? options : []).map(x => String(x || "").trim().slice(0, 80)).filter(Boolean).slice(0, 4);
+      if (!q || opts.length < 2) return "工具执行失败：question 不能为空，options 要给 2~4 个候选";
+      track({ type: "ask", question: q, options: opts });
+      let r;
+      try { r = await ask({ question: q, options: opts }); } catch (e) { r = { cancel: true }; }
+      if (signal && signal.aborted) throw signal.reason || new Error("用户停止");
+      if (!r || r.cancel) {
+        track({ type: "asked", question: q, answer: "", cancel: true });
+        throw new Error("用户停止");
+      }
+      if (r.other) {
+        track({ type: "asked", question: q, answer: "我直接说", other: true });
+        onOther(q);
+        return "用户想自己说明，本次运行结束。";
+      }
+      const a = String(r.answer || "").slice(0, 200);
+      track({ type: "asked", question: q, answer: a });
+      return `用户选择：${a}`;
+    },
+    {
+      name: "ask_user",
+      description: "有不清楚、需要用户拍板的地方时问用户：界面显示问题和候选按钮，返回用户选的那一项。一次只问一个问题。",
+      schema: {
+        type: "object",
+        properties: {
+          question: { type: "string", description: "要问的问题，一句话，说清为什么要问" },
+          options: { type: "array", items: { type: "string" }, description: "2~4 个候选答案，写短（界面另外会给「我直接说」）" }
+        },
+        required: ["question", "options"]
+      }
+    }
+  );
 }
 
 /** 把一份报表结果整份写进文件夹（数据 SAP → 浏览器 → 文件，不经过模型；写前同样要用户确认） */
@@ -174,6 +221,7 @@ export function compactSteps(trace) {
         plan.text = JSON.stringify((e.todos || []).map(t => [String(t.content || "").slice(0, 60), t.status])).slice(0, 1000);
         break;
       case "tool_start": {
+        if (e.tool === "ask_user") break;   // 问答另记一条（asked）
         const s = { k: "tool", id: e.id, tool: e.tool, arg: String(e.arg || "").slice(0, 200), st: "RUNNING", at: e.at };
         byId[e.id] = s; out.push(s); break;
       }
@@ -188,6 +236,9 @@ export function compactSteps(trace) {
           text: (e.approved ? (e.auto ? "已按本次允许自动" : "已同意") : "已拒绝") + e.action + " " + String(e.path || "").slice(0, 120) });
         break;
       case "skill": out.push({ k: "skill", text: String(e.name || "").slice(0, 60) }); break;
+      case "asked":
+        if (!e.cancel) out.push({ k: "note", st: "OK", text: ("问：" + String(e.question || "").slice(0, 120) + " → " + String(e.answer || "")).slice(0, 300) });
+        break;
       case "compacted": out.push({ k: "note", text: "对话较长，已自动压缩" }); break;
       case "card": out.push({ k: "card", tool: e.tool || "" }); break;
       default: break;
@@ -222,6 +273,8 @@ function textOf(m) {
  * @param {(evt)=>void} [o.onEvent] 过程事件
  * @param {FolderBackend} [o.folderBackend] 跨轮复用的文件夹后端（优先于 o.folder）
  * @param {(req:{action,path,before,after})=>Promise<boolean|{approved:boolean,message?:string}>} [o.confirm] 写文件确认
+ * @param {(req:{question:string, options:string[]})=>Promise<{answer?:string, other?:boolean, cancel?:boolean}>} [o.ask]
+ *        问用户（ask_user 工具）；不传时不给模型这个工具
  * @param {AbortSignal} [o.signal]
  * @param {object} [o.sap] createSapClient 参数（base 等）
  * @param {object} [o.client] 测试时注入
@@ -357,6 +410,16 @@ export async function run(o) {
   const tools = buildSapTools(client, runInfo, emit, inner.signal, onCard, onDatasets);
   const canExport = !!(folderBackend && runInfo.export);
   if (canExport) tools.push(buildExportTool(client, runInfo, folderBackend, inner.signal));
+  // 问用户：选「我直接说」时和参数卡一样立即停，问题就是这次的回答
+  let askOther = "";
+  const canAsk = typeof o.ask === "function";
+  if (canAsk) {
+    tools.push(buildAskTool(o.ask, track, inner.signal, q => {
+      if (askOther || card) return;
+      askOther = q;
+      inner.abort(new Error("lingxi-ask"));
+    }));
+  }
 
   // 替换框架默认的对话压缩（同名中间件按名字替换）：按模型上下文和中文比例提前压缩
   const ctxPlan = contextPlan(runInfo.limits && runInfo.limits.contextTokens);
@@ -377,6 +440,7 @@ export async function run(o) {
       folderBackend ? FOLDER_PROMPT : NO_FOLDER_PROMPT,
       skillSources.length ? SKILL_PROMPT : "",
       canExport ? EXPORT_PROMPT : "",
+      canAsk ? ASK_PROMPT : "",
       runInfo.systemPrompt || ""
     ].filter(Boolean).join("\n\n"),
     backend,
@@ -457,8 +521,8 @@ export async function run(o) {
       }
     }
   } catch (e) {
-    if (card && !(o.signal && o.signal.aborted)) {
-      // 参数卡收尾：不是错误
+    if ((card || askOther) && !(o.signal && o.signal.aborted)) {
+      // 参数卡 / 用户要自己说明：正常收尾，不是错误
     } else {
       status = o.signal && o.signal.aborted ? "CANCELLED" : "ERROR";
       errorMsg = (e && e.message) || String(e);
@@ -466,6 +530,7 @@ export async function run(o) {
     }
   }
   if (card && status === "OK") answer = String(card.answer || answer || "请在下面的参数卡里核对参数后提交。");
+  else if (askOther && status === "OK") answer = askOther + "\n\n请在输入框里直接说明。";
 
   try {
     await client.finishRun({

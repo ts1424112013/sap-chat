@@ -142,6 +142,22 @@ async function main() {
     const st7 = run7.steps || [];
     check("精简过程记录交给 SAP（说明 / 工具 / 确认）", st7.some(s => s.k === "say") && st7.some(s => s.k === "tool" && s.tool === "search_tables" && s.st === "OK" && s.sum) &&
       st7.some(s => s.k === "note" && /自动/.test(s.text)) && st7.some(s => s.k === "think") && !JSON.stringify(st7).includes("先找表"), JSON.stringify(st7).slice(0, 400));
+    // ---- 场景八：不清楚就问（ask_user） ----
+    const ev8 = [];
+    let q8 = null;
+    const r8 = await LingxiAgent.run({ question: "场景八A", sap: { base: "/sap/bc/zai_agent" }, onEvent: e => ev8.push(e),
+      ask: async q => { q8 = q; return { answer: "客戶料號" }; } });
+    const run8 = Object.values(await (await fetch("/__runs")).json()).find(x => x.question === "场景八A") || {};
+    check("有问用户界面时：提示词有「不清楚就先问」、工具里有 ask_user", run8.sysHasAskRule === true && run8.hasAskTool === true);
+    check("ask_user 把问题和候选交给界面，用户选的回给模型", q8 && q8.options.length === 2 && /用户选择：客戶料號/.test(r8.answer), r8.answer);
+    check("问答记进精简过程记录（不另记工具行）", (run8.steps || []).some(s => s.k === "note" && /问：.*客戶料號/.test(s.text)) &&
+      !(run8.steps || []).some(s => s.k === "tool" && s.tool === "ask_user"), JSON.stringify(run8.steps));
+    const r8b = await LingxiAgent.run({ question: "场景八B", sap: { base: "/sap/bc/zai_agent" }, ask: async () => ({ other: true }) });
+    const run8b = Object.values(await (await fetch("/__runs")).json()).find(x => x.question === "场景八B") || {};
+    check("选「我直接说」：立即停，问题就是回答，不再调模型", run8b.modelCalls === 1 && run8b.status === "OK" && /要带哪一列/.test(r8b.answer), JSON.stringify({ calls: run8b.modelCalls, a: r8b.answer }));
+    const r8c = await LingxiAgent.run({ question: "场景八C", sap: { base: "/sap/bc/zai_agent" } });
+    const run8c = Object.values(await (await fetch("/__runs")).json()).find(x => x.question === "场景八C") || {};
+    check("没有问用户界面时不给 ask_user", run8c.hasAskTool === false && run8c.sysHasAskRule === false);
     check("网关报超出上下文：压缩后重试，运行照常完成", run6.overflowSent === true && /完成 场景六/.test(r6.answer) && run6.status === "OK", r6.answer);
     $("state").textContent = checks.every(c => c.ok) ? "全部通过" : "有失败";
   } catch (e) {

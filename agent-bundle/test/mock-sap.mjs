@@ -130,6 +130,18 @@ const server = http.createServer(async (req, res) => {
       choices: [{ index: 0, message, finish_reason: calls ? "tool_calls" : "stop" }],
       usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }
     });
+    if (run.question && run.question.includes("场景八")) {
+      // 不清楚就问：第一步 ask_user，第二步按用户选的回答（选「我直接说」时引擎应停下，不再有第二步）
+      run.step8 = (run.step8 || 0) + 1;
+      run.sysHasAskRule = sys.includes("不清楚就先问");
+      run.hasAskTool = (data.tools || []).some(t => t.function && t.function.name === "ask_user");
+      if (run.step8 === 1) {
+        const c = [call("ask_user", { question: "结果里有两列像料号，要带哪一列？", options: ["鴻海料號", "客戶料號"] })];
+        return reply({ role: "assistant", content: "", tool_calls: c }, c);
+      }
+      const t = msgs.filter(m => m.role === "tool").map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("|");
+      return reply({ role: "assistant", content: "完成 场景八 " + t });
+    }
     if (run.question && run.question.includes("场景七")) {
       // 界面改版要的事件：节点说明（content + tool_calls）、深度思考（reasoning_content）、用量、本次都允许
       run.step7 = (run.step7 || 0) + 1;

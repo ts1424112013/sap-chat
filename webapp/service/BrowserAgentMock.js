@@ -97,9 +97,20 @@ sap.ui.define([], function () {
 		}
 	}
 
+	/** 不清楚就问：结果里两列都像料号 → 先问用户带哪一列（演示 ask_user） */
+	function scriptAsk(iStep) {
+		return iStep === 0 ? [call("ask_user", { question: "结果里有两列都像料号，要带哪一列进下一张报表？", options: ["鴻海料號", "客戶料號"] })] : null;
+	}
+
 	function answer(aMsgs, sQ, bFolder, sKind) {
 		var aTool = aMsgs.filter(function (m) { return m.role === "tool"; }).map(textOf);
 		var aLines = ["（演示模式：没有连接 SAP 和模型，下面是固定剧本的结果，用来看浏览器 Agent 的流程。）", ""];
+		if (sKind === "ASK") {
+			var mPick = /用户选择：(.+)/.exec(aTool.join("\n"));
+			aLines.push("- 按你选的「" + (mPick ? mPick[1].trim() : "") + "」这一列去重后带进下一张报表的料号参数。",
+				"- 真实环境下这一步由报表接力工具 prefill_report 生成参数卡，你核对后提交（演示模式不生成）。");
+			return aLines.join("\n");
+		}
 		if (sKind === "PLAN") {
 			aLines.push("- 按受控查询计划统计了物料类型分布：原材料（ROH）最多，9120 个；成品（FERT）1280 个。明细见下方表格，可以直接生成图表。");
 			return aLines.join("\n");
@@ -192,7 +203,8 @@ sap.ui.define([], function () {
 			RESULT: "先找本会话里的库存结果，在全部行上排出前 10，再看要不要存成 CSV。",
 			PLAN: "按受控查询计划统计物料类型分布。",
 			FUNC: "用登记的函数查工厂 1000 的未清采购。",
-			REPORT: "打开报表的参数卡，参数由你确认后提交。"
+			REPORT: "打开报表的参数卡，参数由你确认后提交。",
+			ASK: "结果里有两列像料号，先跟你确认用哪一列。"
 		})[sKind] || "";
 	}
 
@@ -290,6 +302,8 @@ sap.ui.define([], function () {
 							sKind = "FUNC";
 						} else if (bDataScene && /统计|分布|占比|趋势|汇总/.test(sQuestion) && !/结果/.test(sQuestion)) {
 							sKind = "PLAN";
+						} else if (/结果/.test(sQuestion) && /料号|料號/.test(sQuestion) && /带|執行|执行|接力/.test(sQuestion)) {
+							sKind = "ASK";
 						} else if (/结果|导出|存成|另存|排名|最高|最多/.test(sQuestion)) {
 							sKind = "RESULT";
 						}
@@ -451,6 +465,8 @@ sap.ui.define([], function () {
 								calls = scriptFunc(iStep - iOff);
 							} else if (sKind === "REPORT") {
 								calls = scriptReport(iStep - iOff, aMsgs, sQuestion, sTcode);
+							} else if (sKind === "ASK") {
+								calls = scriptAsk(iStep - iOff);
 							} else if (sKind === "RESULT") {
 								calls = scriptResult(iStep - iOff, aMsgs, sQuestion, o.folder);
 							} else {

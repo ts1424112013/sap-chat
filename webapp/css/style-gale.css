@@ -2417,6 +2417,7 @@ body.schedOn .dataTools .dtSched { display: inline-block !important; }
 .rtAskDiff .baDiffNote { font-size: .76rem; color: var(--sub); }
 .rtOpt { display: flex; align-items: center; gap: .6rem; padding: .45rem .8rem; border-top: 1px solid var(--line); cursor: pointer; transition: background .12s; }
 .rtOpt:hover, .rtOpt:focus { background: var(--hover); outline: none; }
+.rtOptOther { color: var(--sub); }
 .rtKey { width: 1.25rem; height: 1.25rem; border-radius: 6px; border: 1px solid var(--line-strong); display: inline-flex; align-items: center; justify-content: center;
         font-size: .74rem; color: var(--text-2); background: var(--bg); flex: none; }
 .rtOpt:hover .rtKey { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }

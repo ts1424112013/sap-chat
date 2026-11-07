@@ -22,7 +22,7 @@ sap.ui.define([
 
 	var TOOL_LABEL = {
 		ls: "列目录", read_file: "读文件", write_file: "写文件", edit_file: "改文件", "delete": "删除文件",
-		glob: "找文件", grep: "搜内容", task: "子任务",
+		glob: "找文件", grep: "搜内容", task: "子任务", ask_user: "问你",
 		search_tables: "查表", describe_table: "表结构", run_sql: "执行查询", sap_data_analysis: "数据分析",
 		resolve_report: "找报表", get_report_parameters: "报表参数", get_report_result: "报表结果",
 		read_program_source: "读源码", call_function: "调用函数", query_result: "查询结果",
@@ -207,6 +207,7 @@ sap.ui.define([
 		 * @param {boolean} o.think
 		 * @param {function(object)} o.onEvent 引擎事件（原样转发，RunTimeline 据此画过程）
 		 * @param {function(object):Promise} o.confirm 改文件确认 {action,path,before,after} → {approved, always}
+		 * @param {function(object):Promise} o.ask 模型问用户 {question, options} → {answer} | {other} | {cancel}
 		 * @param {AbortSignal} o.signal
 		 * @param {function():string} o.authHeader 本地开发经代理时的 Basic 头（部署在 SAP 时为空，走登录 Cookie）
 		 * @param {object} [o.mock] 演示模式的目录数据（reportDefs / skills），见 BrowserAgentMock.createClient
@@ -223,7 +224,9 @@ sap.ui.define([
 				var aChanges = [];
 				var iTools = 0;
 				var onEvent = function (e) {
-					if (e.type === "tool_start") {
+					if (e.type === "tool_start" && e.tool === "ask_user") {
+						// 问用户不算工具步骤（时间线里是问题卡）
+					} else if (e.type === "tool_start") {
 						iTools++;
 						mById[e.id] = { phase: "EXECUTING", status: "RUNNING", tool: e.tool, toolLabel: TOOL_LABEL[e.tool] || e.tool,
 							label: e.arg || mainArg(e.tool, e.args), t: Date.now() };
@@ -249,6 +252,7 @@ sap.ui.define([
 						focusArtifactId: o.focusArtifactId || "" },
 					folderBackend: oFB || undefined,
 					confirm: o.confirm,
+					ask: o.ask,
 					onEvent: onEvent,
 					signal: o.signal,
 					sap: { base: cfg().path }

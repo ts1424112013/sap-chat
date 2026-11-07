@@ -98,6 +98,11 @@ sap.ui.define([
 				s.plan = (e.todos || []).map(function (t) { return { text: t.content, st: t.status }; });
 				break;
 			case "tool_start":
+				if (e.tool === "ask_user") {   // 问用户：由 _rtQuestion 画成问题卡，不另画工具行
+					if (!s.lastWasTool) { s.model++; }
+					s.lastWasTool = true;
+					return;
+				}
 				if (!s.lastWasTool) { s.model++; }
 				s.lastWasTool = true;
 				s.tool++;
@@ -108,6 +113,10 @@ sap.ui.define([
 				s.verb = VERB[e.tool] || "执行中";
 				break;
 			case "tool_end":
+				if (e.tool === "ask_user") {
+					s.lastWasTool = false;
+					return;
+				}
 				oIt = s.byId[e.id];
 				s.lastWasTool = false;
 				if (oIt) {
@@ -170,13 +179,58 @@ sap.ui.define([
 			});
 		},
 
-		/** 选了确认项：0 = 是，1 = 是且本次都不再询问，2 = 否 */
+		/**
+		 * 模型问用户（ask_user）：在时间线里就地出问题卡，候选 + 「我直接说」，
+		 * 返回 Promise<{answer} | {other: true} | {cancel: true}>
+		 */
+		_rtQuestion: function (sUid, req) {
+			var that = this;
+			var s = this._mRt && this._mRt[sUid];
+			if (!s) {
+				return Promise.resolve({ other: true });
+			}
+			return new Promise(function (resolve) {
+				var oIt = { k: "q", question: req.question || "", options: (req.options || []).slice(0, 4), done: null };
+				s.items.push(oIt);
+				s.ask = { item: oIt, resolve: resolve, n: oIt.options.length + 1 };
+				that._rtRender(sUid);
+				that._rtInfo(s);
+				if (that._isNearBottom && that._isNearBottom()) {
+					that._scrollToBottom();
+				}
+			});
+		},
+
+		/** 收掉还开着的确认 / 问题（停止、运行结束时） */
+		_rtCancelAsk: function (sUid) {
+			var s = this._mRt && this._mRt[sUid];
+			if (s && s.ask) {
+				this._rtPick(sUid, s.ask.item.k === "q" ? -1 : 2);
+			}
+		},
+
+		/**
+		 * 选了一项。改文件确认：0 = 是，1 = 是且本次都不再询问，2 = 否；
+		 * 问题卡：0..n-1 = 候选，n = 我直接说，-1 = 停止
+		 */
 		_rtPick: function (sUid, iOpt) {
 			var s = this._mRt && this._mRt[sUid];
 			if (!s || !s.ask) {
 				return;
 			}
 			var a = s.ask;
+			if (a.item.k === "q") {
+				var aOpt = a.item.options;
+				if (iOpt >= aOpt.length + 1) {
+					return;
+				}
+				s.ask = null;
+				a.item.done = iOpt < 0 ? { cancel: true } : (iOpt === aOpt.length ? { other: true } : { answer: aOpt[iOpt] });
+				this._rtRender(sUid);
+				this._rtInfo(s);
+				a.resolve(a.item.done);
+				return;
+			}
 			s.ask = null;
 			a.item.done = iOpt === 2 ? "no" : (iOpt === 1 ? "all" : "yes");
 			this._rtRender(sUid);
@@ -190,8 +244,8 @@ sap.ui.define([
 			if (!s) {
 				return;
 			}
-			if (s.ask) {   // 停止时还开着的确认按「不要」收掉
-				this._rtPick(sUid, 2);
+			if (s.ask) {   // 停止时还开着的确认按「不要」、问题按「停止」收掉
+				this._rtCancelAsk(sUid);
 			}
 			s.status = sStatus === "OK" ? "OK" : (sStatus === "STOPPED" ? "STOPPED" : "ERROR");
 			s.items.forEach(function (x) {
@@ -199,6 +253,8 @@ sap.ui.define([
 			});
 			// 最后给出回答的那一轮（SAP 直接回答的——如 Fiori 参数卡——没有调模型，不计）
 			var bDet = !s.tool && !s.items.some(function (x) { return x.k === "say"; });
+			// 选了「我直接说」：引擎直接收尾，没有最后那一轮模型
+			bDet = bDet || s.items.some(function (x) { return x.k === "q" && x.done && x.done.other; });
 			if (s.status === "OK" && !bDet) { s.model++; }
 			s.ms = Date.now() - s.t0;
 			s.collapsed = this._rtPrefCollapse();
@@ -271,7 +327,8 @@ sap.ui.define([
 			}
 			if (bRun) {
 				h += s.ask
-					? '<div class="rtStatus rtWait">' + IC.hand + "<span>等你确认 · 点选或按 1 / 2 / 3</span></div>"
+					? '<div class="rtStatus rtWait">' + IC.hand + "<span>" + (s.ask.item.k === "q" ? "等你回答" : "等你确认") +
+						" · 点选或按 " + Array.apply(null, { length: s.ask.n || 3 }).map(function (v, k) { return k + 1; }).join(" / ") + "</span></div>"
 					: '<div class="rtStatus">' + IC.spin + '<span class="rtShim">' + esc(s.verb) + "…</span>" +
 						'<span class="rtTimer" data-t0="' + s.t0 + '">' + Math.round((Date.now() - s.t0) / 1000) + " 秒</span>" +
 						'<span class="rtHint">Esc 停止</span></div>';
@@ -308,6 +365,8 @@ sap.ui.define([
 				return '<div class="rtNote">' + IC.note + "<span>参数卡已生成</span></div>";
 			case "ask":
 				return this._rtAskHtml(x);
+			case "q":
+				return this._rtQHtml(x);
 			case "tool":
 				return this._rtToolHtml(x, i);
 			default:
@@ -389,6 +448,23 @@ sap.ui.define([
 				}).join("") + "</div>";
 		},
 
+		_rtQHtml: function (x) {
+			if (x.done) {
+				if (x.done.cancel) {
+					return '<div class="rtNote">' + IC.err + "<span>没有回答：" + esc(x.question) + "</span></div>";
+				}
+				return '<div class="rtNote rtOk">' + IC.ok + "<span>" + esc(x.question) + " → <b>" +
+					esc(x.done.other ? "我直接说" : x.done.answer) + "</b></span></div>";
+			}
+			var aOpt = x.options.concat(["我直接说（在输入框里补充）"]);
+			return '<div class="rtAsk rtQ"><div class="rtAskHead"><b>' + esc(x.question) + "</b>" +
+				'<span class="rtSub">灵犀需要你确认一下再继续</span></div>' +
+				aOpt.map(function (t, k) {
+					return '<div class="rtOpt' + (k === aOpt.length - 1 ? " rtOptOther" : "") + '" data-rt="pick" data-v="' + k +
+						'" role="button" tabindex="0"><span class="rtKey">' + (k + 1) + "</span><span>" + esc(t) + "</span></div>";
+				}).join("") + "</div>";
+		},
+
 		/* ---------------- 输入框下的信息栏 ---------------- */
 
 		_rtInfo: function (s) {
@@ -417,7 +493,7 @@ sap.ui.define([
 						(cur && s.status === "RUNNING" ? " · 正在：" + esc(cur.text) : "") + "</span>");
 				}
 				if (s.status === "RUNNING") {
-					a.push('<span class="rtInfoRun">' + (s.ask ? "等你确认" : esc(s.verb) + "…") + "</span>");
+					a.push('<span class="rtInfoRun">' + (s.ask ? (s.ask.item.k === "q" ? "等你回答" : "等你确认") : esc(s.verb) + "…") + "</span>");
 				}
 			}
 			oChat.setProperty("/ba/infoHtml", '<div class="rtInfo">' + a.join("") + "</div>");
@@ -454,7 +530,7 @@ sap.ui.define([
 					return;
 				}
 				var s = that._mRt[sUid];
-				if (s.ask && !bTyping && /^[123]$/.test(ev.key)) {
+				if (s.ask && !bTyping && /^[1-9]$/.test(ev.key) && Number(ev.key) <= (s.ask.n || 3)) {
 					ev.preventDefault();
 					that._rtPick(sUid, Number(ev.key) - 1);
 				} else if (ev.key === "Escape" && s.status === "RUNNING" && !(sap.m.InstanceManager && sap.m.InstanceManager.hasOpenDialog &&

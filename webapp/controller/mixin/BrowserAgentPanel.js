@@ -339,6 +339,9 @@ sap.ui.define([
 				},
 				confirm: function (req) {
 					return that._rtConfirm(sUid, req);
+				},
+				ask: function (req) {
+					return that._rtQuestion(sUid, req);
 				}
 			}).then(function (r) {
 				that._baSyncFolder(BrowserAgentService.folderInfo());
@@ -374,7 +377,7 @@ sap.ui.define([
 			// 时间线里还在等确认的面板也按「不要」收掉，引擎才能停下来
 			var sRt = this._rtActiveUid && this._rtActiveUid();
 			if (sRt && this._mRt[sRt].ask) {
-				this._rtPick(sRt, 2);
+				this._rtCancelAsk(sRt);
 			}
 			if (this._baAbort) {
 				this._baAbort.abort(new Error("用户停止"));
