@@ -51,6 +51,20 @@ const SCRIPT2 = [
   () => null
 ];
 
+// 场景三：SAP 技能 + 文件夹技能 + 报表结果存到文件夹 + 报表参数卡（拿到卡即停）
+const RPT_TOOLS = [
+  { name: "list_results", description: "列出本会话的报表结果", parameters: { type: "object", properties: {} } },
+  { name: "open_report", description: "打开报表参数卡", parameters: { type: "object", properties: { tcode: { type: "string" } }, required: ["tcode"] } }
+];
+const SAP_SKILLS = [{ id: "SK1", name: "库存盘点", description: "盘点库存、导出库存结果时的做法", body: "MARKER-SKILL 先列结果再导出" }];
+const SCRIPT3 = [
+  () => [call("read_file", { file_path: "/SAP技能/SK1/SKILL.md" })],
+  () => [call("list_results", {})],
+  () => [call("save_result_to_folder", { result_id: "ART1", file_path: "/导出/库存.csv" })],
+  () => [call("open_report", { tcode: "ZMM001" })],
+  () => null
+];
+
 function send(res, code, obj, type = "application/json") {
   res.writeHead(code, { "Content-Type": type + "; charset=utf-8", "Cache-Control": "no-store" });
   res.end(typeof obj === "string" ? obj : JSON.stringify(obj));
@@ -71,6 +85,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/" || url.pathname === "/poc.html") return send(res, 200, fs.readFileSync(path.join(here, "poc.html"), "utf8"), "text/html");
     if (url.pathname === "/lingxi-agent.js") return send(res, 200, fs.readFileSync(path.join(here, "../../webapp/thirdparty/lingxi-agent/lingxi-agent.js"), "utf8"), "text/javascript");
     if (url.pathname === "/__log") return send(res, 200, log);
+    if (url.pathname === "/__runs") return send(res, 200, Object.fromEntries(runs));
     return send(res, 404, { message: "not found" });
   }
   let body = "";
@@ -84,6 +99,10 @@ const server = http.createServer(async (req, res) => {
     if (bad.length) return send(res, 400, { ok: false, message: bad.join("；") });
     const runId = "R" + Date.now().toString(36);
     runs.set(runId, { modelCalls: 0, toolCalls: 0, question: data.question });
+    if (String(data.question || "").includes("场景三")) {
+      return send(res, 200, { runId, model: "mock-model", tools: [...SAP_TOOLS, ...RPT_TOOLS], skills: SAP_SKILLS, export: true,
+        limits: { recursionLimit: 80 }, systemPrompt: "场景：REPORT（模拟）" });
+    }
     return send(res, 200, { runId, model: "mock-model", tools: SAP_TOOLS, limits: { recursionLimit: 80 }, systemPrompt: "场景：DATA（模拟）" });
   }
   if (p === "/chat/completions") {
@@ -108,6 +127,18 @@ const server = http.createServer(async (req, res) => {
     const names = (data.tools || []).map(t => t.function && t.function.name);
     for (const need of ["write_todos", "ls", "read_file", "edit_file", "write_file", "task", "search_tables"]) {
       if (!names.includes(need)) return send(res, 400, { error: { message: "tools 里缺 " + need + "；实际：" + names.join(",") } });
+    }
+    if (run.question && run.question.includes("场景三")) {
+      if (step === 0) {
+        run.sysHasSapSkill = sys.includes("/SAP技能/SK1/SKILL.md") && sys.includes("库存盘点");
+        run.sysHasFolderSkill = sys.includes("项目口径");
+        run.hasExportTool = names.includes("save_result_to_folder");
+      }
+      const toolTexts = msgs.filter(m => m.role === "tool").map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content));
+      if (step === 1) run.skillRead = toolTexts.some(t => t.includes("MARKER-SKILL"));
+      const c3 = (SCRIPT3[step] || (() => null))();
+      if (c3) return reply({ role: "assistant", content: "", tool_calls: c3 }, c3);
+      return reply({ role: "assistant", content: "不应该走到这里：拿到参数卡后应当停止" });
     }
     if (run.question && run.question.includes("场景二")) {
       const c2 = (SCRIPT2[step] || (() => null))();
@@ -135,13 +166,27 @@ const server = http.createServer(async (req, res) => {
     const bad = checkHeaders(req, true);
     if (bad.length || data.runId !== req.headers["x-lingxi-run"]) return send(res, 400, { ok: false, message: bad.join("；") || "运行号不一致" });
     runs.get(data.runId).toolCalls++;
+    if (data.tool === "list_results") return send(res, 200, { ok: true, content: JSON.stringify({ results: [{ id: "ART1", label: "库存结果", rows: 1 }] }) });
+    if (data.tool === "open_report") {
+      return send(res, 200, { ok: true, content: "参数卡已生成", card: {
+        tool: "open_report", taskId: "T1", taskModule: "REPORT", taskStatus: "WAITING_INPUT", needsInput: true,
+        pendingParamsJson: JSON.stringify({ report_id: "ZMM001", tcode: "ZMM001", params: [{ param_id: "WERKS", label: "工厂", required: true }] }),
+        answer: "【报表 测试库存】(ZMM001) 请填参数"
+      } });
+    }
     if (data.tool !== "search_tables") return send(res, 200, { ok: false, message: "工具未授权：" + data.tool });
     if (data.args && data.args.keyword === "坏参数") return send(res, 200, { ok: false, message: "参数被拒绝: keyword 不合法" });
     return send(res, 200, { ok: true, content: JSON.stringify({ rows: [{ TABNAME: "AFKO", DDTEXT: "订单表头" }, { TABNAME: "AFPO", DDTEXT: "订单项目" }], total: 2 }) });
   }
+  if (p === "/results/export") {
+    const bad = checkHeaders(req, true);
+    if (bad.length || data.runId !== req.headers["x-lingxi-run"]) return send(res, 400, { ok: false, message: bad.join("；") || "运行号不一致" });
+    if (data.resultId !== "ART1") return send(res, 200, { ok: false, message: "结果不存在" });
+    return send(res, 200, { ok: true, label: "库存结果", rows: 2, columns: 2, truncated: false, csv: "物料,库存\nM1,10\nM2,\"1,200\"\n" });
+  }
   if (p === "/run/finish") {
     const run = runs.get(data.runId);
-    if (run) Object.assign(run, { status: data.status, answer: data.answer });
+    if (run) Object.assign(run, { status: data.status, answer: data.answer, skillsUsed: data.skillsUsed });
     return send(res, 200, { ok: true });
   }
   return send(res, 404, { message: "unknown " + p });

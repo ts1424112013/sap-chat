@@ -83,6 +83,32 @@ async function main() {
     check("拒绝修改后 Agent 收到拒绝说明", flags.rejected);
     check("SAP 工具返回 ok:false 时运行继续、原因交给模型", flags.toolErr);
     check("拒绝后文件没变", (await text(root, "/工单.csv")) === before2);
+    // ---- 场景三：技能（SAP + 文件夹）+ 结果存到文件夹 + 报表参数卡 ----
+    const sk = await (await (await root.getDirectoryHandle(".lingxi")).getDirectoryHandle("技能", { create: true })).getDirectoryHandle("项目口径", { create: true });
+    const skw = await (await sk.getFileHandle("SKILL.md", { create: true })).createWritable();
+    await skw.write("---\nname: 项目口径\ndescription: 本项目的库存口径\n---\n\n库存按可用库存算\n"); await skw.close();
+    const ev3 = [];
+    const confirms3 = [];
+    const r3 = await LingxiAgent.run({
+      question: "场景三", folderBackend: r.folder, sap: { base: "/sap/bc/zai_agent" },
+      onEvent: e => { ev3.push(e); events.push(e); },
+      confirm: async req => { confirms3.push(req.action + " " + req.path); return true; }
+    });
+    const runs = await (await fetch("/__runs")).json();
+    const run3 = Object.values(runs).find(x => x.question === "场景三") || {};
+    check("系统提示里列出 SAP 技能", run3.sysHasSapSkill);
+    check("系统提示里列出文件夹技能", run3.sysHasFolderSkill);
+    check("读到 SAP 技能正文", run3.skillRead);
+    check("技能使用写回 SAP（skillsUsed）", JSON.stringify(run3.skillsUsed) === '["SK1"]', JSON.stringify(run3.skillsUsed));
+    check("有选文件夹时才有导出工具", run3.hasExportTool);
+    const csv = await text(root, "/导出/库存.csv");   // .text() 会吃掉 BOM，BOM 看原始字节
+    const head = new Uint8Array(await (await (await (await root.getDirectoryHandle("导出")).getFileHandle("库存.csv")).getFile()).slice(0, 3).arrayBuffer());
+    check("结果存成 CSV（带 BOM，数据来自 SAP）", head[0] === 0xEF && head[1] === 0xBB && head[2] === 0xBF && csv.includes('M2,"1,200"'), JSON.stringify(csv.slice(0, 40)));
+    check("存文件前确认", confirms3.length === 1 && confirms3[0] === "新建 /导出/库存.csv", JSON.stringify(confirms3));
+    check("拿到参数卡即停（模型只调 4 次）", run3.modelCalls === 4, "modelCalls=" + run3.modelCalls);
+    check("参数卡交回界面", r3.card && r3.card.taskId === "T1" && /请填参数/.test(r3.answer), r3.answer);
+    check("参数卡写回会话", run3.status === "OK" && /请填参数/.test(run3.answer || ""));
+    check("技能事件", ev3.some(e => e.type === "skill" && e.name === "库存盘点"));
     $("state").textContent = checks.every(c => c.ok) ? "全部通过" : "有失败";
   } catch (e) {
     check("运行", false, (e && e.stack) || e);

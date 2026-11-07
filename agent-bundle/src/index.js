@@ -17,10 +17,16 @@ import { createSapClient, SapAgentError } from "./sap-client.js";
 import {
   FolderBackend, folderSupported, pickFolder, restoreFolder, requestFolderPermission, forgetFolder
 } from "./folder-backend.js";
+import { ReadonlyMemBackend, skillFiles } from "./readonly-backend.js";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 export const MEMORY_FILE = "/灵犀记忆.md";
+/** SAP 管理员维护的技能（只读，SAP /run/start 下发） */
+export const SAP_SKILL_DIR = "/SAP技能/";
+/** 文件夹自带的技能：.lingxi/技能/<名字>/SKILL.md */
+export const FOLDER_SKILL_DIR = "/.lingxi/技能/";
 const MAX_TOOL_CHARS = 60000;
+const CARD_TOOL_TEXT = "参数卡已经显示给用户。本次运行到此结束，不要再调用工具。";
 
 const BASE_PROMPT = `你是「灵犀」，公司内部的 SAP 业务助手，运行在用户浏览器里。
 工作方式：
@@ -37,6 +43,10 @@ const FOLDER_PROMPT = `用户已授权一个本地文件夹，文件工具里的
 
 const NO_FOLDER_PROMPT = `用户没有授权本地文件夹；文件工具只能用来存放本次对话里的中间结果（浏览器内存，刷新即失）。`;
 
+const SKILL_PROMPT = `技能是做某类事的固定做法：技能清单里有和当前问题相关的，先用 read_file 读它的 SKILL.md，再按做法执行；不相关就不读。`;
+
+const EXPORT_PROMPT = `用户要把报表结果存到文件夹（导出、另存、存成 CSV / Excel）时，用 save_result_to_folder：数据由 SAP 直接写进文件，不经过你，不要自己拼表格内容再 write_file。`;
+
 function clip(s, n = MAX_TOOL_CHARS) {
   s = typeof s === "string" ? s : JSON.stringify(s);
   return s.length > n ? s.slice(0, n) + `\n…[已截断，原长 ${s.length} 字符]` : s;
@@ -46,14 +56,21 @@ function rid() {
   return (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2)).replace(/-/g, "");
 }
 
-/** 把 SAP 返回的工具清单包装成 LangChain 工具；执行时再交给 SAP 校验 */
-function buildSapTools(client, run, emit, signal) {
+/**
+ * 把 SAP 返回的工具清单包装成 LangChain 工具；执行时再交给 SAP 校验。
+ * 工具结果带 card（报表参数卡）时交给 onCard：引擎随即结束本次运行，由界面显示参数卡。
+ */
+function buildSapTools(client, run, emit, signal, onCard) {
   return (run.tools || []).map(t => tool(
     async (args) => {
       const requestId = rid();
       const r = await client.execTool({ runId: run.runId, tool: t.name, args: args || {}, requestId }, { signal });
       if (r && r.display) emit({ type: "display", tool: t.name, display: r.display });
       if (r && r.ok === false) return `工具执行失败：${r.message || "未知原因"}`;
+      if (r && r.card && typeof r.card === "object") {
+        onCard(r.card);
+        return CARD_TOOL_TEXT;
+      }
       return clip(r && r.content != null ? r.content : r);
     },
     {
@@ -62,6 +79,41 @@ function buildSapTools(client, run, emit, signal) {
       schema: t.parameters && typeof t.parameters === "object" ? t.parameters : { type: "object", properties: {} }
     }
   ));
+}
+
+/** 把一份报表结果整份写进文件夹（数据 SAP → 浏览器 → 文件，不经过模型；写前同样要用户确认） */
+function buildExportTool(client, run, folderBackend, signal) {
+  return tool(
+    async ({ result_id, file_path }) => {
+      const path = String(file_path || "").trim();
+      if (!/\.csv$/i.test(path)) return "工具执行失败：file_path 要以 .csv 结尾（Excel 可以直接打开 CSV）";
+      let r;
+      try {
+        r = await client.exportResult({ runId: run.runId, resultId: String(result_id || "") }, { signal });
+      } catch (e) {
+        if (signal && signal.aborted) throw e;
+        return `工具执行失败：${(e && e.message) || e}`;
+      }
+      if (!r || typeof r.csv !== "string") return "工具执行失败：SAP 没有返回数据";
+      // 带 BOM：Excel 直接双击打开时中文不乱码
+      const w = await folderBackend.write(path, "﻿" + r.csv);
+      if (w && w.error) return w.error;
+      return `已保存 ${path}：「${r.label || result_id}」${r.rows} 行 × ${r.columns} 列` +
+        (r.truncated ? `（结果超过导出上限，只导出了前 ${r.rows} 行）` : "") + "。";
+    },
+    {
+      name: "save_result_to_folder",
+      description: "把一份报表结果的全部行存成 CSV 文件，放进用户授权的文件夹（写前会让用户确认）。result_id 用 list_results 查到的结果号。",
+      schema: {
+        type: "object",
+        properties: {
+          result_id: { type: "string", description: "结果号（list_results 返回的 id）" },
+          file_path: { type: "string", description: "文件夹里的路径，以 .csv 结尾，如 /报表结果/库存.csv" }
+        },
+        required: ["result_id", "file_path"]
+      }
+    }
+  );
 }
 
 function msgType(m) {
@@ -81,7 +133,9 @@ function textOf(m) {
  * @param {object} o
  * @param {string} o.question
  * @param {Array<{role:'user'|'assistant',content:string}>} [o.history] 之前几轮（已在 SAP 会话里）
- * @param {{sessionId?:string, scene?:string, modelId?:string, think?:boolean}} [o.context]
+ * @param {{sessionId?:string, scene?:string, modelId?:string, think?:boolean, skillId?:string}} [o.context]
+ * 返回 { answer, card?, skills[], changes[], … }；card = SAP 报表参数卡（taskId / taskModule / taskStatus /
+ * needsInput / pendingParamsJson / answer），有卡时 answer 就是卡的说明
  * @param {FileSystemDirectoryHandle} [o.folder] 已授权的文件夹
  * @param {boolean} [o.confirmWrites=true] 写文件前要求确认
  * @param {(evt)=>void} [o.onEvent] 过程事件
@@ -140,10 +194,26 @@ export async function run(o) {
     }
   });
 
+  // 技能：SAP 下发的（只读目录）+ 文件夹里 .lingxi/技能/ 下的（项目自带做法）
+  const sapSkills = skillFiles(runInfo.skills);
+  const skillIdByDir = {};
+  for (const s of runInfo.skills || []) {
+    const p = Object.keys(sapSkills).find(k => sapSkills[k].includes(`sap_skill_id: ${JSON.stringify(String(s.id))}`));
+    if (p) skillIdByDir[p.split("/")[1]] = { id: String(s.id), name: s.name || s.id };
+  }
+  const sapSkillBackend = Object.keys(sapSkills).length ? new ReadonlyMemBackend(sapSkills) : null;
+  let folderHasSkills = false;
+  if (folderBackend) {
+    const l = await folderBackend.ls(FOLDER_SKILL_DIR);
+    folderHasSkills = !l.error && (l.files || []).some(f => f.is_dir);
+  }
+  const skillSources = [...(sapSkillBackend ? [SAP_SKILL_DIR] : []), ...(folderHasSkills ? [FOLDER_SKILL_DIR] : [])];
+
   const backend = (cfg) => {
     const mem = new StateBackend(cfg);
     const routes = { "/large_tool_results/": mem, "/conversation_history/": mem, "/草稿/": mem };
-    return folderBackend ? new CompositeBackend(folderBackend, routes) : mem;
+    if (sapSkillBackend) routes[SAP_SKILL_DIR] = sapSkillBackend;
+    return folderBackend || sapSkillBackend ? new CompositeBackend(folderBackend || mem, routes) : mem;
   };
 
   let memoryFiles;
@@ -152,20 +222,63 @@ export async function run(o) {
     if (!m.error) memoryFiles = [MEMORY_FILE];
   }
 
+  // 报表参数卡：工具拿到卡就停下（和原 Agent 一样，参数由用户在卡上确认后提交，聊天里不执行报表）
+  const inner = new AbortController();
+  if (o.signal) {
+    if (o.signal.aborted) inner.abort(o.signal.reason);
+    else o.signal.addEventListener("abort", () => inner.abort(o.signal.reason), { once: true });
+  }
+  let card = null;
+  const onCard = c => {
+    if (card) return;
+    card = c;
+    track({ type: "card", tool: c.tool || "", taskId: c.taskId || "" });
+    // 立即停：不能再发下一轮模型请求（SAP 会照样转发给模型，白花一次调用）
+    inner.abort(new Error("lingxi-card"));
+  };
+
+  const tools = buildSapTools(client, runInfo, emit, inner.signal, onCard);
+  const canExport = !!(folderBackend && runInfo.export);
+  if (canExport) tools.push(buildExportTool(client, runInfo, folderBackend, inner.signal));
+
   const agent = createDeepAgent({
     name: "lingxi",
     model,
-    tools: buildSapTools(client, runInfo, emit, o.signal),
-    systemPrompt: [BASE_PROMPT, folderBackend ? FOLDER_PROMPT : NO_FOLDER_PROMPT, runInfo.systemPrompt || ""].filter(Boolean).join("\n\n"),
+    tools,
+    systemPrompt: [
+      BASE_PROMPT,
+      folderBackend ? FOLDER_PROMPT : NO_FOLDER_PROMPT,
+      skillSources.length ? SKILL_PROMPT : "",
+      canExport ? EXPORT_PROMPT : "",
+      runInfo.systemPrompt || ""
+    ].filter(Boolean).join("\n\n"),
     backend,
     memory: memoryFiles,
+    skills: skillSources.length ? skillSources : undefined,
     // deepagents 1.16 起待办工具只给部分模型默认开启，这里显式加上。
     // 改文件确认不用框架的 interrupt（浏览器里没有异步上下文），由文件夹后端自己等用户点确认。
     middleware: [todoListMiddleware()]
   });
 
   const messages = [...(o.history || []).map(h => ({ role: h.role, content: h.content })), { role: "user", content: o.question }];
-  const config = { configurable: { thread_id: runInfo.runId }, recursionLimit: (runInfo.limits && runInfo.limits.recursionLimit) || 120, signal: o.signal };
+  const config = { configurable: { thread_id: runInfo.runId }, recursionLimit: (runInfo.limits && runInfo.limits.recursionLimit) || 120, signal: inner.signal };
+
+  const skillsUsed = new Map();
+  const noteSkill = (toolName, args) => {
+    if (toolName !== "read_file" || !args) return;
+    const p = String(args.file_path || args.path || "");
+    let m = p.match(/^\/SAP技能\/([^/]+)\/SKILL\.md$/);
+    if (m && skillIdByDir[m[1]] && !skillsUsed.has(skillIdByDir[m[1]].id)) {
+      skillsUsed.set(skillIdByDir[m[1]].id, skillIdByDir[m[1]].name);
+      track({ type: "skill", source: "SAP", id: skillIdByDir[m[1]].id, name: skillIdByDir[m[1]].name });
+      return;
+    }
+    m = p.match(/^\/\.lingxi\/技能\/([^/]+)\/SKILL\.md$/);
+    if (m && !skillsUsed.has("folder:" + m[1])) {
+      skillsUsed.set("folder:" + m[1], m[1]);
+      track({ type: "skill", source: "FOLDER", id: "", name: m[1] });
+    }
+  };
 
   let answer = "";
   let status = "OK";
@@ -184,6 +297,7 @@ export async function run(o) {
               const calls = m.tool_calls || [];
               for (const c of calls) {
                 if (c.name === "write_todos") continue;
+                noteSkill(c.name, c.args);
                 track({ type: "tool_start", id: c.id, tool: c.name, args: c.args });
               }
               const t = textOf(m);
@@ -199,18 +313,30 @@ export async function run(o) {
       }
     }
   } catch (e) {
-    status = o.signal && o.signal.aborted ? "CANCELLED" : "ERROR";
-    errorMsg = (e && e.message) || String(e);
-    track({ type: "error", message: errorMsg, status: e && e.status });
+    if (card && !(o.signal && o.signal.aborted)) {
+      // 参数卡收尾：不是错误
+    } else {
+      status = o.signal && o.signal.aborted ? "CANCELLED" : "ERROR";
+      errorMsg = (e && e.message) || String(e);
+      track({ type: "error", message: errorMsg, status: e && e.status });
+    }
   }
+  if (card && status === "OK") answer = String(card.answer || answer || "请在下面的参数卡里核对参数后提交。");
 
   try {
-    await client.finishRun({ runId: runInfo.runId, status, answer, message: errorMsg, trace: trace.slice(-200) });
+    await client.finishRun({
+      runId: runInfo.runId, status, answer, message: errorMsg, trace: trace.slice(-200),
+      skillsUsed: [...skillsUsed.keys()].filter(k => !k.startsWith("folder:"))
+    });
   } catch (e) { emit({ type: "warn", message: "运行结果未能写回 SAP 会话：" + e.message }); }
 
   emit({ type: "phase", phase: "done", status });
   if (status !== "OK") throw Object.assign(new Error(errorMsg || status), { status, trace, runId: runInfo.runId });
-  return { answer, runId: runInfo.runId, trace, changes: folderBackend ? folderBackend.changes.slice() : [], elapsedMs: Date.now() - started, folder: folderBackend };
+  return {
+    answer, runId: runInfo.runId, trace, card,
+    skills: [...skillsUsed.values()],
+    changes: folderBackend ? folderBackend.changes.slice() : [], elapsedMs: Date.now() - started, folder: folderBackend
+  };
 }
 
 export {

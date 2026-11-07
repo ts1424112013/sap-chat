@@ -6,7 +6,10 @@
  *        → { runId, model, tools:[{name,description,parameters}], limits, systemPrompt }
  *   POST {base}/chat/completions  OpenAI 兼容；头 X-Lingxi-Run 指明运行号；SAP 用自己的模型配置转发
  *   POST {base}/tools/exec        { runId, tool, args, requestId } → { ok, content, message, display? }
- *   POST {base}/run/finish        { runId, status, answer, trace }
+ *   POST {base}/run/finish        { runId, status, answer, trace, skillsUsed }
+ *   POST {base}/results/export    { runId, resultId } → { ok, label, rows, columns, csv, truncated }
+ *   /tools/exec 的结果可带 card（报表参数卡：taskId / taskModule / taskStatus / needsInput / pendingParamsJson / answer），
+ *   引擎拿到后立刻结束本次运行，由界面显示参数卡
  *
  * 同源、沿用 SAP 登录 Cookie；每个请求都带 X-Lingxi-Agent 头（SAP 端据此 + Origin 防跨站）。
  * 浏览器不持有模型密钥；模型 SDK 加的 Authorization（Bearer）一律去掉，避免 ICF 把它当登录凭据；
@@ -90,6 +93,7 @@ export function createSapClient({ base = "/sap/bc/zai_agent", origin, timeoutMs 
     startRun: (p, o) => post("/run/start", p, o),
     execTool: (p, o) => post("/tools/exec", p, { ...o, runId: p.runId, okFalseThrows: false }),
     finishRun: (p, o) => post("/run/finish", p, { ...o, runId: p.runId }),
+    exportResult: (p, o) => post("/results/export", p, { ...o, runId: p.runId }),
     modelFetch
   };
 }
