@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>灵犀浏览器引擎自测</title>
+<style>
+  body { font: 14px/1.6 system-ui, sans-serif; margin: 16px; background: #fff; color: #222; }
+  pre { background: #f5f5f5; padding: 8px; white-space: pre-wrap; max-height: 360px; overflow: auto; }
+  .ok { color: #0a7a3a; } .bad { color: #b00020; }
+</style>
+</head>
+<body>
+<h3>灵犀浏览器引擎自测（模拟 SAP + 浏览器私有存储当文件夹）</h3>
+<button id="go">运行</button> <span id="state">未运行</span>
+<h4>检查结果</h4><div id="checks"></div>
+<h4>过程事件</h4><pre id="events"></pre>
+<script src="/lingxi-agent.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const events = [];
+const checks = [];
+function check(name, ok, detail) { checks.push({ name, ok, detail }); $("checks").innerHTML = checks.map(c => `<div class="${c.ok ? "ok" : "bad"}">${c.ok ? "✔" : "✘"} ${c.name}${c.detail ? " — " + c.detail : ""}</div>`).join(""); }
+async function text(dir, path) {
+  let d = dir; const parts = path.split("/").filter(Boolean);
+  for (const p of parts.slice(0, -1)) d = await d.getDirectoryHandle(p);
+  return (await (await d.getFileHandle(parts[parts.length - 1])).getFile()).text();
+}
+async function main() {
+  $("state").textContent = "运行中…";
+  const root = await navigator.storage.getDirectory();
+  // 每次干净开始
+  for await (const [name] of root.entries()) await root.removeEntry(name, { recursive: true });
+  const f = await root.getFileHandle("工单.csv", { create: true });
+  const w = await f.createWritable(); await w.write("工单,状态\n1001,未完工\n1002,未完工\n"); await w.close();
+
+  const netBefore = performance.getEntriesByType("resource").length;
+  const confirms = [];
+  window.__result = null;
+  try {
+    const r = await LingxiAgent.run({
+      question: "把 1001 改成已完工，写个汇总",
+      folder: root,
+      sap: { base: "/sap/bc/zai_agent" },
+      onEvent: e => { events.push(e); $("events").textContent = events.map(x => JSON.stringify(x)).join("\n"); },
+      confirm: async req => { confirms.push(req.action + " " + req.path); return true; }
+    });
+    window.__result = r;
+    check("回答", /完成/.test(r.answer), r.answer);
+    check("待办清单出现并更新", events.filter(e => e.type === "todos").length >= 2);
+    check("调了 SAP 工具", events.some(e => e.type === "tool_end" && e.tool === "search_tables" && e.ok));
+    check("读了文件", events.some(e => e.type === "tool_end" && e.tool === "read_file" && /1001/.test(e.preview)));
+    check("改文件前确认 3 次", confirms.length === 3, JSON.stringify(confirms));
+    check("CSV 被改", (await text(root, "/工单.csv")).includes("1001,已完工"));
+    check("汇总新建", (await text(root, "/汇总.md")).includes("工单汇总"));
+    check("记忆文件写入", (await text(root, "/灵犀记忆.md")).includes("灵犀记忆"));
+    const bk = await (await root.getDirectoryHandle(".lingxi")).getDirectoryHandle("备份");
+    let backupOk = false;
+    for await (const [, sess] of bk.entries()) backupOk = (await text(sess, "/工单.csv")).includes("1001,未完工");
+    check("改之前有备份（原内容）", backupOk);
+    check("修改记录", (await text(root, "/.lingxi/修改记录.md")).split("\n").filter(l => l.startsWith("| 20")).length === 3);
+    const undo = await r.folder.undoLast();
+    let memGone = false; try { await text(root, "/灵犀记忆.md"); } catch (e) { memGone = true; }
+    check("撤回最后一次（新建的记忆文件被删）", !undo.error && memGone, JSON.stringify(undo));
+    const res = performance.getEntriesByType("resource").slice(netBefore).map(e => e.name);
+    const foreign = res.filter(u => !u.startsWith(location.origin));
+    check("没有外网请求", foreign.length === 0, foreign.join(", "));
+    const log = await (await fetch("/__log")).json();
+    check("SAP 请求都带头、无 Authorization", log.every(l => l.headers.agent === "1" && !l.headers.auth));
+    check("模型调用都带运行号", log.filter(l => l.path === "/chat/completions").every(l => l.headers.run));
+    // ---- 场景二：已有记忆文件、子 Agent、用户拒绝修改 ----
+    const mf = await root.getFileHandle("灵犀记忆.md", { create: true });
+    const mw = await mf.createWritable(); await mw.write("# 灵犀记忆\n\n- MARKER-42 工单号一律四位\n"); await mw.close();
+    const before2 = await text(root, "/工单.csv");
+    const r2 = await LingxiAgent.run({
+      question: "场景二", folderBackend: r.folder, sap: { base: "/sap/bc/zai_agent" },
+      onEvent: e => events.push(e),
+      confirm: async req => ({ approved: false, message: "先别改" })
+    });
+    const flags = JSON.parse(r2.answer.replace(/^FLAGS /, ""));
+    check("下次运行读到记忆文件", flags.memory, r2.answer);
+    check("子 Agent 返回结果", flags.subagent);
+    check("拒绝修改后 Agent 收到拒绝说明", flags.rejected);
+    check("拒绝后文件没变", (await text(root, "/工单.csv")) === before2);
+    $("state").textContent = checks.every(c => c.ok) ? "全部通过" : "有失败";
+  } catch (e) {
+    check("运行", false, (e && e.stack) || e);
+    $("state").textContent = "出错";
+  }
+  window.__checks = checks;
+}
+$("go").onclick = main;
+</script>
+</body>
+</html>

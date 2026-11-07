@@ -4,8 +4,22 @@
     {
       "name": "gale-ui5",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["ui5", "serve", "--port", "8080"],
+      "runtimeArgs": [
+        "ui5",
+        "serve",
+        "--port",
+        "8080"
+      ],
       "port": 8080
+    },
+    {
+      "name": "agent-poc",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "agent-bundle/test/mock-sap.mjs",
+        "8091"
+      ],
+      "port": 8091
     }
   ]
 }
