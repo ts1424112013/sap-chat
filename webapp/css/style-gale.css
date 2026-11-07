@@ -2448,7 +2448,6 @@ body.schedOn .dataTools .dtSched { display: inline-block !important; }
 @media (prefers-reduced-motion: reduce) { .rtSpin, .rtShim, .rtTool, .rtAsk { animation: none; } .rtShim { color: var(--text-2); } }
 /* 输入框下的信息栏 */
 .rtInfo { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .9rem; padding: .3rem .25rem 0; font-size: .74rem; color: var(--sub); }
-.rtInfoEng { color: var(--text-2); }
 .rtInfoPlan { color: var(--text-2); max-width: 22rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rtInfoRun { color: var(--accent); margin-left: auto; }
 .rtMeter { display: inline-block; width: 46px; height: 4px; border-radius: 2px; background: var(--line); vertical-align: middle; overflow: hidden; }

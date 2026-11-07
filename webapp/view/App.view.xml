@@ -199,6 +199,13 @@
                                                                                         <Button icon="sap-icon://refresh" type="Transparent" tooltip="重新读取技能" press=".onRefreshSkills"
                                                                                                 visible="{= !!${skill>/error} }" enabled="{= !${chat>/busy} }" class="skillRetry"/>
                                                                                 </HBox>
+                                                                                <!-- 20261108：文件夹放在模型选择左边 -->
+                                                                                <Button id="baFolderHero" icon="sap-icon://folder-blank" type="Transparent"
+                                                                                        text="{parts: [{path: 'chat>/ba/folderName'}, {path: 'chat>/ba/folderState'}], formatter: '.fmtBaFolderText'}"
+                                                                                        tooltip="{parts: [{path: 'chat>/ba/folderName'}, {path: 'chat>/ba/folderState'}], formatter: '.fmtBaFolderTip'}"
+                                                                                        visible="{parts: [{path: 'chat>/workspaceMode'}, {path: 'chat>/ba/available'}, {path: 'chat>/ba/on'}, {path: 'chat>/ba/folderSupported'}], formatter: '.fmtBaFolderVisible'}"
+                                                                                        enabled="{= !${chat>/busy} }" press=".onBaFolder"
+                                                                                        class="thinkPill baFolder"/>
                                                                                 <Button id="modelBtnHero" icon="sap-icon://machine" text="{chat>/currentModelName}" tooltip="{i18n>modelPickTip}"
                                                                                         type="Transparent" press=".onOpenModelPicker" class="modelPill"/>
                                                                                 <!-- 20261029：深度思考（模型配了思考参数 + 后端有 Think 参数时显示；点一下开 / 关，按模型记在本浏览器） -->
@@ -213,17 +220,12 @@
                                                                                         pressed="{chat>/ba/on}"
                                                                                         tooltip="在浏览器里运行 Agent（会列计划、能派子任务、能读写你选的文件夹）。关掉就回到原 Agent"
                                                                                         enabled="{= !${chat>/busy} }" press=".onToggleBrowserAgent" class="thinkPill baPill"/>
-                                                                                <Button id="baFolderHero" icon="sap-icon://folder-blank" type="Transparent"
-                                                                                        text="{parts: [{path: 'chat>/ba/folderName'}, {path: 'chat>/ba/folderState'}], formatter: '.fmtBaFolderText'}"
-                                                                                        tooltip="{parts: [{path: 'chat>/ba/folderName'}, {path: 'chat>/ba/folderState'}], formatter: '.fmtBaFolderTip'}"
-                                                                                        visible="{parts: [{path: 'chat>/workspaceMode'}, {path: 'chat>/ba/available'}, {path: 'chat>/ba/on'}, {path: 'chat>/ba/folderSupported'}], formatter: '.fmtBaFolderVisible'}"
-                                                                                        enabled="{= !${chat>/busy} }" press=".onBaFolder"
-                                                                                        class="thinkPill baFolder"/>
                                                                                 <!-- V9.3：文本附件上传 + 发送；
                                                                                      V13：Agent 模式下附件按钮保留（作为上下文）
                                                                                      20261012：inputActions 恒靠右（Agent 模式左侧角色区隐藏时不再被挤到左下角） -->
                                                                                 <HBox alignItems="Center" class="inputActions">
                                                                                         <u:FileUploader id="attachHero"
+                                                                                                visible="{parts: [{path: 'chat>/workspaceMode'}, {path: 'chat>/ba/on'}], formatter: '.fmtAttachVisible'}"
                                                                                                 buttonOnly="true"
                                                                                                 buttonText=""
                                                                                                 icon="sap-icon://attachment"
@@ -327,6 +329,13 @@
                                                                                         <Button icon="sap-icon://refresh" type="Transparent" tooltip="重新读取技能" press=".onRefreshSkills"
                                                                                                 visible="{= !!${skill>/error} }" enabled="{= !${chat>/busy} }" class="skillRetry"/>
                                                                                 </HBox>
+                                                                                <!-- 20261108：文件夹放在模型选择左边 -->
+                                                                                <Button id="baFolderDock" icon="sap-icon://folder-blank" type="Transparent"
+                                                                                        text="{parts: [{path: 'chat>/ba/folderName'}, {path: 'chat>/ba/folderState'}], formatter: '.fmtBaFolderText'}"
+                                                                                        tooltip="{parts: [{path: 'chat>/ba/folderName'}, {path: 'chat>/ba/folderState'}], formatter: '.fmtBaFolderTip'}"
+                                                                                        visible="{parts: [{path: 'chat>/workspaceMode'}, {path: 'chat>/ba/available'}, {path: 'chat>/ba/on'}, {path: 'chat>/ba/folderSupported'}], formatter: '.fmtBaFolderVisible'}"
+                                                                                        enabled="{= !${chat>/busy} }" press=".onBaFolder"
+                                                                                        class="thinkPill baFolder"/>
                                                                                 <Button id="modelBtnDock" icon="sap-icon://machine" text="{chat>/currentModelName}" tooltip="{i18n>modelPickTip}"
                                                                                         type="Transparent" press=".onOpenModelPicker" class="modelPill"/>
                                                                                 <!-- 20261029：深度思考（模型配了思考参数 + 后端有 Think 参数时显示；点一下开 / 关，按模型记在本浏览器） -->
@@ -341,16 +350,11 @@
                                                                                         pressed="{chat>/ba/on}"
                                                                                         tooltip="在浏览器里运行 Agent（会列计划、能派子任务、能读写你选的文件夹）。关掉就回到原 Agent"
                                                                                         enabled="{= !${chat>/busy} }" press=".onToggleBrowserAgent" class="thinkPill baPill"/>
-                                                                                <Button id="baFolderDock" icon="sap-icon://folder-blank" type="Transparent"
-                                                                                        text="{parts: [{path: 'chat>/ba/folderName'}, {path: 'chat>/ba/folderState'}], formatter: '.fmtBaFolderText'}"
-                                                                                        tooltip="{parts: [{path: 'chat>/ba/folderName'}, {path: 'chat>/ba/folderState'}], formatter: '.fmtBaFolderTip'}"
-                                                                                        visible="{parts: [{path: 'chat>/workspaceMode'}, {path: 'chat>/ba/available'}, {path: 'chat>/ba/on'}, {path: 'chat>/ba/folderSupported'}], formatter: '.fmtBaFolderVisible'}"
-                                                                                        enabled="{= !${chat>/busy} }" press=".onBaFolder"
-                                                                                        class="thinkPill baFolder"/>
                                                                                 <!-- V9.3：文本附件上传（V13：Agent 模式保留 —— 附件作为任务上下文拼入提问）
                                                                                      20261012：inputActions 恒靠右 -->
                                                                                 <HBox alignItems="Center" class="inputActions">
                                                                                         <u:FileUploader id="attachDock"
+                                                                                                visible="{parts: [{path: 'chat>/workspaceMode'}, {path: 'chat>/ba/on'}], formatter: '.fmtAttachVisible'}"
                                                                                                 buttonOnly="true"
                                                                                                 buttonText=""
                                                                                                 icon="sap-icon://attachment"

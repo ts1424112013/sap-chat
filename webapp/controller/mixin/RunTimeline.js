@@ -473,7 +473,6 @@ sap.ui.define([
 				return;
 			}
 			var a = [];
-			a.push('<span class="rtInfoEng">新引擎 · ' + esc(oChat.getProperty("/currentModelName") || "") + "</span>");
 			var sFolder = oChat.getProperty("/ba/folderName");
 			if (sFolder) {
 				a.push("<span>文件夹 " + esc(sFolder) + "</span>");
@@ -496,7 +495,7 @@ sap.ui.define([
 					a.push('<span class="rtInfoRun">' + (s.ask ? (s.ask.item.k === "q" ? "等你回答" : "等你确认") : esc(s.verb) + "…") + "</span>");
 				}
 			}
-			oChat.setProperty("/ba/infoHtml", '<div class="rtInfo">' + a.join("") + "</div>");
+			oChat.setProperty("/ba/infoHtml", a.length ? '<div class="rtInfo">' + a.join("") + "</div>" : "");
 		},
 
 		/* ---------------- 交互 ---------------- */

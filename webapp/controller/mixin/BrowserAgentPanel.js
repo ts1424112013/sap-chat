@@ -173,6 +173,10 @@ sap.ui.define([
 			var oCfgBa = (window.ZAI_CONFIG && window.ZAI_CONFIG.browserAgent) || {};
 			return sWorkspace === "AGENT" && !!bAvail && oCfgBa.toggleInInput === true;
 		},
+		/** 附件按钮：新引擎下隐藏（文件交给「选择文件夹」，模型按需读，不整份塞进提问） */
+		fmtAttachVisible: function (sWorkspace, bOn) {
+			return !(sWorkspace === "AGENT" && !!bOn);
+		},
 		fmtBaFolderVisible: function (sWorkspace, bAvail, bOn, bFs) {
 			return sWorkspace === "AGENT" && !!bAvail && !!bOn && !!bFs;
 		},
