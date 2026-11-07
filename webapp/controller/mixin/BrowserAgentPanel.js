@@ -283,6 +283,11 @@ sap.ui.define([
 				think: p.think === "X",
 				signal: oAbort.signal,
 				authHeader: function () { return ChatService._basicHeader ? ChatService._basicHeader() : ""; },
+				// 演示模式：报表目录与技能清单取 ChatService 的演示数据（真实环境由 SAP /run/start 下发）
+				mock: ChatService.getMode() === "mock" ? {
+					reportDefs: function () { return ChatService._mockReportDefs ? ChatService._mockReportDefs() : null; },
+					skills: function () { return ChatService.getSkills ? ChatService.getSkills({ scene: p.scene, sessionId: p.sessionId }) : null; }
+				} : null,
 				onSteps: function (aSteps) {
 					if (!oLive.stopped) {
 						that._applyLive(sUid, aSteps, false, oLive);

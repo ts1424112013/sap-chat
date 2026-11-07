@@ -26,7 +26,10 @@ sap.ui.define([
 		search_tables: "查表", describe_table: "表结构", run_sql: "执行查询", sap_data_analysis: "数据分析",
 		resolve_report: "找报表", get_report_parameters: "报表参数", get_report_result: "报表结果",
 		read_program_source: "读源码", call_function: "调用函数", query_result: "查询结果",
-		resolve_material: "物料", get_stock_snapshot: "库存", get_daily_movement: "出入库", get_batch_stock: "批次库存"
+		resolve_material: "物料", get_stock_snapshot: "库存", get_daily_movement: "出入库", get_batch_stock: "批次库存",
+		// 20261107 M2：报表 / 结果 / 存到文件夹
+		list_results: "我的结果", read_result: "读结果", lookup_by_result: "关联查表",
+		open_report: "报表参数卡", prefill_report: "预填参数卡", save_result_to_folder: "存到文件夹"
 	};
 
 	function cfg() {
@@ -53,7 +56,8 @@ sap.ui.define([
 
 	function mainArg(sTool, oArgs) {
 		var o = oArgs || {};
-		return o.file_path || o.path || o.pattern || o.keyword || o.description || o.table || o.tabname || "";
+		return o.file_path || o.path || o.pattern || o.keyword || o.description || o.table || o.tabname ||
+			o.tcode || o.purpose || "";
 	}
 
 	var Service = {
@@ -196,6 +200,7 @@ sap.ui.define([
 		 * @param {function(object):Promise} o.confirm 改文件确认 {action,path,before,after} → {approved}
 		 * @param {AbortSignal} o.signal
 		 * @param {function():string} o.authHeader 本地开发经代理时的 Basic 头（部署在 SAP 时为空，走登录 Cookie）
+		 * @param {object} [o.mock] 演示模式的目录数据（reportDefs / skills），见 BrowserAgentMock.createClient
 		 * @returns {Promise<object>} 与 ChatService.sendTask 同形
 		 */
 		send: function (o) {
@@ -259,6 +264,19 @@ sap.ui.define([
 							addStep({ phase: "NOTE", status: "OK", label: e.text.trim().slice(0, 300) });
 						}
 						break;
+					case "skill":
+						addStep({ phase: "NOTE", status: "OK", label: "使用技能：" + e.name + (e.source === "FOLDER" ? "（文件夹）" : "") });
+						break;
+					case "card":
+						// 参数卡出来引擎就停了，这一步的工具没有 tool_end：在这里收口
+						aSteps.forEach(function (s) {
+							if (s.status === "RUNNING" && (!e.tool || s.tool === e.tool)) {
+								s.status = "OK";
+								s.elapsedMs = Date.now() - s.t;
+							}
+						});
+						addStep({ phase: "NOTE", status: "OK", label: "参数卡已生成，请在下面核对参数后提交" });
+						break;
 					default:
 						return;
 					}
@@ -277,7 +295,7 @@ sap.ui.define([
 					sap: { base: cfg().path }
 				};
 				if (that.useMock) {
-					oRun.client = BrowserAgentMock.createClient({ folder: !!oFB, scene: o.scene });
+					oRun.client = BrowserAgentMock.createClient({ folder: !!oFB, scene: o.scene, sessionId: o.sessionId, mock: o.mock });
 				} else if (o.authHeader && o.authHeader()) {
 					oRun.client = LA.createSapClient({ base: cfg().path, authHeader: o.authHeader() });
 				}
@@ -287,7 +305,17 @@ sap.ui.define([
 						sAnswer += "\n\n**本次改动的文件**（改之前的原样在 `.lingxi/备份/`，可在文件夹菜单里撤回）\n" +
 							aChanges.map(function (c) { return "- " + c.action + "　`" + c.path + "`"; }).join("\n");
 					}
-					return that._result(r, sAnswer, aSteps, iTools, t0, "OK", "", o.modelId);
+					var res = that._result(r, sAnswer, aSteps, iTools, t0, "OK", "", o.modelId);
+					// 报表参数卡：和原 Agent 同形的任务字段，控制器照常挂内联参数卡（_updateTaskState / _attachAskCard）
+					var c = r.card;
+					if (c && c.taskId) {
+						res.taskId = c.taskId;
+						res.taskModule = c.taskModule || "REPORT";
+						res.taskStatus = c.taskStatus || "WAITING_INPUT";
+						res.needsInput = c.needsInput !== false;
+						res.pendingParamsJson = c.pendingParamsJson || "";
+					}
+					return res;
 				}, function (e) {
 					var bStop = o.signal && o.signal.aborted;
 					var res = that._result({ trace: e && e.trace }, "", aSteps, iTools, t0, bStop ? "STOPPED" : "ERROR",
