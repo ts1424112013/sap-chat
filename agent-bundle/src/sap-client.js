@@ -49,7 +49,7 @@ export function createSapClient({ base = "/sap/bc/zai_agent", origin, timeoutMs 
     return h;
   }
 
-  async function post(path, body, { runId, signal } = {}) {
+  async function post(path, body, { runId, signal, okFalseThrows = true } = {}) {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(new Error("timeout")), timeoutMs);
     if (signal) signal.addEventListener("abort", () => ctl.abort(signal.reason), { once: true });
@@ -70,7 +70,8 @@ export function createSapClient({ base = "/sap/bc/zai_agent", origin, timeoutMs 
       const msg = (data && (data.message || (data.error && data.error.message))) || `SAP 返回 ${res.status}`;
       throw new SapAgentError(msg, res.status, data || text.slice(0, 500));
     }
-    if (data && data.ok === false && data.message) throw new SapAgentError(data.message, res.status, data);
+    // 工具执行的 ok:false 是给模型看的失败原因（参数被拒等），不终止运行
+    if (okFalseThrows && data && data.ok === false && data.message) throw new SapAgentError(data.message, res.status, data);
     return data;
   }
 
@@ -87,7 +88,7 @@ export function createSapClient({ base = "/sap/bc/zai_agent", origin, timeoutMs 
   return {
     root,
     startRun: (p, o) => post("/run/start", p, o),
-    execTool: (p, o) => post("/tools/exec", p, { ...o, runId: p.runId }),
+    execTool: (p, o) => post("/tools/exec", p, { ...o, runId: p.runId, okFalseThrows: false }),
     finishRun: (p, o) => post("/run/finish", p, { ...o, runId: p.runId }),
     modelFetch
   };

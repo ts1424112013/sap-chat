@@ -432,9 +432,12 @@ check('save_audit 声明 it_calls（OPTIONAL），主流程传入 lt_llm_calls',
   /it_calls\s+TYPE tt_llm_call OPTIONAL/.test(ag) && /it_trace\s+= lt_trace\s+it_calls\s+= lt_llm_calls \)/.test(ag));
 check('log_llm_call：SUMMARY 截到 200 字符；网关没返回写"未返回"',
   /IF strlen\( lv_sum \) > 200\.\s*lv_sum = lv_sum\(200\)\./.test(methodOf(ag, 'log_llm_call')) && /`未返回`/.test(methodOf(ag, 'log_llm_call')));
-check('两处数据集回填都按整行裁到 GUARD 上限以内；run_sql 回填副本不再改写 total_rows',
-  agCnt(/iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 200/g) === 2 && !/ls_feed_ds-total_rows\s*=/.test(ag) &&
-  !/ls_feed_ds-error\s*=/.test(ag));
+// 20261107：浏览器 Agent 的 browser_tool 用同一条回填规则（第 3 处），原 analyze_agent 里仍是 2 处
+check('两处数据集回填都按整行裁到 GUARD 上限以内；run_sql 回填副本不再改写 total_rows（+ browser_tool 同规则 1 处）',
+  agCnt(/iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 200/g) === 3 &&
+  (methodOf(ag, 'analyze_agent').match(/iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 200/g) || []).length === 2 &&
+  /iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 200/.test(methodOf(ag, 'browser_tool')) &&
+  !/ls_feed_ds-total_rows\s*=/.test(ag) && !/ls_feed_ds-error\s*=/.test(ag));
 const daRaw = read('ZCL_AI_DATA_ANALYSIS_SERVICE.abap'), da = codeOnly(daRaw);
 const daBuild = methodOf(da, 'build_datasets_json');
 check('DATA_ANALYSIS V13.4：数据集 JSON 行数与截断写在明细前面（name → lv_head → status/columns → rows → 尾部）',
@@ -1190,6 +1193,54 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[a.length][b.length]; };
   check('编辑距离：ZIDPMM159 → ZDPMM159 = 1、ZDPMM139 → ZDPMM159 = 1（会提示）；ZIDPMMTLK → ZDPMM159 > 2（不提示）',
     ed('ZIDPMM159', 'ZDPMM159') === 1 && ed('ZDPMM139', 'ZDPMM159') === 1 && ed('ZIDPMMTLK', 'ZDPMM159') > 2);
+}
+
+
+/* ---------- 20261107 浏览器 Agent 引擎（功能计划书/Deep Agents浏览器接入/02 §5） ---------- */
+{
+  console.log('\n━━ 浏览器 Agent：ZCL_AI_AGENT_HTTP V1.0 / AGENT_SERVICE V15.18 / LLM_CLIENT V1.7');
+  const httpRaw = read('ZCL_AI_AGENT_HTTP.abap'), http = codeOnly(httpRaw);
+  const hr = methodOf(http, 'if_http_extension~handle_request');
+  check('HTTP：只收 POST、必须带 X-Lingxi-Agent、校验 Origin，再按路径分发',
+    /INTERFACES if_http_extension\./.test(http) && /'~request_method'/.test(hr) && /'x-lingxi-agent'/.test(hr) &&
+    /origin_ok\( server \)/.test(hr) && ["'/run/start'", "'/chat/completions'", "'/tools/exec'", "'/run/finish'"].every((k) => hr.includes(k)));
+  check('HTTP：工具执行的运行号必须与请求头一致；用户只取 sy-uname（处理类里不读任何 user 参数）',
+    /ls_tool-run_id <> server->request->get_header_field\( 'x-lingxi-run' \)/.test(hr) && !/userid|user_id|iv_user/i.test(http));
+  check('HTTP：出错时 ROLLBACK，模型路径错误按 OpenAI 格式 { error:{ message } } 返回',
+    /ROLLBACK WORK/.test(hr) && /\\\{"error":\\\{"message":/.test(methodOf(http, 'fail')));
+
+  const agRaw2 = read('ZCL_AI_AGENT_SERVICE.abap'), ag2 = codeOnly(agRaw2);
+  const bs = methodOf(ag2, 'browser_start'), bm = methodOf(ag2, 'browser_model'), bt = methodOf(ag2, 'browser_tool'), bf = methodOf(ag2, 'browser_finish');
+  check('AGENT_SERVICE V15.18：四个入口都在，analyze_agent 里没有 browser / zai_brun',
+    /^\* V15\.18 20261107/m.test(agRaw2) && bs && bm && bt && bf && !/zai_brun|browser_/.test(methodOf(ag2, 'analyze_agent')));
+  check('browser_start：开通 + BROWSER_AGENT_ON + 会话归属 + scene_ok + 技能 + 模型白名单（read_agent_model）+ 拒绝 Ollama',
+    /FROM zai_chat_user/.test(bs) && /brun_cfg\( 'BROWSER_AGENT_ON' \)/.test(bs) && /lv_owner <> sy-uname/.test(bs) &&
+    /zcl_ai_access=>scene_ok\( lv_scene \)/.test(bs) && /zcl_ai_skill_service=>resolve\(/.test(bs) &&
+    /read_agent_model\(/.test(bs) && /model_type = 'OLLAMA'/.test(bs) && /INSERT zai_brun FROM/.test(bs));
+  check('browser_start：工具 = 场景候选 ∩ 技能 ∩ 本期只读白名单（不含 sap_data_analysis / call_function / 报表类）',
+    /get_tools_for_domain\( lv_domain \)/.test(bs) && /filter_tools\(/.test(bs) && /lc_supported NS/.test(bs) &&
+    !/sap_data_analysis|call_function|prefill_report|query_result/.test((bs.match(/lc_supported TYPE string\s+VALUE `([^`]*)`/) || [, ''])[1]));
+  check('browser_model：先校验运行号，模型调用次数原子 +1（超上限 429）且立即提交，再 forward_openai',
+    /brun_get\(/.test(bm) && /SET model_calls = model_calls \+ 1/.test(bm) && /model_calls < @lv_max/.test(bm) &&
+    bm.indexOf('COMMIT WORK') > bm.indexOf('model_calls + 1') && bm.indexOf('forward_openai') > bm.indexOf('COMMIT WORK') && /ev_code\s+= 429/.test(bm));
+  check('browser_tool：工具必须在运行清单内；参数走 parse_flat_json + validate_args；run_sql 先 describe、次数按运行累计',
+    /\|,\{ ls_run-tools \},\| NS \|,\{ lv_tool \},\|/.test(bt) && /parse_flat_json\(/.test(bt) && /validate_args\(/.test(bt) &&
+    /必须先 describe_table/.test(bt) && /SET sql_execs = sql_execs \+ 1/.test(bt) && /zcl_ai_sql_guard=>read_max_exec\( \)/.test(bt));
+  check('browser_finish：只写自己的运行；重复收尾直接返回；问题取 ZAI_BRUN 里存的原文',
+    /ls_run-userid <> sy-uname/.test(bf) && /ls_run-status <> 'RUNNING'\.\s*RETURN\./.test(bf) && /iv_question\s+= ls_run-question/.test(bf));
+  check('brun_get：归属 / 状态 / 有效期都校验',
+    /es_run-userid <> sy-uname/.test(methodOf(ag2, 'brun_get')) && /es_run-status <> 'RUNNING'/.test(methodOf(ag2, 'brun_get')) &&
+    /lv_now > es_run-expires_at/.test(methodOf(ag2, 'brun_get')));
+
+  const lcRaw2 = read('ZCL_AI_LLM_CLIENT.abap'), lc2 = codeOnly(lcRaw2);
+  const fw = methodOf(lc2, 'forward_openai'), ob = methodOf(lc2, 'openai_body');
+  check('LLM_CLIENT V1.7：forward_openai 不重试、拒绝 Ollama；chat 仍是原样（DO 2 TIMES 重试还在）',
+    /^\* V1\.7 20261107/m.test(lcRaw2) && fw && !/DO 2 TIMES/.test(fw) && /model_type = 'OLLAMA'/.test(fw) && /DO 2 TIMES/.test(methodOf(lc2, 'chat')));
+  check('openai_body：顶层字段白名单、model / stream / max_tokens 由 SAP 写，缺 messages 拒绝',
+    /\|messages\|tools\|tool_choice\|temperature\|top_p\|stop\|response_format\|parallel_tool_calls\|/.test(lcRaw2) &&
+    /value = 'model'/.test(ob) && /value = 'stream'/.test(ob) && /value = 'max_tokens'/.test(ob) && /缺少 messages/.test(ob));
+  const keys = ['BROWSER_AGENT_ON', 'BROWSER_AGENT_USERS', 'BRUN_MAX_MODEL', 'BRUN_MAX_TOOL', 'BRUN_MAX_BODY_KB', 'BRUN_TTL_MIN'];
+  check('新配置键都 ≤ 20 字符（CFGKEY CHAR 20）', keys.every((k) => k.length <= 20 && agRaw2.includes("'" + k + "'")));
 }
 
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));

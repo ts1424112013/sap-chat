@@ -45,6 +45,7 @@ const SCRIPT = [
 
 // 场景二：记忆文件已存在 + 子 Agent + 用户拒绝修改
 const SCRIPT2 = [
+  () => [call("search_tables", { keyword: "坏参数" })],
   () => [call("task", { description: "子任务：数一下 1001 出现几次", subagent_type: "general-purpose" })],
   () => [call("edit_file", { file_path: "/工单.csv", old_string: "1002,未完工", new_string: "1002,已完工" })],
   () => null
@@ -115,7 +116,8 @@ const server = http.createServer(async (req, res) => {
       const flags = {
         memory: sys.includes("MARKER-42"),
         subagent: toolTexts.some(t => t.includes("子任务结果")),
-        rejected: toolTexts.some(t => t.includes("用户拒绝"))
+        rejected: toolTexts.some(t => t.includes("用户拒绝")),
+        toolErr: toolTexts.some(t => t.includes("工具执行失败") && t.includes("参数被拒绝"))
       };
       return reply({ role: "assistant", content: "FLAGS " + JSON.stringify(flags) });
     }
@@ -134,6 +136,7 @@ const server = http.createServer(async (req, res) => {
     if (bad.length || data.runId !== req.headers["x-lingxi-run"]) return send(res, 400, { ok: false, message: bad.join("；") || "运行号不一致" });
     runs.get(data.runId).toolCalls++;
     if (data.tool !== "search_tables") return send(res, 200, { ok: false, message: "工具未授权：" + data.tool });
+    if (data.args && data.args.keyword === "坏参数") return send(res, 200, { ok: false, message: "参数被拒绝: keyword 不合法" });
     return send(res, 200, { ok: true, content: JSON.stringify({ rows: [{ TABNAME: "AFKO", DDTEXT: "订单表头" }, { TABNAME: "AFPO", DDTEXT: "订单项目" }], total: 2 }) });
   }
   if (p === "/run/finish") {

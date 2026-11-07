@@ -43,6 +43,15 @@
 *         空 = 按模型配置; 只对配了写法的模型生效(没配写法不知道参数名, 照旧不传)
 *         ★ 重贴后核对标记: chat 声明有 iv_think 与 ev_reasoning; 有 think_fragment( 与 split_think(;
 *           有 ev_reasoning = parse_reasoning( lv_resp ); PUBLIC 有 wrap_think 声明(DPC 用)
+* V1.7 20261107(功能计划书/Deep Agents浏览器接入/02 §5.1): 新增 PUBLIC forward_openai ——
+*         浏览器 Agent 引擎的模型请求原样转发(OpenAI 兼容, 透传 tools / tool_calls)。
+*         请求体只保留白名单顶层字段(messages / tools / tool_choice / temperature / top_p /
+*         stop / response_format / parallel_tool_calls), model 换成本配置的 API_MODEL,
+*         stream 固定 false, max_tokens 一律用配置值(缺省 4096); 思考参数同 chat。
+*         只发一次不重试(重试由浏览器决定), 响应原样返回。OLLAMA 类型的模型不支持。
+*         chat 及其余方法未改动。
+*         ★ 重贴后核对标记: PUBLIC 有 forward_openai 声明; PRIVATE 有 openai_body 声明;
+*           openai_body 里有 cl_sxml_string_writer=>create( type = if_sxml=>co_xt_json )
 *=======================================================================
 CLASS zcl_ai_llm_client DEFINITION
   PUBLIC
@@ -141,8 +150,32 @@ CLASS zcl_ai_llm_client DEFINITION
                 iv_timeout_s  TYPE i
       RETURNING VALUE(rv)     TYPE abap_bool.
 
+    " V1.7: 浏览器 Agent 引擎的模型请求转发(OpenAI 兼容, 透传 tools / tool_calls)
+    " @parameter is_cfg   | 模型配置(必须是 OpenAI 兼容类型)
+    " @parameter iv_body  | 浏览器发来的请求体(JSON)
+    " @parameter iv_think | 本次思考开关 X / N / 空 = 按模型配置(同 chat)
+    " @parameter ev_code  | 网关 HTTP 状态码(网络层失败为 0)
+    " @parameter ev_resp  | 网关响应原文(成功时原样回给浏览器)
+    " @parameter ev_error | 非空 = 失败原因(请求体不合法 / 配置问题 / 网络 / 非 200)
+    CLASS-METHODS forward_openai
+      IMPORTING is_cfg     TYPE zai_model_cfg
+                iv_body    TYPE string
+                iv_think   TYPE string OPTIONAL
+      EXPORTING ev_code    TYPE i
+                ev_resp    TYPE string
+                ev_error   TYPE string
+                ev_elapsed TYPE i
+                ev_usage   TYPE ty_usage.
+
   PROTECTED SECTION.
   PRIVATE SECTION.
+
+    " V1.7: 浏览器请求体 → 发给网关的请求体(白名单顶层字段 + 改写 model / stream / max_tokens)
+    CLASS-METHODS openai_body
+      IMPORTING is_cfg   TYPE zai_model_cfg
+                iv_body  TYPE string
+      EXPORTING ev_body  TYPE string
+                ev_error TYPE string.
 
     TYPES: BEGIN OF ty_opt,
              temperature TYPE p LENGTH 3 DECIMALS 2,
@@ -754,6 +787,233 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
     ELSEIF iv_code = 429 OR ( iv_code >= 500 AND iv_code <= 599 ).
       rv = abap_true.
     ENDIF.
+
+  ENDMETHOD.
+
+  METHOD forward_openai.
+
+    DATA: lo_http   TYPE REF TO if_http_client,
+          lv_reason TYPE string,
+          lv_t1     TYPE i,
+          lv_t2     TYPE i,
+          lx        TYPE REF TO cx_root.
+
+    CLEAR: ev_code, ev_resp, ev_error, ev_elapsed, ev_usage.
+
+    " ---- 0. 配置校验(同 chat) ----
+    IF is_cfg-model_type = 'OLLAMA'.
+      ev_error = |浏览器 Agent 需要 OpenAI 兼容的模型; { is_cfg-model_id } 是 Ollama 类型, 请换模型|.
+      RETURN.
+    ENDIF.
+    IF is_cfg-endpoint_url IS INITIAL AND is_cfg-destination IS INITIAL.
+      ev_error = '模型配置缺少 ENDPOINT_URL / DESTINATION(ZAI_MODEL_CFG)'.
+      RETURN.
+    ENDIF.
+    IF is_cfg-endpoint_url IS NOT INITIAL
+       AND is_cfg-endpoint_url NP 'http://*'
+       AND is_cfg-endpoint_url NP 'https://*'.
+      ev_error = |ENDPOINT_URL 必须以 http:// 或 https:// 开头: { is_cfg-endpoint_url }|.
+      RETURN.
+    ENDIF.
+
+    " ---- 1. 请求体: 白名单字段 + 改写 model / stream / max_tokens ----
+    DATA lv_body TYPE string.
+    openai_body( EXPORTING is_cfg   = is_cfg
+                           iv_body  = iv_body
+                 IMPORTING ev_body  = lv_body
+                           ev_error = ev_error ).
+    IF ev_error IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+
+    " 思考参数(同 chat: 按模型配置, 输入框按钮只换开关位)
+    DATA(lv_think) = think_mode( is_cfg-model_id ).
+    IF lv_think IS NOT INITIAL AND ( iv_think = 'X' OR iv_think = 'N' ).
+      lv_think = substring( val = lv_think len = 2 ) && COND string( WHEN iv_think = 'X' THEN `1` ELSE `0` ).
+    ENDIF.
+    DATA(lv_frag) = think_fragment( iv_mode = lv_think iv_model_type = is_cfg-model_type ).
+    IF lv_frag IS NOT INITIAL.
+      DATA(lv_brace) = find( val = lv_body sub = `}` occ = -1 ).
+      IF lv_brace > 0.
+        lv_body = substring( val = lv_body len = lv_brace ) && `,` && lv_frag &&
+                  substring( val = lv_body off = lv_brace ).
+      ENDIF.
+    ENDIF.
+
+    DATA(lv_timeout) = is_cfg-timeout_sec.
+    IF lv_timeout <= 0.
+      lv_timeout = 300.
+    ENDIF.
+
+    " ---- 2. 发送(只发一次; 重试由浏览器决定) ----
+    GET RUN TIME FIELD lv_t1.
+    TRY.
+        IF is_cfg-destination IS NOT INITIAL.
+          cl_http_client=>create_by_destination(
+            EXPORTING destination = CONV rfcdest( is_cfg-destination )
+            IMPORTING client      = lo_http ).
+        ELSE.
+          cl_http_client=>create_by_url(
+            EXPORTING url     = CONV #( is_cfg-endpoint_url )
+            IMPORTING client  = lo_http ).
+        ENDIF.
+      CATCH cx_root INTO lx.
+        ev_error = |创建 HTTP 客户端失败: { lx->get_text( ) }|.
+        RETURN.
+    ENDTRY.
+
+    lo_http->request->set_method( if_http_request=>co_request_method_post ).
+    lo_http->request->set_header_field( name  = 'Content-Type'
+                                        value = 'application/json; charset=utf-8' ).
+    CASE is_cfg-auth_type.
+      WHEN 'BEARER'.
+        lo_http->request->set_header_field( name  = 'Authorization'
+                                            value = |Bearer { is_cfg-api_key }| ).
+      WHEN 'X_API_KEY'.
+        lo_http->request->set_header_field( name  = 'x-api-key'
+                                            value = is_cfg-api_key ).
+      WHEN OTHERS.
+    ENDCASE.
+    lo_http->request->set_cdata( lv_body ).
+
+    lo_http->send( EXPORTING timeout = lv_timeout
+                   EXCEPTIONS http_communication_failure = 1
+                              http_invalid_state          = 2
+                              http_processing_failed      = 3
+                              OTHERS                      = 4 ).
+    IF sy-subrc <> 0.
+      ev_error = |发送请求失败(subrc={ sy-subrc }), 检查网络/白名单/SM59 目的地|.
+    ELSE.
+      lo_http->receive( EXCEPTIONS http_communication_failure = 1
+                                   http_invalid_state          = 2
+                                   http_processing_failed      = 3
+                                   OTHERS                      = 4 ).
+      IF sy-subrc <> 0.
+        ev_error = |接收响应失败(subrc={ sy-subrc }), 可能是模型服务超时({ lv_timeout }s)|.
+      ELSE.
+        lo_http->response->get_status( IMPORTING code   = ev_code
+                                                 reason = lv_reason ).
+        ev_resp = lo_http->response->get_cdata( ).
+      ENDIF.
+    ENDIF.
+    lo_http->close( ).
+
+    GET RUN TIME FIELD lv_t2.
+    ev_elapsed = ( lv_t2 - lv_t1 ) / 1000.
+
+    IF ev_error IS INITIAL AND ev_code <> 200.
+      DATA(lv_snip) = ev_resp.
+      IF strlen( lv_snip ) > 300.
+        lv_snip = lv_snip(300).
+      ENDIF.
+      ev_error = |HTTP { ev_code } { lv_reason }: { lv_snip }|.
+    ENDIF.
+    IF ev_error IS INITIAL.
+      ev_usage = parse_usage( ev_resp ).
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD openai_body.
+
+    " 原样保留的顶层字段; 其余(model / stream / max_tokens / n / logprobs …)一律丢弃
+    CONSTANTS lc_keep TYPE string
+      VALUE `|messages|tools|tool_choice|temperature|top_p|stop|response_format|parallel_tool_calls|`.
+
+    CLEAR: ev_body, ev_error.
+    IF iv_body IS INITIAL.
+      ev_error = '请求体为空'.
+      RETURN.
+    ENDIF.
+
+    DATA(lv_max) = is_cfg-max_tokens.
+    IF lv_max <= 0.
+      lv_max = 4096.
+    ENDIF.
+
+    TRY.
+        DATA(lo_reader) = cl_sxml_string_reader=>create( cl_abap_codepage=>convert_to( iv_body ) ).
+        DATA(lo_out)    = cl_sxml_string_writer=>create( type = if_sxml=>co_xt_json ).
+        DATA(lo_writer) = CAST if_sxml_writer( lo_out ).
+        DATA: lv_depth TYPE i,
+              lv_skip  TYPE i,            " > 0: 正在跳过的顶层成员所在深度
+              lv_msgs  TYPE abap_bool.    " 有 messages 字段
+
+        DO.
+          DATA(lo_node) = lo_reader->read_next_node( ).
+          IF lo_node IS INITIAL.
+            EXIT.
+          ENDIF.
+          CASE lo_node->type.
+            WHEN if_sxml_node=>co_nt_element_open.
+              lv_depth = lv_depth + 1.
+              IF lv_depth = 1.
+                DATA(lo_root) = CAST if_sxml_open_element( lo_node ).
+                IF lo_root->if_sxml_named~qname-name <> 'object'.
+                  ev_error = '请求体必须是 JSON 对象'.
+                  RETURN.
+                ENDIF.
+              ENDIF.
+              IF lv_skip = 0 AND lv_depth = 2.
+                DATA(lo_member) = CAST if_sxml_open_element( lo_node ).
+                DATA(lo_attr)   = lo_member->get_attribute_value( 'name' ).
+                DATA(lv_name)   = COND string( WHEN lo_attr IS BOUND THEN lo_attr->get_value( ) ).
+                IF lc_keep NS |\|{ lv_name }\||.
+                  lv_skip = lv_depth.
+                  CONTINUE.
+                ENDIF.
+                IF lv_name = 'messages'.
+                  lv_msgs = abap_true.
+                ENDIF.
+              ENDIF.
+              IF lv_skip > 0.
+                CONTINUE.
+              ENDIF.
+              lo_writer->write_node( lo_node ).
+
+            WHEN if_sxml_node=>co_nt_element_close.
+              IF lv_skip > 0.
+                IF lv_depth = lv_skip.
+                  lv_skip = 0.
+                ENDIF.
+                lv_depth = lv_depth - 1.
+                CONTINUE.
+              ENDIF.
+              IF lv_depth = 1.
+                " 根对象收尾前补上由 SAP 决定的字段
+                lo_writer->open_element( name = 'str' ).
+                lo_writer->write_attribute( name = 'name' value = 'model' ).
+                lo_writer->write_value( CONV string( is_cfg-api_model ) ).
+                lo_writer->close_element( ).
+                lo_writer->open_element( name = 'bool' ).
+                lo_writer->write_attribute( name = 'name' value = 'stream' ).
+                lo_writer->write_value( `false` ).
+                lo_writer->close_element( ).
+                lo_writer->open_element( name = 'num' ).
+                lo_writer->write_attribute( name = 'name' value = 'max_tokens' ).
+                lo_writer->write_value( |{ lv_max }| ).
+                lo_writer->close_element( ).
+              ENDIF.
+              lv_depth = lv_depth - 1.
+              lo_writer->write_node( lo_node ).
+
+            WHEN OTHERS.
+              IF lv_skip > 0.
+                CONTINUE.
+              ENDIF.
+              lo_writer->write_node( lo_node ).
+          ENDCASE.
+        ENDDO.
+
+        IF lv_msgs = abap_false.
+          ev_error = '请求体缺少 messages'.
+          RETURN.
+        ENDIF.
+        ev_body = cl_abap_codepage=>convert_from( lo_out->get_output( ) ).
+      CATCH cx_root INTO DATA(lx).
+        ev_error = |请求体不是合法 JSON: { lx->get_text( ) }|.
+    ENDTRY.
 
   ENDMETHOD.
 

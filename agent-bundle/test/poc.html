@@ -81,6 +81,7 @@ async function main() {
     check("下次运行读到记忆文件", flags.memory, r2.answer);
     check("子 Agent 返回结果", flags.subagent);
     check("拒绝修改后 Agent 收到拒绝说明", flags.rejected);
+    check("SAP 工具返回 ok:false 时运行继续、原因交给模型", flags.toolErr);
     check("拒绝后文件没变", (await text(root, "/工单.csv")) === before2);
     $("state").textContent = checks.every(c => c.ok) ? "全部通过" : "有失败";
   } catch (e) {

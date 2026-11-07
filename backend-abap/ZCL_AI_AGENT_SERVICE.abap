@@ -248,6 +248,20 @@
 *   ★ 重贴后核对标记: 有 lv_rl_on 与 iv_relay = lv_rl_on; 有 zcl_ai_report_relay=>run( 与
 *     zcl_ai_report_relay=>merge_pending(; 数据分析收口条件有 AND lv_rl_done = abap_false;
 *     build_report_intro 有 METHOD near_tcodes 调用
+* V15.18 20261107(功能计划书/Deep Agents浏览器接入/02 §5): 浏览器 Agent 引擎的服务端入口 ——
+*   新增 PUBLIC browser_start / browser_model / browser_tool / browser_finish(只由
+*   ZCL_AI_AGENT_HTTP 调用), analyze_agent 及其余方法未改动。
+*   ① browser_start: 开通 + BROWSER_AGENT_ON(+ BROWSER_AGENT_USERS 试点名单) → 会话归属 / 场景 /
+*     技能 / 模型白名单(同 analyze_agent) → 建会话头 → 可用工具 = 场景候选 ∩ 技能 ∩ 本期支持的只读工具
+*     (search_tables / describe_table / run_sql / read_program_source / 库存 4 个) → 写 ZAI_BRUN
+*   ② browser_model: 运行号归属 / 状态 / 有效期 → 请求体大小 → 模型调用次数原子 +1(超上限拒绝)
+*     → ZCL_AI_LLM_CLIENT=>forward_openai 原样转发; 用量累计到 ZAI_BRUN
+*   ③ browser_tool: 工具必须在本次运行清单内; 参数同 GUARD 校验; run_sql 仍要求先 describe_table、
+*     执行次数按运行累计(SQL_MAX_EXEC); 结果按 GUARD 上限裁剪
+*   ④ browser_finish: 问答写回会话(save_chat, 问题取开始时存的原文); 重复收尾直接返回
+*   依赖: ZAI_BRUN(SE11 新表)/ ZCL_AI_LLM_CLIENT V1.7
+*   ★ 重贴后核对标记: PUBLIC 有 browser_start / browser_model / browser_tool / browser_finish 与
+*     ty_brun_start; PRIVATE 有 brun_get / brun_cfg; browser_model 里有 zcl_ai_llm_client=>forward_openai(
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -331,7 +345,68 @@ CLASS zcl_ai_agent_service DEFINITION
                 iv_think      TYPE string OPTIONAL  " V15.9: 本次思考开关 X / N / 空 = 按模型配置
       EXPORTING es_result     TYPE ty_agent_result.
 
+    " ---- V15.18: 浏览器 Agent 引擎(Deep Agents 浏览器版)入口, 只由 ZCL_AI_AGENT_HTTP 调用 ----
+    TYPES: BEGIN OF ty_brun_start,
+             run_id     TYPE string,
+             model      TYPE string,   " 模型 ID(显示用; 实际 API_MODEL 由转发时替换)
+             tools_json TYPE string,   " [{"name":…,"description":…,"parameters":{JSON Schema}}]
+             system     TYPE string,   " 场景说明 + 领域卡 + 技能做法
+             max_model  TYPE i,        " 本次运行模型调用上限
+             max_tool   TYPE i,        " 本次运行工具调用上限
+           END OF ty_brun_start.
+
+    " 开始一次运行: 校验开通 / 开关 / 会话 / 场景 / 技能 / 模型, 建会话头, 返回可用工具
+    CLASS-METHODS browser_start
+      IMPORTING iv_session_id TYPE string
+                iv_scene      TYPE string
+                iv_model_id   TYPE string
+                iv_question   TYPE string
+                iv_skill_id   TYPE string OPTIONAL
+                iv_think      TYPE string OPTIONAL
+      EXPORTING es_start      TYPE ty_brun_start
+                ev_error      TYPE string
+                ev_http       TYPE i.
+
+    " 一轮模型调用(OpenAI 兼容原样转发; ev_code = 回给浏览器的 HTTP 状态)
+    CLASS-METHODS browser_model
+      IMPORTING iv_run_id TYPE string
+                iv_body   TYPE string
+      EXPORTING ev_code   TYPE i
+                ev_resp   TYPE string
+                ev_error  TYPE string.
+
+    " 执行一个工具(ev_ok = 空时 ev_message 是给模型看的失败原因; ev_http <> 200 = 请求本身被拒)
+    CLASS-METHODS browser_tool
+      IMPORTING iv_run_id  TYPE string
+                iv_tool    TYPE string
+                iv_args    TYPE string
+      EXPORTING ev_ok      TYPE abap_bool
+                ev_content TYPE string
+                ev_message TYPE string
+                ev_http    TYPE i.
+
+    " 结束运行: 问答写回会话
+    CLASS-METHODS browser_finish
+      IMPORTING iv_run_id  TYPE string
+                iv_status  TYPE string
+                iv_answer  TYPE string
+                iv_message TYPE string OPTIONAL
+      EXPORTING ev_error   TYPE string
+                ev_http    TYPE i.
+
   PRIVATE SECTION.
+
+    " V15.18: 读运行号并校验归属 / 状态 / 有效期
+    CLASS-METHODS brun_get
+      IMPORTING iv_run_id TYPE string
+      EXPORTING es_run    TYPE zai_brun
+                ev_error  TYPE string
+                ev_http   TYPE i.
+
+    " V15.18: 读 ZAI_CHAT_CFG 文本配置(去空格; 没有返回空)
+    CLASS-METHODS brun_cfg
+      IMPORTING iv_key    TYPE string
+      RETURNING VALUE(rv) TYPE string.
 
     " 读 Agent 模型配置: AGENT_MODEL 指定 → 该模型; 否则第一条启用模型
     " V15.2: 增加场景白名单(AGENT_MODELS[_<场景>]); 不允许时 ev_error 给原因
@@ -3469,6 +3544,541 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
   ENDMETHOD.
 
+
+  METHOD browser_start.
+
+    CLEAR: es_start, ev_error.
+    ev_http = 200.
+
+    " ---- 1. 开通 / 开关 / 试点名单 ----
+    SELECT SINGLE userid FROM zai_chat_user
+      WHERE userid = @sy-uname AND active = 'X'
+      INTO @DATA(lv_user).
+    IF sy-subrc <> 0.
+      ev_http  = 403.
+      ev_error = '你还没有被赋予此功能的使用权限，请联系管理员'.
+      RETURN.
+    ENDIF.
+    IF brun_cfg( 'BROWSER_AGENT_ON' ) <> 'X'.
+      ev_http  = 403.
+      ev_error = '浏览器 Agent 未开启(管理员在 ZAI_CHAT_CFG 维护 BROWSER_AGENT_ON = X), 请先切回原 Agent'.
+      RETURN.
+    ENDIF.
+    DATA(lv_users) = to_upper( brun_cfg( 'BROWSER_AGENT_USERS' ) ).
+    IF lv_users IS NOT INITIAL.
+      SPLIT lv_users AT ',' INTO TABLE DATA(lt_users).
+      DATA(lv_in) = abap_false.
+      LOOP AT lt_users INTO DATA(lv_u).
+        CONDENSE lv_u NO-GAPS.
+        IF lv_u = CONV string( sy-uname ).
+          lv_in = abap_true.
+          EXIT.
+        ENDIF.
+      ENDLOOP.
+      IF lv_in = abap_false.
+        ev_http  = 403.
+        ev_error = '浏览器 Agent 试点期间只对部分用户开放, 请切回原 Agent 或联系管理员'.
+        RETURN.
+      ENDIF.
+    ENDIF.
+    IF iv_session_id IS INITIAL OR strlen( iv_session_id ) > 32.
+      ev_http  = 400.
+      ev_error = '会话 ID 为空或过长, 请在前端重新打开会话'.
+      RETURN.
+    ENDIF.
+    IF iv_question IS INITIAL.
+      ev_http  = 400.
+      ev_error = '问题内容为空'.
+      RETURN.
+    ENDIF.
+
+    " ---- 2. 会话归属与场景(同 analyze_agent) ----
+    SELECT SINGLE created_by, agent_type FROM zai_chat_sess
+      WHERE session_id = @iv_session_id
+      INTO ( @DATA(lv_owner), @DATA(lv_atype) ).
+    DATA(lv_found) = xsdbool( sy-subrc = 0 ).
+    IF lv_found = abap_true AND lv_owner <> sy-uname.
+      ev_http  = 403.
+      ev_error = '该会话不属于当前用户，请新建会话后重试'.
+      RETURN.
+    ENDIF.
+    DATA(lv_scene) = zcl_ai_intent_router=>normalize_scene(
+                       COND string( WHEN lv_found = abap_true THEN CONV string( lv_atype ) ELSE iv_scene ) ).
+    IF zcl_ai_access=>scene_ok( lv_scene ) = abap_false.
+      ev_http  = 403.
+      ev_error = zcl_ai_access=>scene_deny_text( lv_scene ).
+      RETURN.
+    ENDIF.
+
+    " ---- 3. 技能(与 analyze_agent 同一套解析; 任务上下文本期不用) ----
+    DATA: ls_skill     TYPE zcl_ai_skill_service=>ty_skill,
+          lv_skill_err TYPE string.
+    zcl_ai_skill_service=>resolve(
+      EXPORTING iv_id = iv_skill_id iv_scene = lv_scene iv_session_id = iv_session_id iv_task_id = ``
+      IMPORTING es_skill = ls_skill ev_error = lv_skill_err ).
+    IF lv_skill_err IS NOT INITIAL.
+      ev_http  = 403.
+      ev_error = lv_skill_err.
+      RETURN.
+    ENDIF.
+
+    " ---- 4. 领域(同 analyze_agent 的场景映射) ----
+    DATA(lv_domain) = zcl_ai_domain_cards=>match_domain( iv_question ).
+    CASE lv_scene.
+      WHEN zcl_ai_intent_router=>gc_scene_report OR zcl_ai_intent_router=>gc_scene_fiori.
+        lv_domain = zcl_ai_domain_cards=>gc_dom_general.
+      WHEN zcl_ai_intent_router=>gc_scene_data.
+        lv_domain = zcl_ai_domain_cards=>gc_dom_data.
+      WHEN zcl_ai_intent_router=>gc_scene_inventory.
+        lv_domain = zcl_ai_domain_cards=>gc_dom_inventory.
+      WHEN zcl_ai_intent_router=>gc_scene_code.
+        lv_domain = zcl_ai_domain_cards=>gc_dom_code.
+    ENDCASE.
+    IF lv_scene = zcl_ai_intent_router=>gc_scene_auto
+       AND ( lv_domain = zcl_ai_domain_cards=>gc_dom_data OR lv_domain = zcl_ai_domain_cards=>gc_dom_inventory )
+       AND zcl_ai_access=>scene_ok( zcl_ai_intent_router=>gc_scene_data ) = abap_false.
+      lv_domain = zcl_ai_domain_cards=>gc_dom_general.
+    ENDIF.
+
+    " ---- 5. 模型(场景白名单同 analyze_agent; 只支持 OpenAI 兼容) ----
+    DATA: ls_cfg  TYPE zai_model_cfg,
+          lv_merr TYPE string.
+    read_agent_model( EXPORTING iv_model_id = iv_model_id
+                                iv_scene    = lv_scene
+                      IMPORTING es_cfg      = ls_cfg
+                                ev_error    = lv_merr ).
+    IF lv_merr IS NOT INITIAL.
+      ev_http  = 400.
+      ev_error = lv_merr.
+      RETURN.
+    ENDIF.
+    IF ls_cfg-model_id IS INITIAL OR ls_cfg-is_active <> 'X'.
+      ev_http  = 400.
+      ev_error = '没有可用的启用模型, 请在模型管理中维护'.
+      RETURN.
+    ENDIF.
+    IF ls_cfg-model_type = 'OLLAMA'.
+      ev_http  = 400.
+      ev_error = |浏览器 Agent 需要 OpenAI 兼容的模型; { ls_cfg-model_id } 是 Ollama 类型, 请换模型或切回原 Agent|.
+      RETURN.
+    ENDIF.
+
+    " ---- 6. 会话头(拒绝普通对话会话; 新会话写入场景) ----
+    DATA lv_ens TYPE string.
+    ensure_agent_session( EXPORTING iv_session_id = iv_session_id
+                                    iv_question   = iv_question
+                                    iv_model_id   = CONV string( ls_cfg-model_id )
+                                    iv_scene      = lv_scene
+                          IMPORTING ev_error      = lv_ens ).
+    IF lv_ens IS NOT INITIAL.
+      ev_http  = 400.
+      ev_error = lv_ens.
+      RETURN.
+    ENDIF.
+    zcl_ai_skill_service=>bind( iv_session_id = iv_session_id iv_task_id = `` is_skill = ls_skill ).
+
+    " ---- 7. 工具 = 场景候选 ∩ 技能 ∩ 浏览器引擎本期支持的只读工具 ----
+    CONSTANTS lc_supported TYPE string
+      VALUE `,search_tables,describe_table,run_sql,read_program_source,resolve_material,get_stock_snapshot,get_daily_movement,get_batch_stock,`.
+    DATA(lt_tools) = zcl_ai_tool_registry=>get_tools_for_domain( lv_domain ).
+    zcl_ai_skill_service=>filter_tools( EXPORTING is_skill = ls_skill CHANGING ct_tools = lt_tools ).
+    DATA: lv_tools_json TYPE string,
+          lv_tools_csv  TYPE string.
+    LOOP AT lt_tools INTO DATA(ls_tool).
+      IF lc_supported NS |,{ ls_tool-tool_id },|.
+        CONTINUE.
+      ENDIF.
+      DATA: lv_props TYPE string,
+            lv_req   TYPE string.
+      CLEAR: lv_props, lv_req.
+      LOOP AT ls_tool-params INTO DATA(ls_p).
+        DATA(lv_hint) = SWITCH string( ls_p-ptype
+                          WHEN zcl_ai_tool_registry=>gc_pt_plant    THEN `工厂代码(4 位)`
+                          WHEN zcl_ai_tool_registry=>gc_pt_material THEN `物料号`
+                          WHEN zcl_ai_tool_registry=>gc_pt_date     THEN `日期 YYYYMMDD`
+                          WHEN zcl_ai_tool_registry=>gc_pt_longtext THEN `长文本(≤4000 字符)`
+                          ELSE `短文本(≤40 字符)` ).
+        lv_props = |{ lv_props }{ COND string( WHEN lv_props IS NOT INITIAL THEN `,` ) }| &&
+                   |"{ ls_p-name }":\{"type":"string","description":"{ lv_hint }"\}|.
+        IF ls_p-required = abap_true.
+          lv_req = |{ lv_req }{ COND string( WHEN lv_req IS NOT INITIAL THEN `,` ) }"{ ls_p-name }"|.
+        ENDIF.
+      ENDLOOP.
+      lv_tools_json = |{ lv_tools_json }{ COND string( WHEN lv_tools_json IS NOT INITIAL THEN `,` ) }| &&
+                      |\{"name":"{ ls_tool-tool_id }","description":"{ json_text( ls_tool-description ) }",| &&
+                      |"parameters":\{"type":"object","properties":\{{ lv_props }\},"required":[{ lv_req }]\}\}|.
+      lv_tools_csv = |{ lv_tools_csv }{ COND string( WHEN lv_tools_csv IS NOT INITIAL THEN `,` ) }{ ls_tool-tool_id }|.
+    ENDLOOP.
+    IF strlen( lv_tools_csv ) > 1000.
+      ev_http  = 500.
+      ev_error = '可用工具清单超长(ZAI_BRUN-TOOLS 为 1000 字符)'.
+      RETURN.
+    ENDIF.
+
+    " ---- 8. 系统说明(场景 + 领域卡 + 技能做法 + 本引擎的工具约定) ----
+    DATA(lv_sys) = |当前场景: { lv_scene }。|.
+    DATA(lv_card) = zcl_ai_domain_cards=>get_card( lv_domain ).
+    IF lv_card IS NOT INITIAL.
+      lv_sys = |{ lv_sys }\n\n{ lv_card }|.
+    ENDIF.
+    IF ls_skill-id IS NOT INITIAL.
+      lv_sys = |{ lv_sys }\n\n{ zcl_ai_skill_service=>card( ls_skill ) }|.
+    ENDIF.
+    IF lv_tools_csv CS 'run_sql'.
+      lv_sys = |{ lv_sys }\n\n【SQL 约定】调用 run_sql 前, SQL 里的每张表都要先用 describe_table 确认字段; | &&
+               |只读查询, 结果只回填前 { zcl_ai_sql_executor=>gc_llm_rows } 行, 回答里要说明总行数。|.
+    ENDIF.
+    IF lv_scene = zcl_ai_intent_router=>gc_scene_report OR lv_scene = zcl_ai_intent_router=>gc_scene_fiori.
+      lv_sys = |{ lv_sys }\n\n【说明】报表执行 / Fiori 报表的参数卡与后台作业目前只在原 Agent 里可用; | &&
+               |用户要执行报表时, 请提醒他关掉输入框下方的「新引擎」再问。|.
+    ENDIF.
+
+    " ---- 9. 运行号 ----
+    DATA: lv_run TYPE c LENGTH 32,
+          lv_now TYPE timestampl,
+          ls_run TYPE zai_brun.
+    CALL FUNCTION 'GUID_CREATE' IMPORTING ev_guid_32 = lv_run.
+    GET TIME STAMP FIELD lv_now.
+    DATA(lv_ttl) = read_cfg_int( iv_key = 'BRUN_TTL_MIN' iv_default = 30 iv_min = 5 iv_max = 240 ).
+    ls_run-mandt      = sy-mandt.
+    ls_run-run_id     = lv_run.
+    ls_run-userid     = sy-uname.
+    ls_run-session_id = iv_session_id.
+    ls_run-scene      = lv_scene.
+    ls_run-model_id   = ls_cfg-model_id.
+    ls_run-think      = COND #( WHEN iv_think = 'X' OR iv_think = 'N' THEN iv_think ).
+    ls_run-tools      = lv_tools_csv.
+    ls_run-status     = 'RUNNING'.
+    ls_run-question   = iv_question.
+    ls_run-created_at = lv_now.
+    ls_run-expires_at = cl_abap_tstmp=>add( tstmp = lv_now secs = lv_ttl * 60 ).
+    INSERT zai_brun FROM @ls_run.
+    IF sy-subrc <> 0.
+      ev_http  = 500.
+      ev_error = '运行号写入失败(ZAI_BRUN)'.
+      RETURN.
+    ENDIF.
+
+    es_start-run_id     = lv_run.
+    es_start-model      = ls_cfg-model_id.
+    es_start-tools_json = |[{ lv_tools_json }]|.
+    es_start-system     = lv_sys.
+    es_start-max_model  = read_cfg_int( iv_key = 'BRUN_MAX_MODEL' iv_default = 40 iv_min = 5 iv_max = 200 ).
+    es_start-max_tool   = read_cfg_int( iv_key = 'BRUN_MAX_TOOL' iv_default = 60 iv_min = 5 iv_max = 300 ).
+
+  ENDMETHOD.
+
+
+  METHOD browser_model.
+
+    CLEAR: ev_code, ev_resp, ev_error.
+    DATA: ls_run  TYPE zai_brun,
+          lv_http TYPE i.
+    brun_get( EXPORTING iv_run_id = iv_run_id
+              IMPORTING es_run    = ls_run
+                        ev_error  = ev_error
+                        ev_http   = lv_http ).
+    IF ev_error IS NOT INITIAL.
+      ev_code = lv_http.
+      RETURN.
+    ENDIF.
+
+    DATA(lv_max_kb) = read_cfg_int( iv_key = 'BRUN_MAX_BODY_KB' iv_default = 1500 iv_min = 100 iv_max = 8000 ).
+    IF strlen( iv_body ) > lv_max_kb * 1024.
+      ev_code  = 413.
+      ev_error = |这一轮发给模型的内容太大(上限 { lv_max_kb } KB), 请让灵犀先总结已有结果|.
+      RETURN.
+    ENDIF.
+
+    " 调用次数原子 +1(超上限即拒绝); 立即提交, 转发期间不占行锁
+    DATA(lv_max) = read_cfg_int( iv_key = 'BRUN_MAX_MODEL' iv_default = 40 iv_min = 5 iv_max = 200 ).
+    UPDATE zai_brun SET model_calls = model_calls + 1
+      WHERE run_id = @ls_run-run_id AND userid = @sy-uname
+        AND status = 'RUNNING' AND model_calls < @lv_max.
+    IF sy-dbcnt = 0.
+      ev_code  = 429.
+      ev_error = |这次运行的模型调用已达上限({ lv_max } 次), 请基于已有结果回答或重新提问|.
+      RETURN.
+    ENDIF.
+    COMMIT WORK.
+
+    SELECT SINGLE * FROM zai_model_cfg
+      WHERE model_id = @ls_run-model_id AND is_active = 'X'
+      INTO @DATA(ls_cfg).
+    IF sy-subrc <> 0.
+      ev_code  = 400.
+      ev_error = |模型 { ls_run-model_id } 已停用, 请重新提问|.
+      RETURN.
+    ENDIF.
+
+    DATA ls_use TYPE zcl_ai_llm_client=>ty_usage.
+    zcl_ai_llm_client=>forward_openai( EXPORTING is_cfg   = ls_cfg
+                                                 iv_body  = iv_body
+                                                 iv_think = CONV string( ls_run-think )
+                                       IMPORTING ev_code  = ev_code
+                                                 ev_resp  = ev_resp
+                                                 ev_error = ev_error
+                                                 ev_usage = ls_use ).
+    IF ev_code = 0 AND ev_error IS NOT INITIAL.
+      ev_code = 502.   " 没拿到网关响应(配置 / 网络 / 请求体不合法)
+    ENDIF.
+    IF ls_use-has_usage = abap_true.
+      UPDATE zai_brun SET tokens_in  = tokens_in + @ls_use-prompt_tokens,
+                          tokens_out = tokens_out + @ls_use-completion_tokens
+        WHERE run_id = @ls_run-run_id.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD browser_tool.
+
+    CLEAR: ev_ok, ev_content, ev_message.
+    ev_http = 200.
+    DATA: ls_run  TYPE zai_brun,
+          lv_err  TYPE string,
+          lv_http TYPE i.
+    brun_get( EXPORTING iv_run_id = iv_run_id
+              IMPORTING es_run    = ls_run
+                        ev_error  = lv_err
+                        ev_http   = lv_http ).
+    IF lv_err IS NOT INITIAL.
+      ev_http    = lv_http.
+      ev_message = lv_err.
+      RETURN.
+    ENDIF.
+
+    " 工具必须在本次运行开始时下发的清单里(浏览器发来的工具名只是请求)
+    DATA(lv_tool) = to_lower( iv_tool ).
+    IF |,{ ls_run-tools },| NS |,{ lv_tool },|.
+      ev_message = |工具 { iv_tool } 不在本次运行允许的范围内|.
+      RETURN.
+    ENDIF.
+
+    DATA(lv_max) = read_cfg_int( iv_key = 'BRUN_MAX_TOOL' iv_default = 60 iv_min = 5 iv_max = 300 ).
+    UPDATE zai_brun SET tool_calls = tool_calls + 1
+      WHERE run_id = @ls_run-run_id AND userid = @sy-uname
+        AND status = 'RUNNING' AND tool_calls < @lv_max.
+    IF sy-dbcnt = 0.
+      ev_http    = 429.
+      ev_message = |这次运行的工具调用已达上限({ lv_max } 次), 请基于已有结果回答|.
+      RETURN.
+    ENDIF.
+    COMMIT WORK.
+
+    " ---- 参数: 与原 Agent 同一套解析与 Schema 校验 ----
+    DATA: lt_kv   TYPE zcl_ai_agent_guard=>tt_kv,
+          lt_norm TYPE zcl_ai_agent_guard=>tt_kv,
+          lv_aerr TYPE string.
+    zcl_ai_agent_guard=>parse_flat_json(
+      EXPORTING iv_json  = COND #( WHEN iv_args IS INITIAL THEN `{}` ELSE iv_args )
+      IMPORTING et_kv    = lt_kv
+                ev_error = lv_aerr ).
+    DATA(ls_tool) = zcl_ai_tool_registry=>get_tool( lv_tool ).
+    IF lv_aerr IS INITIAL.
+      zcl_ai_agent_guard=>validate_args(
+        EXPORTING is_tool  = ls_tool
+                  it_kv    = lt_kv
+        IMPORTING et_norm  = lt_norm
+                  ev_error = lv_aerr ).
+    ENDIF.
+    IF lv_aerr IS NOT INITIAL.
+      ev_message = |参数被拒绝: { lv_aerr }。请修正参数后重试|.
+      RETURN.
+    ENDIF.
+
+    DATA: lv_json TYPE string,
+          lv_cap  TYPE i.
+    lv_cap = zcl_ai_agent_guard=>gc_max_result_chars.
+
+    CASE lv_tool.
+      WHEN zcl_ai_tool_registry=>gc_tool_read_source.
+        SELECT SINGLE * FROM zai_model_cfg
+          WHERE model_id = @ls_run-model_id
+          INTO @DATA(ls_cfg).
+        DATA: lv_src_label TYPE string,
+              lv_src_ok    TYPE abap_bool.
+        exec_read_source(
+          EXPORTING iv_name    = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'name' )
+                    iv_start   = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'start_line' )
+                    iv_keyword = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'keyword' )
+                    is_cfg     = ls_cfg
+          IMPORTING ev_json  = lv_json
+                    ev_label = lv_src_label
+                    ev_ok    = lv_src_ok ).
+        lv_cap = gc_src_feed.
+
+      WHEN zcl_ai_tool_registry=>gc_tool_search_tables.
+        lv_json = zcl_ai_ddic_tools=>search_tables(
+                    iv_keyword = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'keyword' ) ).
+
+      WHEN zcl_ai_tool_registry=>gc_tool_describe_tab.
+        DATA(lv_tab) = to_upper( zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'table' ) ).
+        lv_json = zcl_ai_ddic_tools=>describe_table( iv_tabname = lv_tab ).
+        IF lv_json CS '"ok":true' AND |,{ ls_run-desc_tabs },| NS |,{ lv_tab },|.
+          DATA(lv_tabs) = COND string( WHEN ls_run-desc_tabs IS INITIAL THEN lv_tab
+                                       ELSE |{ ls_run-desc_tabs },{ lv_tab }| ).
+          IF strlen( lv_tabs ) <= 1000.
+            UPDATE zai_brun SET desc_tabs = @lv_tabs WHERE run_id = @ls_run-run_id.
+          ENDIF.
+        ENDIF.
+
+      WHEN zcl_ai_tool_registry=>gc_tool_run_sql.
+        DATA(lv_max_sql) = zcl_ai_sql_guard=>read_max_exec( ).
+        UPDATE zai_brun SET sql_execs = sql_execs + 1
+          WHERE run_id = @ls_run-run_id AND sql_execs < @lv_max_sql.
+        IF sy-dbcnt = 0.
+          lv_json = '{"ok":false,"error":"已达本次运行的 SQL 执行次数上限, 请基于已有结果回答"}'.
+        ELSE.
+          " 规范校验: SQL 里每张表都要在本次运行里 describe 过(同原 Agent); EXECUTOR 内仍做完整安全校验
+          DATA: lv_sql       TYPE string,
+                lv_sql_clean TYPE string,
+                lt_sql_tabs  TYPE zcl_ai_sql_guard=>tt_names,
+                lv_sql_err   TYPE string.
+          lv_sql = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'sql' ).
+          zcl_ai_sql_guard=>validate_sql( EXPORTING iv_sql       = lv_sql
+                                          IMPORTING ev_sql_clean = lv_sql_clean
+                                                    et_tables    = lt_sql_tabs
+                                                    ev_error     = lv_sql_err ).
+          IF lv_sql_err IS INITIAL.
+            SELECT SINGLE desc_tabs FROM zai_brun WHERE run_id = @ls_run-run_id INTO @DATA(lv_described).
+            LOOP AT lt_sql_tabs INTO DATA(lv_need).
+              IF |,{ lv_described },| NS |,{ lv_need },|.
+                lv_sql_err = |执行 run_sql 前必须先 describe_table 确认表 { lv_need } 的字段|.
+                EXIT.
+              ENDIF.
+            ENDLOOP.
+          ENDIF.
+          IF lv_sql_err IS NOT INITIAL.
+            lv_json = |\{"ok":false,"error":"{ json_text( lv_sql_err ) }"\}|.
+          ELSE.
+            DATA(ls_exec) = zcl_ai_sql_executor=>run_sql(
+                              iv_sql        = lv_sql
+                              iv_purpose    = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'purpose' )
+                              iv_session_id = CONV string( ls_run-session_id ) ).
+            DATA(ls_feed) = ls_exec-dataset.
+            IF lines( ls_feed-rows ) > zcl_ai_sql_executor=>gc_llm_rows.
+              DELETE ls_feed-rows FROM zcl_ai_sql_executor=>gc_llm_rows + 1.
+            ENDIF.
+            lv_json = '{"ok":' && COND #( WHEN ls_exec-status = 'OK' THEN 'true' ELSE 'false' ) &&
+                      ',"dataset":' && zcl_ai_data_analysis_service=>build_datasets_json(
+                                         it_datas     = VALUE #( ( ls_feed ) )
+                                         iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 200 ) && '}'.
+          ENDIF.
+        ENDIF.
+
+      WHEN 'resolve_material' OR 'get_stock_snapshot' OR 'get_daily_movement' OR 'get_batch_stock'.
+        DATA(ls_step) = zcl_ai_inventory_tools=>execute( iv_tool = lv_tool it_args = lt_norm ).
+        lv_json = ls_step-result_json.
+
+      WHEN OTHERS.
+        ev_message = |浏览器 Agent 暂不支持工具 { iv_tool }|.
+        RETURN.
+    ENDCASE.
+
+    ev_ok      = abap_true.
+    ev_content = zcl_ai_agent_guard=>trim_result( iv_text = lv_json iv_max = lv_cap ).
+
+  ENDMETHOD.
+
+
+  METHOD browser_finish.
+
+    CLEAR ev_error.
+    ev_http = 200.
+    SELECT SINGLE * FROM zai_brun WHERE run_id = @iv_run_id INTO @DATA(ls_run).
+    IF sy-subrc <> 0.
+      ev_http  = 404.
+      ev_error = '运行号不存在'.
+      RETURN.
+    ENDIF.
+    IF ls_run-userid <> sy-uname.
+      ev_http  = 403.
+      ev_error = '运行号不属于当前用户'.
+      RETURN.
+    ENDIF.
+    IF ls_run-status <> 'RUNNING'.
+      RETURN.   " 重复收尾(网络重试): 已写过会话, 直接返回
+    ENDIF.
+
+    DATA(lv_status) = SWITCH string( to_upper( iv_status )
+                        WHEN 'OK'        THEN `OK`
+                        WHEN 'CANCELLED' THEN `CANCELLED`
+                        ELSE `ERROR` ).
+    DATA(lv_answer) = iv_answer.
+    IF lv_answer IS INITIAL.
+      lv_answer = COND #( WHEN lv_status = 'CANCELLED' THEN `（已停止）`
+                          ELSE |（浏览器 Agent 未完成: { iv_message }）| ).
+    ENDIF.
+
+    DATA lv_now TYPE timestampl.
+    GET TIME STAMP FIELD lv_now.
+    DATA lv_ms TYPE i.
+    TRY.
+        lv_ms = cl_abap_tstmp=>subtract( tstmp1 = lv_now tstmp2 = ls_run-created_at ) * 1000.
+      CATCH cx_root.
+        lv_ms = 0.
+    ENDTRY.
+
+    save_chat( iv_session_id = CONV string( ls_run-session_id )
+               iv_question   = ls_run-question
+               iv_answer     = lv_answer
+               iv_model_id   = CONV string( ls_run-model_id )
+               iv_status     = COND #( WHEN lv_status = 'OK' THEN `OK` ELSE `ERROR` )
+               iv_ms         = lv_ms ).
+    UPDATE zai_brun SET status = @lv_status, finished_at = @lv_now
+      WHERE run_id = @ls_run-run_id.
+
+  ENDMETHOD.
+
+
+  METHOD brun_get.
+
+    CLEAR: es_run, ev_error.
+    ev_http = 200.
+    IF iv_run_id IS INITIAL OR strlen( iv_run_id ) > 32.
+      ev_http  = 400.
+      ev_error = '缺少运行号'.
+      RETURN.
+    ENDIF.
+    SELECT SINGLE * FROM zai_brun WHERE run_id = @iv_run_id INTO @es_run.
+    IF sy-subrc <> 0.
+      ev_http  = 404.
+      ev_error = '运行号不存在'.
+      RETURN.
+    ENDIF.
+    IF es_run-userid <> sy-uname.
+      ev_http  = 403.
+      ev_error = '运行号不属于当前用户'.
+      RETURN.
+    ENDIF.
+    IF es_run-status <> 'RUNNING'.
+      ev_http  = 409.
+      ev_error = '这次运行已经结束, 请重新提问'.
+      RETURN.
+    ENDIF.
+    DATA lv_now TYPE timestampl.
+    GET TIME STAMP FIELD lv_now.
+    IF lv_now > es_run-expires_at.
+      ev_http  = 410.
+      ev_error = '这次运行已超时, 请重新提问'.
+      RETURN.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD brun_cfg.
+
+    CLEAR rv.
+    SELECT SINGLE cfgvalue FROM zai_chat_cfg
+      WHERE cfgkey = @iv_key
+      INTO @DATA(lv_val).
+    IF sy-subrc = 0.
+      rv = condense( CONV string( lv_val ) ).
+    ENDIF.
+
+  ENDMETHOD.
 
 ENDCLASS.
 
