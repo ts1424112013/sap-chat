@@ -95,6 +95,9 @@ sap.ui.define([
 			if (this._rtInfo) {
 				this._rtInfo(null);
 			}
+			if (this._syncAttachRowVisibility) {
+				this._syncAttachRowVisibility();
+			}
 		},
 
 		/** 预加载引擎并取回上次的文件夹（选文件夹必须在点击里同步调用，引擎得先就绪） */
@@ -156,6 +159,9 @@ sap.ui.define([
 			}
 			if (this._paintSkill) {
 				this._paintSkill();
+			}
+			if (this._syncAttachRowVisibility) {
+				this._syncAttachRowVisibility();
 			}
 			if (bOn) {
 				this._baWarm();

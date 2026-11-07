@@ -496,9 +496,18 @@ sap.ui.define([
                         this._syncAttachRowVisibility();
                 },
 
-                /** V13：附件回显行可见性 = 已选附件（对话与 Agent 均支持，Agent 作为任务上下文） */
+                /**
+                  * 20261108：Agent 用新引擎时不用附件（附件按钮已隐藏，文件改走「选择文件夹」）。
+                  * 在对话模式选好的附件切到 Agent 后不显示、不拼进提问、也不清掉，回到对话还在
+                  */
+                _attachIgnored: function () {
+                        var oChat = this.getView().getModel("chat");
+                        return !!(oChat && oChat.getProperty("/workspaceMode") === "AGENT" && this._baActive && this._baActive());
+                },
+
+                /** V13：附件回显行可见性 = 已选附件（对话与 Agent 均支持，Agent 作为任务上下文；新引擎除外） */
                 _syncAttachRowVisibility: function () {
-                        var bShow = !!this._oAttachment;
+                        var bShow = !!this._oAttachment && !this._attachIgnored();
                         this.byId("attachRowHero").setVisible(bShow);
                         this.byId("attachRowDock").setVisible(bShow);
                 },
@@ -1073,7 +1082,8 @@ sap.ui.define([
                         var oChatModel = this.getView().getModel("chat");
                         var oRB = this._rb();
                         var oCtx = oChatModel.getProperty("/currentSession") || {};
-                        var oAtt = this._oAttachment;
+                        var bIgnore = this._attachIgnored();
+                        var oAtt = bIgnore ? null : this._oAttachment;
                         var sMeta = "";
                         if (oAtt) {
                                 sMeta = oRB.getText("attachMeta", [oAtt.name, oAtt.sizeText]);
@@ -1085,6 +1095,7 @@ sap.ui.define([
                                 agentType: oCtx.agentType || "",
                                 displayText: sText,
                                 meta: sMeta,
+                                keepAttachment: bIgnore,
                                 question: sText + (oAtt ? oAtt.block : "")
                         });
                 },
@@ -1145,7 +1156,9 @@ sap.ui.define([
                         // V16：卡片联动的后续消息（选项/自由输入）不清空用户正在写的草稿
                         if (!oCfg.keepInput) {
                                 oChatModel.setProperty("/input", "");
-                                this._clearAttachment();   // 附件已拼入本次提问（两模式均消费）
+                                if (!oCfg.keepAttachment) {
+                                        this._clearAttachment();   // 附件已拼入本次提问（两模式均消费；新引擎没用它就留着）
+                                }
                         }
                         this._refreshMessages();
                         this._scrollToBottom();
