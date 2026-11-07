@@ -1254,8 +1254,8 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     /lv_res_on = abap_true/.test(bs) && /zcl_ai_report_service=>read_enabled\( \) = abap_true/.test(bs) &&
     /zcl_ai_access=>scene_ok\( zcl_ai_intent_router=>gc_scene_report \)/.test(bs) &&
     /zcl_ai_result_lookup=>allowed\( iv_session_id \)/.test(bs) && /zcl_ai_report_relay=>enabled\( \)/.test(bs));
-  check('browser_start：技能清单走 skill_service=>list（开关 / 可见性 / 场景同下拉），手动选的不重复，最多 30 个；运行号记 SKILL_ID',
-    /zcl_ai_skill_service=>list\(/.test(bs) && /ls_sk-id = ls_skill-id/.test(bs) && /lv_sk_n > 30/.test(bs) &&
+  check('browser_start：技能清单走 skill_service=>list（开关 / 可见性 / 场景同下拉），手动选的不重复；运行号记 SKILL_ID',
+    /zcl_ai_skill_service=>list\(/.test(bs) && /DELETE lt_sk_all WHERE id = ls_skill-id/.test(bs) &&
     /ls_run-skill_id\s+= ls_skill-id/.test(bs) && /es_start-skills_json/.test(bs) && /es_start-export\s+= lv_res_on/.test(bs));
   check('browser_tool：报表 / 结果工具先于扁平 kv 处理；除 list_results / open_report 外结果号都过 brun_art',
     bt.indexOf("lv_tool = 'list_results'") > -1 && bt.indexOf("lv_tool = 'list_results'") < bt.indexOf('parse_flat_json(') &&
@@ -1309,6 +1309,12 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     /lv_fiori_on = abap_true AND \( lv_scene = zcl_ai_intent_router=>gc_scene_fiori OR lv_fpick = abap_true OR lv_ffocus = abap_true \)/.test(bs) &&
     /CLEAR ls_fturn\./.test(bs) && /`open_fiori_report`/.test(bs) &&
     /WHEN 'open_fiori_report'\./.test(bt) && /\|选择报表：\{ lv_fname \}\|/.test(bt) && /iv_module\s+= zcl_ai_fiori_report_service=>gc_module/.test(bt));
+  check('V15.24：技能上限 BRUN_MAX_SKILLS（默认 40）；超过时按相关度挑（名称 ×3、说明 ×1、本会话用过 +5，同分保持原顺序），系统说明写明总数',
+    /^\* V15\.24 20261108/m.test(agRaw2) && /read_cfg_int\( iv_key = 'BRUN_MAX_SKILLS' iv_default = 40 iv_min = 5 iv_max = 100 \)/.test(bs) &&
+    /IF lv_sk_total > lv_sk_max\./.test(bs) && /SORT lt_rank STABLE BY score DESCENDING/.test(bs) &&
+    /LOOP AT lt_rank INTO DATA\(ls_rank\) TO lv_sk_max/.test(bs) && /lv_score = lv_score \+ 5/.test(bs) &&
+    /只列出和本次问题最相关的/.test(bs) && !/lv_sk_n > 30/.test(bs) &&
+    /rv = rv \+ 3\./.test(methodOf(ag2, 'skill_score')) && /rv = rv \+ 1\./.test(methodOf(ag2, 'skill_score')));
   check('V15.23：技能清单 = 开放的各场景合并去重',
     /SPLIT zcl_ai_access=>gc_scenes AT ',' INTO TABLE lt_scn/.test(bs) && /NOT line_exists\( lt_sk_all\[ id = ls_sk1-id \] \)/.test(bs));
 

@@ -422,6 +422,7 @@ sap.ui.define([
             var counts = { ALL: items.length };
             Object.keys(SCENE_TEXT).forEach(function (k) { counts[k] = items.filter(function (s) { return s.scenes.indexOf(k) >= 0; }).length; });
             m.setProperty("/counts", counts);
+            m.setProperty("/activeCount", items.filter(function (s) { return s.active && s.body; }).length);
             m.setProperty("/view", items.filter(function (s) {
                 return (f === "ALL" || s.scenes.indexOf(f) >= 0) &&
                     (!q || (s.name + " " + s.id + " " + s.description).toLowerCase().indexOf(q) >= 0);

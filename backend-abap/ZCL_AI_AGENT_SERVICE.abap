@@ -265,7 +265,7 @@
 * V15.19 20261107(浏览器 Agent M2: 报表 + 技能 + 存到文件夹): 只改 browser_* 方法, analyze_agent 未改动。
 *   ① browser_start: 本会话有可用结果 → 加 list_results / read_result / query_result / lookup_by_result(各自开关);
 *     自动 / 报表执行场景 + 报表读取开 + 有报表场景 → 加 open_report, 有结果时再加 prefill_report;
-*     系统说明列出可用报表(list_defs, 已按授权过滤); 返回 skills_json(技能下拉同口径, 最多 30 个,
+*     系统说明列出可用报表(list_defs, 已按授权过滤); 返回 skills_json(技能下拉同口径, 最多 30 个[V15.24 起 BRUN_MAX_SKILLS 按相关度挑],
 *     手动选的那个除外)与 export(有结果才可导出); ZAI_BRUN 记 SKILL_ID
 *   ② browser_tool: 报表 / 结果工具参数是嵌套 JSON, 不走扁平 kv; 结果号由模型给, 每次 brun_art 核对
 *     本人 + 本会话 + AVAILABLE; open_report / prefill_report 过 build_report_intro(登记 + 授权 + 参数)后
@@ -295,6 +295,10 @@
 *   写新表 ZAI_BSTEP(运行号 + 序号; 会话 + 回复消息序号; 最多 200 步, 只存类型 / 工具 / 参数摘要 / 一句话结果 / 状态 / 耗时);
 *   新 PUBLIC browser_steps(只限本人会话)供刷新 / 重开会话时画回过程
 *   ★ 重贴后核对标记: browser_finish 有 INSERT zai_bstep FROM; 有 METHOD browser_steps
+* V15.24 20261108(新引擎技能清单不再静默截断): 只改 browser_start —
+*   技能上限改为配置 BRUN_MAX_SKILLS(默认 40, 5~100); 超过上限时按与本次问题的相关度挑选:
+*   问题按两字切片, 命中技能名称 ×3 + 命中说明 ×1, 本会话用过的技能 +5, 同分保持原顺序(skill_score);
+*   有技能被略过时在系统说明里写明总数, 让模型在用户点名的技能不在清单里时如实说明
 * V15.23 20261108(新引擎场景只作权限, 用户不再选场景): 只改 browser_start / browser_tool —
 *   ① 工具 = 用户开放的全部场景的域合在一起(数据分析 → 数据 + 库存; 代码分析 → 代码; 通用总有), 不再看会话场景;
 *     报表参数卡只看报表执行权限; 系统说明写明开放了哪些能力、列出可用的 Fiori 报表
@@ -536,6 +540,13 @@ CLASS zcl_ai_agent_service DEFINITION
     CLASS-METHODS csv_cell
       IMPORTING iv        TYPE string
       RETURNING VALUE(rv) TYPE string.
+
+    " V15.24: 技能和问题的相关度(问题两字切片在技能名称 / 说明里命中几处; 名称 ×3)
+    CLASS-METHODS skill_score
+      IMPORTING iv_question TYPE string
+                iv_name     TYPE string
+                iv_desc     TYPE string
+      RETURNING VALUE(rv)   TYPE i.
 
     " 读 Agent 模型配置: AGENT_MODEL 指定 → 该模型; 否则第一条启用模型
     " V15.2: 增加场景白名单(AGENT_MODELS[_<场景>]); 不允许时 ev_error 给原因
@@ -4154,15 +4165,49 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         ENDLOOP.
       ENDIF.
     ENDLOOP.
+    " 手动选的那个 / 没有正文的不下发
+    DELETE lt_sk_all WHERE body IS INITIAL.
+    IF ls_skill-id IS NOT INITIAL.
+      DELETE lt_sk_all WHERE id = ls_skill-id.
+    ENDIF.
+    " V15.24: 超过上限时按相关度挑(原来固定取前 30 个, 后面的模型看不到也没有提示)
+    DATA(lv_sk_max) = read_cfg_int( iv_key = 'BRUN_MAX_SKILLS' iv_default = 40 iv_min = 5 iv_max = 100 ).
+    DATA(lv_sk_total) = lines( lt_sk_all ).
+    IF lv_sk_total > lv_sk_max.
+      TYPES: BEGIN OF ty_sk_rank,
+               score TYPE i,
+               pos   TYPE i,
+             END OF ty_sk_rank.
+      DATA lt_rank TYPE STANDARD TABLE OF ty_sk_rank WITH DEFAULT KEY.
+      DATA lt_sk_keep TYPE zcl_ai_skill_service=>tt_skills.
+      DATA lt_used_ids TYPE SORTED TABLE OF string WITH UNIQUE KEY table_line.
+      IF iv_session_id IS NOT INITIAL.
+        SELECT DISTINCT skill_id FROM zai_skill_use
+          WHERE session_id = @iv_session_id AND owner = @sy-uname
+          INTO TABLE @DATA(lt_used_raw).
+        LOOP AT lt_used_raw INTO DATA(ls_used_raw).
+          INSERT CONV string( ls_used_raw-skill_id ) INTO TABLE lt_used_ids.
+        ENDLOOP.
+      ENDIF.
+      LOOP AT lt_sk_all INTO DATA(ls_sk_r).
+        DATA(lv_pos) = sy-tabix.
+        DATA(lv_score) = skill_score( iv_question = iv_question iv_name = ls_sk_r-name iv_desc = ls_sk_r-description ).
+        IF line_exists( lt_used_ids[ table_line = ls_sk_r-id ] ).
+          lv_score = lv_score + 5.
+        ENDIF.
+        APPEND VALUE #( score = lv_score pos = lv_pos ) TO lt_rank.
+      ENDLOOP.
+      SORT lt_rank STABLE BY score DESCENDING.
+      LOOP AT lt_rank INTO DATA(ls_rank) TO lv_sk_max.
+        APPEND lt_sk_all[ ls_rank-pos ] TO lt_sk_keep.
+      ENDLOOP.
+      lt_sk_all = lt_sk_keep.
+      es_start-system = |{ es_start-system }\n\n【技能】管理员维护的技能共 { lv_sk_total } 个, 技能清单里只列出和本次问题最相关的 { lv_sk_max } 个; | &&
+                        |用户点名的技能不在清单里时, 如实说明并请用户在问题里写出技能的完整名称。|.
+    ENDIF.
     IF lt_sk_all IS NOT INITIAL.
       LOOP AT lt_sk_all INTO DATA(ls_sk).
-        IF ls_sk-id = ls_skill-id OR ls_sk-body IS INITIAL.
-          CONTINUE.
-        ENDIF.
         lv_sk_n = lv_sk_n + 1.
-        IF lv_sk_n > 30.
-          EXIT.
-        ENDIF.
         lv_sk_js = |{ lv_sk_js }{ COND string( WHEN lv_sk_js IS NOT INITIAL THEN `,` ) }| &&
                    |\{"id":"{ json_text( ls_sk-id ) }","name":"{ json_text( ls_sk-name ) }",| &&
                    |"description":"{ json_text( ls_sk-description ) }","body":"{ json_text( ls_sk-body ) }"\}|.
@@ -5107,6 +5152,36 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
               |\{"name":"{ iv_name }","description":"{ json_text( iv_desc ) }","parameters":{ iv_params }\}|.
     cv_csv  = |{ cv_csv }{ COND string( WHEN cv_csv IS NOT INITIAL THEN `,` ) }{ iv_name }|.
 
+  ENDMETHOD.
+
+
+  METHOD skill_score.
+    " 问题去掉空白和标点后按两个字一片切开(去重, 最多看前 200 字), 数在技能名称 / 说明里命中几片
+    DATA lt_bg TYPE SORTED TABLE OF string WITH UNIQUE KEY table_line.
+    DATA(lv_q) = to_lower( iv_question ).
+    REPLACE ALL OCCURRENCES OF REGEX `[\s[:punct:]，。？！、：；（）「」《》“”‘’…·]` IN lv_q WITH ``.
+    IF strlen( lv_q ) > 200.
+      lv_q = lv_q(200).
+    ENDIF.
+    DATA(lv_len) = strlen( lv_q ).
+    IF lv_len < 2.
+      RETURN.
+    ENDIF.
+    DATA(lv_off) = 0.
+    WHILE lv_off < lv_len - 1.
+      INSERT substring( val = lv_q off = lv_off len = 2 ) INTO TABLE lt_bg.
+      lv_off = lv_off + 1.
+    ENDWHILE.
+    DATA(lv_name) = to_lower( iv_name ).
+    DATA(lv_desc) = to_lower( iv_desc ).
+    LOOP AT lt_bg INTO DATA(lv_bg).
+      IF find( val = lv_name sub = lv_bg ) >= 0.
+        rv = rv + 3.
+      ENDIF.
+      IF find( val = lv_desc sub = lv_bg ) >= 0.
+        rv = rv + 1.
+      ENDIF.
+    ENDLOOP.
   ENDMETHOD.
 
 

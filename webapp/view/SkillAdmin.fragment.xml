@@ -28,6 +28,9 @@
                     </HBox>
                     <MessageStrip text="技能入口还没开启：用户在聊天里点「技能」选不了。确认技能内容后，打开右上角「聊天里可选技能」。"
                                   type="Warning" showIcon="true" visible="{= ${skillAdmin>/enabled} === false }" class="apvStrip skAdmOffStrip"/>
+                    <!-- 20261108（V15.24）：新引擎每次最多给模型 BRUN_MAX_SKILLS 个技能，超过时按与问题的相关度挑 -->
+                    <MessageStrip text="{= '已启用 ' + ${skillAdmin>/activeCount} + ' 个技能。Agent 每次最多给模型 40 个（ZAI_CHAT_CFG 的 BRUN_MAX_SKILLS 可调），超过时按名称、说明和问题的相关度挑选；名称和说明写得越具体越容易被选中。' }"
+                                  type="Information" showIcon="true" visible="{= ${skillAdmin>/activeCount} > 40 }" class="apvStrip"/>
                 </VBox>
 
                 <HBox renderType="Bare" class="skAdmBody">
@@ -113,8 +116,8 @@
                                 <Input value="{skillAdmin>/edit/name}" maxLength="60" placeholder="动词短语，例如「性能审查」" class="aplInput"/>
                             </VBox>
                             <VBox class="aplField">
-                                <Label text="一句话说明（弹层里显示）" required="true" class="aplLabel"/>
-                                <Input value="{skillAdmin>/edit/description}" maxLength="200" placeholder="说清楚怎么做，不写口号" class="aplInput"/>
+                                <Label text="一句话说明（Agent 据此决定何时用）" required="true" class="aplLabel"/>
+                                <Input value="{skillAdmin>/edit/description}" maxLength="200" placeholder="写清什么情况用，如：查成品可用库存、按仓码汇总或导出库存结果时用" class="aplInput"/>
                             </VBox>
                             <VBox class="aplField">
                                 <Label text="技能编号" required="true" class="aplLabel"/>

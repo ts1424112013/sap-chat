@@ -289,7 +289,7 @@ sap.ui.define([], function () {
 						aDefs = (a[0] && a[0].defs) || [];
 						var aSkills = ((a[1] && a[1].enabled !== false && a[1].skills) || []).filter(function (s) {
 							return s.id && s.body && s.id !== (p && p.skillId);
-						}).slice(0, 30).map(function (s) {
+						}).slice(0, 40).map(function (s) {
 							return { id: s.id, name: s.name, description: s.description, body: s.body };
 						});
 						var bDataScene = scene === "DATA" || scene === "AUTO";
