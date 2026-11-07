@@ -102,7 +102,8 @@ export async function run(o) {
   emit({ type: "phase", phase: "start" });
   const runInfo = await client.startRun({
     sessionId: ctx.sessionId || "", scene: ctx.scene || "", modelId: ctx.modelId || "",
-    question: o.question, think: !!ctx.think, folder: o.folder ? o.folder.name : ""
+    question: o.question, think: !!ctx.think, skillId: ctx.skillId || "",
+    folder: o.folderBackend ? o.folderBackend.name : (o.folder ? o.folder.name : "")
   }, { signal: o.signal });
   if (!runInfo || !runInfo.runId) throw new SapAgentError("SAP 没有返回运行号", 0, runInfo);
   emit({ type: "run", runId: runInfo.runId, model: runInfo.model, tools: (runInfo.tools || []).map(t => t.name) });

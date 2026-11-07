@@ -9,7 +9,8 @@
  *   POST {base}/run/finish        { runId, status, answer, trace }
  *
  * 同源、沿用 SAP 登录 Cookie；每个请求都带 X-Lingxi-Agent 头（SAP 端据此 + Origin 防跨站）。
- * 浏览器不持有模型密钥；发出去的 Authorization 头一律去掉（避免 ICF 把它当登录凭据）。
+ * 浏览器不持有模型密钥；模型 SDK 加的 Authorization（Bearer）一律去掉，避免 ICF 把它当登录凭据；
+ * 只有调用方显式给的 Basic 头（本地开发经代理）才带上。
  */
 
 export class SapAgentError extends Error {
@@ -32,13 +33,16 @@ function sapQuery() {
   } catch (e) { return ""; }
 }
 
-export function createSapClient({ base = "/sap/bc/zai_agent", origin, timeoutMs = 300000 } = {}) {
+export function createSapClient({ base = "/sap/bc/zai_agent", origin, timeoutMs = 300000, authHeader = "" } = {}) {
+  // 只接受 Basic（本地开发经代理时灵犀自己的登录头）；模型 SDK 自带的 Bearer 一律丢弃
+  const basic = /^Basic\s+\S+$/.test(authHeader || "") ? authHeader : "";
   const root = (origin || window.location.origin) + base.replace(/\/+$/, "");
   const qs = sapQuery();
 
   function headers(runId, extra) {
     const h = new Headers(extra || {});
     h.delete("authorization");
+    if (basic) h.set("Authorization", basic);
     h.set("X-Lingxi-Agent", "1");
     h.set("X-Requested-With", "XMLHttpRequest");
     if (runId) h.set("X-Lingxi-Run", runId);

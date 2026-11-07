@@ -307,7 +307,9 @@ export class FolderBackend {
   }
 
   async _log(action, path, detail) {
-    const rec = { at: new Date().toISOString(), action, path, detail: detail || "", question: (this.opts.question && this.opts.question()) || "" };
+    const d = new Date(), z = n => String(n).padStart(2, "0");
+    const local = `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`;
+    const rec = { at: local, action, path, detail: detail || "", question: (this.opts.question && this.opts.question()) || "" };
     try {
       const dir = await this._dir([META_DIR], true);
       const h = await dir.getFileHandle(LOG_FILE, { create: true });

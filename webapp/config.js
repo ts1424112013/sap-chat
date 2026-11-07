@@ -40,5 +40,14 @@ window.ZAI_CONFIG = {
          *           部署精简包（npm run build:deploy）只保留这里写的主题，
          *           改主题后要重新生成精简包 */
         ui5Src: "./resources/sap-ui-core.js",
-        ui5Theme: "sap_horizon"
+        ui5Theme: "sap_horizon",
+
+        /* 20261107：浏览器 Agent 引擎（Deep Agents 浏览器版）
+         *  enabled：false = 完全隐藏「新引擎」开关（一切照旧走原 Agent）
+         *  path：SAP 上的 Agent 服务（SICF 节点，处理类 ZCL_AI_AGENT_HTTP）
+         * 需要 HTTPS 打开页面；用户在输入框下自己打开开关，是否允许使用由 SAP 端判断 */
+        browserAgent: {
+                enabled: true,
+                path: "/sap/bc/zai_agent"
+        }
 };

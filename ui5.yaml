@@ -44,3 +44,16 @@ server:
         # SAP 开发机使用自签名证书，开发环境打开：
         strictSSL: false
 
+
+# ---------------------------------------------------------------------------
+# 20261107：浏览器 Agent 引擎（thirdparty/lingxi-agent/lingxi-agent.js，2.6 MB，已压缩）
+#  · 不进 Component-preload：只有打开「新引擎」的用户才按需加载，首屏不变
+#  · 不再二次压缩：agent-bundle 打包时已压缩，UI5 再压只会多出 -dbg / .map 两个大文件
+# ---------------------------------------------------------------------------
+builder:
+  componentPreload:
+    excludes:
+      - "zai/chat/thirdparty/lingxi-agent/**"
+  minification:
+    excludes:
+      - "zai/chat/thirdparty/lingxi-agent/**"

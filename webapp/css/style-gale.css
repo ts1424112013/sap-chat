@@ -2296,3 +2296,53 @@ body.schedOn .dataTools .dtSched { display: inline-block !important; }
 .mvBtn:hover .sapMBtnContent bdi { color: var(--text) !important; }
 [data-theme="dark"] .askMultiBtn .sapMBtnInner { background: var(--bg) !important; }
 [data-theme="dark"] .vhPop .mvArea textarea { color: var(--text) !important; }
+
+/* ============================================================
+ * 20261107：浏览器 Agent 引擎（新引擎开关 / 文件夹胶囊 / 改文件确认框）
+ * 外形沿用 .thinkPill；文件夹已授权为蓝、待恢复授权为琥珀
+ * ============================================================ */
+.baFolder .sapMBtnContent bdi { max-width: 11rem; overflow: hidden; text-overflow: ellipsis; }
+.baFolderOn .sapMBtnInner { background: var(--accent-soft) !important; border-color: color-mix(in srgb, var(--accent) 45%, transparent) !important; }
+.baFolderOn .sapMBtnIcon, .baFolderOn .sapMBtnContent bdi { color: var(--accent) !important; }
+.baFolderWarn .sapMBtnInner { border-color: color-mix(in srgb, var(--gale-amber) 70%, transparent) !important; border-style: dashed !important; }
+.baFolderWarn .sapMBtnIcon, .baFolderWarn .sapMBtnContent bdi { color: #B7791F !important; }
+[data-theme="dark"] .baFolderWarn .sapMBtnIcon, [data-theme="dark"] .baFolderWarn .sapMBtnContent bdi { color: #FACC15 !important; }
+
+.baConfirmDialog .sapMDialogScroll { padding: 0 !important; }
+.baConfirm { padding: .9rem 1.1rem 1rem; color: var(--text); }
+.baPath { display: flex; align-items: center; gap: .5rem; font-size: .86rem; font-weight: 600; margin-bottom: .55rem; word-break: break-all; }
+.baAct { flex: none; font-size: .72rem; font-weight: 600; padding: .1rem .5rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.baDiffNote { font-size: .75rem; color: var(--sub); margin-bottom: .45rem; }
+.baDiff {
+        margin: 0; max-height: 52vh; overflow: auto; padding: .6rem .7rem; border-radius: 10px;
+        background: var(--bg); border: 1px solid var(--line);
+        font: .76rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all;
+}
+.baDiff span { display: block; padding: 0 .3rem; border-radius: 3px; }
+.baDiff .baAdd { background: rgba(34, 197, 94, .13); color: #15803D; }
+.baDiff .baDel { background: rgba(239, 68, 68, .12); color: #B91C1C; text-decoration: line-through; text-decoration-color: rgba(185, 28, 28, .35); }
+.baDiff .baCtx { color: var(--text-2); }
+.baDiff .baGap { color: var(--sub); text-align: center; }
+[data-theme="dark"] .baDiff .baAdd { color: #4ADE80; background: rgba(74, 222, 128, .12); }
+[data-theme="dark"] .baDiff .baDel { color: #F87171; background: rgba(248, 113, 113, .12); }
+/* 暗色：确认框沿用设置对话框的做法（UI5 仍是亮色主题，只在暗色下就地改映射） */
+[data-theme="dark"] .baConfirmDialog {
+        --sapGroup_ContentBackground: var(--surface-solid);
+        --sapBackgroundColor: var(--surface-solid);
+        --sapTextColor: var(--text);
+        --sapPageHeader_TextColor: var(--text);
+        --sapPageFooter_BorderColor: var(--line);
+        --sapButton_Background: var(--surface);
+        --sapButton_BorderColor: var(--line-strong);
+        --sapButton_TextColor: var(--accent);
+        --sapButton_Lite_TextColor: var(--accent);
+        background: var(--surface-solid) !important;
+}
+[data-theme="dark"] .baConfirmDialog .sapMDialogTitleGroup,
+[data-theme="dark"] .baConfirmDialog .sapMDialogTitleGroup .sapMIBar,
+[data-theme="dark"] .baConfirmDialog .sapMDialogFooter .sapMIBar,
+[data-theme="dark"] .baConfirmDialog .sapMDialogFooter .sapMTB,
+[data-theme="dark"] .baConfirmDialog .sapMDialogSection { background: var(--surface-solid) !important; }
+[data-theme="dark"] .baConfirmDialog .sapMTitle,
+[data-theme="dark"] .baConfirmDialog .sapMDialogTitleGroup .sapMBarChild { color: var(--text) !important; }
+[data-theme="dark"] .baConfirm { color: var(--text); }

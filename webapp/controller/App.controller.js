@@ -42,8 +42,9 @@ sap.ui.define([
         "zai/chat/controller/mixin/ResultRestore",
         "zai/chat/controller/mixin/ComboPanel",
         "zai/chat/controller/mixin/UserAccessPanel",
-        "zai/chat/controller/mixin/SchedulePanel"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel) {
+        "zai/chat/controller/mixin/SchedulePanel",
+        "zai/chat/controller/mixin/BrowserAgentPanel"
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel, BrowserAgentPanel) {
         "use strict";
 
         /**
@@ -589,6 +590,8 @@ sap.ui.define([
                         this._authWatchStart();
                         // 20261104：定时任务（能力探测 + 未读角标 + 专属会话映射）
                         this._scInit();
+                        // 20261107：浏览器 Agent 引擎（Deep Agents）—— 个人开关 + 上次的文件夹
+                        this._baInit();
                         var oUser = ChatService.getAppUser();
                         // V16：侧栏底部用户信息（头像缩写取账号，SAP 账号均为拉丁字母）
                         var oSettings = this.getView().getModel("settings");
@@ -1253,7 +1256,9 @@ sap.ui.define([
                         var oCurTask = oChatModel.getProperty("/currentTask") || {};
                         // 20261028：本轮编号同时用来查运行进度（边跑边看，_startLive）
                         var sCid = bAgent ? this._newSessionId() : "";
-                        var pReq = ChatService.sendByMode({
+                        // 20261107：Agent 工作区开了「浏览器引擎」→ 在浏览器里跑 Deep Agents（BrowserAgentPanel._baSend，结果同形）
+                        var bBrowser = bAgent && this._baActive();
+                        var oSendArgs = {
                                 mode: oCfg.mode,
                                 agentType: oCfg.agentType,
                                 sessionId: sSessionId,
@@ -1267,8 +1272,9 @@ sap.ui.define([
                                 scene: bAgent ? this._normScene(oCfg.agentType) : "",
                                 skillId: bAgent ? this._skillRequestId() : "",
                                 think: bThinkBtn ? (bThinkNow ? "X" : "N") : ""
-                        });
-                        if (bAgent) {
+                        };
+                        var pReq = bBrowser ? this._baSend(oSendArgs, oPending) : ChatService.sendByMode(oSendArgs);
+                        if (bAgent && !bBrowser) {
                                 this._startLive(oPending, sCid, sSessionId);
                         }
 
@@ -1525,7 +1531,7 @@ sap.ui.define([
                                         return String(st.status || "").toUpperCase() === "RUNNING" ? Object.assign({}, st, { status: sEnd }) : st;
                                 }), true, oLive);
                         };
-                        if (sHow === "ok") {
+                        if (sHow === "ok" && !oLive.browser) {
                                 ChatService.getAgentProgress(oLive.cid).then(function (o) {
                                         fnClose((o && o.steps) || null);
                                 }).catch(function () { fnClose(null); });
@@ -1918,6 +1924,7 @@ sap.ui.define([
                         }
                         this._sAbortToken = this._sStreamToken;
                         this._sStreamToken = "";
+                        this._baStop();               // 20261107：浏览器引擎在本页运行，直接中断
                         this._stopThinkingTicker();   // V13：Agent 等待期思考状态一并停止
                         if (this._mSessRun) {
                                 delete this._mSessRun[this._sAbortToken];   // 20261028：停止后侧栏不再转圈（下面 _syncActivity 会同步）
@@ -5371,5 +5378,5 @@ sap.ui.define([
                 hasText: function (s) {
                         return !!(s && s.length);
                 }
-        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel));
+        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel, BrowserAgentPanel));
 });

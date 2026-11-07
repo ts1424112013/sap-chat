@@ -54,6 +54,35 @@ sap.ui.define(["zai/chat/utils/UserAccess"], function (UserAccess) {
                         try { window.localStorage.setItem("zaiChat.mockData", JSON.stringify(oStore)); } catch (e) { /* 忽略 */ }
                 },
 
+                /**
+                 * 20261107：浏览器 Agent 引擎在演示模式下跑完一轮 → 像 SAP 的 run/finish 一样记进会话
+                 * （同 _mockSendAgent 的持久化口径：新会话写入场景，之后固定）
+                 */
+                _mockRecordExchange: function (oPayload, sAnswer) {
+                        var Service = this;
+                        var oStore = Service._mockStore();
+                        var aHist = oStore.messages[oPayload.sessionId] = oStore.messages[oPayload.sessionId] || [];
+                        var sNow = Service._mockTime();
+                        aHist.push({ SessionId: oPayload.sessionId, MsgSeq: "", Role: "user", Content: oPayload.question, ProgramName: "AGENT", CreatedAt: sNow, Status: "OK" });
+                        aHist.push({ SessionId: oPayload.sessionId, MsgSeq: "", Role: "assistant", Content: sAnswer, ProgramName: "AGENT", CreatedAt: sNow, Status: "OK" });
+                        var oSess = oStore.sessions.filter(function (s) { return s.SessionId === oPayload.sessionId; })[0];
+                        if (!oSess) {
+                                oStore.sessions.unshift({
+                                        SessionId: oPayload.sessionId,
+                                        Title: oPayload.question.length > 24 ? oPayload.question.substring(0, 24) + "…" : oPayload.question,
+                                        ModelId: oPayload.modelId || "", MsgCount: "2", CreatedAt: sNow, ChangedAt: sNow, Mode: "AGENT",
+                                        AgentType: /^(REPORT|FIORI|DATA|INVENTORY|CODE)$/.test(String(oPayload.scene || "").toUpperCase())
+                                                ? String(oPayload.scene).toUpperCase() : "GENERAL",
+                                        Status: "COMPLETED"
+                                });
+                        } else {
+                                oSess.ChangedAt = sNow;
+                                oSess.MsgCount = String((parseInt(oSess.MsgCount || "0", 10) || 0) + 2);
+                                oSess.Status = "COMPLETED";
+                        }
+                        Service._mockSave(oStore);
+                },
+
                 _mockModels: function () {
                         return new Promise(function (fnResolve) {
                                 setTimeout(function () {
