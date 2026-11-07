@@ -26,6 +26,8 @@
 *              /run/finish 收 skillsUsed; 新路径 /results/export(依赖 ZCL_AI_AGENT_SERVICE V15.19)
 *         V1.2 20261107 /run/start 收 focusArtifactId、回 answer / card(Fiori 确定性回答);
 *              /tools/exec 回 datasets(界面表格 / 图表)(依赖 ZCL_AI_AGENT_SERVICE V15.20)
+*         V1.3 20261108 /run/start 的 limits 多回 contextTokens(浏览器据此决定何时压缩对话)
+*              (依赖 ZCL_AI_AGENT_SERVICE V15.21)
 *         ★ 重贴后核对标记: INTERFACES if_http_extension; handle_request 里有
 *           WHEN '/run/start' / '/chat/completions' / '/tools/exec' / '/results/export' / '/run/finish'
 *=======================================================================
@@ -157,6 +159,7 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                              |"answer":{ jstr( ls_out-answer ) },| &&
                              COND string( WHEN ls_out-card IS NOT INITIAL THEN |"card":{ ls_out-card },| ) &&
                              |"limits":\{"maxModelCalls":{ ls_out-max_model },"maxToolCalls":{ ls_out-max_tool },| &&
+                             |"contextTokens":{ ls_out-ctx_tokens },| &&
                              |"recursionLimit":{ ( ls_out-max_model + ls_out-max_tool ) * 2 + 10 }\}\}| ).
 
           " ---------------- 一轮模型调用(OpenAI 兼容) ----------------

@@ -287,6 +287,10 @@
 *   依赖: ZAI_BRUN 再加 FUNC_EXECS INT4; ZCL_AI_AGENT_HTTP V1.2
 *   ★ 重贴后核对标记: browser_start 有 zcl_ai_fiori_report_service=>agent_turn(; browser_tool 有 execute_plan( 与
 *     zcl_ai_rfc_exec=>call_sync(; PRIVATE 有 brun_ds_json; brun_art 有 FROM zai_frpt_run
+* V15.21 20261108(新引擎上下文超长): 新配置 BRUN_CTX_TOKENS(模型上下文上限, 默认 256000)经 /run/start 下发,
+*   浏览器按中文实际比例换算后提前压缩对话; browser_model 的请求体上限默认改为跟上下文走(≈ token × 4 字节,
+*   256K → 1000 KB, 原固定 1500 KB), 超限消息带 "maximum context length", 浏览器认得并压缩后重试
+*   ★ 重贴后核对标记: ty_brun_start 有 ctx_tokens; browser_model 有 lv_ctx_tok * 4 DIV 1024
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -380,6 +384,7 @@ CLASS zcl_ai_agent_service DEFINITION
              max_tool   TYPE i,        " 本次运行工具调用上限
              skills_json TYPE string,  " V15.19: 可让模型自己选用的技能 [{id,name,description,body}]
              export     TYPE abap_bool, " V15.19: X = 本会话有报表结果, 浏览器可以导出到文件夹
+             ctx_tokens TYPE i,        " V15.21: 模型上下文上限(token, BRUN_CTX_TOKENS), 浏览器据此决定何时压缩对话
              answer     TYPE string,   " V15.20: 非空 = 确定性回答(Fiori 参数卡 / 候选 / 闸门提示), 浏览器不调模型
              card       TYPE string,   " V15.20: 确定性回答带的参数卡 JSON(同 browser_tool 的 ev_card)
            END OF ty_brun_start.
@@ -4003,6 +4008,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     es_start-max_model  = read_cfg_int( iv_key = 'BRUN_MAX_MODEL' iv_default = 40 iv_min = 5 iv_max = 200 ).
     es_start-max_tool   = read_cfg_int( iv_key = 'BRUN_MAX_TOOL' iv_default = 60 iv_min = 5 iv_max = 300 ).
     es_start-export     = lv_res_on.
+    es_start-ctx_tokens = read_cfg_int( iv_key = 'BRUN_CTX_TOKENS' iv_default = 256000 iv_min = 8000 iv_max = 2000000 ).
 
     " ---- 9b. V15.20 Fiori 确定性回答: 参数卡建 FIORI 任务(同原 Agent), 浏览器直接显示, 不调模型 ----
     IF lv_scene = zcl_ai_intent_router=>gc_scene_fiori AND ls_fturn-kind <> zcl_ai_fiori_report_service=>gc_turn_analyze.
@@ -4062,10 +4068,14 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    DATA(lv_max_kb) = read_cfg_int( iv_key = 'BRUN_MAX_BODY_KB' iv_default = 1500 iv_min = 100 iv_max = 8000 ).
+    " V15.21: 请求体上限默认跟模型上下文走(约 4 字节 / token: 256K token ≈ 1000 KB), 配置 BRUN_MAX_BODY_KB 可改;
+    " 超限时消息里带 maximum context length —— 浏览器引擎认得这句, 会先压缩对话再重试
+    DATA(lv_ctx_tok) = read_cfg_int( iv_key = 'BRUN_CTX_TOKENS' iv_default = 256000 iv_min = 8000 iv_max = 2000000 ).
+    DATA(lv_max_kb) = read_cfg_int( iv_key = 'BRUN_MAX_BODY_KB' iv_default = nmin( val1 = lv_ctx_tok * 4 DIV 1024 val2 = 8000 )
+                                    iv_min = 100 iv_max = 8000 ).
     IF strlen( iv_body ) > lv_max_kb * 1024.
       ev_code  = 413.
-      ev_error = |这一轮发给模型的内容太大(上限 { lv_max_kb } KB), 请让灵犀先总结已有结果|.
+      ev_error = |这一轮发给模型的内容太大(上限 { lv_max_kb } KB), 请先总结已有结果 (maximum context length exceeded)|.
       RETURN.
     ENDIF.
 

@@ -9,7 +9,7 @@
  *   3. 流式执行，把待办 / 工具调用 / 改文件确认 / 回答推给界面；
  *   4. SAP /run/finish 落会话与审计。
  */
-import { createDeepAgent, CompositeBackend, StateBackend } from "deepagents/browser";
+import { createDeepAgent, CompositeBackend, StateBackend, createSummarizationMiddleware } from "deepagents/browser";
 import { ChatOpenAI } from "@langchain/openai";
 import { tool } from "@langchain/core/tools";
 import { todoListMiddleware } from "langchain";
@@ -19,7 +19,7 @@ import {
 } from "./folder-backend.js";
 import { ReadonlyMemBackend, skillFiles } from "./readonly-backend.js";
 
-export const VERSION = "0.3.0";
+export const VERSION = "0.4.0";
 export const MEMORY_FILE = "/灵犀记忆.md";
 /** SAP 管理员维护的技能（只读，SAP /run/start 下发） */
 export const SAP_SKILL_DIR = "/SAP技能/";
@@ -27,6 +27,35 @@ export const SAP_SKILL_DIR = "/SAP技能/";
 export const FOLDER_SKILL_DIR = "/.lingxi/技能/";
 const MAX_TOOL_CHARS = 60000;
 const CARD_TOOL_TEXT = "参数卡已经显示给用户。本次运行到此结束，不要再调用工具。";
+
+/**
+ * 上下文压缩时机。框架估 token 用「字数 ÷ 4」（按英文），中文实际约每字 0.6～1 token，会少算 2～3 倍；
+ * 所以按 2.2 倍折算：估算值到「上下文 × 60% ÷ 2.2」就压缩（256K 模型 ≈ 7 万估算 token：
+ * 纯中文实际约 19 万、偏英文 / JSON 实际约 7 万，都在上限内）。每次只把最近约「上下文 × 40% ÷ 2.2」的内容交给模型去总结。
+ * 万一还是超了：SAP / 网关回「maximum context length」，框架会先压缩再重试一次。
+ */
+export const CJK_TOKEN_FACTOR = 2.2;
+export function contextPlan(ctxTokens) {
+  const ctx = Math.max(8000, Number(ctxTokens) || 256000);
+  return {
+    ctx,
+    trigger: Math.floor(ctx * 0.6 / CJK_TOKEN_FACTOR),
+    trimToSummarize: Math.floor(ctx * 0.4 / CJK_TOKEN_FACTOR),
+    keepMessages: 6
+  };
+}
+
+const SUMMARY_PROMPT = `你在为一个 SAP 业务助手压缩对话记录。请用中文写一份简洁的总结，后面的工作只能看到这份总结：
+1. 用户要做的事、已经定下的口径和结论；
+2. 已经查到的关键数字、表名、字段、报表 / 结果号（result_id）、对象名，原样保留；
+3. 改过或新建的文件路径；
+4. 还没做完的事（对照待办）。
+不要编造内容，不要写客套话。
+
+对话记录：
+{conversation}
+
+总结：`;
 
 const BASE_PROMPT = `你是「灵犀」，公司内部的 SAP 业务助手，运行在用户浏览器里。
 工作方式：
@@ -261,6 +290,16 @@ export async function run(o) {
   const canExport = !!(folderBackend && runInfo.export);
   if (canExport) tools.push(buildExportTool(client, runInfo, folderBackend, inner.signal));
 
+  // 替换框架默认的对话压缩（同名中间件按名字替换）：按模型上下文和中文比例提前压缩
+  const ctxPlan = contextPlan(runInfo.limits && runInfo.limits.contextTokens);
+  const summarization = createSummarizationMiddleware({
+    backend,
+    trigger: { type: "tokens", value: ctxPlan.trigger },
+    keep: { type: "messages", value: ctxPlan.keepMessages },
+    trimTokensToSummarize: ctxPlan.trimToSummarize,
+    summaryPrompt: SUMMARY_PROMPT
+  });
+
   const agent = createDeepAgent({
     name: "lingxi",
     model,
@@ -277,7 +316,7 @@ export async function run(o) {
     skills: skillSources.length ? skillSources : undefined,
     // deepagents 1.16 起待办工具只给部分模型默认开启，这里显式加上。
     // 改文件确认不用框架的 interrupt（浏览器里没有异步上下文），由文件夹后端自己等用户点确认。
-    middleware: [todoListMiddleware()]
+    middleware: [todoListMiddleware(), summarization]
   });
 
   const messages = [...(o.history || []).map(h => ({ role: h.role, content: h.content })), { role: "user", content: o.question }];
@@ -310,6 +349,10 @@ export async function run(o) {
         for (const [, upd] of Object.entries(chunk || {})) {
           if (!upd || typeof upd !== "object") continue;
           if (Array.isArray(upd.todos)) track({ type: "todos", todos: upd.todos.map(t => ({ content: t.content, status: t.status })) });
+          // 对话压缩：框架把这一次的压缩记在状态 _summarizationEvent 里
+          if (upd._summarizationEvent && typeof upd._summarizationEvent === "object") {
+            track({ type: "compacted", file: upd._summarizationEvent.filePath || "" });
+          }
           const msgs = Array.isArray(upd.messages) ? upd.messages : (upd.messages && upd.messages.value) || [];
           for (const m of msgs) {
             const ty = msgType(m);

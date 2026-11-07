@@ -264,6 +264,9 @@ sap.ui.define([
 							addStep({ phase: "NOTE", status: "OK", label: e.text.trim().slice(0, 300) });
 						}
 						break;
+					case "compacted":
+						addStep({ phase: "NOTE", status: "OK", label: "对话较长，已自动压缩（早期内容总结成一段，原文留在本次运行的草稿里）" });
+						break;
 					case "skill":
 						addStep({ phase: "NOTE", status: "OK", label: "使用技能：" + e.name + (e.source === "FOLDER" ? "（文件夹）" : "") });
 						break;

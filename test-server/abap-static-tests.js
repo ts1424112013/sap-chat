@@ -1240,7 +1240,7 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     /\|messages\|tools\|tool_choice\|temperature\|top_p\|stop\|response_format\|parallel_tool_calls\|/.test(lcRaw2) &&
     /value = 'model'/.test(ob) && /value = 'stream'/.test(ob) && /value = 'max_tokens'/.test(ob) && /缺少 messages/.test(ob));
   const keys = ['BROWSER_AGENT_ON', 'BROWSER_AGENT_USERS', 'BRUN_MAX_MODEL', 'BRUN_MAX_TOOL', 'BRUN_MAX_BODY_KB', 'BRUN_TTL_MIN',
-    'BRUN_EXPORT_ROWS', 'BRUN_EXPORT_KB'];
+    'BRUN_EXPORT_ROWS', 'BRUN_EXPORT_KB', 'BRUN_CTX_TOKENS'];
   check('新配置键都 ≤ 20 字符（CFGKEY CHAR 20）', keys.every((k) => k.length <= 20 && agRaw2.includes("'" + k + "'")));
 
   /* ---- 20261107 浏览器 Agent M2：报表 + 结果 + 技能 + 存到文件夹（AGENT_SERVICE V15.19 / HTTP V1.1） ---- */
@@ -1299,6 +1299,12 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     /iv_module\s+= zcl_ai_fiori_report_service=>gc_module/.test(bs));
   check('brun_art：Fiori 结果要求用户已「交给模型分析」（ANALYZED = X），导出不要求',
     /FROM zai_frpt_run/.test(ba) && /lv_an <> 'X'/.test(ba) && /iv_for_model = abap_false/.test(be));
+  /* ---- 20261108 上下文超长（AGENT_SERVICE V15.21 / HTTP V1.3） ---- */
+  check('V15.21：上下文上限 BRUN_CTX_TOKENS 下发；请求体上限默认跟上下文走，超限消息带 maximum context length',
+    /^\* V15\.21 20261108/m.test(agRaw2) && /es_start-ctx_tokens = read_cfg_int\( iv_key = 'BRUN_CTX_TOKENS'/.test(bs) &&
+    /lv_ctx_tok \* 4 DIV 1024/.test(bm) && /maximum context length exceeded/.test(bm) &&
+    bm.indexOf('strlen( iv_body )') < bm.indexOf('model_calls + 1') &&
+    /^\*\s+V1\.3 20261108/m.test(httpRaw) && /"contextTokens":\{ ls_out-ctx_tokens \}/.test(hr));
   check('HTTP V1.2：开始收 focusArtifactId、回 answer / card；工具结果回 datasets',
     /^\*\s+V1\.2 20261107/m.test(httpRaw) && /iv_focus_artifact_id = ls_start-focus_artifact_id/.test(hr) &&
     /"answer":/.test(hr) && /,"datasets":\{ lv_ds \}/.test(hr));

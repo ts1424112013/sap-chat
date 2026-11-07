@@ -116,6 +116,16 @@ async function main() {
     const run4 = Object.values(runs4).find(x => x.question === "场景四") || {};
     check("确定性回答：不调模型、直接带回参数卡", run4.modelCalls === 0 && r4.card && r4.card.taskModule === "FIORI" && /Fiori 报表/.test(r4.answer), JSON.stringify({ calls: run4.modelCalls, a: r4.answer }));
     check("确定性回答写回会话；聚焦结果号带到 SAP", run4.status === "OK" && run4.focus === "FA1");
+    // ---- 场景六：上下文压缩（按中文比例提前压缩 + 网关报超出上下文时压缩重试） ----
+    const plan = LingxiAgent.contextPlan(256000);
+    check("压缩时机按中文折算（256K → 约 7 万估算 token）", plan.trigger === 69818 && plan.trimToSummarize === 46545, JSON.stringify(plan));
+    const ev6 = [];
+    const r6 = await LingxiAgent.run({ question: "场景六", sap: { base: "/sap/bc/zai_agent" }, onEvent: e => { ev6.push(e); events.push(e); } });
+    const run6 = Object.values(await (await fetch("/__runs")).json()).find(x => x.question === "场景六") || {};
+    check("中文大结果累积到阈值就自动压缩（用中文总结提示）", run6.summaries >= 1 && run6.summaryPromptChars > 0 && ev6.some(e => e.type === "compacted"),
+      JSON.stringify({ summaries: run6.summaries, compacted: ev6.filter(e => e.type === "compacted").length }));
+    check("压缩后后续请求带的是总结", run6.sawSummary === true);
+    check("网关报超出上下文：压缩后重试，运行照常完成", run6.overflowSent === true && /完成 场景六/.test(r6.answer) && run6.status === "OK", r6.answer);
     $("state").textContent = checks.every(c => c.ok) ? "全部通过" : "有失败";
   } catch (e) {
     check("运行", false, (e && e.stack) || e);

@@ -99,6 +99,10 @@ const server = http.createServer(async (req, res) => {
     if (bad.length) return send(res, 400, { ok: false, message: bad.join("；") });
     const runId = "R" + Date.now().toString(36);
     runs.set(runId, { modelCalls: 0, toolCalls: 0, question: data.question, focus: data.focusArtifactId || "" });
+    if (String(data.question || "").includes("场景六")) {
+      // 上下文压缩：模型上限设成 4 万 token，工具连续回大段中文
+      return send(res, 200, { runId, model: "mock-model", tools: SAP_TOOLS, limits: { recursionLimit: 80, contextTokens: 40000 }, systemPrompt: "场景：DATA（模拟）" });
+    }
     if (String(data.question || "").includes("场景四")) {
       // Fiori 场景的确定性回答：SAP 直接给回答和参数卡，浏览器不该再调模型
       return send(res, 200, { runId, model: "mock-model", tools: [], limits: { recursionLimit: 80 }, systemPrompt: "",
@@ -126,6 +130,26 @@ const server = http.createServer(async (req, res) => {
       choices: [{ index: 0, message, finish_reason: calls ? "tool_calls" : "stop" }],
       usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }
     });
+    if (run.question && run.question.includes("场景六")) {
+      if (firstUser.startsWith("你在为一个 SAP 业务助手压缩对话记录")) {
+        run.summaries = (run.summaries || 0) + 1;
+        run.summaryPromptChars = firstUser.length;
+        return reply({ role: "assistant", content: "总结：用户要看大结果，已经查过几次，每次都是一大段数据。" });
+      }
+      run.step6 = (run.step6 || 0) + 1;
+      run.maxBody = Math.max(run.maxBody || 0, body.length);
+      run.sawSummary = run.sawSummary || msgs.some(m => String(typeof m.content === "string" ? m.content : JSON.stringify(m.content)).includes("总结：用户要看大结果"));
+      // 第 4 次主请求假装网关报超出上下文（同 SAP 413 的写法），引擎应压缩后重试
+      if (run.step6 === 4 && !run.overflowSent) {
+        run.overflowSent = true;
+        return send(res, 413, { error: { message: "这一轮发给模型的内容太大(上限 160 KB), 请先总结已有结果 (maximum context length exceeded)", type: "lingxi_error" } });
+      }
+      if (run.step6 <= 6) {
+        const c = [call("search_tables", { keyword: "大结果" })];
+        return reply({ role: "assistant", content: "", tool_calls: c }, c);
+      }
+      return reply({ role: "assistant", content: `完成 场景六 summaries=${run.summaries || 0}` });
+    }
     if (firstUser.startsWith("子任务")) {
       run.subagent = true;
       return reply({ role: "assistant", content: "子任务结果：1001 出现 1 次" });
@@ -184,6 +208,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (data.tool !== "search_tables") return send(res, 200, { ok: false, message: "工具未授权：" + data.tool });
     if (data.args && data.args.keyword === "坏参数") return send(res, 200, { ok: false, message: "参数被拒绝: keyword 不合法" });
+    if (data.args && data.args.keyword === "大结果") return send(res, 200, { ok: true, content: "物料库存明细：" + "工厂一千号仓库成品".repeat(800) });
     return send(res, 200, { ok: true, content: JSON.stringify({ rows: [{ TABNAME: "AFKO", DDTEXT: "订单表头" }, { TABNAME: "AFPO", DDTEXT: "订单项目" }], total: 2 }) });
   }
   if (p === "/results/export") {
