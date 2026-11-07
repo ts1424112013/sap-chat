@@ -6,7 +6,8 @@
  *        → { runId, model, tools:[{name,description,parameters}], limits, systemPrompt }
  *   POST {base}/chat/completions  OpenAI 兼容；头 X-Lingxi-Run 指明运行号；SAP 用自己的模型配置转发
  *   POST {base}/tools/exec        { runId, tool, args, requestId } → { ok, content, message, display? }
- *   POST {base}/run/finish        { runId, status, answer, trace, skillsUsed }
+ *   POST {base}/run/finish        { runId, status, answer, skillsUsed, steps }（steps = 精简过程记录）
+ *   POST {base}/run/steps         { sessionId } → { runs: [{ msgSeq, steps }] }
  *   POST {base}/results/export    { runId, resultId } → { ok, label, rows, columns, csv, truncated }
  *   /tools/exec 的结果可带 card（报表参数卡：taskId / taskModule / taskStatus / needsInput / pendingParamsJson / answer），
  *   引擎拿到后立刻结束本次运行，由界面显示参数卡
@@ -94,6 +95,8 @@ export function createSapClient({ base = "/sap/bc/zai_agent", origin, timeoutMs 
     execTool: (p, o) => post("/tools/exec", p, { ...o, runId: p.runId, okFalseThrows: false }),
     finishRun: (p, o) => post("/run/finish", p, { ...o, runId: p.runId }),
     exportResult: (p, o) => post("/results/export", p, { ...o, runId: p.runId }),
+    /** 会话里新引擎各轮的精简过程记录（刷新 / 重开会话时画回来）→ { runs: [{ msgSeq, steps }] } */
+    getSteps: (p, o) => post("/run/steps", p, o),
     modelFetch
   };
 }

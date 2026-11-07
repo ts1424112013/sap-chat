@@ -18,8 +18,9 @@ import {
   FolderBackend, folderSupported, pickFolder, restoreFolder, requestFolderPermission, forgetFolder
 } from "./folder-backend.js";
 import { ReadonlyMemBackend, skillFiles } from "./readonly-backend.js";
+import { summarizeStep, mainArg } from "./step-summary.js";
 
-export const VERSION = "0.4.0";
+export const VERSION = "0.5.0";
 export const MEMORY_FILE = "/灵犀记忆.md";
 /** SAP 管理员维护的技能（只读，SAP /run/start 下发） */
 export const SAP_SKILL_DIR = "/SAP技能/";
@@ -61,7 +62,12 @@ const BASE_PROMPT = `你是「灵犀」，公司内部的 SAP 业务助手，运
 工作方式：
 - 多步任务先用 write_todos 列出计划，做完一项勾一项；简单问题直接回答，不必列计划。
 - SAP 数据只能通过 SAP 工具获取，不要编造数字；工具返回"部分数据 / 已截断"时，回答里要说明。
-- 回答用中文，先给结论，再给依据。`;
+- 回答用中文，先给结论，再给依据。
+过程说明（用户在界面上实时看你的每一步）：
+- 开始干活时，在第一次调用工具的同时用一句话说打算怎么做（先查什么、再看什么）。
+- 拿到重要发现、要换方向时，用一句话说看到了什么、接下来查什么。
+- 要用户确认的操作（写文件等）之前，用一句话说为什么要这么做。
+- 其余步骤（连续查表、读文件）直接调用工具，不必说话。每句不超过 40 个字，不重复工具名，不写客套话。`;
 
 const FOLDER_PROMPT = `用户已授权一个本地文件夹，文件工具里的 "/" 就是这个文件夹的根目录。
 - 改文件前先读；尽量用 edit_file 做小范围修改，不要整份重写。
@@ -91,12 +97,14 @@ function rid() {
  */
 function buildSapTools(client, run, emit, signal, onCard, onDatasets) {
   return (run.tools || []).map(t => tool(
-    async (args) => {
+    async (args, config) => {
       const requestId = rid();
       const r = await client.execTool({ runId: run.runId, tool: t.name, args: args || {}, requestId }, { signal });
       if (r && r.display) emit({ type: "display", tool: t.name, display: r.display });
-      // 数据集（查数 / 结果查询 / 数据分析 / 函数）直接交给界面画表格和图表，不经过模型
-      if (r && Array.isArray(r.datasets) && r.datasets.length && onDatasets) onDatasets(t.name, r.datasets);
+      // 数据集（查数 / 结果查询 / 数据分析 / 函数）直接交给界面画表格和图表，不经过模型；带上调用编号，界面挂到对应那一步
+      if (r && Array.isArray(r.datasets) && r.datasets.length && onDatasets) {
+        onDatasets(t.name, r.datasets, config && config.toolCall && config.toolCall.id);
+      }
       if (r && r.ok === false) return `工具执行失败：${r.message || "未知原因"}`;
       if (r && r.card && typeof r.card === "object") {
         onCard(r.card);
@@ -147,6 +155,48 @@ function buildExportTool(client, run, folderBackend, signal) {
   );
 }
 
+/**
+ * 精简的过程记录（存进 SAP，刷新 / 重开会话时按同样样式画回来）：
+ * 每步只留类型、工具、主要参数、一句话结果、状态、耗时；不存文件内容、源码、返回全文、思考全文。
+ * k: say 说明 | plan 计划 | tool 工具 | skill 技能 | note 提示 | card 参数卡 | think 思考（只留耗时）
+ */
+export function compactSteps(trace) {
+  const out = [];
+  const byId = {};
+  let plan = null;
+  for (const e of trace || []) {
+    if (out.length >= 200) break;
+    switch (e.type) {
+      case "say": out.push({ k: "say", text: String(e.text || "").slice(0, 300) }); break;
+      case "think": out.push({ k: "think", ms: e.ms || 0 }); break;
+      case "todos":
+        if (!plan) { plan = { k: "plan", text: "" }; out.push(plan); }
+        plan.text = JSON.stringify((e.todos || []).map(t => [String(t.content || "").slice(0, 60), t.status])).slice(0, 1000);
+        break;
+      case "tool_start": {
+        const s = { k: "tool", id: e.id, tool: e.tool, arg: String(e.arg || "").slice(0, 200), st: "RUNNING", at: e.at };
+        byId[e.id] = s; out.push(s); break;
+      }
+      case "tool_end": {
+        const s = byId[e.id];
+        if (s) { s.st = e.ok ? "OK" : "ERROR"; s.sum = String(e.summary || "").slice(0, 200); s.ms = Math.max(0, (e.at || 0) - (s.at || 0)); }
+        break;
+      }
+      case "datasets": { const s = byId[e.id]; if (s) { s.ds = e.index; s.dn = e.count; } break; }
+      case "confirmed":
+        out.push({ k: "note", st: e.approved ? "OK" : "ERROR",
+          text: (e.approved ? (e.auto ? "已按本次允许自动" : "已同意") : "已拒绝") + e.action + " " + String(e.path || "").slice(0, 120) });
+        break;
+      case "skill": out.push({ k: "skill", text: String(e.name || "").slice(0, 60) }); break;
+      case "compacted": out.push({ k: "note", text: "对话较长，已自动压缩" }); break;
+      case "card": out.push({ k: "card", tool: e.tool || "" }); break;
+      default: break;
+    }
+  }
+  for (const s of out) { if (s.st === "RUNNING") s.st = "STOPPED"; delete s.at; delete s.id; }
+  return out;
+}
+
 function msgType(m) {
   if (!m) return "";
   if (typeof m._getType === "function") return m._getType();
@@ -192,20 +242,23 @@ export async function run(o) {
     folder: o.folderBackend ? o.folderBackend.name : (o.folder ? o.folder.name : "")
   }, { signal: o.signal });
   if (!runInfo || !runInfo.runId) throw new SapAgentError("SAP 没有返回运行号", 0, runInfo);
-  emit({ type: "run", runId: runInfo.runId, model: runInfo.model, tools: (runInfo.tools || []).map(t => t.name) });
+  emit({ type: "run", runId: runInfo.runId, model: runInfo.model, tools: (runInfo.tools || []).map(t => t.name),
+    limits: { maxModelCalls: (runInfo.limits && runInfo.limits.maxModelCalls) || 0, maxToolCalls: (runInfo.limits && runInfo.limits.maxToolCalls) || 0,
+      contextTokens: (runInfo.limits && runInfo.limits.contextTokens) || 0 } });
 
   // SAP 已经给出确定性回答（Fiori 报表参数卡 / 候选清单 / 闸门提示）：不调模型，直接收尾
   if (runInfo.answer) {
     const det = { answer: String(runInfo.answer), card: runInfo.card && typeof runInfo.card === "object" ? runInfo.card : null };
     if (det.card) track({ type: "card", tool: det.card.tool || "", taskId: det.card.taskId || "" });
     try {
-      await client.finishRun({ runId: runInfo.runId, status: "OK", answer: det.answer, message: "", trace: trace.slice(-200), skillsUsed: [] });
+      await client.finishRun({ runId: runInfo.runId, status: "OK", answer: det.answer, message: "", skillsUsed: [], steps: compactSteps(trace) });
     } catch (e) { emit({ type: "warn", message: "运行结果未能写回 SAP 会话：" + e.message }); }
     emit({ type: "phase", phase: "done", status: "OK" });
     return { answer: det.answer, runId: runInfo.runId, trace, card: det.card, skills: [], datasets: [], deterministic: true,
       changes: [], elapsedMs: Date.now() - started, folder: o.folderBackend || null };
   }
 
+  let allowAllWrites = false;
   // 文件夹后端：调用方可传入同一个实例跨多轮复用（撤回要用到之前的修改记录）
   let folderBackend = o.folderBackend || (o.folder ? new FolderBackend(o.folder) : null);
   if (folderBackend) {
@@ -214,11 +267,17 @@ export async function run(o) {
       question: () => o.question,
       onChange: c => track({ type: "file_changed", action: c.action, path: c.path, backup: c.backup }),
       confirm: o.confirmWrites === false ? null : async req => {
+        // 用户在本次运行里选过「都不再询问」：同类写入自动通过（只在本次运行有效）
+        if (allowAllWrites) {
+          track({ type: "confirmed", action: req.action, path: req.path, approved: true, auto: true });
+          return { approved: true };
+        }
         track({ type: "confirm", action: req.action, path: req.path });
         // 没有确认界面时一律拒绝，绝不静默写用户文件
         const r = o.confirm ? await o.confirm(req) : { approved: false, message: "界面不支持确认" };
         const ok = r === true || (r && r.approved === true);
-        track({ type: "confirmed", action: req.action, path: req.path, approved: ok });
+        if (ok && r && r.always === true) allowAllWrites = true;
+        track({ type: "confirmed", action: req.action, path: req.path, approved: ok, always: !!(r && r.always) });
         return r;
       }
     };
@@ -282,9 +341,18 @@ export async function run(o) {
   };
 
   const datasets = [];
-  const onDatasets = (toolName, list) => {
+  const onDatasets = (toolName, list, callId) => {
+    const first = datasets.length;
     for (const d of list) if (d && typeof d === "object" && datasets.length < 8) datasets.push(d);
-    track({ type: "datasets", tool: toolName, count: list.length });
+    // index = 这一步的数据集在本次运行 datasets 里从第几个开始（界面按它把数据卡挂到这一步下面）
+    // preview：每个数据集只带列名和前 3 行，供过程里就地预览；完整数据在运行结果的 datasets 里
+    track({ type: "datasets", tool: toolName, id: callId || "", index: first, count: datasets.length - first,
+      preview: list.slice(0, 2).map(d => ({
+        name: (d && d.name) || "", total: d && (d.total_rows != null ? d.total_rows : (d.rows || []).length),
+        columns: ((d && d.columns) || []).slice(0, 6).map(c => (c && (c.label || c.name)) || ""),
+        numeric: ((d && d.columns) || []).slice(0, 6).map(c => !!(c && c.numeric)),
+        rows: ((d && d.rows) || []).slice(0, 3).map(r => (Array.isArray(r) ? r : []).slice(0, 6))
+      })) });
   };
   const tools = buildSapTools(client, runInfo, emit, inner.signal, onCard, onDatasets);
   const canExport = !!(folderBackend && runInfo.export);
@@ -339,6 +407,8 @@ export async function run(o) {
     }
   };
 
+  const callArgs = {};
+  let lastModelAt = Date.now();
   let answer = "";
   let status = "OK";
   let errorMsg = "";
@@ -357,19 +427,30 @@ export async function run(o) {
           for (const m of msgs) {
             const ty = msgType(m);
             if (ty === "ai") {
+              // 深度思考（DeepSeek 的 reasoning_content）：单独交给界面，默认收起；不进会话正文
+              const rc = m.additional_kwargs && m.additional_kwargs.reasoning_content;
+              const now = Date.now();
+              if (typeof rc === "string" && rc.trim()) track({ type: "think", text: rc.trim(), ms: now - lastModelAt });
+              lastModelAt = now;
+              // 真实用量（网关返回 usage 时）：界面据此显示上下文用了多少
+              const um = m.usage_metadata;
+              if (um && um.input_tokens) emit({ type: "usage", input: um.input_tokens, output: um.output_tokens || 0, ctx: ctxPlan.ctx });
               const calls = m.tool_calls || [];
+              const t = textOf(m);
+              if (calls.length && t && t.trim()) track({ type: "say", text: t.trim() });
               for (const c of calls) {
                 if (c.name === "write_todos") continue;
                 noteSkill(c.name, c.args);
-                track({ type: "tool_start", id: c.id, tool: c.name, args: c.args });
+                callArgs[c.id] = c.args;
+                track({ type: "tool_start", id: c.id, tool: c.name, args: c.args, arg: mainArg(c.name, c.args) });
               }
-              const t = textOf(m);
               if (!calls.length && t) { answer = t; emit({ type: "answer", text: t }); }
-              else if (t) emit({ type: "thinking", text: t });
             } else if (ty === "tool") {
               if (m.name === "write_todos") continue;
               const t = textOf(m);
-              track({ type: "tool_end", id: m.tool_call_id, tool: m.name, ok: !/^(Error|工具执行失败)/.test(t), preview: t.slice(0, 300) });
+              const ok = !/^(Error|工具执行失败)/.test(t) && m.status !== "error";
+              track({ type: "tool_end", id: m.tool_call_id, tool: m.name, ok,
+                summary: summarizeStep(m.name, callArgs[m.tool_call_id], t, ok), preview: t.slice(0, 1000) });
             }
           }
         }
@@ -388,8 +469,9 @@ export async function run(o) {
 
   try {
     await client.finishRun({
-      runId: runInfo.runId, status, answer, message: errorMsg, trace: trace.slice(-200),
-      skillsUsed: [...skillsUsed.keys()].filter(k => !k.startsWith("folder:"))
+      runId: runInfo.runId, status, answer, message: errorMsg,
+      skillsUsed: [...skillsUsed.keys()].filter(k => !k.startsWith("folder:")),
+      steps: compactSteps(trace)
     });
   } catch (e) { emit({ type: "warn", message: "运行结果未能写回 SAP 会话：" + e.message }); }
 
@@ -404,5 +486,6 @@ export async function run(o) {
 
 export {
   createSapClient, SapAgentError,
-  FolderBackend, folderSupported, pickFolder, restoreFolder, requestFolderPermission, forgetFolder
+  FolderBackend, folderSupported, pickFolder, restoreFolder, requestFolderPermission, forgetFolder,
+  summarizeStep, mainArg
 };

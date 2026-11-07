@@ -125,6 +125,23 @@ async function main() {
     check("中文大结果累积到阈值就自动压缩（用中文总结提示）", run6.summaries >= 1 && run6.summaryPromptChars > 0 && ev6.some(e => e.type === "compacted"),
       JSON.stringify({ summaries: run6.summaries, compacted: ev6.filter(e => e.type === "compacted").length }));
     check("压缩后后续请求带的是总结", run6.sawSummary === true);
+    // ---- 场景七：界面改版要的事件（节点说明、思考、用量、结果句、本次都允许、精简过程记录） ----
+    const ev7 = [];
+    let asked7 = 0;
+    const r7 = await LingxiAgent.run({ question: "场景七", folderBackend: r.folder, sap: { base: "/sap/bc/zai_agent" },
+      onEvent: e => { ev7.push(e); events.push(e); },
+      confirm: async () => { asked7++; return { approved: true, always: true }; } });
+    const run7 = Object.values(await (await fetch("/__runs")).json()).find(x => x.question === "场景七") || {};
+    check("提示词里有「过程说明」规则", run7.sysHasNarrationRule === true);
+    check("节点说明 say 事件（完整文字）", ev7.some(e => e.type === "say" && e.text === "先查工单相关的表，再统计。"));
+    check("深度思考 think 事件", ev7.some(e => e.type === "think" && /先找表/.test(e.text)));
+    check("用量 usage 事件", ev7.some(e => e.type === "usage" && e.input === 1234 && e.ctx > 0));
+    check("工具行带主要参数与一句话结果", ev7.some(e => e.type === "tool_start" && e.arg === "工单") &&
+      ev7.some(e => e.type === "tool_end" && e.tool === "search_tables" && /共 2 条/.test(e.summary)), JSON.stringify(ev7.filter(e => e.type === "tool_end").map(e => e.summary)));
+    check("「本次都允许」：只问一次，第二次写入自动通过", asked7 === 1 && ev7.some(e => e.type === "confirmed" && e.auto === true) && /完成 场景七/.test(r7.answer));
+    const st7 = run7.steps || [];
+    check("精简过程记录交给 SAP（说明 / 工具 / 确认）", st7.some(s => s.k === "say") && st7.some(s => s.k === "tool" && s.tool === "search_tables" && s.st === "OK" && s.sum) &&
+      st7.some(s => s.k === "note" && /自动/.test(s.text)) && st7.some(s => s.k === "think") && !JSON.stringify(st7).includes("先找表"), JSON.stringify(st7).slice(0, 400));
     check("网关报超出上下文：压缩后重试，运行照常完成", run6.overflowSent === true && /完成 场景六/.test(r6.answer) && run6.status === "OK", r6.answer);
     $("state").textContent = checks.every(c => c.ok) ? "全部通过" : "有失败";
   } catch (e) {

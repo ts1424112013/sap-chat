@@ -130,6 +130,21 @@ const server = http.createServer(async (req, res) => {
       choices: [{ index: 0, message, finish_reason: calls ? "tool_calls" : "stop" }],
       usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }
     });
+    if (run.question && run.question.includes("场景七")) {
+      // 界面改版要的事件：节点说明（content + tool_calls）、深度思考（reasoning_content）、用量、本次都允许
+      run.step7 = (run.step7 || 0) + 1;
+      run.sysHasNarrationRule = run.sysHasNarrationRule || sys.includes("过程说明");
+      const usage = { prompt_tokens: 1234 * run.step7, completion_tokens: 20, total_tokens: 1234 * run.step7 + 20 };
+      const rep = (message, calls) => send(res, 200, { id: "c7-" + run.step7, object: "chat.completion", created: 1, model: "mock-model",
+        choices: [{ index: 0, message, finish_reason: calls ? "tool_calls" : "stop" }], usage });
+      if (run.step7 === 1) {
+        const c = [call("search_tables", { keyword: "工单" })];
+        return rep({ role: "assistant", content: "先查工单相关的表，再统计。", reasoning_content: "用户想看工单状态，先找表。", tool_calls: c }, c);
+      }
+      if (run.step7 === 2) { const c = [call("write_file", { file_path: "/七-1.md", content: "一" })]; return rep({ role: "assistant", content: "", tool_calls: c }, c); }
+      if (run.step7 === 3) { const c = [call("write_file", { file_path: "/七-2.md", content: "二" })]; return rep({ role: "assistant", content: "", tool_calls: c }, c); }
+      return rep({ role: "assistant", content: "完成 场景七" });
+    }
     if (run.question && run.question.includes("场景六")) {
       if (firstUser.startsWith("你在为一个 SAP 业务助手压缩对话记录")) {
         run.summaries = (run.summaries || 0) + 1;
@@ -219,7 +234,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (p === "/run/finish") {
     const run = runs.get(data.runId);
-    if (run) Object.assign(run, { status: data.status, answer: data.answer, skillsUsed: data.skillsUsed });
+    if (run) Object.assign(run, { status: data.status, answer: data.answer, skillsUsed: data.skillsUsed, steps: data.steps });
     return send(res, 200, { ok: true });
   }
   return send(res, 404, { message: "unknown " + p });

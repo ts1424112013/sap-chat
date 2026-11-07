@@ -352,7 +352,8 @@ export class FolderBackend {
     if (bad) return { error: bad };
     try {
       const existed = await this._exists(path);
-      const denied = await this._confirm(existed ? "覆盖" : "新建", path, existed ? await this._textOrNull(path) : null, String(content));
+      // 对比时去掉开头的 BOM（读文本时浏览器会吃掉它，不去掉第一行会显示成「改了」）
+      const denied = await this._confirm(existed ? "覆盖" : "新建", path, existed ? await this._textOrNull(path) : null, String(content).replace(/^\uFEFF/, ""));
       if (denied) return { error: denied };
       const backup = existed ? await this._backup(path) : null;
       await this._writeText(path, String(content));
