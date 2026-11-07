@@ -24,6 +24,8 @@
 * 版本:   V1.0 20261107 首版
 *         V1.1 20261107 浏览器 Agent M2: /run/start 回 skills / export; /tools/exec 回 card;
 *              /run/finish 收 skillsUsed; 新路径 /results/export(依赖 ZCL_AI_AGENT_SERVICE V15.19)
+*         V1.2 20261107 /run/start 收 focusArtifactId、回 answer / card(Fiori 确定性回答);
+*              /tools/exec 回 datasets(界面表格 / 图表)(依赖 ZCL_AI_AGENT_SERVICE V15.20)
 *         ★ 重贴后核对标记: INTERFACES if_http_extension; handle_request 里有
 *           WHEN '/run/start' / '/chat/completions' / '/tools/exec' / '/results/export' / '/run/finish'
 *=======================================================================
@@ -45,6 +47,7 @@ CLASS zcl_ai_agent_http DEFINITION
              question   TYPE string,
              think      TYPE abap_bool,
              skill_id   TYPE string,
+             focus_artifact_id TYPE string,   " V1.2: 前端聚焦的结果(Fiori「交给模型分析」)
            END OF ty_start_req.
     TYPES: BEGIN OF ty_tool_req,
              run_id     TYPE string,
@@ -136,6 +139,7 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                         iv_question   = ls_start-question
                         iv_skill_id   = ls_start-skill_id
                         iv_think      = COND #( WHEN ls_start-think = abap_true THEN `X` ELSE `` )
+                        iv_focus_artifact_id = ls_start-focus_artifact_id
               IMPORTING es_start      = ls_out
                         ev_error      = lv_err
                         ev_http       = lv_http ).
@@ -150,6 +154,8 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                              |"tools":{ ls_out-tools_json },"systemPrompt":{ jstr( ls_out-system ) },| &&
                              |"skills":{ COND string( WHEN ls_out-skills_json IS INITIAL THEN `[]` ELSE ls_out-skills_json ) },| &&
                              |"export":{ COND string( WHEN ls_out-export = abap_true THEN `true` ELSE `false` ) },| &&
+                             |"answer":{ jstr( ls_out-answer ) },| &&
+                             COND string( WHEN ls_out-card IS NOT INITIAL THEN |"card":{ ls_out-card },| ) &&
                              |"limits":\{"maxModelCalls":{ ls_out-max_model },"maxToolCalls":{ ls_out-max_tool },| &&
                              |"recursionLimit":{ ( ls_out-max_model + ls_out-max_tool ) * 2 + 10 }\}\}| ).
 
@@ -182,7 +188,8 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
             DATA: lv_ok      TYPE abap_bool,
                   lv_content TYPE string,
                   lv_msg     TYPE string,
-                  lv_card    TYPE string.
+                  lv_card    TYPE string,
+                  lv_ds      TYPE string.
             zcl_ai_agent_service=>browser_tool(
               EXPORTING iv_run_id  = ls_tool-run_id
                         iv_tool    = ls_tool-tool
@@ -191,7 +198,8 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                         ev_content = lv_content
                         ev_message = lv_msg
                         ev_http    = lv_http
-                        ev_card    = lv_card ).
+                        ev_card    = lv_card
+                        ev_datasets = lv_ds ).
             COMMIT WORK.
             IF lv_http <> 200.
               fail( io_server = server iv_code = lv_http iv_msg = lv_msg ).
@@ -199,7 +207,8 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
               reply( io_server = server iv_code = 200
                      iv_json = |\{"ok":{ COND string( WHEN lv_ok = abap_true THEN `true` ELSE `false` ) },| &&
                                |"content":{ jstr( lv_content ) },"message":{ jstr( lv_msg ) }| &&
-                               COND string( WHEN lv_card IS NOT INITIAL THEN |,"card":{ lv_card }| ) && |\}| ).
+                               COND string( WHEN lv_card IS NOT INITIAL THEN |,"card":{ lv_card }| ) &&
+                               COND string( WHEN lv_ds IS NOT INITIAL THEN |,"datasets":{ lv_ds }| ) && |\}| ).
             ENDIF.
 
           " ---------------- V1.1: 把一份报表结果导出成 CSV(浏览器写进用户文件夹) ----------------

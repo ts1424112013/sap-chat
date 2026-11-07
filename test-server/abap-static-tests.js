@@ -432,9 +432,9 @@ check('save_audit 声明 it_calls（OPTIONAL），主流程传入 lt_llm_calls',
   /it_calls\s+TYPE tt_llm_call OPTIONAL/.test(ag) && /it_trace\s+= lt_trace\s+it_calls\s+= lt_llm_calls \)/.test(ag));
 check('log_llm_call：SUMMARY 截到 200 字符；网关没返回写"未返回"',
   /IF strlen\( lv_sum \) > 200\.\s*lv_sum = lv_sum\(200\)\./.test(methodOf(ag, 'log_llm_call')) && /`未返回`/.test(methodOf(ag, 'log_llm_call')));
-// 20261107：浏览器 Agent 的 browser_tool 用同一条回填规则（第 3 处），原 analyze_agent 里仍是 2 处
-check('两处数据集回填都按整行裁到 GUARD 上限以内；run_sql 回填副本不再改写 total_rows（+ browser_tool 同规则 1 处）',
-  agCnt(/iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 200/g) === 3 &&
+// 20261107：浏览器 Agent 的 browser_tool 用同一条回填规则（run_sql + 数据分析计划 2 处），原 analyze_agent 里仍是 2 处
+check('两处数据集回填都按整行裁到 GUARD 上限以内；run_sql 回填副本不再改写 total_rows（+ browser_tool 同规则 2 处）',
+  agCnt(/iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 200/g) === 4 &&
   (methodOf(ag, 'analyze_agent').match(/iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 200/g) || []).length === 2 &&
   /iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 200/.test(methodOf(ag, 'browser_tool')) &&
   !/ls_feed_ds-total_rows\s*=/.test(ag) && !/ls_feed_ds-error\s*=/.test(ag));
@@ -1281,6 +1281,27 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     /^\*\s+V1\.1 20261107/m.test(httpRaw) && hr.includes("'/results/export'") &&
     /ls_exp-run_id <> server->request->get_header_field\( 'x-lingxi-run' \)/.test(hr) && /,"card":\{ lv_card \}/.test(hr) &&
     /it_skills\s+= ls_fin-skills_used/.test(hr) && /"skills":/.test(hr) && /"export":/.test(hr));
+
+  /* ---- 20261107 浏览器 Agent M3：数据表 + 数据分析计划 + 调用函数 + Fiori（AGENT_SERVICE V15.20 / HTTP V1.2） ---- */
+  console.log('\n━━ 浏览器 Agent M3：AGENT_SERVICE V15.20 / ZCL_AI_AGENT_HTTP V1.2');
+  check('V15.20：brun_ds_json 在；analyze_agent 仍未改',
+    /^\* V15\.20 20261107/m.test(agRaw2) && methodOf(ag2, 'brun_ds_json') && !/brun_|browser_/.test(methodOf(ag2, 'analyze_agent')));
+  check('browser_tool：数据分析计划走 parse_analysis_plan + validate_plan + execute_plan；计划被拒不执行',
+    /parse_analysis_plan\(/.test(bt) && /validate_plan\( ls_plan \)/.test(bt) &&
+    bt.indexOf('execute_plan(') > bt.indexOf('IF lv_plerr IS NOT INITIAL.'));
+  check('browser_tool：调用函数走 parse_function_call + call_sync，次数按运行原子累计（FUNC_EXECS < max_exec）',
+    /parse_function_call\(/.test(bt) && /SET func_execs = func_execs \+ 1/.test(bt) && /func_execs < @lv_cf_max/.test(bt) &&
+    bt.indexOf('call_sync(') > bt.indexOf('func_execs + 1'));
+  check('browser_tool：run_sql / 结果查询 / 数据分析 / 函数都把数据集交回界面（ev_datasets）',
+    (bt.match(/ev_datasets = brun_ds_json\(/g) || []).length >= 4);
+  check('browser_start：Fiori 场景先走 agent_turn；非 ANALYZE 直接回 answer（+ FIORI 任务的参数卡）不调模型',
+    /zcl_ai_fiori_report_service=>agent_turn\(/.test(bs) && /es_start-answer = /.test(bs) &&
+    /iv_module\s+= zcl_ai_fiori_report_service=>gc_module/.test(bs));
+  check('brun_art：Fiori 结果要求用户已「交给模型分析」（ANALYZED = X），导出不要求',
+    /FROM zai_frpt_run/.test(ba) && /lv_an <> 'X'/.test(ba) && /iv_for_model = abap_false/.test(be));
+  check('HTTP V1.2：开始收 focusArtifactId、回 answer / card；工具结果回 datasets',
+    /^\*\s+V1\.2 20261107/m.test(httpRaw) && /iv_focus_artifact_id = ls_start-focus_artifact_id/.test(hr) &&
+    /"answer":/.test(hr) && /,"datasets":\{ lv_ds \}/.test(hr));
 }
 
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));

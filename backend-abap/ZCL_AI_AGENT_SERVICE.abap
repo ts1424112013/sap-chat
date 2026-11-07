@@ -276,6 +276,17 @@
 *   依赖: ZAI_BRUN 加字段 SKILL_ID CHAR 32 / TASK_ID CHAR 32; ZCL_AI_AGENT_HTTP V1.1
 *   ★ 重贴后核对标记: PUBLIC 有 browser_export 与 ty_brun_start-skills_json; PRIVATE 有 brun_art / brun_results /
 *     brun_card / brun_add_tool / csv_cell; browser_tool 里有 brun_card( 与 zcl_ai_result_query=>run(
+* V15.20 20261107(浏览器 Agent M3: 数据表回界面 + 数据分析计划 + 调用函数 + Fiori 报表), 只改 browser_* / brun_*:
+*   ① browser_tool 新出参 ev_datasets: run_sql / query_result / lookup_by_result / sap_data_analysis /
+*     call_function 的数据集(build_datasets_json, 约 300K 字符内)回浏览器, 界面出表格 / 图表 / 组合
+*   ② sap_data_analysis: parse_analysis_plan + validate_plan + execute_plan(同原 Agent);
+*     call_function: parse_function_call + ZCL_AI_RFC_EXEC=>call_sync, 次数按运行累计(ZAI_BRUN-FUNC_EXECS ≤ max_exec)
+*   ③ Fiori 场景: browser_start 先调 ZCL_AI_FIORI_REPORT_SERVICE=>agent_turn(同原 Agent):
+*     CARD / ANSWER → es_start-answer(+ card, 建 FIORI 任务)浏览器直接显示不调模型; ANALYZE → 结果上下文进系统说明
+*   ④ brun_art 加 Fiori 分析闸门: FIORI_RESULT 要求 ZAI_FRPT_RUN-ANALYZED = X(导出不要求); list_results 标出未交给模型的
+*   依赖: ZAI_BRUN 再加 FUNC_EXECS INT4; ZCL_AI_AGENT_HTTP V1.2
+*   ★ 重贴后核对标记: browser_start 有 zcl_ai_fiori_report_service=>agent_turn(; browser_tool 有 execute_plan( 与
+*     zcl_ai_rfc_exec=>call_sync(; PRIVATE 有 brun_ds_json; brun_art 有 FROM zai_frpt_run
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -369,6 +380,8 @@ CLASS zcl_ai_agent_service DEFINITION
              max_tool   TYPE i,        " 本次运行工具调用上限
              skills_json TYPE string,  " V15.19: 可让模型自己选用的技能 [{id,name,description,body}]
              export     TYPE abap_bool, " V15.19: X = 本会话有报表结果, 浏览器可以导出到文件夹
+             answer     TYPE string,   " V15.20: 非空 = 确定性回答(Fiori 参数卡 / 候选 / 闸门提示), 浏览器不调模型
+             card       TYPE string,   " V15.20: 确定性回答带的参数卡 JSON(同 browser_tool 的 ev_card)
            END OF ty_brun_start.
 
     " 开始一次运行: 校验开通 / 开关 / 会话 / 场景 / 技能 / 模型, 建会话头, 返回可用工具
@@ -379,6 +392,7 @@ CLASS zcl_ai_agent_service DEFINITION
                 iv_question   TYPE string
                 iv_skill_id   TYPE string OPTIONAL
                 iv_think      TYPE string OPTIONAL
+                iv_focus_artifact_id TYPE string OPTIONAL   " V15.20: 前端聚焦的结果(Fiori「交给模型分析」用)
       EXPORTING es_start      TYPE ty_brun_start
                 ev_error      TYPE string
                 ev_http       TYPE i.
@@ -401,7 +415,8 @@ CLASS zcl_ai_agent_service DEFINITION
                 ev_content TYPE string
                 ev_message TYPE string
                 ev_http    TYPE i
-                ev_card    TYPE string.
+                ev_card    TYPE string
+                ev_datasets TYPE string.   " V15.20: 本次工具产出的数据集 JSON 数组(界面表格 / 图表用, 不回模型)
 
     " 结束运行: 问答写回会话
     " V15.19: it_skills = 浏览器里模型读过的 SAP 技能编号(只审计能用的); 有参数卡任务时本轮问答归入任务
@@ -442,10 +457,17 @@ CLASS zcl_ai_agent_service DEFINITION
       RETURNING VALUE(rv) TYPE string.
 
     " V15.19: 结果号核对 —— 本人 + 本运行的会话 + AVAILABLE(返回空 = 通过, 否则是给模型看的原因)
+    " V15.20: iv_for_model = X(默认)时 Fiori 结果还要求用户已「交给模型分析」(ZAI_FRPT_RUN-ANALYZED); 导出不要求
     CLASS-METHODS brun_art
       IMPORTING is_run          TYPE zai_brun
                 iv_result_id    TYPE string
+                iv_for_model    TYPE abap_bool DEFAULT abap_true
       RETURNING VALUE(rv_error) TYPE string.
+
+    " V15.20: 数据集 → 给界面的 JSON 数组(按字符预算裁行)
+    CLASS-METHODS brun_ds_json
+      IMPORTING it_datas  TYPE zcl_ai_data_analysis_service=>tt_dataset
+      RETURNING VALUE(rv) TYPE string.
 
     " V15.19: 本会话的报表结果清单(list_results 的返回)
     CLASS-METHODS brun_results
@@ -460,6 +482,7 @@ CLASS zcl_ai_agent_service DEFINITION
                 iv_tcode    TYPE string
                 iv_answer   TYPE string
                 iv_pending  TYPE string
+                iv_module   TYPE string OPTIONAL   " V15.20: 空 = 报表执行(REPORT); FIORI = Fiori 报表
       RETURNING VALUE(rv)   TYPE string.
 
     " V15.19: 往浏览器工具清单里加一个工具(JSON Schema 原样给)
@@ -3746,6 +3769,17 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     ENDIF.
     zcl_ai_skill_service=>bind( iv_session_id = iv_session_id iv_task_id = `` is_skill = ls_skill ).
 
+    " ---- 6b. V15.20 Fiori 报表场景: 和原 Agent 一样先走确定性的 agent_turn ----
+    " CARD(出参数卡) / ANSWER(候选清单、闸门提示、场景说明)→ 不调模型, 浏览器直接显示;
+    " ANALYZE(用户已同意 → agent_turn 已置 ANALYZED)→ 结果上下文进系统说明, 模型照常分析
+    DATA ls_fturn TYPE zcl_ai_fiori_report_service=>ty_turn.
+    IF lv_scene = zcl_ai_intent_router=>gc_scene_fiori.
+      ls_fturn = zcl_ai_fiori_report_service=>agent_turn( iv_session_id        = iv_session_id
+                                                          iv_question          = iv_question
+                                                          iv_focus_artifact_id = iv_focus_artifact_id ).
+      COMMIT WORK.   " agent_turn 可能已写 ANALYZED
+    ENDIF.
+
     " ---- 7. 工具 = 场景候选 ∩ 技能 ∩ 浏览器引擎本期支持的只读工具 ----
     CONSTANTS lc_supported TYPE string
       VALUE `,search_tables,describe_table,run_sql,read_program_source,resolve_material,get_stock_snapshot,get_daily_movement,get_batch_stock,`.
@@ -3754,6 +3788,26 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     DATA: lv_tools_json TYPE string,
           lv_tools_csv  TYPE string.
     LOOP AT lt_tools INTO DATA(ls_tool).
+      " V15.20: 数据分析计划 / 调用函数 —— args 是嵌套 JSON, 按原 Agent 的格式说明给 Schema
+      IF ls_tool-tool_id = zcl_ai_tool_registry=>gc_tool_data_analysis.
+        brun_add_tool( EXPORTING iv_name   = ls_tool-tool_id
+                                 iv_desc   = |{ ls_tool-description } 查询计划直接作为参数对象(intent / queries 放在同一层)。|
+                                 iv_params = `{"type":"object","properties":{"intent":{"type":"string"},` &&
+                                             `"queries":{"type":"array","items":{"type":"object"},` &&
+                                             `"description":"[{name,entity,operation,dimensions,metrics,filters}]"}},"required":["queries"]}`
+                       CHANGING  cv_json   = lv_tools_json
+                                 cv_csv    = lv_tools_csv ).
+        CONTINUE.
+      ELSEIF ls_tool-tool_id = zcl_ai_tool_registry=>gc_tool_call_func.
+        brun_add_tool( EXPORTING iv_name   = ls_tool-tool_id
+                                 iv_desc   = ls_tool-description
+                                 iv_params = `{"type":"object","properties":{"function":{"type":"string","description":"函数调用名"},` &&
+                                             `"purpose":{"type":"string","description":"一句话说明, 作为结果标题"},` &&
+                                             `"params":{"type":"object","description":"参数名 → 值"}},"required":["function"]}`
+                       CHANGING  cv_json   = lv_tools_json
+                                 cv_csv    = lv_tools_csv ).
+        CONTINUE.
+      ENDIF.
       IF lc_supported NS |,{ ls_tool-tool_id },|.
         CONTINUE.
       ENDIF.
@@ -3880,10 +3934,10 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       lv_sys = |{ lv_sys }\n\n【SQL 约定】调用 run_sql 前, SQL 里的每张表都要先用 describe_table 确认字段; | &&
                |只读查询, 结果只回填前 { zcl_ai_sql_executor=>gc_llm_rows } 行, 回答里要说明总行数。|.
     ENDIF.
-    " V15.19: 报表执行已接入(open_report 出参数卡); Fiori 报表取数仍只在原 Agent
-    IF lv_scene = zcl_ai_intent_router=>gc_scene_fiori.
-      lv_sys = |{ lv_sys }\n\n【说明】Fiori 报表的参数卡与取数目前只在原 Agent 里可用; | &&
-               |用户要查 Fiori 报表时, 请提醒他关掉输入框下方的「新引擎」再问。已有的 Fiori 结果可以用结果工具分析。|.
+    " V15.20: Fiori 场景走到模型这一步只有 ANALYZE(用户已同意): 结果上下文同原 Agent
+    IF lv_scene = zcl_ai_intent_router=>gc_scene_fiori AND ls_fturn-kind = zcl_ai_fiori_report_service=>gc_turn_analyze.
+      lv_sys = |{ lv_sys }\n\n{ ls_fturn-context }\n| &&
+               |(这份 Fiori 结果的结果号是 { ls_fturn-artifact_id }; 上面只有统计和部分行时, 用 query_result 在全部行上查。)|.
     ENDIF.
     IF lv_rpt_on = abap_true.
       DATA lv_rpt_list TYPE string.
@@ -3949,6 +4003,20 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     es_start-max_model  = read_cfg_int( iv_key = 'BRUN_MAX_MODEL' iv_default = 40 iv_min = 5 iv_max = 200 ).
     es_start-max_tool   = read_cfg_int( iv_key = 'BRUN_MAX_TOOL' iv_default = 60 iv_min = 5 iv_max = 300 ).
     es_start-export     = lv_res_on.
+
+    " ---- 9b. V15.20 Fiori 确定性回答: 参数卡建 FIORI 任务(同原 Agent), 浏览器直接显示, 不调模型 ----
+    IF lv_scene = zcl_ai_intent_router=>gc_scene_fiori AND ls_fturn-kind <> zcl_ai_fiori_report_service=>gc_turn_analyze.
+      es_start-answer = COND #( WHEN ls_fturn-answer IS NOT INITIAL THEN ls_fturn-answer ELSE `（没有可显示的内容）` ).
+      IF ls_fturn-kind = zcl_ai_fiori_report_service=>gc_turn_card AND ls_fturn-pending_json IS NOT INITIAL.
+        es_start-card = brun_card( is_run     = ls_run
+                                   iv_tool    = `fiori`
+                                   iv_tcode   = ls_fturn-report_name
+                                   iv_answer  = es_start-answer
+                                   iv_pending = ls_fturn-pending_json
+                                   iv_module  = zcl_ai_fiori_report_service=>gc_module ).
+      ENDIF.
+      RETURN.   " 技能清单用不上
+    ENDIF.
 
     " ---- 10. V15.19 可让模型自己选用的技能(同技能下拉: 开关 + 公开 / 管理员 + 适用场景; 已选的那个已在系统说明里) ----
     " 只下发名字 / 说明 / 正文; 技能的工具子集只对用户手动选的技能生效(自动选用只影响做法, 不扩展也不收窄工具)
@@ -4044,7 +4112,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
   METHOD browser_tool.
 
-    CLEAR: ev_ok, ev_content, ev_message, ev_card.
+    CLEAR: ev_ok, ev_content, ev_message, ev_card, ev_datasets.
     ev_http = 200.
     DATA: ls_run  TYPE zai_brun,
           lv_err  TYPE string,
@@ -4150,6 +4218,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           IF lv_rj IS INITIAL AND lv_rerr IS NOT INITIAL.
             lv_rj = |\{"ok":false,"error":"{ json_text( lv_rerr ) }"\}|.
           ENDIF.
+          IF lv_rerr IS INITIAL.
+            ev_datasets = brun_ds_json( VALUE #( ( ls_r_ds ) ) ).   " V15.20: 界面表格 / 图表
+          ENDIF.
 
         WHEN OTHERS.   " open_report / prefill_report: 出参数卡(和原 Agent 同一个 build_report_intro: 登记 + 授权 + 参数)
           IF lv_rtc IS INITIAL OR strlen( lv_rtc ) > 40.
@@ -4211,6 +4282,96 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
       ev_ok      = abap_true.
       ev_content = zcl_ai_agent_guard=>trim_result( iv_text = lv_rj iv_max = lv_rcap ).
+      RETURN.
+    ENDIF.
+
+    " ---- V15.20: 数据分析计划(受控查询计划; 解析 / 校验 / 执行同原 Agent) ----
+    IF lv_tool = zcl_ai_tool_registry=>gc_tool_data_analysis.
+      DATA: ls_plan  TYPE zcl_ai_data_analysis_service=>ty_plan,
+            lv_plerr TYPE string,
+            lt_pds   TYPE zcl_ai_data_analysis_service=>tt_dataset.
+      zcl_ai_agent_guard=>parse_analysis_plan( EXPORTING iv_json  = COND #( WHEN iv_args IS INITIAL THEN `{}` ELSE iv_args )
+                                               IMPORTING es_plan  = ls_plan
+                                                         ev_error = lv_plerr ).
+      IF lv_plerr IS INITIAL.
+        lv_plerr = zcl_ai_data_analysis_service=>validate_plan( ls_plan ).
+      ENDIF.
+      ev_ok = abap_true.
+      IF lv_plerr IS NOT INITIAL.
+        ev_content = |\{"ok":false,"error":"查询计划被拒绝: { json_text( lv_plerr ) }。只能使用能力目录声明的实体 / 字段 / 操作 / 操作符"\}|.
+        RETURN.
+      ENDIF.
+      lt_pds = zcl_ai_data_analysis_service=>execute_plan( ls_plan ).
+      ev_datasets = brun_ds_json( lt_pds ).
+      ev_content  = zcl_ai_agent_guard=>trim_result(
+                      iv_text = |\{"ok":true,"datasets":| &&
+                                zcl_ai_data_analysis_service=>build_datasets_json(
+                                  it_datas     = lt_pds
+                                  iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 200 ) && |\}| ).
+      RETURN.
+    ENDIF.
+
+    " ---- V15.20: 调用已登记的只读函数(校验 / 授权 / 执行都在 ZCL_AI_RFC_EXEC; 次数按运行累计) ----
+    IF lv_tool = zcl_ai_tool_registry=>gc_tool_call_func.
+      DATA: lv_cf_fn   TYPE string,
+            lv_cf_purp TYPE string,
+            lv_cf_par  TYPE string,
+            lv_cf_err  TYPE string,
+            lv_cf_res  TYPE string,
+            lv_cf_name TYPE string,
+            lv_cf_tc   TYPE string,
+            ls_cf_ds   TYPE zcl_ai_data_analysis_service=>ty_dataset.
+      zcl_ai_agent_guard=>parse_function_call( EXPORTING iv_json     = COND #( WHEN iv_args IS INITIAL THEN `{}` ELSE iv_args )
+                                               IMPORTING ev_function = lv_cf_fn
+                                                         ev_purpose  = lv_cf_purp
+                                                         ev_params   = lv_cf_par
+                                                         ev_error    = lv_cf_err ).
+      IF lv_cf_err IS INITIAL.
+        DATA(lv_cf_max) = zcl_ai_rfc_exec=>max_exec( ).
+        UPDATE zai_brun SET func_execs = func_execs + 1
+          WHERE run_id = @ls_run-run_id AND func_execs < @lv_cf_max.
+        IF sy-dbcnt = 0.
+          lv_cf_err = |已达本次运行的函数调用次数上限({ lv_cf_max } 次), 请基于已有结果回答|.
+        ELSE.
+          COMMIT WORK.
+        ENDIF.
+      ENDIF.
+      IF lv_cf_err IS INITIAL.
+        GET RUN TIME FIELD DATA(lv_cf_t0).
+        zcl_ai_rfc_exec=>call_sync( EXPORTING iv_call_name   = lv_cf_fn
+                                              iv_params_json = lv_cf_par
+                                    IMPORTING ev_result      = lv_cf_res
+                                              ev_name        = lv_cf_name
+                                              ev_tcode       = lv_cf_tc
+                                              ev_error       = lv_cf_err ).
+        GET RUN TIME FIELD DATA(lv_cf_t1).
+      ENDIF.
+      IF lv_cf_err IS INITIAL.
+        TRY.
+            /ui2/cl_json=>deserialize( EXPORTING json = lv_cf_res CHANGING data = ls_cf_ds ).
+          CATCH cx_root INTO DATA(lx_cf).
+            lv_cf_err = |函数结果解析失败: { lx_cf->get_text( ) }|.
+        ENDTRY.
+      ENDIF.
+      ev_ok = abap_true.
+      IF lv_cf_err IS NOT INITIAL.
+        ev_content = |\{"ok":false,"function":"{ json_text( lv_cf_fn ) }","error":"{ json_text( lv_cf_err ) }"\}|.
+        RETURN.
+      ENDIF.
+      ls_cf_ds-name       = COND #( WHEN lv_cf_purp IS NOT INITIAL THEN lv_cf_purp ELSE lv_cf_name ).
+      ls_cf_ds-status     = 'OK'.
+      ls_cf_ds-source     = |FUNC:{ lv_cf_tc }|.
+      ls_cf_ds-elapsed_ms = ( lv_cf_t1 - lv_cf_t0 ) / 1000.
+      ev_datasets = brun_ds_json( VALUE #( ( ls_cf_ds ) ) ).
+      DATA(ls_cf_feed) = ls_cf_ds.
+      IF lines( ls_cf_feed-rows ) > zcl_ai_sql_executor=>gc_llm_rows.
+        DELETE ls_cf_feed-rows FROM zcl_ai_sql_executor=>gc_llm_rows + 1.
+      ENDIF.
+      ev_content = zcl_ai_agent_guard=>trim_result(
+                     iv_text = |\{"ok":true,"function":"{ json_text( lv_cf_tc ) }","name":"{ json_text( lv_cf_name ) }",| &&
+                               |"dataset":| && zcl_ai_data_analysis_service=>build_datasets_json(
+                                                 it_datas     = VALUE #( ( ls_cf_feed ) )
+                                                 iv_max_chars = zcl_ai_agent_guard=>gc_max_result_chars - 300 ) && |\}| ).
       RETURN.
     ENDIF.
 
@@ -4304,6 +4465,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                               iv_sql        = lv_sql
                               iv_purpose    = zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'purpose' )
                               iv_session_id = CONV string( ls_run-session_id ) ).
+            IF ls_exec-status = 'OK'.
+              ev_datasets = brun_ds_json( VALUE #( ( ls_exec-dataset ) ) ).   " V15.20: 界面表格 / 图表
+            ENDIF.
             DATA(ls_feed) = ls_exec-dataset.
             IF lines( ls_feed-rows ) > zcl_ai_sql_executor=>gc_llm_rows.
               DELETE ls_feed-rows FROM zcl_ai_sql_executor=>gc_llm_rows + 1.
@@ -4469,7 +4633,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     COMMIT WORK.
 
     DATA(lv_rid) = condense( iv_result_id ).
-    ev_error = brun_art( is_run = ls_run iv_result_id = lv_rid ).
+    " 导出直接进用户自己的文件夹, 不经过模型 → 不要求 Fiori 分析闸门
+    ev_error = brun_art( is_run = ls_run iv_result_id = lv_rid iv_for_model = abap_false ).
     IF ev_error IS NOT INITIAL.
       RETURN.
     ENDIF.
@@ -4582,17 +4747,27 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       rv_error = '缺少结果号 result_id(先用 list_results 查本会话的结果)'.
       RETURN.
     ENDIF.
-    SELECT SINGLE status FROM zai_artifact
+    SELECT SINGLE status, artifact_type FROM zai_artifact
       WHERE artifact_id = @iv_result_id
         AND owner       = @sy-uname
         AND session_id  = @is_run-session_id
-      INTO @DATA(lv_st).
+      INTO ( @DATA(lv_st), @DATA(lv_atype) ).
     IF sy-subrc <> 0.
       rv_error = |结果 { iv_result_id } 不存在或不属于当前会话(先用 list_results 查本会话的结果)|.
       RETURN.
     ENDIF.
     IF lv_st <> 'AVAILABLE'.
       rv_error = |结果 { iv_result_id } 当前不可用(状态 { lv_st }), 可以请用户重新执行报表|.
+      RETURN.
+    ENDIF.
+    " V15.20: Fiori 结果的分析闸门(同原 Agent): 用户点了「交给模型分析」(ANALYZED = X)数据才给模型
+    IF iv_for_model = abap_true AND lv_atype = zcl_ai_fiori_report_service=>gc_art_type.
+      SELECT SINGLE analyzed FROM zai_frpt_run
+        WHERE artifact_id = @iv_result_id AND owner = @sy-uname
+        INTO @DATA(lv_an).
+      IF sy-subrc <> 0 OR lv_an <> 'X'.
+        rv_error = |这份 Fiori 结果还没有交给模型(模型只能知道行数和列名)。请用户先点结果下方的「交给模型分析」, 再继续提问|.
+      ENDIF.
     ENDIF.
 
   ENDMETHOD.
@@ -4620,10 +4795,21 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           lv_tc = lv_run_tc.
         ENDIF.
       ENDIF.
+      " V15.20: Fiori 结果没「交给模型分析」时标出来(模型只能看到这一行元数据)
+      DATA lv_gate TYPE string.
+      CLEAR lv_gate.
+      IF ls_a-artifact_type = zcl_ai_fiori_report_service=>gc_art_type.
+        SELECT SINGLE analyzed FROM zai_frpt_run
+          WHERE artifact_id = @ls_a-artifact_id AND owner = @sy-uname
+          INTO @DATA(lv_fan).
+        IF sy-subrc <> 0 OR lv_fan <> 'X'.
+          lv_gate = `,"note":"Fiori 结果还没交给模型, 读不到数据; 需要用户先点「交给模型分析」"`.
+        ENDIF.
+      ENDIF.
       lv_items = |{ lv_items }{ COND string( WHEN lv_items IS NOT INITIAL THEN `,` ) }| &&
                  |\{"id":"{ ls_a-artifact_id }","label":"{ json_text( CONV string( ls_a-display_label ) ) }",| &&
                  |"report":"{ json_text( lv_tc ) }","type":"{ ls_a-artifact_type }",| &&
-                 |"rows":{ ls_a-row_count },"created_at":"{ ls_a-created_at }"\}|.
+                 |"rows":{ ls_a-row_count },"created_at":"{ ls_a-created_at }"{ lv_gate }\}|.
     ENDLOOP.
     rv = |\{"ok":true,"count":{ lines( lt_a ) },"results":[{ lv_items }]\}|.
 
@@ -4637,12 +4823,17 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       RETURN.
     ENDIF.
     DATA(lv_sess) = CONV string( is_run-session_id ).
+    DATA(lv_fiori) = xsdbool( iv_module = zcl_ai_fiori_report_service=>gc_module ).
+    DATA(lv_mod) = COND string( WHEN lv_fiori = abap_true THEN zcl_ai_fiori_report_service=>gc_module
+                                ELSE zcl_ai_task_service=>gc_mod_report ).
     DATA(ls_pick) = zcl_ai_task_service=>pick_or_create(
                       iv_session_id = lv_sess
                       iv_task_id    = ''
-                      iv_module_id  = zcl_ai_task_service=>gc_mod_report
-                      iv_intent     = zcl_ai_intent_router=>gc_int_run_analyze
-                      iv_title      = |报表 { iv_tcode }| ).
+                      iv_module_id  = lv_mod
+                      iv_intent     = COND #( WHEN lv_fiori = abap_true THEN zcl_ai_fiori_report_service=>gc_intent
+                                              ELSE zcl_ai_intent_router=>gc_int_run_analyze )
+                      iv_title      = COND #( WHEN lv_fiori = abap_true THEN |Fiori 报表 { iv_tcode }|
+                                              ELSE |报表 { iv_tcode }| ) ).
     IF ls_pick-task_id IS INITIAL.
       RETURN.
     ENDIF.
@@ -4659,8 +4850,21 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     UPDATE zai_brun SET task_id = @lv_tid WHERE run_id = @is_run-run_id.
     COMMIT WORK.
     rv = |\{"tool":"{ iv_tool }","taskId":"{ json_text( ls_task-task_id ) }",| &&
-         |"taskModule":"{ zcl_ai_task_service=>gc_mod_report }","taskStatus":"{ zcl_ai_task_service=>gc_st_waiting_input }",| &&
+         |"taskModule":"{ lv_mod }","taskStatus":"{ zcl_ai_task_service=>gc_st_waiting_input }",| &&
          |"needsInput":true,"pendingParamsJson":"{ json_text( iv_pending ) }","answer":"{ json_text( iv_answer ) }"\}|.
+
+  ENDMETHOD.
+
+
+  METHOD brun_ds_json.
+
+    " 界面表格 / 图表 / 组合分析用: 格式同 AnalysisJson 的 datasets; 单次最多约 300K 字符(按整行裁)
+    CLEAR rv.
+    IF it_datas IS INITIAL.
+      RETURN.
+    ENDIF.
+    rv = zcl_ai_data_analysis_service=>build_datasets_json( it_datas     = it_datas
+                                                            iv_max_chars = 300000 ).
 
   ENDMETHOD.
 
