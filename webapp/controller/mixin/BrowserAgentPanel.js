@@ -280,13 +280,21 @@ sap.ui.define([
 				scene: p.scene,
 				modelId: p.modelId,
 				skillId: p.skillId,
+				focusArtifactId: p.focusedArtifactId || "",
 				think: p.think === "X",
 				signal: oAbort.signal,
 				authHeader: function () { return ChatService._basicHeader ? ChatService._basicHeader() : ""; },
 				// 演示模式：报表目录与技能清单取 ChatService 的演示数据（真实环境由 SAP /run/start 下发）
 				mock: ChatService.getMode() === "mock" ? {
 					reportDefs: function () { return ChatService._mockReportDefs ? ChatService._mockReportDefs() : null; },
-					skills: function () { return ChatService.getSkills ? ChatService.getSkills({ scene: p.scene, sessionId: p.sessionId }) : null; }
+					skills: function () { return ChatService.getSkills ? ChatService.getSkills({ scene: p.scene, sessionId: p.sessionId }) : null; },
+					// Fiori 场景同原 Agent 的演示：先走确定性的一轮（参数卡 / 候选 / 闸门 / 同意分析）
+					fioriTurn: ChatService._fioriTurn ? function () {
+						return ChatService._fioriTurn({ sessionId: p.sessionId, question: p.question, focusedArtifactId: p.focusedArtifactId || "" });
+					} : null,
+					fioriAnalysis: ChatService._fioriMockAnalysis ? function (oRun) {
+						return ChatService._fioriMockAnalysis(oRun, p.question);
+					} : null
 				} : null,
 				onSteps: function (aSteps) {
 					if (!oLive.stopped) {
@@ -296,6 +304,11 @@ sap.ui.define([
 				confirm: this._baConfirm.bind(this)
 			}).then(function (r) {
 				that._baSyncFolder(BrowserAgentService.folderInfo());
+				// 数据集 → 和原 Agent 一样的 analysis（表格 / 图表 / 导出 / 加入组合）
+				if (r && r.analysisRaw) {
+					r.analysis = ChatService._sanitizeAnalysis ? ChatService._sanitizeAnalysis(r.analysisRaw) : null;
+					delete r.analysisRaw;
+				}
 				// 演示模式没有 SAP 的 run/finish：本地记进会话，左侧列表与重开会话都能看到
 				if (ChatService.getMode() === "mock" && r && r.status === "OK" && ChatService._mockRecordExchange) {
 					ChatService._mockRecordExchange({ sessionId: p.sessionId, question: p.question, modelId: p.modelId, scene: p.scene }, r.answer);

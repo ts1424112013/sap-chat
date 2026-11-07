@@ -11,6 +11,8 @@ sap.ui.define([], function () {
 	 *   · 「执行 / 跑 + 报表事务码」→ open_report → 参数卡（引擎拿到卡即停）
 	 *   · 「结果 / 导出 / 存」→ list_results → query_result →（选了文件夹且要存）save_result_to_folder
 	 *   · 问题里有「技能」→ 先读第一个技能的 SKILL.md
+	 *   · 数据分析 / 自动：「统计 / 分布 / 汇总」→ sap_data_analysis；「函数 / 未清采购」→ call_function（都带数据集回界面）
+	 *   · Fiori 报表：同原 Agent 演示的 _fioriTurn —— 参数卡 / 候选 / 闸门提示直接回答（不调模型），同意分析后才进模型
 	 *   · 其余：选了文件夹 → 列计划 / 看文件夹 / 读文件 /（要写时）写汇总；没选 → 查表
 	 * 不发任何网络请求。
 	 * =====================================================================
@@ -98,6 +100,14 @@ sap.ui.define([], function () {
 	function answer(aMsgs, sQ, bFolder, sKind) {
 		var aTool = aMsgs.filter(function (m) { return m.role === "tool"; }).map(textOf);
 		var aLines = ["（演示模式：没有连接 SAP 和模型，下面是固定剧本的结果，用来看浏览器 Agent 的流程。）", ""];
+		if (sKind === "PLAN") {
+			aLines.push("- 按受控查询计划统计了物料类型分布：原材料（ROH）最多，9120 个；成品（FERT）1280 个。明细见下方表格，可以直接生成图表。");
+			return aLines.join("\n");
+		}
+		if (sKind === "FUNC") {
+			aLines.push("- 调用函数 Z_AI_DEMO_PO_OPEN 查到工厂 1000 有 3 张未清采购单，供应商 100023 占 2 张。明细见下方表格。");
+			return aLines.join("\n");
+		}
 		var sSkill = aTool.filter(function (t) { return /以下是管理员维护的做法/.test(t); })[0];
 		if (sSkill) {
 			var mName = /name: "([^"]+)"/.exec(sSkill);
@@ -137,6 +147,36 @@ sap.ui.define([], function () {
 				"- 点输入框下方的「选择文件夹」，可以让灵犀读写你电脑上的一个文件夹。");
 		}
 		return aLines.join("\n");
+	}
+
+	/** 演示数据集（与 SAP build_datasets_json 同格式） */
+	function demoDs(sName, aCols, aRows, sSource) {
+		return {
+			name: sName, status: "OK", total_rows: aRows.length, truncated: false, elapsed_ms: 120, source: sSource || "",
+			columns: aCols.map(function (c) { return { name: c[0], label: c[1] || c[0], numeric: !!c[2] }; }),
+			rows: aRows
+		};
+	}
+
+	var DS_RESULT = function (iLimit) {
+		return demoDs("库存最高前 " + iLimit + " 料号", [["鴻海料號"], ["倉碼"], ["庫存", "", true]],
+			DEMO_ROWS.slice().sort(function (a, b) { return b[2] - a[2]; }).slice(0, iLimit), "RESULT:" + DEMO_ART);
+	};
+	var DS_PLAN = demoDs("按物料类型统计物料数", [["MTART", "物料类型"], ["COUNT", "物料数", true]],
+		[["FERT", 1280], ["HALB", 3460], ["ROH", 9120], ["VERP", 410]], "PLAN");
+	var DS_FUNC = demoDs("工厂 1000 未清采购", [["EBELN", "采购订单"], ["LIFNR", "供应商"], ["OPEN_QTY", "未清数量", true]],
+		[["4500012345", "100023", 1200], ["4500012377", "100045", 300], ["4500012410", "100023", 75]], "FUNC:Z_AI_DEMO_PO_OPEN");
+
+	/** 数据分析：受控查询计划 → 数据集 */
+	function scriptPlan(iStep) {
+		return iStep === 0 ? [call("sap_data_analysis", { intent: "table_analysis", queries: [{
+			name: "按物料类型统计物料数", entity: "MATERIAL", operation: "group", dimensions: ["MTART"], metrics: ["count"], filters: []
+		}] })] : null;
+	}
+
+	/** 调用函数：未清采购（演示函数） */
+	function scriptFunc(iStep) {
+		return iStep === 0 ? [call("call_function", { "function": "Z_AI_DEMO_PO_OPEN", purpose: "工厂 1000 未清采购", params: { IV_WERKS: "1000" } })] : null;
 	}
 
 	function demoCsv() {
@@ -185,10 +225,31 @@ sap.ui.define([], function () {
 			};
 			var scene = String(o.scene || "AUTO").toUpperCase();
 			var bRptScene = scene === "AUTO" || scene === "REPORT";
+			var sFioriText = "";
 			return {
 				root: root,
 				startRun: function (p) {
 					sQuestion = (p && p.question) || "";
+					// Fiori 场景：同 SAP，先走确定性的一轮；不是「同意分析」就直接回答（不调模型）
+					var oT = scene === "FIORI" && mock.fioriTurn ? mock.fioriTurn() : null;
+					if (oT && oT.kind !== "ANALYZE") {
+						var bCard = oT.kind === "CARD" && oT.pending;
+						return wait(200).then(function () {
+							return {
+								runId: "MOCK" + Date.now().toString(36), model: "演示模型", tools: [], skills: [], "export": false,
+								answer: oT.answer || "（没有可显示的内容）",
+								card: bCard ? {
+									tool: "fiori", taskId: "FTASK" + String(o.sessionId || "").substring(0, 8),
+									taskModule: "FIORI", taskStatus: "WAITING_INPUT", needsInput: true,
+									pendingParamsJson: oT.pending, answer: oT.answer
+								} : null
+							};
+						});
+					}
+					if (oT) {
+						sKind = "FIORI_ANALYZE";
+						sFioriText = mock.fioriAnalysis && oT.run ? mock.fioriAnalysis(oT.run) : "（演示）已同意分析。";
+					}
 					return Promise.all([safe(mock.reportDefs), safe(mock.skills)]).then(function (a) {
 						aDefs = (a[0] && a[0].defs) || [];
 						var aSkills = ((a[1] && a[1].enabled !== false && a[1].skills) || []).filter(function (s) {
@@ -196,9 +257,16 @@ sap.ui.define([], function () {
 						}).slice(0, 30).map(function (s) {
 							return { id: s.id, name: s.name, description: s.description, body: s.body };
 						});
-						if (bRptScene && /执行|跑一下|跑个|开.*报表|报表参数/.test(sQuestion)) {
+						var bDataScene = scene === "DATA" || scene === "AUTO";
+						if (sKind === "FIORI_ANALYZE") {
+							// 已定
+						} else if (bRptScene && /执行|跑一下|跑个|开.*报表|报表参数/.test(sQuestion)) {
 							sKind = "REPORT";
 							sTcode = tcodeOf(sQuestion, aDefs);
+						} else if (bDataScene && /函数|未清采购/.test(sQuestion)) {
+							sKind = "FUNC";
+						} else if (bDataScene && /统计|分布|占比|趋势|汇总/.test(sQuestion) && !/结果/.test(sQuestion)) {
+							sKind = "PLAN";
 						} else if (/结果|导出|存成|另存|排名|最高|最多/.test(sQuestion)) {
 							sKind = "RESULT";
 						}
@@ -215,6 +283,15 @@ sap.ui.define([], function () {
 							name: "query_result", description: "在一份报表结果的全部行上筛选 / 分组 / 排序",
 							parameters: { type: "object", properties: { result_id: { type: "string" }, sort: { type: "object" }, limit: { type: "integer" }, purpose: { type: "string" } }, required: ["result_id"] }
 						}];
+						if (bDataScene) {
+							aTools.push({
+								name: "sap_data_analysis", description: "SAP 数据分析(受控查询计划)",
+								parameters: { type: "object", properties: { intent: { type: "string" }, queries: { type: "array", items: { type: "object" } } }, required: ["queries"] }
+							}, {
+								name: "call_function", description: "调用已登记的只读函数",
+								parameters: { type: "object", properties: { "function": { type: "string" }, purpose: { type: "string" }, params: { type: "object" } }, required: ["function"] }
+							});
+						}
 						if (bRptScene) {
 							aTools.push({
 								name: "open_report", description: "打开报表参数卡",
@@ -249,7 +326,12 @@ sap.ui.define([], function () {
 								return { ok: true, content: JSON.stringify({ ok: false, error: "结果 " + a.result_id + " 不存在或不属于当前会话" }) };
 							}
 							var aRows = DEMO_ROWS.slice().sort(function (x, y) { return y[2] - x[2]; }).slice(0, a.limit || 20);
-							return { ok: true, content: JSON.stringify({ ok: true, total: DEMO_ROWS.length, columns: DEMO_COLS, rows: aRows }) };
+							return { ok: true, content: JSON.stringify({ ok: true, total: DEMO_ROWS.length, columns: DEMO_COLS, rows: aRows }),
+								datasets: p.tool === "query_result" ? [DS_RESULT(a.limit || 20)] : undefined };
+						case "sap_data_analysis":
+							return { ok: true, content: JSON.stringify({ ok: true, datasets: [DS_PLAN] }), datasets: [DS_PLAN] };
+						case "call_function":
+							return { ok: true, content: JSON.stringify({ ok: true, "function": "Z_AI_DEMO_PO_OPEN", dataset: DS_FUNC }), datasets: [DS_FUNC] };
 						case "open_report":
 							var sTc = String(a.tcode || "").toUpperCase();
 							var d = aDefs.filter(function (x) { return x.TCODE === sTc; })[0];
@@ -295,7 +377,12 @@ sap.ui.define([], function () {
 						var aMsgs = oReq.messages || [];
 						var sFirst = textOf(aMsgs.filter(function (m) { return m.role === "user"; })[0]);
 						var sSys = aMsgs.filter(function (m) { return m.role === "system"; }).map(textOf).join("\n");
-						var iStep = aMsgs.filter(function (m) { return m.role === "assistant"; }).length;
+						// 只数本轮（最后一条用户消息之后）的模型步骤；同一会话前几轮的回答也在 messages 里
+						var iLastUser = -1;
+						aMsgs.forEach(function (m, i) { if (m.role === "user") { iLastUser = i; } });
+						var aTurn = aMsgs.slice(iLastUser + 1);
+						var iStep = aTurn.filter(function (m) { return m.role === "assistant"; }).length;
+						aMsgs = aMsgs.slice(Math.max(0, iLastUser));   // 剧本只看本轮的工具结果
 						var calls;
 						var sText = "";
 						if (/^子任务/.test(sFirst)) {
@@ -304,8 +391,14 @@ sap.ui.define([], function () {
 							// 问题里提到「技能」且系统提示里列了技能 → 第一步先读技能
 							var mSkill = /技能/.test(sQuestion) && /(\/(?:SAP技能|\.lingxi\/技能)\/[^\s)`'"]+\/SKILL\.md)/.exec(sSys);
 							var iOff = mSkill ? 1 : 0;
-							if (mSkill && iStep === 0) {
+							if (sKind === "FIORI_ANALYZE") {
+								calls = null;   // 结果上下文已在系统说明里（演示：直接给统计解读）
+							} else if (mSkill && iStep === 0) {
 								calls = [call("read_file", { file_path: mSkill[1] })];
+							} else if (sKind === "PLAN") {
+								calls = scriptPlan(iStep - iOff);
+							} else if (sKind === "FUNC") {
+								calls = scriptFunc(iStep - iOff);
 							} else if (sKind === "REPORT") {
 								calls = scriptReport(iStep - iOff, aMsgs, sQuestion, sTcode);
 							} else if (sKind === "RESULT") {
@@ -314,7 +407,7 @@ sap.ui.define([], function () {
 								calls = o.folder ? scriptFolder(iStep - iOff, aMsgs, sQuestion) : scriptNoFolder(iStep - iOff, aMsgs, sQuestion);
 							}
 							if (!calls) {
-								sText = answer(aMsgs, sQuestion, o.folder, sKind);
+								sText = sKind === "FIORI_ANALYZE" ? sFioriText : answer(aMsgs, sQuestion, o.folder, sKind);
 							}
 						}
 						return wait(calls ? 600 : 400).then(function () {

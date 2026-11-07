@@ -194,7 +194,7 @@ sap.ui.define([
 		 * @param {object} o
 		 * @param {string} o.question
 		 * @param {Array<{role,content}>} o.history
-		 * @param {string} o.sessionId / o.scene / o.modelId / o.skillId
+		 * @param {string} o.sessionId / o.scene / o.modelId / o.skillId / o.focusArtifactId
 		 * @param {boolean} o.think
 		 * @param {function(Array)} o.onSteps 每有变化推一次完整步骤列表（_applyLive 格式）
 		 * @param {function(object):Promise} o.confirm 改文件确认 {action,path,before,after} → {approved}
@@ -287,7 +287,8 @@ sap.ui.define([
 				var oRun = {
 					question: o.question,
 					history: o.history || [],
-					context: { sessionId: o.sessionId, scene: o.scene, modelId: o.modelId, think: !!o.think, skillId: o.skillId || "" },
+					context: { sessionId: o.sessionId, scene: o.scene, modelId: o.modelId, think: !!o.think, skillId: o.skillId || "",
+						focusArtifactId: o.focusArtifactId || "" },
 					folderBackend: oFB || undefined,
 					confirm: o.confirm,
 					onEvent: onEvent,
@@ -307,6 +308,13 @@ sap.ui.define([
 					}
 					var res = that._result(r, sAnswer, aSteps, iTools, t0, "OK", "", o.modelId);
 					// 报表参数卡：和原 Agent 同形的任务字段，控制器照常挂内联参数卡（_updateTaskState / _attachAskCard）
+					// 工具带回的数据集：原样交给控制器（ChatService._sanitizeAnalysis 清洗后画表格 / 图表）
+					if (r.datasets && r.datasets.length) {
+						res.analysisRaw = { summary: "", findings: [], charts: [], datasets: r.datasets };
+					}
+					if (r.deterministic) {
+						res.rounds = 0;
+					}
 					var c = r.card;
 					if (c && c.taskId) {
 						res.taskId = c.taskId;
