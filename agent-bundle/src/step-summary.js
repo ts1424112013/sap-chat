@@ -121,6 +121,22 @@ export function summarizeStep(tool, args, text, ok) {
     default:
       break;
   }
+  if (/^adt_/.test(tool)) {
+    let m;
+    switch (tool) {
+      case "adt_search": m = /找到 (\d+) 个对象/.exec(t); return m ? `找到 ${n(m[1])} 个对象` : cut(t, 60);
+      case "adt_read_source":
+        m = /命中 (\d+) 处/.exec(t); if (m) return `「${cut(a.keyword, 20)}」命中 ${n(m[1])} 处`;
+        m = /共 (\d+) 行，第 (\d+)–(\d+) 行/.exec(t); if (m) return `读了第 ${m[2]}–${m[3]} 行（共 ${n(m[1])} 行）`;
+        return cut(t.split("\n")[0], 60);
+      case "adt_structure": m = /结构（(\d+) 项）/.exec(t); return m ? `${n(m[1])} 项` : cut(t, 60);
+      case "adt_where_used": m = /共 (\d+) 个/.exec(t); return m ? `被 ${n(m[1])} 个对象使用` : cut(t, 60);
+      case "adt_package": m = /共 (\d+) 个对象/.exec(t); return m ? `${n(m[1])} 个对象` : cut(t, 60);
+      case "adt_syntax_check": m = /错误 (\d+) 个，警告 \/ 提示 (\d+) 个/.exec(t);
+        return m ? `错误 ${m[1]} 个，警告 ${m[2]} 个` : (/通过/.test(t) ? "语法检查通过" : cut(t, 60));
+      default: return cut(t, 60);
+    }
+  }
   if (o && (o.total != null || o.count != null)) return `共 ${n(o.total != null ? o.total : o.count)} 条`;
   return `返回 ${n(t.length)} 字`;
 }
@@ -128,6 +144,10 @@ export function summarizeStep(tool, args, text, ok) {
 /** 工具行上显示的主要参数（一个，过长截断） */
 export function mainArg(tool, args) {
   const a = args || {};
+  if (/^adt_/.test(tool)) {
+    const obj = a.object || a.query || a.package || "";
+    return cut(obj + (a.keyword ? " · " + a.keyword : a.start_line > 1 ? " · 第 " + a.start_line + " 行起" : ""), 80);
+  }
   const v = a.file_path || a.path || a.pattern || a.keyword || a.table || a.tabname || a.tcode ||
     a.purpose || a.name || a.description || a.result_id || a.function || "";
   return cut(typeof v === "string" ? v : JSON.stringify(v), 80);

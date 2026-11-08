@@ -1328,6 +1328,28 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     /^\*\s+V1\.4 20261108/m.test(httpRaw) && /it_steps\s+= ls_fin-steps/.test(hr) && hr.includes("'/run/steps'") &&
     /zcl_ai_agent_service=>browser_steps\(/.test(hr));
 
+  /* ---- 20261108 ADT 代码工具（AGENT_SERVICE V15.25 / HTTP V1.5） ---- */
+  const bau = methodOf(ag2, 'browser_audit');
+  check('V15.25：ADT 开关 = BROWSER_ADT_ON + 代码分析权限 + S_DEVELOP 显示 + 可选名单；工具名进运行清单（放不下就不开），es_start-adt 回浏览器',
+    /^\* V15\.25 20261108/m.test(agRaw2) && /brun_cfg\( 'BROWSER_ADT_ON' \) = 'X' AND line_exists\( lt_doms\[ table_line = zcl_ai_domain_cards=>gc_dom_code \] \)/.test(bs) &&
+    /AUTHORITY-CHECK OBJECT 'S_DEVELOP'[\s\S]*?ID 'ACTVT'\s+FIELD '03'/.test(bs) && /brun_cfg\( 'BROWSER_ADT_USERS' \)/.test(bs) &&
+    /strlen\( lv_tools_csv \) \+ strlen\( gc_adt_tools \) \+ 1 <= 1000/.test(bs) && /es_start-adt\s+= lv_adt/.test(bs) &&
+    bs.indexOf("brun_cfg( 'BROWSER_ADT_ON' )") < bs.indexOf('ls_run-tools      = lv_tools_csv') &&
+    /gc_adt_tools TYPE string VALUE `adt_search,adt_read_source,adt_structure,adt_where_used,adt_package,adt_syntax_check`/.test(ag2));
+  check('V15.25：browser_audit 报备 = 运行号校验 + 只认清单里的 adt_ 工具 + 计入工具次数（超限 429）+ 写 ZAI_BSTEP KIND = ADT（序号 1000 + 次数）；回填只改本人本运行的 ADT 行',
+    bau && /brun_get\(/.test(bau) && /lv_tool\(4\) <> 'adt_'/.test(bau) && /\|,\{ ls_run-tools \},\| NS \|,\{ lv_tool \},\|/.test(bau) &&
+    /SET tool_calls = tool_calls \+ 1/.test(bau) && /ev_http\s+= 429/.test(bau) && /ls_bs-kind\s+= 'ADT'/.test(bau) &&
+    /ls_bs-seq\s+= gc_adt_seq0 \+ lv_calls/.test(bau) && /ls_bs-status\s+= 'CALL'/.test(bau) &&
+    /WHERE run_id = @ls_run-run_id AND seq = @iv_seq AND kind = 'ADT' AND userid = @sy-uname/.test(bau) &&
+    bau.indexOf('IF iv_seq > 0.') < bau.indexOf('tool_calls + 1'));
+  check('V15.25：收尾只删重写非 ADT 过程行并补 ADT 行的消息序号；browser_steps 不读 ADT 行',
+    /DELETE FROM zai_bstep WHERE run_id = @ls_run-run_id AND kind <> 'ADT'/.test(bf) &&
+    /UPDATE zai_bstep SET msg_seq = @lv_seq WHERE run_id = @ls_run-run_id AND kind = 'ADT'/.test(bf) && /AND kind <> 'ADT'/.test(bst));
+  check('HTTP V1.5：/run/start 回 adt；新路径 /tools/audit（运行号头一致、seq / status / ms / rows 转给 browser_audit，被拒回滚）',
+    /^\*\s+V1\.5 20261108/m.test(httpRaw) && /"adt":\{ COND string\( WHEN ls_out-adt = abap_true/.test(hr) &&
+    hr.includes("'/tools/audit'") && /zcl_ai_agent_service=>browser_audit\(/.test(hr) && /iv_seq\s+= ls_aud-seq/.test(hr) &&
+    /ls_aud-run_id <> server->request->get_header_field\( 'x-lingxi-run' \)/.test(hr));
+
   /* ---- 20261108 上下文超长（AGENT_SERVICE V15.21 / HTTP V1.3） ---- */
   check('V15.21：上下文上限 BRUN_CTX_TOKENS 下发；请求体上限默认跟上下文走，超限消息带 maximum context length',
     /^\* V15\.21 20261108/m.test(agRaw2) && /es_start-ctx_tokens = read_cfg_int\( iv_key = 'BRUN_CTX_TOKENS'/.test(bs) &&

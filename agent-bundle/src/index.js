@@ -19,8 +19,9 @@ import {
 } from "./folder-backend.js";
 import { ReadonlyMemBackend, skillFiles } from "./readonly-backend.js";
 import { summarizeStep, mainArg } from "./step-summary.js";
+import { createAdtClient, ADT_TOOL_SPECS, ADT_PROMPT, normalizeUri } from "./adt-client.js";
 
-export const VERSION = "0.6.0";
+export const VERSION = "0.7.0";
 export const MEMORY_FILE = "/灵犀记忆.md";
 /** SAP 管理员维护的技能（只读，SAP /run/start 下发） */
 export const SAP_SKILL_DIR = "/SAP技能/";
@@ -203,6 +204,57 @@ function buildExportTool(client, run, folderBackend, signal) {
 }
 
 /**
+ * ADT 代码工具（只读，浏览器直连 /sap/bc/adt）。每次调用先报 SAP /tools/audit（校验运行号、计入工具次数、写审计），
+ * SAP 拒绝或报不了就不调 ADT；调完再报一次结果（失败不影响回答）。
+ */
+function buildAdtTools(adt, client, run, signal) {
+  const fns = {
+    adt_search: async a => {
+      const list = await adt.search(a.query, a.type, 50, signal);
+      if (!list.length) return { text: `没有找到名字匹配「${a.query}」的对象（或没有权限看到）。`, rows: 0 };
+      return { text: `找到 ${list.length} 个对象` + (list.length >= 50 ? "（最多列 50 个，可以把名字写得更具体）" : "") + "：\n" +
+        list.map(o => `${o.name}  ${o.typeText}${o.package ? "  包 " + o.package : ""}${o.description ? "  " + o.description : ""}  ${o.uri}`).join("\n"), rows: list.length };
+    },
+    adt_read_source: a => adt.readSource(a, signal),
+    adt_structure: a => adt.structure(a, signal),
+    adt_where_used: a => adt.whereUsed(a, signal),
+    adt_package: a => adt.packageContents(a, signal),
+    adt_syntax_check: a => adt.syntaxCheck(a, signal)
+  };
+  return ADT_TOOL_SPECS.map(spec => tool(
+    async args => {
+      const a = args || {};
+      const target = String(a.object || a.query || a.package || "").slice(0, 200) + (a.keyword ? " ~" + String(a.keyword).slice(0, 40) : "");
+      // 白名单外的地址：不报审计、不发请求，直接拒绝
+      if (/^(https?:\/\/[^/]+)?\/sap\/bc\/adt\//i.test(String(a.object || "").trim()) && !normalizeUri(a.object)) {
+        return "工具执行失败：对象地址不在允许范围内（只能读报表 / 包含程序 / 类 / 接口 / 函数 / CDS / 表 / 结构 / 数据元素 / 域 / 包）";
+      }
+      let seq = 0;
+      try {
+        const r = await client.auditAdt({ runId: run.runId, tool: spec.name, target }, { signal });
+        if (!r || r.ok === false) return `工具执行失败：${(r && r.message) || "SAP 没有允许这次调用"}`;
+        seq = r.seq || 0;
+      } catch (e) {
+        if (signal && signal.aborted) throw e;
+        return `工具执行失败：${(e && e.message) || "SAP 审计接口不可用，不能调用 ADT"}`;
+      }
+      const t0 = Date.now();
+      let out, status = "OK";
+      try {
+        out = await fns[spec.name](a);
+      } catch (e) {
+        if (signal && signal.aborted) throw e;
+        status = e && (e.status === 401 || e.status === 403) ? "DENIED" : "ERROR";
+        out = { text: `工具执行失败：${(e && e.message) || e}`, rows: 0 };
+      }
+      client.auditAdt({ runId: run.runId, seq, status, ms: Date.now() - t0, rows: out.rows || 0 }, {}).catch(() => {});
+      return clip(out.text);
+    },
+    { name: spec.name, description: spec.description, schema: spec.schema }
+  ));
+}
+
+/**
  * 精简的过程记录（存进 SAP，刷新 / 重开会话时按同样样式画回来）：
  * 每步只留类型、工具、主要参数、一句话结果、状态、耗时；不存文件内容、源码、返回全文、思考全文。
  * k: say 说明 | plan 计划 | tool 工具 | skill 技能 | note 提示 | card 参数卡 | think 思考（只留耗时）
@@ -295,7 +347,7 @@ export async function run(o) {
     folder: o.folderBackend ? o.folderBackend.name : (o.folder ? o.folder.name : "")
   }, { signal: o.signal });
   if (!runInfo || !runInfo.runId) throw new SapAgentError("SAP 没有返回运行号", 0, runInfo);
-  emit({ type: "run", runId: runInfo.runId, model: runInfo.model, tools: (runInfo.tools || []).map(t => t.name),
+  emit({ type: "run", runId: runInfo.runId, model: runInfo.model, tools: (runInfo.tools || []).map(t => t.name), adt: runInfo.adt === true,
     limits: { maxModelCalls: (runInfo.limits && runInfo.limits.maxModelCalls) || 0, maxToolCalls: (runInfo.limits && runInfo.limits.maxToolCalls) || 0,
       contextTokens: (runInfo.limits && runInfo.limits.contextTokens) || 0 } });
 
@@ -410,6 +462,9 @@ export async function run(o) {
   const tools = buildSapTools(client, runInfo, emit, inner.signal, onCard, onDatasets);
   const canExport = !!(folderBackend && runInfo.export);
   if (canExport) tools.push(buildExportTool(client, runInfo, folderBackend, inner.signal));
+  // ADT 代码工具：SAP 说这次可以用（开关 + 代码分析权限 + 开发显示权限）才挂上
+  const canAdt = runInfo.adt === true && typeof client.adtFetch === "function" && typeof client.auditAdt === "function";
+  if (canAdt) tools.push(...buildAdtTools(createAdtClient({ fetch: client.adtFetch }), client, runInfo, inner.signal));
   // 问用户：选「我直接说」时和参数卡一样立即停，问题就是这次的回答
   let askOther = "";
   const canAsk = typeof o.ask === "function";
@@ -441,6 +496,7 @@ export async function run(o) {
       skillSources.length ? SKILL_PROMPT : "",
       canExport ? EXPORT_PROMPT : "",
       canAsk ? ASK_PROMPT : "",
+      canAdt ? ADT_PROMPT : "",
       runInfo.systemPrompt || ""
     ].filter(Boolean).join("\n\n"),
     backend,
@@ -552,5 +608,5 @@ export async function run(o) {
 export {
   createSapClient, SapAgentError,
   FolderBackend, folderSupported, pickFolder, restoreFolder, requestFolderPermission, forgetFolder,
-  summarizeStep, mainArg
+  summarizeStep, mainArg, createAdtClient, normalizeUri
 };

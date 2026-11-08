@@ -65,6 +65,81 @@ const SCRIPT3 = [
   () => null
 ];
 
+// 场景九：ADT 代码工具（SAP 回 adt:true；浏览器直连 /sap/bc/adt；每次先报 /tools/audit）
+const SCRIPT9 = [
+  () => [call("adt_search", { query: "ZCL_AI_AGENT*", type: "CLAS" })],
+  () => [call("adt_structure", { object: "ZCL_AI_AGENT_SERVICE" })],
+  () => [call("adt_read_source", { object: "/sap/bc/adt/oo/classes/zcl_ai_agent_service", keyword: "browser_start" })],
+  () => [call("adt_read_source", { object: "ZCL_AI_AGENT_SERVICE", start_line: 3, max_lines: 2 })],
+  () => [call("adt_where_used", { object: "ZCL_AI_AGENT_SERVICE" })],
+  () => [call("adt_package", { package: "ZIDPPP" })],
+  () => [call("adt_syntax_check", { object: "ZCL_AI_AGENT_SERVICE" })],
+  () => [call("adt_read_source", { object: "/sap/bc/adt/datapreview/freestyle" })],
+  () => [call("adt_read_source", { object: "ZCL_SECRET" })],
+  () => [call("adt_read_source", { object: "SHKZG" })],
+  () => null
+];
+const adt = { log: [], token: "TOK1", rotated: false, audits: [] };
+const ref = (name, type, uri, pkg, desc) =>
+  `<adtcore:objectReference adtcore:uri="${uri}" adtcore:type="${type}" adtcore:name="${name}" adtcore:packageName="${pkg}"${desc ? ` adtcore:description="${desc}"` : ""}/>`;
+const SRC = ["CLASS zcl_ai_agent_service DEFINITION PUBLIC.", "  PUBLIC SECTION.", "    CLASS-METHODS browser_start.", "    CLASS-METHODS browser_tool.",
+  "ENDCLASS.", "CLASS zcl_ai_agent_service IMPLEMENTATION.", "  METHOD browser_start.", "    \" 开始一次运行", "  ENDMETHOD.", "ENDCLASS."].join("\n");
+function adtRoute(req, res, url, body) {
+  const p = url.pathname.slice("/sap/bc/adt".length);
+  adt.log.push({ method: req.method, path: p + url.search, csrf: req.headers["x-csrf-token"] || "", auth: !!req.headers.authorization, agentHdr: !!req.headers["x-lingxi-agent"] });
+  const xml = (code, s, extra = {}) => { res.writeHead(code, { "Content-Type": "application/xml; charset=utf-8", ...extra }); res.end(s); };
+  const exc = (code, msg) => xml(code, `<?xml version="1.0" encoding="utf-8"?><exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><namespace id="com.sap.adt"/><type id="ExceptionResourceNoAuthorization"/><message lang="EN">${msg}</message></exc:exception>`);
+  if (p === "/discovery") {
+    if (req.headers["x-csrf-token"] === "fetch") adt.fetches = (adt.fetches || 0) + 1;
+    return xml(200, `<app:service xmlns:app="http://www.w3.org/2007/app"/>`, { "x-csrf-token": adt.token });
+  }
+  if (req.method === "POST") {
+    // 第一次语法检查时假装令牌过期：回 403 + Required，引擎应重取令牌再试
+    if (p === "/checkruns" && !adt.rotated) { adt.rotated = true; adt.token = "TOK2"; return xml(403, "", { "x-csrf-token": "Required" }); }
+    if (req.headers["x-csrf-token"] !== adt.token) return xml(403, "", { "x-csrf-token": "Required" });
+  }
+  if (p === "/repository/informationsystem/search") {
+    const q = (url.searchParams.get("query") || "").toUpperCase();
+    const all = [
+      ref("ZCL_AI_AGENT_SERVICE", "CLAS/OC", "/sap/bc/adt/oo/classes/zcl_ai_agent_service", "ZIDPPP", "Agent 编排"),
+      ref("ZCL_AI_AGENT_HTTP", "CLAS/OC", "/sap/bc/adt/oo/classes/zcl_ai_agent_http", "ZIDPPP", ""),
+      ref("ZCL_SECRET", "CLAS/OC", "/sap/bc/adt/oo/classes/zcl_secret", "ZSEC", ""),
+      ref("SHKZG", "DOMA/DD", "/sap/bc/adt/ddic/domains/shkzg", "BF", "借贷标识")
+    ].filter(s => { const n = /adtcore:name="([^"]+)"/.exec(s)[1]; return q.endsWith("*") ? n.startsWith(q.slice(0, -1)) : n === q; });
+    return xml(200, `<?xml version="1.0" encoding="utf-8"?><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">${all.join("")}</adtcore:objectReferences>`);
+  }
+  if (p === "/oo/classes/zcl_secret/source/main") return exc(403, "No authorization to access the resource /sap/bc/adt/oo/classes/zcl_secret");
+  if (p === "/oo/classes/zcl_ai_agent_service/source/main") { res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" }); return res.end(SRC); }
+  if (p === "/oo/classes/zcl_ai_agent_service/objectstructure") {
+    const el = (n, t, line, vis) => `<abapsource:objectStructureElement adtcore:name="${n}" adtcore:type="${t}" visibility="${vis}"><atom:link href="/sap/bc/adt/oo/classes/zcl_ai_agent_service/source/main#start=${line},4" rel="http://www.sap.com/adt/relations/source/definitionIdentifier"/></abapsource:objectStructureElement>`;
+    return xml(200, `<?xml version="1.0" encoding="utf-8"?><abapsource:objectStructureElement xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core" xmlns:atom="http://www.w3.org/2005/Atom" adtcore:name="ZCL_AI_AGENT_SERVICE" adtcore:type="CLAS/OC">` +
+      el("BROWSER_START", "CLAS/OM", 3, "public") + el("BROWSER_TOOL", "CLAS/OM", 4, "public") + `</abapsource:objectStructureElement>`);
+  }
+  if (p === "/repository/informationsystem/usageReferences") {
+    const ro = (n, t, pkg, isRes) => `<usageReferences:referencedObject uri="/x/${n}" isResult="${isRes}"><usageReferences:adtObject adtcore:name="${n}" adtcore:type="${t}"><adtcore:packageRef adtcore:name="${pkg}"/></usageReferences:adtObject></usageReferences:referencedObject>`;
+    adt.whereUsedUri = url.searchParams.get("uri");
+    return xml(200, `<?xml version="1.0" encoding="utf-8"?><usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences" xmlns:adtcore="http://www.sap.com/adt/core"><usageReferences:referencedObjects>` +
+      ro("ZIDPPP", "DEVC/K", "ZIDPPP", "false") + ro("ZCL_AI_AGENT_HTTP", "CLAS/OC", "ZIDPPP", "true") + ro("ZCL_AI_DPC_EXT", "CLAS/OC", "ZIDPPP", "true") +
+      `</usageReferences:referencedObjects></usageReferences:usageReferenceResult>`);
+  }
+  if (p === "/repository/nodestructure") {
+    const node = (t, n, d) => `<SEU_ADT_REPOSITORY_OBJ_NODE><OBJECT_TYPE>${t}</OBJECT_TYPE><OBJECT_NAME>${n}</OBJECT_NAME><DESCRIPTION>${d}</DESCRIPTION></SEU_ADT_REPOSITORY_OBJ_NODE>`;
+    return xml(200, `<?xml version="1.0" encoding="utf-8"?><asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><TREE_CONTENT>` +
+      node("CLAS/OC", "ZCL_AI_AGENT_SERVICE", "Agent 编排") + node("CLAS/OC", "ZCL_AI_AGENT_HTTP", "") + node("TABL/DT", "ZAI_BRUN", "运行号") +
+      `</TREE_CONTENT></DATA></asx:values></asx:abap>`);
+  }
+  if (p === "/checkruns") {
+    adt.checkBody = body;
+    return xml(200, `<?xml version="1.0" encoding="utf-8"?><chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport chkrun:reporter="abapCheckRun"><chkrun:checkMessageList>` +
+      `<chkrun:checkMessage chkrun:uri="/sap/bc/adt/oo/classes/zcl_ai_agent_service/source/main#start=8,5" chkrun:type="W" chkrun:shortText="变量 LV_X 未使用"/>` +
+      `</chkrun:checkMessageList></chkrun:checkReport></chkrun:checkRunReports>`);
+  }
+  if (p === "/ddic/domains/shkzg") {
+    return xml(200, `<?xml version="1.0" encoding="utf-8"?><doma:domain adtcore:name="SHKZG" adtcore:type="DOMA/DD" adtcore:description="Soll-/Haben-Kennzeichen" xmlns:doma="http://www.sap.com/dictionary/domain" xmlns:adtcore="http://www.sap.com/adt/core"><doma:content><doma:typeInformation><doma:datatype>CHAR</doma:datatype><doma:length>000001</doma:length><doma:decimals>000000</doma:decimals></doma:typeInformation><doma:valueInformation><doma:valueTableRef/><doma:fixValues><doma:fixValue><doma:position>0001</doma:position><doma:low>H</doma:low><doma:high/><doma:text>Haben</doma:text></doma:fixValue><doma:fixValue><doma:position>0002</doma:position><doma:low>S</doma:low><doma:high/><doma:text>Soll</doma:text></doma:fixValue></doma:fixValues></doma:valueInformation></doma:content></doma:domain>`);
+  }
+  return exc(404, "not found " + p);
+}
+
 function send(res, code, obj, type = "application/json") {
   res.writeHead(code, { "Content-Type": type + "; charset=utf-8", "Cache-Control": "no-store" });
   res.end(typeof obj === "string" ? obj : JSON.stringify(obj));
@@ -80,6 +155,12 @@ function checkHeaders(req, needRun) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
+  if (url.pathname.startsWith("/sap/bc/adt/")) {
+    let b = "";
+    for await (const c of req) b += c;
+    return adtRoute(req, res, url, b);
+  }
+  if (url.pathname === "/__adt") return send(res, 200, adt);
   if (req.method !== "POST") {
     if (!url.pathname.startsWith(BASE) && req.method === "HEAD") return send(res, 200, "");
     if (url.pathname === "/" || url.pathname === "/poc.html") return send(res, 200, fs.readFileSync(path.join(here, "poc.html"), "utf8"), "text/html");
@@ -110,6 +191,9 @@ const server = http.createServer(async (req, res) => {
         card: { tool: "fiori", taskId: "F1", taskModule: "FIORI", taskStatus: "WAITING_INPUT", needsInput: true,
           pendingParamsJson: JSON.stringify({ kind: "FIORI", report_id: "FR1", report_name: "测试", params: [] }), answer: "x" } });
     }
+    if (String(data.question || "").includes("场景九")) {
+      return send(res, 200, { runId, model: "mock-model", tools: SAP_TOOLS, adt: true, limits: { recursionLimit: 80 }, systemPrompt: "场景：CODE（模拟）" });
+    }
     if (String(data.question || "").includes("场景三")) {
       return send(res, 200, { runId, model: "mock-model", tools: [...SAP_TOOLS, ...RPT_TOOLS], skills: SAP_SKILLS, export: true,
         limits: { recursionLimit: 80 }, systemPrompt: "场景：REPORT（模拟）" });
@@ -125,6 +209,8 @@ const server = http.createServer(async (req, res) => {
     const step = msgs.filter(m => m.role === "assistant").length;
     const sys = msgs.filter(m => m.role === "system").map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n");
     const firstUser = String((msgs.find(m => m.role === "user") || {}).content || "");
+    if (!firstUser.startsWith("你在为")) run.hasAdtTools = (data.tools || []).some(t => t.function && /^adt_/.test(t.function.name));
+    if (!firstUser.startsWith("你在为")) run.sysHasAdtRule = sys.includes("adt_search");
     const reply = (message, calls) => send(res, 200, {
       id: "chatcmpl-" + run.modelCalls, object: "chat.completion", created: Math.floor(Date.now() / 1000), model: "mock-model",
       choices: [{ index: 0, message, finish_reason: calls ? "tool_calls" : "stop" }],
@@ -176,6 +262,13 @@ const server = http.createServer(async (req, res) => {
         return reply({ role: "assistant", content: "", tool_calls: c }, c);
       }
       return reply({ role: "assistant", content: `完成 场景六 summaries=${run.summaries || 0}` });
+    }
+    if (run.question && run.question.includes("场景九")) {
+      run.step9 = (run.step9 || 0) + 1;
+      const c9 = (SCRIPT9[run.step9 - 1] || (() => null))();
+      if (c9) return reply({ role: "assistant", content: "", tool_calls: c9 }, c9);
+      run.toolTexts9 = msgs.filter(m => m.role === "tool").map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content));
+      return reply({ role: "assistant", content: "完成 场景九" });
     }
     if (firstUser.startsWith("子任务")) {
       run.subagent = true;
@@ -237,6 +330,22 @@ const server = http.createServer(async (req, res) => {
     if (data.args && data.args.keyword === "坏参数") return send(res, 200, { ok: false, message: "参数被拒绝: keyword 不合法" });
     if (data.args && data.args.keyword === "大结果") return send(res, 200, { ok: true, content: "物料库存明细：" + "工厂一千号仓库成品".repeat(800) });
     return send(res, 200, { ok: true, content: JSON.stringify({ rows: [{ TABNAME: "AFKO", DDTEXT: "订单表头" }, { TABNAME: "AFPO", DDTEXT: "订单项目" }], total: 2 }) });
+  }
+  if (p === "/tools/audit") {
+    const bad = checkHeaders(req, true);
+    if (bad.length || data.runId !== req.headers["x-lingxi-run"]) return send(res, 400, { ok: false, message: bad.join("；") || "运行号不一致" });
+    const run = runs.get(data.runId);
+    if (!run.adtOk) run.adtOk = String(run.question || "").includes("场景九");
+    if (!run.adtOk) return send(res, 200, { ok: false, message: "这次运行没有开放 ADT" });
+    if (data.seq) {
+      const a = adt.audits.find(x => x.runId === data.runId && x.seq === data.seq);
+      if (a) Object.assign(a, { status: data.status, ms: data.ms, rows: data.rows });
+      return send(res, 200, { ok: true });
+    }
+    run.toolCalls++;
+    const seq = adt.audits.filter(x => x.runId === data.runId).length + 1;
+    adt.audits.push({ runId: data.runId, seq, tool: data.tool, target: data.target, status: "CALL" });
+    return send(res, 200, { ok: true, seq });
   }
   if (p === "/results/export") {
     const bad = checkHeaders(req, true);

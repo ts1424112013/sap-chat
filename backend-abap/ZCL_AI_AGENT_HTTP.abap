@@ -29,8 +29,10 @@
 *         V1.3 20261108 /run/start 的 limits 多回 contextTokens(浏览器据此决定何时压缩对话)
 *              (依赖 ZCL_AI_AGENT_SERVICE V15.21)
 *         V1.4 20261108 /run/finish 收 steps(精简过程记录); 新路径 /run/steps(依赖 ZCL_AI_AGENT_SERVICE V15.22)
+*         V1.5 20261108 ADT 代码工具: /run/start 回 adt; 新路径 /tools/audit(浏览器调 ADT 前报备 / 调完回填)
+*              (依赖 ZCL_AI_AGENT_SERVICE V15.25)
 *         ★ 重贴后核对标记: INTERFACES if_http_extension; handle_request 里有
-*           WHEN '/run/start' / '/chat/completions' / '/tools/exec' / '/results/export' / '/run/finish' / '/run/steps'
+*           WHEN '/run/start' / '/chat/completions' / '/tools/exec' / '/tools/audit' / '/results/export' / '/run/finish' / '/run/steps'
 *=======================================================================
 CLASS zcl_ai_agent_http DEFINITION
   PUBLIC
@@ -65,6 +67,15 @@ CLASS zcl_ai_agent_http DEFINITION
              skills_used TYPE string_table,   " V1.1: 模型读过的 SAP 技能编号
              steps       TYPE zcl_ai_agent_service=>tt_bstep_in,   " V1.4: 精简过程记录
            END OF ty_finish_req.
+    TYPES: BEGIN OF ty_audit_req,      " V1.5: ADT 调用报备(seq = 0)/ 回填(seq > 0)
+             run_id TYPE string,
+             tool   TYPE string,
+             target TYPE string,
+             seq    TYPE i,
+             status TYPE string,
+             ms     TYPE i,
+             rows   TYPE i,
+           END OF ty_audit_req.
     TYPES: BEGIN OF ty_steps_req,
              session_id TYPE string,
            END OF ty_steps_req.
@@ -161,6 +172,7 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                              |"tools":{ ls_out-tools_json },"systemPrompt":{ jstr( ls_out-system ) },| &&
                              |"skills":{ COND string( WHEN ls_out-skills_json IS INITIAL THEN `[]` ELSE ls_out-skills_json ) },| &&
                              |"export":{ COND string( WHEN ls_out-export = abap_true THEN `true` ELSE `false` ) },| &&
+                             |"adt":{ COND string( WHEN ls_out-adt = abap_true THEN `true` ELSE `false` ) },| &&
                              |"answer":{ jstr( ls_out-answer ) },| &&
                              COND string( WHEN ls_out-card IS NOT INITIAL THEN |"card":{ ls_out-card },| ) &&
                              |"limits":\{"maxModelCalls":{ ls_out-max_model },"maxToolCalls":{ ls_out-max_tool },| &&
@@ -218,6 +230,39 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                                COND string( WHEN lv_card IS NOT INITIAL THEN |,"card":{ lv_card }| ) &&
                                COND string( WHEN lv_ds IS NOT INITIAL THEN |,"datasets":{ lv_ds }| ) && |\}| ).
             ENDIF.
+
+          " ---------------- V1.5: ADT 代码工具调用报备 / 回填(浏览器直连 /sap/bc/adt 前后各一次) ----------------
+          WHEN '/tools/audit'.
+            DATA: ls_aud  TYPE ty_audit_req,
+                  lv_aseq TYPE i,
+                  lv_aok  TYPE abap_bool,
+                  lv_amsg TYPE string.
+            parse( EXPORTING iv_json = lv_body CHANGING cs_data = ls_aud ).
+            IF ls_aud-run_id <> server->request->get_header_field( 'x-lingxi-run' ).
+              fail( io_server = server iv_code = 400 iv_msg = '运行号不一致' ).
+              RETURN.
+            ENDIF.
+            zcl_ai_agent_service=>browser_audit(
+              EXPORTING iv_run_id  = ls_aud-run_id
+                        iv_tool    = ls_aud-tool
+                        iv_target  = ls_aud-target
+                        iv_seq     = ls_aud-seq
+                        iv_status  = ls_aud-status
+                        iv_ms      = ls_aud-ms
+                        iv_rows    = ls_aud-rows
+              IMPORTING ev_seq     = lv_aseq
+                        ev_ok      = lv_aok
+                        ev_message = lv_amsg
+                        ev_http    = lv_http ).
+            IF lv_http <> 200.
+              ROLLBACK WORK.
+              fail( io_server = server iv_code = lv_http iv_msg = lv_amsg ).
+              RETURN.
+            ENDIF.
+            COMMIT WORK.
+            reply( io_server = server iv_code = 200
+                   iv_json = |\{"ok":{ COND string( WHEN lv_aok = abap_true THEN `true` ELSE `false` ) },| &&
+                             |"seq":{ lv_aseq },"message":{ jstr( lv_amsg ) }\}| ).
 
           " ---------------- V1.1: 把一份报表结果导出成 CSV(浏览器写进用户文件夹) ----------------
           WHEN '/results/export'.

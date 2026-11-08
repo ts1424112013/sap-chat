@@ -306,6 +306,15 @@
 *   ③ 技能清单 = 开放的各场景的技能合在一起(去重)
 *   旧的场景会话照常可用(Fiori 场景会话仍全部走 agent_turn)
 *   ★ 重贴后核对标记: browser_start 有 lt_doms 与 open_fiori_report; browser_tool 有 WHEN 'open_fiori_report'
+* V15.25 20261108(功能计划书/Deep Agents浏览器接入/03 ADT 代码工具): 只改 browser_start / browser_finish / browser_steps, 新增 browser_audit —
+*   ① browser_start: BROWSER_ADT_ON = X + 用户开放了代码分析 + S_DEVELOP 显示权限(同 ZCL_AI_CODE_PROVIDER)+ 可选名单
+*     BROWSER_ADT_USERS → es_start-adt = X, 6 个 adt_ 工具名记进 ZAI_BRUN-TOOLS(工具本身由浏览器引擎定义, 直连 /sap/bc/adt)
+*   ② 新 PUBLIC browser_audit: 浏览器每次调 ADT 前先报(工具必须在本次清单里; 计入 TOOL_CALLS, 超 BRUN_MAX_TOOL 回 429),
+*     写 ZAI_BSTEP 一行(KIND = ADT, SEQ = 1000 + 当前工具次数, STATUS = CALL); 调完回填 OK / DENIED / ERROR、耗时、条数
+*   ③ browser_finish 只删重写非 ADT 的过程行, 并把本次 ADT 行的 MSG_SEQ 补上; browser_steps 不读 ADT 行
+*   依赖: ZAI_BSTEP(〇-AJ, 不加字段); ZCL_AI_AGENT_HTTP V1.5
+*   ★ 重贴后核对标记: PUBLIC 有 browser_audit 与 ty_brun_start-adt; browser_start 有 brun_cfg( 'BROWSER_ADT_ON' );
+*     browser_finish 有 AND kind <> 'ADT'
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -375,6 +384,9 @@ CLASS zcl_ai_agent_service DEFINITION
                gc_src_feed       TYPE i VALUE 24000, " V15.2: 源码工具结果回填上限
                gc_src_hits       TYPE i VALUE 20,    " V15.7: 关键词定位最多返回的命中处数
                gc_src_ctx        TYPE i VALUE 6.     " V15.7: 每处命中前后各带的行数
+    " V15.25: 浏览器引擎的 ADT 代码工具(只读; 定义在浏览器引擎里, 这里只用于运行清单与审计核对)
+    CONSTANTS: gc_adt_tools TYPE string VALUE `adt_search,adt_read_source,adt_structure,adt_where_used,adt_package,adt_syntax_check`,
+               gc_adt_seq0  TYPE i VALUE 1000.  " ADT 审计行在 ZAI_BSTEP 的序号从 1001 起(收尾写的过程行是 1~200)
 
     " Agent 入口(读请求; 工具全部只读, 不创建/修改/过账任何业务数据)
     CLASS-METHODS analyze_agent
@@ -402,6 +414,7 @@ CLASS zcl_ai_agent_service DEFINITION
              ctx_tokens TYPE i,        " V15.21: 模型上下文上限(token, BRUN_CTX_TOKENS), 浏览器据此决定何时压缩对话
              answer     TYPE string,   " V15.20: 非空 = 确定性回答(Fiori 参数卡 / 候选 / 闸门提示), 浏览器不调模型
              card       TYPE string,   " V15.20: 确定性回答带的参数卡 JSON(同 browser_tool 的 ev_card)
+             adt        TYPE abap_bool, " V15.25: X = 浏览器可以用 ADT 代码工具(直连 /sap/bc/adt, 只读)
            END OF ty_brun_start.
 
     " 开始一次运行: 校验开通 / 开关 / 会话 / 场景 / 技能 / 模型, 建会话头, 返回可用工具
@@ -471,6 +484,23 @@ CLASS zcl_ai_agent_service DEFINITION
       EXPORTING ev_json       TYPE string
                 ev_error      TYPE string
                 ev_http       TYPE i.
+
+    " V15.25: ADT 代码工具调用报备(浏览器直连 /sap/bc/adt 前先报, 报不了就不调)
+    " iv_seq = 0: 报备 —— 工具必须在本次运行清单里, 计入工具次数(超上限 ev_http = 429), 写 ZAI_BSTEP(KIND = ADT)→ ev_seq
+    " iv_seq > 0: 回填这一条的状态(OK / DENIED / ERROR)/ 耗时 / 条数
+    " ev_ok = 空且 ev_http = 200 时 ev_message 是给模型看的原因
+    CLASS-METHODS browser_audit
+      IMPORTING iv_run_id  TYPE string
+                iv_tool    TYPE string OPTIONAL
+                iv_target  TYPE string OPTIONAL
+                iv_seq     TYPE i OPTIONAL
+                iv_status  TYPE string OPTIONAL
+                iv_ms      TYPE i OPTIONAL
+                iv_rows    TYPE i OPTIONAL
+      EXPORTING ev_seq     TYPE i
+                ev_ok      TYPE abap_bool
+                ev_message TYPE string
+                ev_http    TYPE i.
 
     " V15.19: 把一份报表结果整份导出成 CSV(浏览器写进用户选的文件夹; 数据不经过模型)
     " ev_error 非空且 ev_http = 200 = 给模型看的失败原因; ev_http <> 200 = 请求本身被拒
@@ -4087,6 +4117,37 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                |。所有数字都要来自工具结果, 不要用举例行推算全量结论。|.
     ENDIF.
 
+    " ---- 8b. V15.25 ADT 代码工具(浏览器直连 /sap/bc/adt, 只读; 对象级权限仍由 ADT 按 S_ADT_RES / S_DEVELOP 逐个检查) ----
+    " 条件: 开关 BROWSER_ADT_ON = X + 用户开放了代码分析 + 有开发显示权限(同 ZCL_AI_CODE_PROVIDER)+ 可选试点名单 BROWSER_ADT_USERS
+    DATA(lv_adt) = abap_false.
+    IF brun_cfg( 'BROWSER_ADT_ON' ) = 'X' AND line_exists( lt_doms[ table_line = zcl_ai_domain_cards=>gc_dom_code ] ).
+      AUTHORITY-CHECK OBJECT 'S_DEVELOP'
+        ID 'DEVCLASS' FIELD '*'
+        ID 'OBJTYPE'  FIELD 'PROG'
+        ID 'ACTVT'    FIELD '03'.
+      IF sy-subrc = 0.
+        lv_adt = abap_true.
+        DATA(lv_adt_users) = to_upper( brun_cfg( 'BROWSER_ADT_USERS' ) ).
+        IF lv_adt_users IS NOT INITIAL.
+          lv_adt = abap_false.
+          SPLIT lv_adt_users AT ',' INTO TABLE DATA(lt_adt_users).
+          LOOP AT lt_adt_users INTO DATA(lv_adt_u).
+            CONDENSE lv_adt_u NO-GAPS.
+            IF lv_adt_u = CONV string( sy-uname ).
+              lv_adt = abap_true.
+              EXIT.
+            ENDIF.
+          ENDLOOP.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+    " ZAI_BRUN-TOOLS 是 SSTRING 1000: 放不下时不开 ADT(不截断工具清单)
+    IF lv_adt = abap_true AND strlen( lv_tools_csv ) + strlen( gc_adt_tools ) + 1 <= 1000.
+      lv_tools_csv = |{ lv_tools_csv }{ COND string( WHEN lv_tools_csv IS NOT INITIAL THEN `,` ) }{ gc_adt_tools }|.
+    ELSE.
+      lv_adt = abap_false.
+    ENDIF.
+
     " ---- 9. 运行号 ----
     DATA: lv_run TYPE c LENGTH 32,
           lv_now TYPE timestampl,
@@ -4121,6 +4182,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     es_start-max_model  = read_cfg_int( iv_key = 'BRUN_MAX_MODEL' iv_default = 40 iv_min = 5 iv_max = 200 ).
     es_start-max_tool   = read_cfg_int( iv_key = 'BRUN_MAX_TOOL' iv_default = 60 iv_min = 5 iv_max = 300 ).
     es_start-export     = lv_res_on.
+    es_start-adt        = lv_adt.
     es_start-ctx_tokens = read_cfg_int( iv_key = 'BRUN_CTX_TOKENS' iv_default = 256000 iv_min = 8000 iv_max = 2000000 ).
 
     " ---- 9b. V15.20 Fiori 确定性回答: 参数卡建 FIORI 任务(同原 Agent), 浏览器直接显示, 不调模型 ----
@@ -4802,7 +4864,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     " ---- V15.22: 精简过程记录 → ZAI_BSTEP(最多 200 步; 只存类型 / 工具 / 参数摘要 / 一句话结果 / 状态 / 耗时, 不存全文) ----
     DATA: ls_bs TYPE zai_bstep,
           lv_bn TYPE i.
-    DELETE FROM zai_bstep WHERE run_id = @ls_run-run_id.
+    " V15.25: ADT 审计行(KIND = ADT)是调用时写的, 不删; 只补上这次回答的消息序号
+    DELETE FROM zai_bstep WHERE run_id = @ls_run-run_id AND kind <> 'ADT'.
+    UPDATE zai_bstep SET msg_seq = @lv_seq WHERE run_id = @ls_run-run_id AND kind = 'ADT'.
     LOOP AT it_steps INTO DATA(ls_in).
       lv_bn = lv_bn + 1.
       IF lv_bn > 200.
@@ -4831,6 +4895,85 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD browser_audit.
+
+    CLEAR: ev_seq, ev_ok, ev_message.
+    ev_http = 200.
+    DATA: ls_run  TYPE zai_brun,
+          lv_err  TYPE string,
+          lv_http TYPE i.
+    brun_get( EXPORTING iv_run_id = iv_run_id
+              IMPORTING es_run    = ls_run
+                        ev_error  = lv_err
+                        ev_http   = lv_http ).
+    IF lv_err IS NOT INITIAL.
+      ev_http    = lv_http.
+      ev_message = lv_err.
+      RETURN.
+    ENDIF.
+
+    " ---- 回填: 状态 / 耗时 / 条数(只能改本人本运行的 ADT 行) ----
+    IF iv_seq > 0.
+      DATA(lv_st) = to_upper( iv_status ).
+      IF lv_st <> 'OK' AND lv_st <> 'DENIED' AND lv_st <> 'ERROR'.
+        lv_st = 'ERROR'.
+      ENDIF.
+      DATA(lv_sum) = |{ iv_rows } 条|.
+      UPDATE zai_bstep SET status = @lv_st, ms = @iv_ms, summary = @lv_sum
+        WHERE run_id = @ls_run-run_id AND seq = @iv_seq AND kind = 'ADT' AND userid = @sy-uname.
+      ev_ok  = xsdbool( sy-dbcnt = 1 ).
+      ev_seq = iv_seq.
+      IF ev_ok = abap_false.
+        ev_message = '没有这条 ADT 记录'.
+      ENDIF.
+      RETURN.
+    ENDIF.
+
+    " ---- 报备: 工具必须是 ADT 工具且在本次运行开始时下发的清单里 ----
+    DATA(lv_tool) = to_lower( condense( iv_tool ) ).
+    IF strlen( lv_tool ) < 5 OR lv_tool(4) <> 'adt_' OR |,{ gc_adt_tools },| NS |,{ lv_tool },|
+       OR |,{ ls_run-tools },| NS |,{ lv_tool },|.
+      ev_message = |工具 { iv_tool } 不在本次运行允许的范围内|.
+      RETURN.
+    ENDIF.
+
+    " 计入工具次数(与 browser_tool 同一个上限); 行锁到提交, 并发的报备会排队, 序号不会重复
+    DATA(lv_max) = read_cfg_int( iv_key = 'BRUN_MAX_TOOL' iv_default = 60 iv_min = 5 iv_max = 300 ).
+    UPDATE zai_brun SET tool_calls = tool_calls + 1
+      WHERE run_id = @ls_run-run_id AND userid = @sy-uname
+        AND status = 'RUNNING' AND tool_calls < @lv_max.
+    IF sy-dbcnt = 0.
+      ev_http    = 429.
+      ev_message = |这次运行的工具调用已达上限({ lv_max } 次), 请基于已有结果回答|.
+      RETURN.
+    ENDIF.
+    SELECT SINGLE tool_calls FROM zai_brun WHERE run_id = @ls_run-run_id INTO @DATA(lv_calls).
+
+    DATA: ls_bs  TYPE zai_bstep,
+          lv_now TYPE timestampl.
+    GET TIME STAMP FIELD lv_now.
+    ls_bs-mandt      = sy-mandt.
+    ls_bs-run_id     = ls_run-run_id.
+    ls_bs-seq        = gc_adt_seq0 + lv_calls.
+    ls_bs-session_id = ls_run-session_id.
+    ls_bs-userid     = sy-uname.
+    ls_bs-kind       = 'ADT'.
+    ls_bs-tool       = lv_tool.
+    ls_bs-target     = substring( val = iv_target len = nmin( val1 = strlen( iv_target ) val2 = 512 ) ).
+    ls_bs-status     = 'CALL'.
+    ls_bs-created_at = lv_now.
+    INSERT zai_bstep FROM @ls_bs.
+    IF sy-subrc <> 0.
+      ev_http    = 500.
+      ev_message = 'ADT 审计写入失败(ZAI_BSTEP)'.
+      RETURN.
+    ENDIF.
+    ev_seq = ls_bs-seq.
+    ev_ok  = abap_true.
+
+  ENDMETHOD.
+
+
   METHOD browser_steps.
 
     CLEAR: ev_json, ev_error.
@@ -4848,6 +4991,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     ENDIF.
     SELECT * FROM zai_bstep
       WHERE session_id = @iv_session_id AND userid = @sy-uname
+        AND kind <> 'ADT'                 " V15.25: ADT 审计行只供审计, 界面过程用浏览器交来的那份
       ORDER BY msg_seq, run_id, seq
       INTO TABLE @DATA(lt_bs)
       UP TO 5000 ROWS.

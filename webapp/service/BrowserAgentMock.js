@@ -13,7 +13,8 @@ sap.ui.define([], function () {
 	 *   · 问题里有「技能」→ 先读第一个技能的 SKILL.md
 	 *   · 数据分析 / 自动：「统计 / 分布 / 汇总」→ sap_data_analysis；「函数 / 未清采购」→ call_function（都带数据集回界面）
 	 *   · Fiori 报表：同原 Agent 演示的 _fioriTurn —— 参数卡 / 候选 / 闸门提示直接回答（不调模型），同意分析后才进模型
-	 *   · 其余：选了文件夹 → 列计划 / 看文件夹 / 读文件 /（要写时）写汇总；没选 → 查表
+	 *   · 自动 / 代码分析：「源码 / 代码 / 类 / 谁调用」→ ADT 代码工具（adt_search → adt_structure → adt_where_used，假 ADT 回应）
+ *   · 其余：选了文件夹 → 列计划 / 看文件夹 / 读文件 /（要写时）写汇总；没选 → 查表
 	 * 不发任何网络请求。
 	 * =====================================================================
 	 */
@@ -104,6 +105,12 @@ sap.ui.define([], function () {
 
 	function answer(aMsgs, sQ, bFolder, sKind) {
 		var aTool = aMsgs.filter(function (m) { return m.role === "tool"; }).map(textOf);
+		if (sKind === "ADT") {
+			return "**ZCL_AI_AGENT_SERVICE**（包 ZIDPPP）是 Agent 的编排类（演示数据）。\n\n" +
+				"- 新引擎相关的方法：`BROWSER_START`（第 3690 行）、`BROWSER_TOOL`（第 4287 行）、`BROWSER_FINISH`（第 4698 行）；原 Agent 入口是 `ANALYZE_AGENT`（第 412 行）。\n" +
+				"- 被 3 个对象使用：`ZCL_AI_AGENT_HTTP`、`ZCL_AI_DPC_EXT`、`ZCL_AI_SCHEDULE_SERVICE`。\n\n" +
+				"（演示模式：ADT 回应是假的，没有连 SAP。）";
+		}
 		var aLines = ["（演示模式：没有连接 SAP 和模型，下面是固定剧本的结果，用来看浏览器 Agent 的流程。）", ""];
 		if (sKind === "ASK") {
 			var mPick = /用户选择：(.+)/.exec(aTool.join("\n"));
@@ -190,6 +197,56 @@ sap.ui.define([], function () {
 		return iStep === 0 ? [call("call_function", { "function": "Z_AI_DEMO_PO_OPEN", purpose: "工厂 1000 未清采购", params: { IV_WERKS: "1000" } })] : null;
 	}
 
+	/** ADT 代码工具：找类 → 看结构 → 查谁在用 */
+	function scriptAdt(iStep) {
+		return [
+			[call("adt_search", { query: "ZCL_AI_AGENT*", type: "CLAS" })],
+			[call("adt_structure", { object: "ZCL_AI_AGENT_SERVICE" })],
+			[call("adt_where_used", { object: "ZCL_AI_AGENT_SERVICE" })]
+		][iStep] || null;
+	}
+
+	/** 演示用的假 ADT（/sap/bc/adt）：只覆盖剧本用到的几个地址 */
+	var ADT_NS = "xmlns:adtcore=\"http://www.sap.com/adt/core\"";
+	function adtResponse(sPath) {
+		var xml = function (s) {
+			return new Response("<?xml version=\"1.0\" encoding=\"utf-8\"?>" + s, { status: 200, headers: { "Content-Type": "application/xml", "x-csrf-token": "DEMO" } });
+		};
+		var ref = function (n, d) {
+			return "<adtcore:objectReference adtcore:uri=\"/sap/bc/adt/oo/classes/" + n.toLowerCase() + "\" adtcore:type=\"CLAS/OC\" adtcore:name=\"" + n +
+				"\" adtcore:packageName=\"ZIDPPP\" adtcore:description=\"" + d + "\"/>";
+		};
+		var p = sPath.split("?")[0];
+		if (p === "/sap/bc/adt/discovery") {
+			return xml("<app:service xmlns:app=\"http://www.w3.org/2007/app\"/>");
+		}
+		if (p === "/sap/bc/adt/repository/informationsystem/search") {
+			var q = decodeURIComponent((/query=([^&]+)/.exec(sPath) || [])[1] || "").toUpperCase();
+			var a = [ref("ZCL_AI_AGENT_SERVICE", "Agent 编排（演示）"), ref("ZCL_AI_AGENT_HTTP", "新引擎 HTTP 入口（演示）")].filter(function (r) {
+				var n = /adtcore:name="([^"]+)"/.exec(r)[1];
+				return /\*$/.test(q) ? n.indexOf(q.slice(0, -1)) === 0 : n === q;
+			});
+			return xml("<adtcore:objectReferences " + ADT_NS + ">" + a.join("") + "</adtcore:objectReferences>");
+		}
+		if (p === "/sap/bc/adt/oo/classes/zcl_ai_agent_service/objectstructure") {
+			var el = function (n, l) {
+				return "<abapsource:objectStructureElement adtcore:name=\"" + n + "\" adtcore:type=\"CLAS/OM\" visibility=\"public\">" +
+					"<atom:link href=\"./source/main#start=" + l + ",4\" rel=\"definitionIdentifier\"/></abapsource:objectStructureElement>";
+			};
+			return xml("<abapsource:objectStructureElement xmlns:abapsource=\"http://www.sap.com/adt/abapsource\" xmlns:atom=\"http://www.w3.org/2005/Atom\" " + ADT_NS +
+				" adtcore:name=\"ZCL_AI_AGENT_SERVICE\">" + el("ANALYZE_AGENT", 412) + el("BROWSER_START", 3690) + el("BROWSER_TOOL", 4287) + el("BROWSER_FINISH", 4698) +
+				"</abapsource:objectStructureElement>");
+		}
+		if (p === "/sap/bc/adt/repository/informationsystem/usageReferences") {
+			var ro = function (n) {
+				return "<u:referencedObject isResult=\"true\"><u:adtObject adtcore:name=\"" + n + "\" adtcore:type=\"CLAS/OC\"><adtcore:packageRef adtcore:name=\"ZIDPPP\"/></u:adtObject></u:referencedObject>";
+			};
+			return xml("<u:usageReferenceResult xmlns:u=\"http://www.sap.com/adt/ris/usageReferences\" " + ADT_NS + "><u:referencedObjects>" +
+				ro("ZCL_AI_AGENT_HTTP") + ro("ZCL_AI_DPC_EXT") + ro("ZCL_AI_SCHEDULE_SERVICE") + "</u:referencedObjects></u:usageReferenceResult>");
+		}
+		return new Response("", { status: 404 });
+	}
+
 	/** 演示的节点说明：开始时说打算、要写文件前说为什么（其余步骤不说，同真实提示词的规则） */
 	function narrate(sKind, iStep, calls) {
 		var sTool = calls && calls[0] && calls[0]["function"] && calls[0]["function"].name;
@@ -204,7 +261,8 @@ sap.ui.define([], function () {
 			PLAN: "按受控查询计划统计物料类型分布。",
 			FUNC: "用登记的函数查工厂 1000 的未清采购。",
 			REPORT: "打开报表的参数卡，参数由你确认后提交。",
-			ASK: "结果里有两列像料号，先跟你确认用哪一列。"
+			ASK: "结果里有两列像料号，先跟你确认用哪一列。",
+			ADT: "先按名字找到这个类，看它的方法结构，再查哪些对象在调用它。"
 		})[sKind] || "";
 	}
 
@@ -306,6 +364,8 @@ sap.ui.define([], function () {
 							sKind = "ASK";
 						} else if (/结果|导出|存成|另存|排名|最高|最多/.test(sQuestion)) {
 							sKind = "RESULT";
+						} else if ((scene === "AUTO" || scene === "CODE") && /源码|代码|类|谁调用|哪里用到|where.?used|ZCL_/i.test(sQuestion)) {
+							sKind = "ADT";
 						}
 						var aTools = [{
 							name: "search_tables",
@@ -348,6 +408,7 @@ sap.ui.define([], function () {
 								tools: aTools,
 								skills: aSkills,
 								"export": true,
+								adt: scene === "AUTO" || scene === "CODE",
 								limits: { recursionLimit: 60, maxModelCalls: 40, maxToolCalls: 60, contextTokens: 256000 },
 								systemPrompt: "场景：" + scene + "（演示）" + (aDefs.length ? "\n可用的报表：" +
 									aDefs.map(function (d) { return d.TCODE + " " + d.NAME; }).join("；") : "")
@@ -419,6 +480,13 @@ sap.ui.define([], function () {
 						return { ok: true, label: "成品可用庫存報表（演示）", rows: DEMO_ROWS.length, columns: DEMO_COLS.length, truncated: false, csv: demoCsv() };
 					});
 				},
+				adtFetch: function (sPath) {
+					return wait(250).then(function () { return adtResponse(sPath); });
+				},
+				auditAdt: (function () {
+					var iSeq = 1000;
+					return function (p) { return Promise.resolve({ ok: true, seq: p && p.seq ? p.seq : ++iSeq }); };
+				}()),
 				finishRun: function (p) {
 					// 演示：精简过程记录存在本机（按会话），重开会话时画回来；真实环境存在 SAP（ZAI_BSTEP）
 					try {
@@ -467,6 +535,8 @@ sap.ui.define([], function () {
 								calls = scriptReport(iStep - iOff, aMsgs, sQuestion, sTcode);
 							} else if (sKind === "ASK") {
 								calls = scriptAsk(iStep - iOff);
+							} else if (sKind === "ADT") {
+								calls = scriptAdt(iStep - iOff);
 							} else if (sKind === "RESULT") {
 								calls = scriptResult(iStep - iOff, aMsgs, sQuestion, o.folder);
 							} else {

@@ -158,6 +158,31 @@ async function main() {
     const r8c = await LingxiAgent.run({ question: "场景八C", sap: { base: "/sap/bc/zai_agent" } });
     const run8c = Object.values(await (await fetch("/__runs")).json()).find(x => x.question === "场景八C") || {};
     check("没有问用户界面时不给 ask_user", run8c.hasAskTool === false && run8c.sysHasAskRule === false);
+    check("SAP 没开 ADT 时不给 adt_ 工具", run8c.hasAdtTools === false && run8c.sysHasAdtRule === false);
+    // ---- 场景九：ADT 代码工具 ----
+    const ev9 = [];
+    const r9 = await LingxiAgent.run({ question: "场景九 看看 ZCL_AI_AGENT_SERVICE", sap: { base: "/sap/bc/zai_agent" }, onEvent: e => ev9.push(e) });
+    const run9 = Object.values(await (await fetch("/__runs")).json()).find(x => /场景九/.test(x.question)) || {};
+    const adt9 = await (await fetch("/__adt")).json();
+    const t9 = run9.toolTexts9 || [];
+    check("ADT：SAP 回 adt:true 时挂上 6 个 adt_ 工具和用法说明", run9.hasAdtTools === true && run9.sysHasAdtRule === true && /完成 场景九/.test(r9.answer));
+    check("ADT 搜索：解析对象名、类型、包、地址", /找到 2 个对象/.test(t9[0]) && /ZCL_AI_AGENT_SERVICE\s+类\s+包 ZIDPPP/.test(t9[0]) && /\/sap\/bc\/adt\/oo\/classes\/zcl_ai_agent_http/.test(t9[0]), t9[0]);
+    check("ADT 结构：给名字也能用（先按名字找地址），带行号", /BROWSER_START\s+CLAS\/OM public\s+行 3/.test(t9[1]), t9[1]);
+    check("ADT 读源码：keyword 只给命中行和前后文，带行号", /命中 2 处/.test(t9[2]) && /\s7\s+METHOD browser_start\./.test(t9[2]), t9[2]);
+    check("ADT 读源码：分页", /第 3–4 行/.test(t9[3]) && /还有 6 行，继续读用 start_line=5/.test(t9[3]), t9[3]);
+    check("ADT 被谁使用：只列结果对象，不含包节点", /共 2 个/.test(t9[4]) && /ZCL_AI_DPC_EXT/.test(t9[4]) && !/^ZIDPPP\s/m.test(t9[4]) && adt9.whereUsedUri === "/sap/bc/adt/oo/classes/zcl_ai_agent_service", t9[4]);
+    check("ADT 包内容：按类型分组", /包 ZIDPPP 共 3 个对象/.test(t9[5]) && /【表】1 个/.test(t9[5]), t9[5]);
+    check("ADT 语法检查：令牌过期时重取一次再成功，只查已激活版本", /警告 \/ 提示 1 个/.test(t9[6]) && /行 8/.test(t9[6]) && adt9.fetches === 2 && /version="active"/.test(adt9.checkBody || ""), t9[6] + " fetches=" + adt9.fetches);
+    check("ADT 白名单：datapreview 地址直接拒绝，不发请求、不记审计", /不在允许范围内/.test(t9[7]) && !adt9.log.some(l => /datapreview/.test(l.path)) && !adt9.audits.some(a => /datapreview/.test(a.target)), t9[7]);
+    check("ADT 没权限：如实转告，审计记 DENIED", /没有权限/.test(t9[8]) && adt9.audits.some(a => a.target === "ZCL_SECRET" && a.status === "DENIED"), t9[8]);
+    check("ADT 域：返回类型和固定值", /CHAR 长度 1/.test(t9[9]) && /H\s+Haben/.test(t9[9]) && /固定值（2 个）/.test(t9[9]), t9[9]);
+    check("ADT 审计：每次调用先报（计入工具次数）、调完回填状态；请求不带灵犀头和 Authorization",
+      adt9.audits.length === 9 && adt9.audits.every(a => a.status !== "CALL") &&
+      adt9.log.every(l => !l.auth && !l.agentHdr) && adt9.log.filter(l => l.method === "POST").every(l => l.csrf),
+      JSON.stringify(adt9.audits.map(a => a.tool + ":" + a.status)));
+    const st9 = (run9.steps || []).filter(s => s.k === "tool");
+    check("ADT 过程记录：一句话结果", st9.some(s => s.tool === "adt_where_used" && /被 2 个对象使用/.test(s.sum)) &&
+      st9.some(s => s.tool === "adt_syntax_check" && /错误 0 个，警告 1 个/.test(s.sum)), JSON.stringify(st9.map(s => s.sum)));
     check("网关报超出上下文：压缩后重试，运行照常完成", run6.overflowSent === true && /完成 场景六/.test(r6.answer) && run6.status === "OK", r6.answer);
     $("state").textContent = checks.every(c => c.ok) ? "全部通过" : "有失败";
   } catch (e) {

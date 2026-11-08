@@ -1,9 +1,16 @@
 # 新引擎接入 ADT 代码工具 —— 方案 V1.0
 
-> 日期：2026-11-07 ｜ 状态：方案，未开工 ｜ 前置：《02-方案与开发计划 V2.0》的 M1 ~ M3（〇-AF / AG / AH）
+> 日期：2026-11-07 ｜ 状态：**M1 已实现（2026-11-08，引擎 0.7.0 / AGENT_SERVICE V15.25 / AGENT_HTTP V1.5，部署见《03》《04》〇-AN）**，未上 SAP ｜ 前置：《02-方案与开发计划 V2.0》的 M1 ~ M3（〇-AF / AG / AH）
 > 参考：github.com/marianfoo/sap-ai-mcp-servers 目录里的 ADT 类 MCP（mario-andreschak/mcp-abap-adt、oisee/vibing-steampunk、ARC-1），接口细节以 marcellourbani/abap-adt-api（VS Code ABAP 插件用的库）为准
 
 ---
+
+> **实现与方案的差别（2026-11-08）**
+> - M0 已在 QAS 确认（discovery / 搜索 / 读源码 / 域固定值 / CDS 源码能打开，无开发权限账号 403）。
+> - 审计按 〇-AJ 的约定写进 `ZAI_BSTEP`（`KIND = ADT`、`SEQ` 从 1001 起），不另建表；收尾重写过程记录时不删 ADT 行。
+> - 工具参数 `object` 既可以是对象地址，也可以直接给对象名（引擎按名字精确搜到地址），省一轮。
+> - `adt_read_source` 对域 / 数据元素返回定义和固定值（M0 第 5 项，数据分析可用）；另支持 `keyword` 只看命中行。
+> - 场景只作权限（〇-AK）后，条件 2 改为「用户开放了代码分析」。
 
 ## 1. 要解决什么
 

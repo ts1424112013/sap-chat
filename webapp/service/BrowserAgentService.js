@@ -29,7 +29,10 @@ sap.ui.define([
 		resolve_material: "物料", get_stock_snapshot: "库存", get_daily_movement: "出入库", get_batch_stock: "批次库存",
 		// 20261107 M2：报表 / 结果 / 存到文件夹
 		list_results: "我的结果", read_result: "读结果", lookup_by_result: "关联查表",
-		open_report: "报表参数卡", prefill_report: "预填参数卡", save_result_to_folder: "存到文件夹"
+		open_report: "报表参数卡", prefill_report: "预填参数卡", save_result_to_folder: "存到文件夹",
+		// 20261108 ADT 代码工具（只读，浏览器直连 /sap/bc/adt）
+		adt_search: "找对象", adt_read_source: "读源码", adt_structure: "对象结构", adt_where_used: "被谁使用",
+		adt_package: "包内容", adt_syntax_check: "语法检查"
 	};
 
 	function cfg() {

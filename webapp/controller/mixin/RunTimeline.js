@@ -28,7 +28,9 @@ sap.ui.define([
 		read_result: "读结果中", open_report: "准备参数卡", prefill_report: "准备参数卡", save_result_to_folder: "导出中",
 		read_file: "读文件中", write_file: "写文件中", edit_file: "改文件中", ls: "看文件夹", glob: "找文件中", grep: "搜内容中",
 		task: "子任务进行中", read_program_source: "读源码中", resolve_material: "查物料", get_stock_snapshot: "查库存",
-		get_daily_movement: "查出入库", get_batch_stock: "查批次库存"
+		get_daily_movement: "查出入库", get_batch_stock: "查批次库存",
+		adt_search: "找对象中", adt_read_source: "读源码中", adt_structure: "看结构", adt_where_used: "查使用处",
+		adt_package: "看包内容", adt_syntax_check: "语法检查中"
 	};
 
 	/* 小图标（16×16，currentColor） */

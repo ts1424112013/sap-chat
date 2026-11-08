@@ -9,6 +9,9 @@
  *   POST {base}/run/finish        { runId, status, answer, skillsUsed, steps }（steps = 精简过程记录）
  *   POST {base}/run/steps         { sessionId } → { runs: [{ msgSeq, steps }] }
  *   POST {base}/results/export    { runId, resultId } → { ok, label, rows, columns, csv, truncated }
+ *   POST {base}/tools/audit       ADT 调用前 { runId, tool, target } → { ok, seq }（计入工具次数，超限 429）；
+ *                                 调用后 { runId, seq, status, ms, rows } → { ok }
+ *   /run/start 回 adt:true 时引擎挂上 adt_* 工具，浏览器直接调同主机的 /sap/bc/adt（用户自己的权限）
  *   /tools/exec 的结果可带 card（报表参数卡：taskId / taskModule / taskStatus / needsInput / pendingParamsJson / answer），
  *   引擎拿到后立刻结束本次运行，由界面显示参数卡
  *
@@ -89,8 +92,25 @@ export function createSapClient({ base = "/sap/bc/zai_agent", origin, timeoutMs 
     };
   }
 
+  /**
+   * ADT 请求（/sap/bc/adt/…，同主机）：带登录 Cookie 和 sap-client / sap-language；不带灵犀的自定义头。
+   * 地址白名单在 adt-client.js 里校验，这里只再确认前缀。
+   */
+  const adtOrigin = origin || window.location.origin;
+  function adtFetch(path, init = {}) {
+    if (!String(path).startsWith("/sap/bc/adt/")) return Promise.reject(new SapAgentError("ADT 地址不合法", 0));
+    const extra = qs ? (path.includes("?") ? "&" : "?") + qs.slice(1) : "";
+    const h = new Headers(init.headers || {});
+    h.delete("authorization");
+    if (basic) h.set("Authorization", basic);
+    return fetch(adtOrigin + path + extra, { ...init, credentials: "same-origin", headers: h });
+  }
+
   return {
     root,
+    adtFetch,
+    /** ADT 调用报备 / 回填结果：{ runId, tool, target } → { ok, seq }；{ runId, seq, status, ms, rows } → { ok } */
+    auditAdt: (p, o) => post("/tools/audit", p, { ...o, runId: p.runId, okFalseThrows: false }),
     startRun: (p, o) => post("/run/start", p, o),
     execTool: (p, o) => post("/tools/exec", p, { ...o, runId: p.runId, okFalseThrows: false }),
     finishRun: (p, o) => post("/run/finish", p, { ...o, runId: p.runId }),
