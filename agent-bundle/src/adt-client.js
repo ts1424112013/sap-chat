@@ -14,6 +14,7 @@ const MAX_BYTES = 2 * 1024 * 1024;
 const TIMEOUT_MS = 60000;
 const PAGE_LINES = 400;
 const MAX_HITS = 60;
+const MAX_CHECK_BYTES = 1024 * 1024;
 
 /** 对象名：字母数字下划线，可带命名空间（/ABC/ 或 %2fabc%2f），$ 开头的本地包 */
 const NAME = "(?:%2f[a-z0-9_]+%2f|/[a-z0-9_]+/)?(?:%24|\\$)?[a-z0-9_]+";
@@ -80,6 +81,14 @@ function excMessage(text) {
 function lineOf(href) {
   const m = /[#&]start=(\d+)/.exec(String(href || ""));
   return m ? Number(m[1]) : 0;
+}
+
+/** UTF-8 文本 → base64（分段，避免长代码撑爆参数） */
+function toBase64(text) {
+  const bytes = new TextEncoder().encode(text);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
 }
 
 export class AdtError extends Error {
@@ -319,13 +328,34 @@ export function createAdtClient({ fetch: f }) {
     return { text: `包 ${name} 共 ${nodes.length} 个对象：\n` + out.join("\n"), rows: nodes.length };
   }
 
-  /** 对已激活版本做语法检查 */
-  async function syntaxCheck({ object }, signal) {
+  /**
+   * 语法检查。只给 object：查 SAP 里已激活的版本。
+   * 同时给 source（或 file，由调用方先读成文本放进 source）：把这段代码当作对象的新内容交给 SAP 检查，
+   * 只走 checkruns，不保存、不加锁、不激活，SAP 上的对象不变。
+   */
+  async function syntaxCheck({ object, include, source, sourceLabel }, signal) {
     const o = await resolve(object, "", signal);
     if (!SOURCE_RE.test(o.uri)) throw new AdtError("只有程序、类、接口、函数、CDS 能做语法检查", 0);
+    let main = o.uri;
+    if (include) {
+      const inc = String(include).toLowerCase();
+      if (!/^(definitions|implementations|macros|testclasses)$/.test(inc) || !/^\/sap\/bc\/adt\/oo\/classes\/[^/]+$/.test(o.uri)) {
+        throw new AdtError("include 只能用于类：definitions / implementations / macros / testclasses", 0);
+      }
+      main = o.uri + "/includes/" + inc;
+    }
+    const hasSrc = typeof source === "string" && source.trim() !== "";
+    if (typeof source === "string" && !hasSrc) throw new AdtError("source 是空的，没有可检查的代码", 0);
+    const srcLines = hasSrc ? source.replace(/\r\n/g, "\n").split("\n") : [];
+    if (hasSrc && new TextEncoder().encode(source).length > MAX_CHECK_BYTES) throw new AdtError("代码超过 1 MB，请拆小后再检查", 0);
+    const artifactUri = main + "/source/main";
+    const inner = hasSrc
+      ? `<chkrun:artifacts><chkrun:artifact chkrun:contentType="text/plain; charset=utf-8" chkrun:uri="${artifactUri}">` +
+        `<chkrun:content>${toBase64(srcLines.join("\r\n"))}</chkrun:content></chkrun:artifact></chkrun:artifacts>`
+      : "";
     const body = `<?xml version="1.0" encoding="UTF-8"?>` +
       `<chkrun:checkObjectList xmlns:chkrun="http://www.sap.com/adt/checkrun" xmlns:adtcore="http://www.sap.com/adt/core">` +
-      `<chkrun:checkObject adtcore:uri="${o.uri}" chkrun:version="active"/></chkrun:checkObjectList>`;
+      `<chkrun:checkObject adtcore:uri="${o.uri}" chkrun:version="active">${inner}</chkrun:checkObject></chkrun:checkObjectList>`;
     const r = await call(`${ADT_ROOT}/checkruns?reporters=abapCheckRun`, {
       method: "POST", body, contentType: "application/vnd.sap.adt.checkobjects+xml",
       accept: "application/vnd.sap.adt.checkmessages+xml", signal
@@ -334,13 +364,21 @@ export function createAdtClient({ fetch: f }) {
     if (!doc) throw new AdtError("语法检查结果解析失败", 0);
     const msgs = all(doc, "checkMessage").map(m => {
       const ty = attr(m, "type");
-      return { type: ty === "E" ? "错误" : ty === "W" ? "警告" : "提示", line: lineOf(attr(m, "uri")), text: attr(m, "shortText"),
-        where: decodeURIComponent((attr(m, "uri").split("#")[0] || "").split("/").slice(-3).join("/")) };
+      const href = attr(m, "uri");
+      const path = decodeURIComponent((href.split("#")[0] || "")).toLowerCase();
+      const line = lineOf(href);
+      // 指向这次交上去的代码时，把那一行原文带上，模型不用再回头找
+      const code = hasSrc && line && path === artifactUri && srcLines[line - 1] != null ? srcLines[line - 1].trim().slice(0, 160) : "";
+      return { type: ty === "E" ? "错误" : ty === "W" ? "警告" : "提示", line, text: attr(m, "shortText"), code,
+        where: hasSrc && path === artifactUri ? "" : path.split("/").slice(-3).join("/") };
     });
+    const what = hasSrc
+      ? `${o.name}${include ? " " + String(include).toLowerCase() : ""}（${sourceLabel || "交来的代码"}，${srcLines.length} 行，只检查、未保存）`
+      : `${o.name}（已激活版本）`;
     const nErr = msgs.filter(m => m.type === "错误").length;
-    if (!msgs.length) return { text: `${o.name}（已激活版本）语法检查通过，没有错误和警告。`, rows: 0 };
-    return { text: `${o.name}（已激活版本）语法检查：错误 ${nErr} 个，警告 / 提示 ${msgs.length - nErr} 个：\n` +
-      msgs.slice(0, 100).map(m => `${m.type}  行 ${m.line || "?"}  ${m.text}${m.where ? "  （" + m.where + "）" : ""}`).join("\n"), rows: msgs.length };
+    if (!msgs.length) return { text: `${what}语法检查通过，没有错误和警告。`, rows: 0 };
+    return { text: `${what}语法检查：错误 ${nErr} 个，警告 / 提示 ${msgs.length - nErr} 个：\n` +
+      msgs.slice(0, 100).map(m => `${m.type}  行 ${m.line || "?"}  ${m.text}${m.where ? "  （" + m.where + "）" : ""}${m.code ? "\n      代码：" + m.code : ""}`).join("\n"), rows: msgs.length };
   }
 
   return { call, search, resolve, readSource, structure, whereUsed, packageContents, syntaxCheck };
@@ -384,13 +422,22 @@ export const ADT_TOOL_SPECS = [
   },
   {
     name: "adt_syntax_check",
-    description: "对对象的已激活版本做语法检查，返回错误 / 警告和行号（不改代码、不激活）。",
-    schema: { type: "object", properties: { object: { type: "string", description: "对象名或对象地址" } }, required: ["object"] }
+    description: "语法检查（不改代码、不保存、不激活）。只给 object：查 SAP 里已激活的版本。" +
+      "检查自己写 / 改的代码：再给 file（文件夹里的代码文件，优先，省得把代码再抄一遍）或 source（代码全文），" +
+      "SAP 把它当作 object 的新内容检查，对象本身不变。返回错误 / 警告、行号和那一行代码。",
+    schema: { type: "object", properties: {
+      object: { type: "string", description: "对象名或对象地址。检查新代码时是这段代码要放进的对象（必须已在 SAP 建好）" },
+      file: { type: "string", description: "可选：文件夹里的代码文件路径，如 /代码/ZMM_REPORT.abap，内容是对象的完整源码" },
+      source: { type: "string", description: "可选：代码全文（没有文件时用）" },
+      include: { type: "string", description: "可选，类的局部部分：definitions / implementations / macros / testclasses（file / source 是这一部分的完整内容）" }
+    }, required: ["object"] }
   }
 ];
 
 export const ADT_PROMPT = `可以用 adt_ 开头的工具查看 SAP 开发对象（只读，权限和用户在 Eclipse 里一样）：
 - 不知道确切名字时先 adt_search；知道名字可以直接把名字传给其他 adt 工具。
 - 大的类 / 程序先 adt_structure 看结构，再用 adt_read_source 按行号或 keyword 读需要的部分，不要整份从头读到尾。
-- 「谁调用了 / 哪里用到」用 adt_where_used；「包里有什么」用 adt_package；「有没有语法错误」用 adt_syntax_check（只查已激活版本）。
+- 「谁调用了 / 哪里用到」用 adt_where_used；「包里有什么」用 adt_package；「有没有语法错误」用 adt_syntax_check。
+- 自己写或改的 ABAP 代码，写进文件夹后用 adt_syntax_check 带 file 检查（没有文件夹时带 source）；有错误就改了再查，直到没有错误再交给用户。这一步只检查，代码不会保存或激活到 SAP。
+- 要检查的对象还没在 SAP 建好时，不要拿别的对象凑：请用户先在 SE38 / SE24 建一个同名空对象，或告诉你可以用哪个测试对象。
 - 结论要引用对象名和行号，没读到的代码不要猜；工具说没有权限时如实告诉用户。`;

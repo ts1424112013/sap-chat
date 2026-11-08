@@ -77,6 +77,9 @@ const SCRIPT9 = [
   () => [call("adt_read_source", { object: "/sap/bc/adt/datapreview/freestyle" })],
   () => [call("adt_read_source", { object: "ZCL_SECRET" })],
   () => [call("adt_read_source", { object: "SHKZG" })],
+  // 检查自己写的代码：source 直接给 / file 从文件夹读；只走 checkruns，不保存
+  () => [call("adt_syntax_check", { object: "ZCL_AI_AGENT_SERVICE", include: "implementations", source: "CLASS lcl IMPLEMENTATION.\n  SYNTAXERR lv_x.\nENDCLASS." })],
+  () => [call("adt_syntax_check", { object: "ZCL_AI_AGENT_SERVICE", file: "/代码/zcl_ai_agent_service.abap" })],
   () => null
 ];
 const adt = { log: [], token: "TOK1", rotated: false, audits: [] };
@@ -129,7 +132,18 @@ function adtRoute(req, res, url, body) {
       `</TREE_CONTENT></DATA></asx:values></asx:abap>`);
   }
   if (p === "/checkruns") {
-    adt.checkBody = body;
+    adt.checkBody = adt.checkBody || body;
+    (adt.checkBodies = adt.checkBodies || []).push(body);
+    const m = /<chkrun:artifact [^>]*chkrun:uri="([^"]+)"[^>]*><chkrun:content>([^<]*)</.exec(body);
+    if (m) {
+      // 交来的代码：含 SYNTAXERR 的行报错误，否则通过
+      const src = Buffer.from(m[2], "base64").toString("utf8");
+      adt.checkSources = [...(adt.checkSources || []), src];
+      const errs = src.split("\r\n").map((l, i) => /SYNTAXERR/.test(l) ? i + 1 : 0).filter(Boolean);
+      return xml(200, `<?xml version="1.0" encoding="utf-8"?><chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport chkrun:reporter="abapCheckRun"><chkrun:checkMessageList>` +
+        errs.map(n => `<chkrun:checkMessage chkrun:uri="${m[1]}#start=${n},2" chkrun:type="E" chkrun:shortText="语句 SYNTAXERR 未定义"/>`).join("") +
+        `</chkrun:checkMessageList></chkrun:checkReport></chkrun:checkRunReports>`);
+    }
     return xml(200, `<?xml version="1.0" encoding="utf-8"?><chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport chkrun:reporter="abapCheckRun"><chkrun:checkMessageList>` +
       `<chkrun:checkMessage chkrun:uri="/sap/bc/adt/oo/classes/zcl_ai_agent_service/source/main#start=8,5" chkrun:type="W" chkrun:shortText="变量 LV_X 未使用"/>` +
       `</chkrun:checkMessageList></chkrun:checkReport></chkrun:checkRunReports>`);

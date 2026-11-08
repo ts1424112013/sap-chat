@@ -161,7 +161,11 @@ async function main() {
     check("SAP 没开 ADT 时不给 adt_ 工具", run8c.hasAdtTools === false && run8c.sysHasAdtRule === false);
     // ---- 场景九：ADT 代码工具 ----
     const ev9 = [];
-    const r9 = await LingxiAgent.run({ question: "场景九 看看 ZCL_AI_AGENT_SERVICE", sap: { base: "/sap/bc/zai_agent" }, title: true, onEvent: e => ev9.push(e) });
+    const codeDir = await root.getDirectoryHandle("代码", { create: true });
+    const cw = await (await codeDir.getFileHandle("zcl_ai_agent_service.abap", { create: true })).createWritable();
+    await cw.write("\uFEFFCLASS zcl_ai_agent_service DEFINITION.\nENDCLASS.\n类实现 中文注释\n"); await cw.close();
+    const r9 = await LingxiAgent.run({ question: "场景九 看看 ZCL_AI_AGENT_SERVICE", folderBackend: r.folder, sap: { base: "/sap/bc/zai_agent" }, title: true, onEvent: e => ev9.push(e),
+      confirm: async () => true });
     const run9 = Object.values(await (await fetch("/__runs")).json()).find(x => /场景九/.test(x.question)) || {};
     const adt9 = await (await fetch("/__adt")).json();
     const t9 = run9.toolTexts9 || [];
@@ -176,8 +180,17 @@ async function main() {
     check("ADT 白名单：datapreview 地址直接拒绝，不发请求、不记审计", /不在允许范围内/.test(t9[7]) && !adt9.log.some(l => /datapreview/.test(l.path)) && !adt9.audits.some(a => /datapreview/.test(a.target)), t9[7]);
     check("ADT 没权限：如实转告，审计记 DENIED", /没有权限/.test(t9[8]) && adt9.audits.some(a => a.target === "ZCL_SECRET" && a.status === "DENIED"), t9[8]);
     check("ADT 域：返回类型和固定值", /CHAR 长度 1/.test(t9[9]) && /H\s+Haben/.test(t9[9]) && /固定值（2 个）/.test(t9[9]), t9[9]);
+    check("ADT 检查新代码（source）：类的实现部分，报错误、行号和那一行代码，未保存",
+      /implementations（交来的代码，3 行，只检查、未保存）语法检查：错误 1 个/.test(t9[10]) && /错误\s+行 2\s+语句 SYNTAXERR 未定义\n\s+代码：SYNTAXERR lv_x\./.test(t9[10]) &&
+      /chkrun:uri="\/sap\/bc\/adt\/oo\/classes\/zcl_ai_agent_service\/includes\/implementations\/source\/main"/.test((adt9.checkBodies || [])[1] || ""), t9[10]);
+    check("ADT 检查新代码（file）：从文件夹读（去掉 BOM、中文不乱码），通过", /文件 \/代码\/zcl_ai_agent_service\.abap，4 行，只检查、未保存）语法检查通过/.test(t9[11]) &&
+      (adt9.checkSources || [])[1] === "CLASS zcl_ai_agent_service DEFINITION.\r\nENDCLASS.\r\n类实现 中文注释\r\n", t9[11] + " src=" + JSON.stringify((adt9.checkSources || [])[1]));
+    check("ADT 检查新代码：只调 checkruns，没有保存 / 加锁 / 激活请求；审计记下文件和代码行数",
+      adt9.log.every(l => l.method === "GET" || l.method === "POST") && !adt9.log.some(l => /_action=LOCK|\/activation|\/source\/main/.test(l.path) && l.method !== "GET") &&
+      adt9.audits.some(a => /<\/代码\/zcl_ai_agent_service\.abap/.test(a.target)) && adt9.audits.some(a => /<代码 3 行/.test(a.target)),
+      JSON.stringify(adt9.audits.map(a => a.target)));
     check("ADT 审计：每次调用先报（计入工具次数）、调完回填状态；请求不带灵犀头和 Authorization",
-      adt9.audits.length === 9 && adt9.audits.every(a => a.status !== "CALL") &&
+      adt9.audits.length === 11 && adt9.audits.every(a => a.status !== "CALL") &&
       adt9.log.every(l => !l.auth && !l.agentHdr) && adt9.log.filter(l => l.method === "POST").every(l => l.csrf),
       JSON.stringify(adt9.audits.map(a => a.tool + ":" + a.status)));
     check("会话标题：回答后让模型起标题，清掉前缀 / 引号 / 句号，交给 SAP 收尾并返回界面",

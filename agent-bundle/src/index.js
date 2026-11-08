@@ -15,13 +15,13 @@ import { tool } from "@langchain/core/tools";
 import { todoListMiddleware } from "langchain";
 import { createSapClient, SapAgentError } from "./sap-client.js";
 import {
-  FolderBackend, folderSupported, pickFolder, restoreFolder, requestFolderPermission, forgetFolder
+  FolderBackend, folderSupported, pickFolder, restoreFolder, requestFolderPermission, forgetFolder, isTextPath
 } from "./folder-backend.js";
 import { ReadonlyMemBackend, skillFiles } from "./readonly-backend.js";
 import { summarizeStep, mainArg } from "./step-summary.js";
 import { createAdtClient, ADT_TOOL_SPECS, ADT_PROMPT, normalizeUri } from "./adt-client.js";
 
-export const VERSION = "0.8.0";
+export const VERSION = "0.9.0";
 export const MEMORY_FILE = "/灵犀记忆.md";
 /** SAP 管理员维护的技能（只读，SAP /run/start 下发） */
 export const SAP_SKILL_DIR = "/SAP技能/";
@@ -238,7 +238,15 @@ function buildExportTool(client, run, folderBackend, signal) {
  * ADT 代码工具（只读，浏览器直连 /sap/bc/adt）。每次调用先报 SAP /tools/audit（校验运行号、计入工具次数、写审计），
  * SAP 拒绝或报不了就不调 ADT；调完再报一次结果（失败不影响回答）。
  */
-function buildAdtTools(adt, client, run, signal) {
+function buildAdtTools(adt, client, run, signal, folderBackend) {
+  // 语法检查带 file：从用户选的文件夹读代码（只读文本文件）
+  const readCode = async file => {
+    if (!folderBackend) throw new Error("这次没有选文件夹，读不了 file；请改用 source 传代码全文");
+    if (!isTextPath(file)) throw new Error(`${file} 不是文本文件，不能当代码检查`);
+    const r = await folderBackend.readRaw(file);
+    if (r.error) throw new Error(r.error);
+    return String(r.data.content || "").replace(/^\uFEFF/, "");
+  };
   const fns = {
     adt_search: async a => {
       const list = await adt.search(a.query, a.type, 50, signal);
@@ -250,12 +258,17 @@ function buildAdtTools(adt, client, run, signal) {
     adt_structure: a => adt.structure(a, signal),
     adt_where_used: a => adt.whereUsed(a, signal),
     adt_package: a => adt.packageContents(a, signal),
-    adt_syntax_check: a => adt.syntaxCheck(a, signal)
+    adt_syntax_check: async a => {
+      if (a.file && a.source) throw new Error("file 和 source 只给一个");
+      if (a.file) return adt.syntaxCheck({ ...a, source: await readCode(String(a.file)), sourceLabel: "文件 " + String(a.file).slice(0, 120) }, signal);
+      return adt.syntaxCheck(a, signal);
+    }
   };
   return ADT_TOOL_SPECS.map(spec => tool(
     async args => {
       const a = args || {};
-      const target = String(a.object || a.query || a.package || "").slice(0, 200) + (a.keyword ? " ~" + String(a.keyword).slice(0, 40) : "");
+      const target = (String(a.object || a.query || a.package || "").slice(0, 200) + (a.keyword ? " ~" + String(a.keyword).slice(0, 40) : "") +
+        (a.file ? " <" + String(a.file).slice(0, 80) : "") + (typeof a.source === "string" && a.source ? ` <代码 ${a.source.split("\n").length} 行` : "")).slice(0, 250);
       // 白名单外的地址：不报审计、不发请求，直接拒绝
       if (/^(https?:\/\/[^/]+)?\/sap\/bc\/adt\//i.test(String(a.object || "").trim()) && !normalizeUri(a.object)) {
         return "工具执行失败：对象地址不在允许范围内（只能读报表 / 包含程序 / 类 / 接口 / 函数 / CDS / 表 / 结构 / 数据元素 / 域 / 包）";
@@ -496,7 +509,7 @@ export async function run(o) {
   if (canExport) tools.push(buildExportTool(client, runInfo, folderBackend, inner.signal));
   // ADT 代码工具：SAP 说这次可以用（开关 + 代码分析权限 + 开发显示权限）才挂上
   const canAdt = runInfo.adt === true && typeof client.adtFetch === "function" && typeof client.auditAdt === "function";
-  if (canAdt) tools.push(...buildAdtTools(createAdtClient({ fetch: client.adtFetch }), client, runInfo, inner.signal));
+  if (canAdt) tools.push(...buildAdtTools(createAdtClient({ fetch: client.adtFetch }), client, runInfo, inner.signal, folderBackend));
   // 问用户：选「我直接说」时和参数卡一样立即停，问题就是这次的回答
   let askOther = "";
   const canAsk = typeof o.ask === "function";
