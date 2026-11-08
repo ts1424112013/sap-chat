@@ -99,8 +99,15 @@ export function summarizeStep(tool, args, text, ok) {
     }
     case "ls":
     case "glob": {
-      const k = t.split("\n").filter(l => l.trim() && !/^Error/.test(l)).length;
-      return k ? `${n(k)} 项` : "空";
+      if (/^Error/.test(t)) return cut(t, 100);
+      // 「No files found in /」是空目录，不算一项
+      const aL = t.split("\n").filter(l => l.trim() && !/^No files found/.test(l));
+      if (!aL.length) return "空";
+      if (tool === "glob") return `${n(aL.length)} 项`;
+      // ls：文件夹和文件分开数，和回答里的说法对得上
+      const nDir = aL.filter(l => /\(directory\)\s*$/.test(l)).length;
+      const nFile = aL.length - nDir;
+      return [nDir ? `${n(nDir)} 个文件夹` : "", nFile ? `${n(nFile)} 个文件` : ""].filter(Boolean).join("、");
     }
     case "grep": {
       const k = t.split("\n").filter(l => /:\d+:/.test(l) || /^\s*\d+:/.test(l)).length;

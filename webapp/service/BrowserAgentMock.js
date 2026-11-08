@@ -57,16 +57,25 @@ sap.ui.define([], function () {
 		var sLs = (aTool.filter(function (m) { return /\(directory\)|bytes\)/.test(textOf(m)); })[0] || {});
 		var sFile = pickFile(textOf(sLs));
 		var bWrite = /写|改|汇总|生成|保存|整理/.test(sQ);
-		switch (iStep) {
-		case 0: return [call("write_todos", plan(0))];
-		case 1: return [call("ls", { path: "/" })];
-		case 2: return sFile ? [call("read_file", { file_path: sFile, limit: 20 }), call("write_todos", plan(1))] : null;
-		case 3: return bWrite ? [call("write_file", {
-			file_path: "/灵犀演示-汇总.md",
-			content: "# 灵犀演示汇总\n\n- 问题：" + sQ + "\n- 读取的文件：" + (sFile || "无") + "\n- 生成时间：" + new Date().toLocaleString() + "\n"
-		}), call("write_todos", plan(2))] : null;
-		default: return null;
+		if (iStep === 0) {
+			return [call("write_todos", plan(0))];
 		}
+		if (iStep === 1) {
+			return [call("ls", { path: "/" })];
+		}
+		// ls 之后的步骤按实际情况排：没有可读文件就不读、不要写就不写，最后都把计划勾完再回答
+		var aSteps = [];
+		if (sFile) {
+			aSteps.push([call("read_file", { file_path: sFile, limit: 20 }), call("write_todos", plan(1))]);
+		}
+		if (bWrite) {
+			aSteps.push([call("write_file", {
+				file_path: "/灵犀演示-汇总.md",
+				content: "# 灵犀演示汇总\n\n- 问题：" + sQ + "\n- 读取的文件：" + (sFile || "无") + "\n- 生成时间：" + new Date().toLocaleString() + "\n"
+			}), call("write_todos", plan(2))]);
+		}
+		aSteps.push([call("write_todos", plan(3))]);
+		return aSteps[iStep - 2] || null;
 	}
 
 	function scriptNoFolder(iStep, aMsgs, sQ) {
@@ -149,9 +158,17 @@ sap.ui.define([], function () {
 		}
 		if (bFolder) {
 			var sLs = aTool.filter(function (t) { return /\(directory\)|bytes\)/.test(t); })[0] || "";
-			var n = sLs ? sLs.split("\n").filter(function (l) { return /bytes\)/.test(l); }).length : 0;
-			aLines.push("- 你选的文件夹里有 **" + n + "** 个文件。");
 			var sRead = aTool.filter(function (t) { return /^@@ lines/.test(t) && !/sap_skill_id|以下是管理员维护的做法/.test(t); })[0];
+			// 和过程里「列目录」那行同一个数法：文件夹、文件分开数（空文件没有 bytes 也算文件）
+			var aLs = sLs.split("\n").filter(function (l) { return l.trim() && !/^No files found/.test(l); });
+			var nDir = aLs.filter(function (l) { return /\(directory\)\s*$/.test(l); }).length;
+			var nFile = aLs.length - nDir;
+			aLines.push(aLs.length
+				? "- 你选的文件夹里有 **" + nFile + "** 个文件" + (nDir ? "、**" + nDir + "** 个文件夹" : "") + "。"
+				: "- 你选的文件夹是空的。");
+			if (aLs.length && !sRead) {
+				aLines.push("- 里面没有能直接读的文本文件（.csv / .txt / .md / .json 等），所以没有读文件。");
+			}
 			if (sRead) {
 				aLines.push("- 读了其中一个文本文件的前几行：", "", "```", sRead.split("\n").slice(1, 6).join("\n"), "```");
 			}
