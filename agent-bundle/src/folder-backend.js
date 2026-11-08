@@ -21,6 +21,14 @@ const TEXT_EXT = new Set([
   "js", "mjs", "cjs", "ts", "tsx", "jsx", "css", "scss", "less", "html", "htm", "svg", "sql", "abap",
   "py", "java", "kt", "go", "rs", "c", "h", "cpp", "hpp", "cs", "sh", "bat", "ps1", "properties", "env"
 ]);
+/**
+ * 模型能新建 / 覆盖 / 修改的文件类型（11.8 #01）：只要普通文本。
+ * 脚本（.bat .cmd .ps1 .vbs .js .sh .py …）用户双击可能直接运行；Office / PDF / 图片模型只能写文本，写进去会打不开。
+ */
+const WRITE_EXT = new Set([
+  "txt", "md", "markdown", "csv", "tsv", "json", "xml", "yaml", "yml", "ini", "cfg", "conf", "log",
+  "sql", "abap", "html", "htm", "css", "properties"
+]);
 const MIME = {
   csv: "text/csv", tsv: "text/tab-separated-values", json: "application/json", md: "text/markdown",
   xml: "application/xml", html: "text/html", htm: "text/html", svg: "image/svg+xml",
@@ -44,6 +52,11 @@ export function mimeOf(p) {
 export function isTextPath(p) {
   const m = mimeOf(p);
   return m.startsWith("text/") || m === "application/json" || m === "application/xml" || m === "image/svg+xml";
+}
+
+/** 模型能不能新建 / 覆盖 / 修改这个文件（只看扩展名） */
+export function canWritePath(p) {
+  return WRITE_EXT.has(extOf(String(p || "")));
 }
 
 /** 把 Agent 给的路径规范成段数组；非法返回 null。"/" → [] */
@@ -138,11 +151,23 @@ export class FolderBackend {
     const parts = splitPath(path);
     return !!parts && parts[0] === META_DIR;
   }
-  _guardWrite(path) {
+  /** 路径合法、不在 .lingxi/、文件夹不是只读 */
+  _guardPath(path) {
     const parts = splitPath(path);
     if (!parts || parts.length === 0) return `Error: invalid path '${path}'. Use an absolute path inside the folder, e.g. /report.csv`;
     if (parts[0] === META_DIR) return `Error: ${META_DIR}/ is managed by 灵犀 (backups and change log) and is read-only.`;
     if (this.opts.readOnly) return "Error: the folder is opened read-only.";
+    return null;
+  }
+  /** 新建 / 覆盖 / 修改：再限文件类型 */
+  _guardWrite(path) {
+    const bad = this._guardPath(path);
+    if (bad) return bad;
+    if (!canWritePath(path)) {
+      const e = extOf(path);
+      return `Error: 不能写 ${e ? "." + e : "没有扩展名的"} 文件（${path}）。只能写文本文件：${[...WRITE_EXT].join(" / ")}。` +
+        "表格存成 .csv（Excel 能直接打开；报表结果用 save_result_to_folder），文档存成 .md；不要写脚本文件。";
+    }
     return null;
   }
 
@@ -388,7 +413,7 @@ export class FolderBackend {
   }
 
   async delete(path) {
-    const bad = this._guardWrite(path);
+    const bad = this._guardPath(path);
     if (bad) return { error: bad };
     const parts = splitPath(path);
     try {

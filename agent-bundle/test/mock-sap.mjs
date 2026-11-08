@@ -82,6 +82,18 @@ const SCRIPT9 = [
   () => [call("adt_syntax_check", { object: "ZCL_AI_AGENT_SERVICE", file: "/代码/zcl_ai_agent_service.abap" })],
   () => null
 ];
+// 场景十一：写文件只许文本类型（11.8 #01）；删除单个文件、每次确认（11.8 #02）
+const SCRIPT11 = [
+  () => [call("write_file", { file_path: "/清理.bat", content: "del /q *.*" })],
+  () => [call("write_file", { file_path: "/汇总.xlsx", content: "a,b" })],
+  () => [call("write_file", { file_path: "/十-说明.md", content: "说明" })],
+  () => [call("delete_file", { file_path: "/删我.txt" })],
+  () => [call("delete_file", { file_path: "/删我.txt" })],
+  () => [call("delete_file", { file_path: "/灵犀记忆.md" })],
+  () => [call("delete_file", { file_path: "/.lingxi/修改记录.md" })],
+  () => [call("delete_file", { file_path: "/十-目录" })],
+  () => null
+];
 // 场景十：IT 自由 SQL（adt_run_sql，0.10.0）—— SAP 下发工具说明，浏览器经 ADT datapreview/freestyle 执行
 const SQL_TOOL = { name: "adt_run_sql", description: "执行一条只读 ABAP SQL（模拟）",
   parameters: { type: "object", properties: { sql: { type: "string" }, max_rows: { type: "integer" }, purpose: { type: "string" } }, required: ["sql"] } };
@@ -224,7 +236,7 @@ const server = http.createServer(async (req, res) => {
         card: { tool: "fiori", taskId: "F1", taskModule: "FIORI", taskStatus: "WAITING_INPUT", needsInput: true,
           pendingParamsJson: JSON.stringify({ kind: "FIORI", report_id: "FR1", report_name: "测试", params: [] }), answer: "x" } });
     }
-    if (String(data.question || "").includes("场景十")) {
+    if (String(data.question || "").includes("场景十") && !String(data.question || "").includes("场景十一")) {
       return send(res, 200, { runId, model: "mock-model", tools: [...SAP_TOOLS, SQL_TOOL], adt: true, limits: { recursionLimit: 80 }, systemPrompt: "场景：DATA（模拟）" });
     }
     if (String(data.question || "").includes("场景九")) {
@@ -318,6 +330,14 @@ const server = http.createServer(async (req, res) => {
       }
       return reply({ role: "assistant", content: `完成 场景六 summaries=${run.summaries || 0}` });
     }
+    if (run.question && run.question.includes("场景十一")) {
+      run.step11 = (run.step11 || 0) + 1;
+      if (run.step11 === 1) run.hasDeleteTool = (data.tools || []).some(t => t.function && t.function.name === "delete_file");
+      const c11 = (SCRIPT11[run.step11 - 1] || (() => null))();
+      if (c11) return reply({ role: "assistant", content: "", tool_calls: c11 }, c11);
+      run.toolTexts11 = msgs.filter(m => m.role === "tool").map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content));
+      return reply({ role: "assistant", content: "完成 场景十一" });
+    }
     if (run.question && run.question.includes("场景十")) {
       run.step10 = (run.step10 || 0) + 1;
       if (run.step10 === 1) {
@@ -401,7 +421,7 @@ const server = http.createServer(async (req, res) => {
     const bad = checkHeaders(req, true);
     if (bad.length || data.runId !== req.headers["x-lingxi-run"]) return send(res, 400, { ok: false, message: bad.join("；") || "运行号不一致" });
     const run = runs.get(data.runId);
-    if (!run.adtOk) run.adtOk = /场景九|场景十/.test(String(run.question || ""));
+    if (!run.adtOk) run.adtOk = /场景九|场景十(?!一)/.test(String(run.question || ""));
     if (!run.adtOk) return send(res, 200, { ok: false, message: "这次运行没有开放 ADT" });
     if (data.seq) {
       const a = adt.audits.find(x => x.runId === data.runId && x.seq === data.seq);

@@ -30,7 +30,7 @@ sap.ui.define([
 		task: "子任务进行中", read_program_source: "读源码中", resolve_material: "查物料", get_stock_snapshot: "查库存",
 		get_daily_movement: "查出入库", get_batch_stock: "查批次库存",
 		adt_search: "找对象中", adt_read_source: "读源码中", adt_structure: "看结构", adt_where_used: "查使用处",
-		adt_package: "看包内容", adt_syntax_check: "语法检查中", compact_memory: "整理记忆中"
+		adt_package: "看包内容", adt_syntax_check: "语法检查中", delete_file: "删文件中", compact_memory: "整理记忆中"
 	};
 
 	/* 小图标（16×16，currentColor） */
@@ -171,7 +171,8 @@ sap.ui.define([
 			return new Promise(function (resolve) {
 				var oIt = { k: "ask", req: req, done: null };
 				s.items.push(oIt);
-				s.ask = { item: oIt, resolve: resolve };
+				// 删除只有「删除 / 不要」两项（「本次都不再询问」对删除不生效）
+				s.ask = { item: oIt, resolve: resolve, n: req.action === "删除" ? 2 : 3 };
 				that._rtRender(sUid);
 				that._rtInfo(s);
 				// 确认面板滚进视野（用户往上翻时不打扰：只在本来就在底部附近时跟随）
@@ -232,6 +233,9 @@ sap.ui.define([
 				this._rtInfo(s);
 				a.resolve(a.item.done);
 				return;
+			}
+			if (a.item.req && a.item.req.action === "删除" && iOpt === 1) {
+				iOpt = 2;   // 删除卡第 2 项是「不要」
 			}
 			s.ask = null;
 			a.item.done = iOpt === 2 ? "no" : (iOpt === 1 ? "all" : "yes");
@@ -443,11 +447,14 @@ sap.ui.define([
 			}
 			var bMem = req.action === "整理记忆";   // 记忆超过上限，回答后合并重复规则（原文件会备份，可撤回）
 			var sQ = bMem ? "记忆超过上限，用整理后的版本替换吗？" : req.action === "删除" ? "要删除这个文件吗？" : req.action === "新建" ? "要新建这个文件吗？" : "要" + (req.action || "修改") + "这个文件吗？";
-			var aOpt = [req.action === "删除" ? "删除" : "是，" + (req.action || "修改"), "是，本次运行写文件都不再询问", bMem ? "不要，保持原样" : "不要，告诉灵犀怎么改"];
+			// [显示文字, 选项值]；选项值 0 = 是，1 = 是且本次都不再询问，2 = 不要。删除每次都问，没有第 2 项
+			var aOpt = req.action === "删除"
+				? [["删除", 0], ["不要，保留这个文件", 2]]
+				: [["是，" + (req.action || "修改"), 0], ["是，本次运行写文件都不再询问", 1], [bMem ? "不要，保持原样" : "不要，告诉灵犀怎么改", 2]];
 			return '<div class="rtAsk"><div class="rtAskHead"><b>' + esc(sQ) + '</b><span class="rtSub">' + esc(req.path) + "</span></div>" +
 				'<div class="rtAskDiff">' + (this._baDiffHtml ? this._baDiffHtml(req) : "") + "</div>" +
-				aOpt.map(function (t, k) {
-					return '<div class="rtOpt" data-rt="pick" data-v="' + k + '" role="button" tabindex="0"><span class="rtKey">' + (k + 1) + "</span><span>" + esc(t) + "</span></div>";
+				aOpt.map(function (o, k) {
+					return '<div class="rtOpt" data-rt="pick" data-v="' + o[1] + '" role="button" tabindex="0"><span class="rtKey">' + (k + 1) + "</span><span>" + esc(o[0]) + "</span></div>";
 				}).join("") + "</div>";
 		},
 

@@ -117,6 +117,8 @@ export function summarizeStep(tool, args, text, ok) {
       return /Successfully|已/.test(t) ? `已写入 ${cut(a.file_path || a.path, 50)}` : cut(t, 80);
     case "edit_file":
       return /Successfully|已/.test(t) ? `已修改 ${cut(a.file_path || a.path, 50)}` : cut(t, 80);
+    case "delete_file":
+      return /^已删除/.test(t) ? `已删除 ${cut(a.file_path, 50)}` : cut(t, 80);
     case "save_result_to_folder":
       return cut(t, 100);
     case "task":

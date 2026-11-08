@@ -249,6 +249,27 @@ async function main() {
       onEvent: e => evM3.push(e), confirm: async req => { confM3.push(req); return true; } });
     const runM3 = Object.values(await (await fetch("/__runs")).json()).find(x => x.question === "场景记忆 三") || {};
     check("记忆：同一份内容拒绝过，本页面不再反复问", confM3.length === 0 && !runM3.memCompactCalls && !evM3.some(e => e.tool === "compact_memory"));
+    // ---- 场景十一：写文件类型 + 删除（11.8 #01 / #02）----
+    const delW11 = await (await root.getFileHandle("删我.txt", { create: true })).createWritable(); await delW11.write("旧数据"); await delW11.close();
+    await root.getDirectoryHandle("十-目录", { create: true });
+    const conf11 = [];
+    const ans11 = [{ approved: true, always: true }, { approved: false, message: "先别删" }, { approved: true, always: true }];
+    const r11 = await LingxiAgent.run({ question: "场景十一", folderBackend: r.folder, sap: { base: "/sap/bc/zai_agent" },
+      confirm: async req => { conf11.push(req.action + " " + req.path); return ans11[conf11.length - 1] || { approved: false }; } });
+    const run11 = Object.values(await (await fetch("/__runs")).json()).find(x => x.question === "场景十一") || {};
+    const t11 = run11.toolTexts11 || [];
+    const exists11 = async n => { try { await root.getFileHandle(n); return true; } catch (e) { return false; } };
+    check("#01 写文件：脚本 .bat 和 Excel .xlsx 直接拒绝（不问用户、不写），提示改存 csv / md",
+      /不能写 \.bat/.test(t11[0]) && /不能写 \.xlsx/.test(t11[1]) && /\.csv/.test(t11[1]) && !(await exists11("清理.bat")) && !(await exists11("汇总.xlsx")) &&
+      conf11[0] === "新建 /十-说明.md", JSON.stringify({ t0: t11[0], conf11 }));
+    check("#02 有文件夹时给 delete_file", run11.hasDeleteTool === true && /完成 场景十一/.test(r11.answer), JSON.stringify(run11.hasDeleteTool));
+    check("#02 删除：选过「本次都不再询问」后删除仍要确认；拒绝不删", conf11[1] === "删除 /删我.txt" && /用户拒绝了这次删除/.test(t11[3]), JSON.stringify({ conf11, t3: t11[3] }));
+    check("#02 删除：同意后删掉并备份；本次都允许不会因删除确认打开", conf11[2] === "删除 /删我.txt" && /已删除 \/删我\.txt/.test(t11[4]) && !(await exists11("删我.txt")) &&
+      conf11.length === 3, JSON.stringify({ conf11, t4: t11[4] }));
+    check("#02 删除：记忆文件、.lingxi/、文件夹都不能删", /长期记忆，不能删/.test(t11[5]) && /read-only/.test(t11[6]) && /only single files/.test(t11[7]) &&
+      (await exists11("灵犀记忆.md")), JSON.stringify(t11.slice(5, 8)));
+    const undo11 = await r.folder.undoLast();
+    check("#02 删除可以撤回：从备份恢复", undo11.action === "删除" && (await exists11("删我.txt")) && (await text(root, "/删我.txt")) === "旧数据", JSON.stringify(undo11));
     check("网关报超出上下文：压缩后重试，运行照常完成", run6.overflowSent === true && /完成 场景六/.test(r6.answer) && run6.status === "OK", r6.answer);
     $("state").textContent = checks.every(c => c.ok) ? "全部通过" : "有失败";
   } catch (e) {

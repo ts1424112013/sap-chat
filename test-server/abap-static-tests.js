@@ -1357,6 +1357,11 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     /^\*\s+V1\.6 20261108/m.test(httpRaw) && /iv_title\s+= ls_fin-title/.test(hr));
 
   /* ---- 20261109 业务问题先找报表 + IT 自由 SQL 经 ADT（AGENT_SERVICE V15.27）+ SQL 成功率（GUARD V1.2.4 / EXECUTOR V1.4 / 域卡 V1.7） ---- */
+  check('V15.28（11.8 #03）：开放了代码分析就总带上【代码分析】规则（keyword 定位、行号、source_hidden、不编代码），新引擎版不含 1500 字 / 15 行',
+    /^\* V15\.28 20261109/m.test(agRaw2) &&
+    /IF line_exists\( lt_doms\[ table_line = zcl_ai_domain_cards=>gc_dom_code \] \)\.\s+lv_sys = \|\{ lv_sys \}\\n\\n【代码分析】/.test(bs) &&
+    /keyword 定位/.test(bs) && /source_hidden/.test(bs) && /禁止凭记忆补全或编造代码/.test(bs) && /引用对象名和行号/.test(bs) &&
+    !/1500 字|不超过 15 行/.test(bs));
   {
     const gRaw = read('ZCL_AI_SQL_GUARD.abap'), g = codeOnly(gRaw), gv = methodOf(g, 'validate_sql'), gn = methodOf(g, 'normalize_sql');
     const eRaw = read('ZCL_AI_SQL_EXECUTOR.abap'), e = codeOnly(eRaw), er = methodOf(e, 'run_sql');

@@ -21,7 +21,7 @@ import { ReadonlyMemBackend, skillFiles } from "./readonly-backend.js";
 import { summarizeStep, mainArg } from "./step-summary.js";
 import { createAdtClient, ADT_TOOL_SPECS, ADT_PROMPT, ADT_SQL_PROMPT, normalizeUri, parseDataPreview } from "./adt-client.js";
 
-export const VERSION = "0.11.0";
+export const VERSION = "0.12.0";
 export const MEMORY_FILE = "/灵犀记忆.md";
 /** 记忆上限（字符）：超过时只载入前这么多，回答后让模型整理一次 */
 export const MEMORY_MAX_CHARS = 6000;
@@ -77,6 +77,8 @@ const BASE_PROMPT = `你是「灵犀」，公司内部的 SAP 业务助手，运
 const FOLDER_PROMPT = `用户已授权一个本地文件夹，文件工具里的 "/" 就是这个文件夹的根目录。
 - 改文件前先读；尽量用 edit_file 做小范围修改，不要整份重写。
 - 写文件会先让用户确认，用户拒绝时不要换个方式再写。
+- 只能写文本文件（txt / md / csv / tsv / json / xml / yaml / sql / abap / html 等）：表格存成 .csv，文档存成 .md；不写 .bat / .ps1 / .vbs / .js / .sh 等脚本，不写 Excel / Word / PDF / 图片。
+- 只有用户明确说要删某个文件时才用 delete_file，一次删一个，每次都会让用户确认；不要为了「整理」自己删文件，删文件夹做不到。
 - .lingxi/ 目录是灵犀的备份和修改记录，只读。
 - ${MEMORY_FILE} 是这个文件夹的长期记忆（上限 ${MEMORY_MAX_CHARS} 字）：只记以后还用得上的规则（口径、格式、命名习惯、用户纠正过的做法），不记一次性的数字、查询结果、临时安排，不记密码、令牌等凭据。
   记之前先看已有条目：同类的用 edit_file 改那一条，不要再追加一条重复的；每条一行，写短。
@@ -273,6 +275,30 @@ function buildAskTool(ask, track, signal, onOther) {
           options: { type: "array", items: { type: "string" }, description: "2~4 个候选答案，写短（界面另外会给「我直接说」）" }
         },
         required: ["question", "options"]
+      }
+    }
+  );
+}
+
+/** 删除文件夹里的单个文件（11.8 #02）：每次确认、先备份到 .lingxi/备份/、可撤回 */
+function buildDeleteTool(folderBackend) {
+  return tool(
+    async ({ file_path }) => {
+      const path = String(file_path || "").trim();
+      if (!path.startsWith("/")) return "工具执行失败：file_path 要以 / 开头，是文件夹里的路径";
+      if (/^\/(草稿|SAP技能|large_tool_results|conversation_history)\//.test(path)) return "工具执行失败：这里不是用户文件夹里的文件，不能删";
+      if (path.replace(/\/+$/, "") === MEMORY_FILE) return `工具执行失败：${MEMORY_FILE} 是长期记忆，不能删；要去掉某条规则用 edit_file 改`;
+      const r = await folderBackend.delete(path);
+      if (r && r.error) return r.error;
+      return `已删除 ${path}（原文件备份在 .lingxi/备份/，用户可以撤回）。`;
+    },
+    {
+      name: "delete_file",
+      description: "删除用户文件夹里的一个文件（不能删文件夹）。只在用户明确要求删除时用；删除前会让用户确认，原文件会备份。",
+      schema: {
+        type: "object",
+        properties: { file_path: { type: "string", description: "要删除的文件路径，如 /旧数据/库存_1001.csv" } },
+        required: ["file_path"]
       }
     }
   );
@@ -539,7 +565,8 @@ export async function run(o) {
       onChange: c => track({ type: "file_changed", action: c.action, path: c.path, backup: c.backup }),
       confirm: o.confirmWrites === false ? null : async req => {
         // 用户在本次运行里选过「都不再询问」：同类写入自动通过（只在本次运行有效）
-        if (allowAllWrites) {
+        const isDelete = req.action === "删除";
+        if (allowAllWrites && !isDelete) {
           track({ type: "confirmed", action: req.action, path: req.path, approved: true, auto: true });
           return { approved: true };
         }
@@ -547,8 +574,10 @@ export async function run(o) {
         // 没有确认界面时一律拒绝，绝不静默写用户文件
         const r = o.confirm ? await o.confirm(req) : { approved: false, message: "界面不支持确认" };
         const ok = r === true || (r && r.approved === true);
-        if (ok && r && r.always === true) allowAllWrites = true;
-        track({ type: "confirmed", action: req.action, path: req.path, approved: ok, always: !!(r && r.always) });
+        // 「本次都不再询问」只管写和改；删除每次都问（11.8 #02）
+        const always = !isDelete && !!(r && r.always === true);
+        if (ok && always) allowAllWrites = true;
+        track({ type: "confirmed", action: req.action, path: req.path, approved: ok, always });
         return r;
       }
     };
@@ -627,6 +656,7 @@ export async function run(o) {
       })) });
   };
   const tools = buildSapTools(client, runInfo, emit, inner.signal, onCard, onDatasets);
+  if (folderBackend && !(folderBackend.opts && folderBackend.opts.readOnly)) tools.push(buildDeleteTool(folderBackend));
   const canExport = !!(folderBackend && runInfo.export);
   if (canExport) tools.push(buildExportTool(client, runInfo, folderBackend, inner.signal));
   // ADT 代码工具：SAP 说这次可以用（开关 + 代码分析权限 + 开发显示权限）才挂上

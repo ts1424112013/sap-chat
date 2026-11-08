@@ -333,6 +333,11 @@
 *   依赖: ZCL_AI_SQL_GUARD V1.2.4、ZCL_AI_SQL_EXECUTOR V1.4(log_run 为 PUBLIC)先激活; 新配置 BROWSER_ADT_SQL / BROWSER_MAX_RPT
 *   ★ 重贴后核对标记: PRIVATE 有 report_params_json 与 chat_prefill; browser_start 有 BROWSER_ADT_SQL 与 BROWSER_MAX_RPT;
 *     browser_tool 有 WHEN 'get_report_parameters'; browser_audit 有 gc_adt_sql_tool
+* V15.28 20261109(11.8 记录 #03 新引擎丢了代码分析规则): 只改 browser_start ——
+*   V15.23 起新引擎不选场景, 领域卡只按问题关键字挑(match_domain), 从不挑到代码域, 有代码分析权限时
+*   读源码 / ADT 工具照给, 但代码规则没进系统说明。现在: 开放了代码分析就总带上【代码分析】规则(新引擎版:
+*   去掉原引擎为 JSON 协议写的「1500 字 / 每段代码 15 行」和「本场景不取数」), 与按关键字挑的领域卡并存
+*   ★ 重贴后核对标记: browser_start 有【代码分析】且不含 1500 字
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -4219,6 +4224,19 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     DATA(lv_card) = zcl_ai_domain_cards=>get_card( lv_domain ).
     IF lv_card IS NOT INITIAL.
       lv_sys = |{ lv_sys }\n\n{ lv_card }|.
+    ENDIF.
+    " V15.28(11.8 #03): 开放了代码分析就总带上代码规则(match_domain 不会挑到代码域; 新引擎没有回答长度限制)
+    IF line_exists( lt_doms[ table_line = zcl_ai_domain_cards=>gc_dom_code ] ).
+      lv_sys = |{ lv_sys }\n\n【代码分析】(问程序 / 类 / 函数 / 报错原因 / 写或改代码时遵守)\n| &&
+               |1. 用户点名程序 / 事务码 / 类 / 函数模块时先读源码(read_program_source; 有 adt_ 工具时也可用 adt_search / adt_read_source);| &&
+               | 没点名对象时先问清楚要分析哪个对象, 不要猜。\n| &&
+               |2. 用户给了报错文案、消息、字段名或 FORM 名时, 先用 keyword 定位(返回命中行号和前后几行), 需要时再按 start_line| &&
+               | 读附近; 大程序不要从第 1 行逐段通读。\n| &&
+               |3. 结论引用对象名和行号, 只陈述源码里看得到的内容。\n| &&
+               |4. 工具返回 source_hidden 时说明当前账号不能查看源码, 只基于元信息解释用途; 对象不存在或不是自开发对象时如实告知;| &&
+               | 禁止凭记忆补全或编造代码。\n| &&
+               |5. 问具体报错或某段逻辑时直接答: 触发条件 → 关键代码与行号 → 业务含义 → 排查建议; 要求整体解读程序时才按| &&
+               | 功能概述 → 主要数据结构与数据库表 → 关键业务逻辑 → 潜在问题与优化建议。修改示例放在 abap 代码块。|.
     ENDIF.
     IF ls_skill-id IS NOT INITIAL.
       lv_sys = |{ lv_sys }\n\n{ zcl_ai_skill_service=>card( ls_skill ) }|.

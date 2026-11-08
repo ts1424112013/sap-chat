@@ -21,7 +21,7 @@ sap.ui.define([
 	var FOLDER_KEY_PREFIX = "lingxi-folder:";
 
 	var TOOL_LABEL = {
-		ls: "列目录", read_file: "读文件", write_file: "写文件", edit_file: "改文件", "delete": "删除文件",
+		ls: "列目录", read_file: "读文件", write_file: "写文件", edit_file: "改文件", "delete": "删除文件", delete_file: "删除文件",
 		glob: "找文件", grep: "搜内容", task: "子任务", ask_user: "问你",
 		search_tables: "查表", describe_table: "表结构", run_sql: "执行查询", sap_data_analysis: "数据分析",
 		resolve_report: "找报表", get_report_parameters: "报表参数", get_report_result: "报表结果",
