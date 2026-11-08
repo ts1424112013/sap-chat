@@ -6,7 +6,7 @@
 *     导致多轮 LLM 调用撞 180s 预算/ICM 超时, 前端表现为卡住)
 *   新增第 7 条: 结果用 markdown 表格呈现(<=15 全列/>15 前 10+其余合计)
 *   UNION 不在 SQL_GUARD 关键字黑名单, 7.50 支持 UNION ALL
-*   ★ 重贴后核对标记: 域卡内应有 UNION ALL 合并
+*   ★ 重贴后核对标记: 域卡内应有 UNION ALL 合并(V1.7 起取消, 以 V1.7 标记为准)
 * V1.2   20261011: 新增 CODE 域(Agent「代码分析」场景; 对话页不再读 SAP,
 *   源码解读迁入 Agent): 常量 gc_dom_code + 代码分析领域卡。
 *   match_domain 不变(CODE 只由会话场景显式选择, 不靠关键词猜)
@@ -28,6 +28,12 @@
 * V1.6   20261102(功能计划书/RFC函数执行/03 §7.4): DATA 域卡加【已登记函数】一段 ——
 *   有 call_function 且现成函数能直接回答时优先调函数, 不用 SQL 重拼; 参数按说明填, 必填缺了先问
 *   ★ 重贴后核对标记: DATA 域卡含【已登记函数】
+* V1.7   20261109(11.8 #04: ZAI_SQL_LOG 分析): DATA 域卡 ——
+*   ① 第 2 条不再推荐 UNION ALL 合并多维度(日志里 UNION 类 8 条全失败: 各段类型不一致、|| 拼接),
+*     改为能用一条 GROUP BY 就一条, 否则每个维度一条 run_sql; 一定要 UNION 时各段同类型、拼接用 &&
+*   ② 第 11 条补「补零后的长度必须正好等于字段长度」(日志: 10 位单号补成 16 位, 执行报不是 C(12) 的有效值)
+*   ③ 新增【业务问题先找报表】段: 有 open_report 时, 已登记报表能回答的先用报表, 不用 SQL 自己拼口径
+*   ★ 重贴后核对标记: DATA 域卡含「正好等于字段长度」与【业务问题先找报表】; 不再含 UNION ALL 合并
 *=======================================================================
 CLASS zcl_ai_domain_cards DEFINITION
   PUBLIC
@@ -128,15 +134,9 @@ CLASS zcl_ai_domain_cards IMPLEMENTATION.
         |   用动态 SQL 工作流: search_tables(按关键词找表) →\n| &&
         |   describe_table(确认字段) → run_sql(执行单条只读 SELECT)。\n| &&
         |   写 SQL 前必须先确认表和字段真实存在, 不得编造表名/字段名。\n| &&
-        |2. 多维度统计(如"按工厂/事务码/日期分别统计")优先用 UNION ALL 合并\n| &&
-        |   为一条 SQL 一次完成(每轮只发一条 run_sql, 多维度合并可显著减少\n| &&
-        |   轮数与耗时), 示例:\n| &&
-        |   SELECT 'WERKS' AS DIM, WERKS AS DIM_VALUE, COUNT(*) AS CNT\n| &&
-        |          FROM ZTAB GROUP BY WERKS\n| &&
-        |   UNION ALL SELECT 'TCODE', TCODE, COUNT(*) FROM ZTAB GROUP BY TCODE\n| &&
-        |   (各段列数与类型必须一致, 第一列是维度名字面量; 整体最后才可加\n| &&
-        |   ORDER BY, 只能引用输出列的位置或前段列名)。仅当维度间需要不同\n| &&
-        |   过滤条件时才拆成多次 run_sql(最多 4 条)。\n| &&
+        |2. 多维度统计: 一个维度能用一条 GROUP BY 完成的就写一条; 不同维度分别发 run_sql\n| &&
+        |   (最多 4 条), 不要用 UNION ALL 把不同维度硬拼成一条。确实要 UNION 时,\n| &&
+        |   各段同位置的列类型和长度必须一致, 字符串拼接用 && (不能用 ||)。\n| &&
         |3. 每条查询要有简短的中文名称(name), 便于用户理解与图表引用。\n| &&
         |4. 0 行结果是有效业务事实, 不是失败; 数据集错误时如实转述错误信息,\n| &&
         |   不要重试超过一次。\n| &&
@@ -182,7 +182,8 @@ CLASS zcl_ai_domain_cards IMPLEMENTATION.
         |   按报错信息修正后重试, 同一错误不要重试超过一次。\n| &&
         |10. 表权限不足或表属于受保护表时, 如实告知用户, 不要换表绕过。\n| &&
         |11. 编号字段在库里补足前导零: describe_table 中 convexit 为 ALPHA 的字段, 值是纯数字\n| &&
-        |    时按 len 左补 0。例: 工单 AUFNR(12 位)131002 写成 '000000131002'; 采购订单 EBELN、\n| &&
+        |    时按 len 左补 0, 补零后的长度必须正好等于字段长度(不能多补)。\n| &&
+        |    例: 工单 AUFNR(12 位)131002 写成 '000000131002'; 采购订单 EBELN、\n| &&
         |    销售订单 VBELN、供应商 LIFNR、客户 KUNNR 是 10 位; 物料号 MATNR 以 describe_table 为准。\n| &&
         |12. 函数括号内侧留空格, 如 SUM( P~WEMNG )、COALESCE( X, 0 )。不支持 LIMIT/TOP、\n| &&
         |    CURRENT_DATE/NOW( )/sy-datum(今天是 { sy-datum }, 直接写日期常量)、DATEDIFF、\n| &&
@@ -194,6 +195,12 @@ CLASS zcl_ai_domain_cards IMPLEMENTATION.
         |    WHERE EXISTS ( SELECT J~OBJNR FROM JEST AS J WHERE J~OBJNR = A~OBJNR\n| &&
         |    AND J~STAT = 'I0002' AND J~INACT = ' ' )(I0002 = REL, 状态码以 TJ02T 为准);\n| &&
         |    需要列出状态文字时单独再查一次。\n| &&
+        |\n| &&
+        |【业务问题先找报表】(工具里有 open_report 时)\n| &&
+        |1. 用户问的是业务数据(工单、库存、采购、出货等), 系统说明里的已登记报表能回答的,\n| &&
+        |   先用报表(get_report_parameters 看参数 → open_report 带上用户话里的值), 不要用 SQL 自己拼口径;\n| &&
+        |   报表口径和权限由 SAP 程序把关, SQL 拼出来的数字可能和公司报表对不上。\n| &&
+        |2. 没有合适的报表时才用 SQL, 并在回答里说明「这是直接查表的结果, 口径未与报表核对」。\n| &&
         |\n| &&
         |【已登记函数】(工具白名单里有 call_function 时)\n| &&
         |1. 工具说明里有现成函数能直接回答的, 优先调函数, 不要用 SQL 重新拼它的逻辑;\n| &&

@@ -32,6 +32,13 @@
 *     IFNULL / NVL(提示 COALESCE)
 *   只加拒绝条件, 原有放行 / 拒绝规则不变
 *   ★ 重贴后核对标记: validate_sql 内有 DATA(lv_ascii) 与 DATS_DAYS_BETWEEN 提示
+* V1.2.4 20261109(11.8 #04: ZAI_SQL_LOG 10-12~11-05 共 159 条, 成功 47%): 校验前先做机械修正,
+*   只动字符串常量之外, 不改语义:
+*   ① 括号内侧补空格 —— COUNT(*) / SUM(X) / COUNT(Z~WERKS) 在严格模式下编译失败(约 25 条);
+*     单独的 SELECT COUNT(*) 还会被当成旧式计数、不许 INTO TABLE(23 条)。补成 COUNT( * ) 两类都消失
+*   ② || 拼接改成 Open SQL 的 &&(|| 在 ABAP 里是字符串模板, 编译报 String templates)
+*   修正后再查一次长度(补空格可能超过 4000; 超长时 strip_literals 只扫前 4000, 不能放过)
+*   ★ 重贴后核对标记: PRIVATE 有 normalize_sql; validate_sql 内有 lv_work = normalize_sql( lv_work ).
 *=======================================================================
 CLASS zcl_ai_sql_guard DEFINITION
   PUBLIC
@@ -78,6 +85,11 @@ CLASS zcl_ai_sql_guard DEFINITION
       RETURNING VALUE(rv_yes) TYPE abap_bool.
 
   PRIVATE SECTION.
+
+    " V1.2.4: 机械修正(括号内侧补空格、|| → &&), 只动字符串常量之外
+    CLASS-METHODS normalize_sql
+      IMPORTING iv_sql        TYPE string
+      RETURNING VALUE(rv_sql) TYPE string.
 
     CLASS-METHODS strip_literals
       IMPORTING iv_sql         TYPE string
@@ -154,6 +166,12 @@ CLASS zcl_ai_sql_guard IMPLEMENTATION.
     SHIFT lv_work RIGHT DELETING TRAILING space.   " V1.2.1
     IF lv_work IS INITIAL.
       ev_error = 'SQL 语句为空'.
+      RETURN.
+    ENDIF.
+    " V1.2.4: 括号内侧补空格、|| → &&(只动常量之外); 补空格后可能变长, 再查一次长度
+    lv_work = normalize_sql( lv_work ).
+    IF strlen( lv_work ) > gc_sql_max_len.
+      ev_error = |SQL 超过长度上限 { gc_sql_max_len } 字符(补齐括号空格后 { strlen( lv_work ) })|.
       RETURN.
     ENDIF.
     DATA(lv_scan) = lv_work.
@@ -348,6 +366,79 @@ CLASS zcl_ai_sql_guard IMPLEMENTATION.
 
     " ---- 5. 通过: 返回压缩后的单行语句(执行用, 保留大小写) ----
     ev_sql_clean = lv_work.
+
+  ENDMETHOD.
+
+
+  METHOD normalize_sql.
+
+    " 逐字符扫描; 单引号常量内原样保留('' 是转义, 仍在常量内)。
+    " 常量外: ( 后面不是空格就补一个, ) 前面不是空格就补一个; || 换成 &&
+    DATA: lv_len  TYPE i,
+          lv_i    TYPE i,
+          lv_nxi  TYPE i,
+          lv_out  TYPE i,
+          lv_ch   TYPE string,
+          lv_nx   TYPE string,
+          lv_prev TYPE string,
+          lv_open TYPE abap_bool.
+
+    rv_sql = ``.
+    lv_len = strlen( iv_sql ).
+    WHILE lv_i < lv_len.
+      lv_ch  = substring( val = iv_sql off = lv_i len = 1 ).
+      lv_nxi = lv_i + 1.
+      lv_nx  = ``.
+      IF lv_nxi < lv_len.
+        lv_nx = substring( val = iv_sql off = lv_nxi len = 1 ).
+      ENDIF.
+
+      IF lv_open = abap_true.
+        rv_sql = rv_sql && lv_ch.
+        IF lv_ch = `'`.
+          IF lv_nx = `'`.
+            rv_sql = rv_sql && lv_nx.
+            lv_i = lv_i + 2.
+            CONTINUE.
+          ENDIF.
+          lv_open = abap_false.
+        ENDIF.
+        lv_i = lv_i + 1.
+        CONTINUE.
+      ENDIF.
+
+      CASE lv_ch.
+        WHEN `'`.
+          lv_open = abap_true.
+          rv_sql = rv_sql && lv_ch.
+        WHEN `(`.
+          rv_sql = rv_sql && lv_ch.
+          IF lv_nx IS NOT INITIAL AND lv_nx <> ` `.
+            rv_sql = rv_sql && ` `.
+          ENDIF.
+        WHEN `)`.
+          lv_out = strlen( rv_sql ).
+          lv_prev = ``.
+          IF lv_out > 0.
+            lv_out = lv_out - 1.
+            lv_prev = substring( val = rv_sql off = lv_out len = 1 ).
+          ENDIF.
+          IF lv_prev IS NOT INITIAL AND lv_prev <> ` `.
+            rv_sql = rv_sql && ` `.
+          ENDIF.
+          rv_sql = rv_sql && lv_ch.
+        WHEN `|`.
+          IF lv_nx = `|`.
+            rv_sql = rv_sql && ` && `.
+            lv_i = lv_i + 2.
+            CONTINUE.
+          ENDIF.
+          rv_sql = rv_sql && lv_ch.
+        WHEN OTHERS.
+          rv_sql = rv_sql && lv_ch.
+      ENDCASE.
+      lv_i = lv_i + 1.
+    ENDWHILE.
 
   ENDMETHOD.
 

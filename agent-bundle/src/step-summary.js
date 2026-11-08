@@ -132,6 +132,7 @@ export function summarizeStep(tool, args, text, ok) {
       case "adt_structure": m = /结构（(\d+) 项）/.exec(t); return m ? `${n(m[1])} 项` : cut(t, 60);
       case "adt_where_used": m = /共 (\d+) 个/.exec(t); return m ? `被 ${n(m[1])} 个对象使用` : cut(t, 60);
       case "adt_package": m = /共 (\d+) 个对象/.exec(t); return m ? `${n(m[1])} 个对象` : cut(t, 60);
+      case "adt_run_sql": m = /：共 (\d+) 行/.exec(t); return m ? `${n(m[1])} 行` : cut(t, 60);
       case "adt_syntax_check": m = /错误 (\d+) 个，警告 \/ 提示 (\d+) 个/.exec(t);
         return m ? `错误 ${m[1]} 个，警告 ${m[2]} 个` : (/通过/.test(t) ? "语法检查通过" : cut(t, 60));
       default: return cut(t, 60);
@@ -145,6 +146,7 @@ export function summarizeStep(tool, args, text, ok) {
 export function mainArg(tool, args) {
   const a = args || {};
   if (/^adt_/.test(tool)) {
+    if (tool === "adt_run_sql") return cut(a.purpose || String(a.sql || "").replace(/\s+/g, " "), 80);
     const obj = a.object || a.query || a.package || "";
     return cut(obj + (a.keyword ? " · " + a.keyword : a.start_line > 1 ? " · 第 " + a.start_line + " 行起" : ""), 80);
   }

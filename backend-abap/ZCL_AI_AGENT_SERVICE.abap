@@ -318,6 +318,21 @@
 * V15.26 20261108(会话标题由模型总结): 只改 browser_finish —— 新可选参数 iv_title(浏览器在任务第一轮回答后让模型起的短标题);
 *   只在会话标题还是默认值(第一句问题, 超 60 字截断加 ...)时改写, 用户改过名的不动; 标题去掉换行、最多 60 字
 *   ★ 重贴后核对标记: browser_finish 有 iv_title 与 UPDATE zai_chat_sess SET title = @lv_new_title
+* V15.27 20261109(业务问题先找报表 + IT 自由 SQL 经 ADT; 11.8 #04 SQL 成功率): 只改 browser_start / browser_tool / browser_audit,
+*   新增 PRIVATE report_params_json / chat_prefill —
+*   ① 报表清单带一句说明; 报表多于 BROWSER_MAX_RPT(默认 40)时按与问题的相关度挑(名称 / 说明命中同 skill_score,
+*     问题里写了事务码 +20); 系统说明改成「业务问题先找报表」的做法(一张合适直接开卡、几张可选用 ask_user 问、
+*     结果出来后先回答原问题、没有报表才查表并说明口径未核对)
+*   ② 新工具 get_report_parameters(只读): 报表用途 + 参数(编号 / 名称 / 类型 / 必填 / 单值多值范围 / 说明 / 选项 / 今天类默认值),
+*     登记与授权检查同 open_report
+*   ③ open_report 新参数 params {参数编号: 值}: 按登记参数核对(编号不分大小写, 日期去掉 - / .), 拼进 pending 的 "values"
+*     (同报表接力), 参数卡预填, 用户核对后提交; 报表里没有的参数编号不带入, 卡片说明里写出来
+*   ④ adt_run_sql(IT 自由 SQL, 浏览器经 ADT datapreview/freestyle 执行): 已开 ADT + BROWSER_ADT_SQL = X + 开放了数据分析
+*     + SQL_ANALYSIS_ENABLED 才下发; 浏览器执行前报备时先过 ZCL_AI_SQL_GUARD(同 run_sql), 拒绝的记 REJECTED;
+*     回填时把 SQL 和结果状态 / 行数记进 ZAI_SQL_LOG
+*   依赖: ZCL_AI_SQL_GUARD V1.2.4、ZCL_AI_SQL_EXECUTOR V1.4(log_run 为 PUBLIC)先激活; 新配置 BROWSER_ADT_SQL / BROWSER_MAX_RPT
+*   ★ 重贴后核对标记: PRIVATE 有 report_params_json 与 chat_prefill; browser_start 有 BROWSER_ADT_SQL 与 BROWSER_MAX_RPT;
+*     browser_tool 有 WHEN 'get_report_parameters'; browser_audit 有 gc_adt_sql_tool
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -389,7 +404,8 @@ CLASS zcl_ai_agent_service DEFINITION
                gc_src_ctx        TYPE i VALUE 6.     " V15.7: 每处命中前后各带的行数
     " V15.25: 浏览器引擎的 ADT 代码工具(只读; 定义在浏览器引擎里, 这里只用于运行清单与审计核对)
     CONSTANTS: gc_adt_tools TYPE string VALUE `adt_search,adt_read_source,adt_structure,adt_where_used,adt_package,adt_syntax_check`,
-               gc_adt_seq0  TYPE i VALUE 1000.  " ADT 审计行在 ZAI_BSTEP 的序号从 1001 起(收尾写的过程行是 1~200)
+               gc_adt_seq0  TYPE i VALUE 1000,
+               gc_adt_sql_tool TYPE string VALUE `adt_run_sql`.  " V15.27: IT 自由 SQL(浏览器经 ADT datapreview/freestyle 执行)  " ADT 审计行在 ZAI_BSTEP 的序号从 1001 起(收尾写的过程行是 1~200)
 
     " Agent 入口(读请求; 工具全部只读, 不创建/修改/过账任何业务数据)
     CLASS-METHODS analyze_agent
@@ -699,6 +715,18 @@ CLASS zcl_ai_agent_service DEFINITION
     " V15(P2): 报表意图确定性应答(登记卡/参数表单引导)。
     " 只回答"是什么/要什么参数", 不执行不假装执行;
     " 未开 REPORT_READ_ENABLED 或 TCode 未登记 → ev_found = false
+    " V15.27: get_report_parameters 的结果 JSON(报表用途 + 参数; 登记 / 授权同 build_report_intro)
+    CLASS-METHODS report_params_json
+      IMPORTING iv_tcode   TYPE string
+      RETURNING VALUE(rv)  TYPE string.
+
+    " V15.27: open_report 的 params → pending 的 "values":{...}(不带外层括号)与给用户看的说明
+    CLASS-METHODS chat_prefill
+      IMPORTING iv_tcode TYPE string
+                iv_args  TYPE string
+      EXPORTING ev_extra TYPE string
+                ev_note  TYPE string.
+
     CLASS-METHODS build_report_intro
       IMPORTING iv_tcode      TYPE string
       EXPORTING ev_found      TYPE abap_bool
@@ -3476,6 +3504,110 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD report_params_json.
+
+    DATA: lv_found TYPE abap_bool,
+          lv_ans   TYPE string,
+          lv_pend  TYPE string,
+          lv_needs TYPE abap_bool,
+          lv_pj    TYPE string.
+    build_report_intro( EXPORTING iv_tcode   = iv_tcode
+                        IMPORTING ev_found   = lv_found
+                                  ev_answer  = lv_ans
+                                  ev_pending = lv_pend
+                                  ev_needs   = lv_needs ).
+    IF lv_found = abap_false.
+      rv = |\{"ok":false,"error":"{ json_text( lv_ans ) }"\}|.
+      RETURN.
+    ENDIF.
+    DATA(ls_def) = zcl_ai_report_service=>get_def_by_tcode( iv_tcode ).
+    DATA(lt_p) = zcl_ai_report_service=>get_params( iv_report_id      = ls_def-report_id
+                                                    iv_config_version = ls_def-config_version ).
+    LOOP AT lt_p INTO DATA(ls_p).
+      DATA(lv_kind) = COND string( WHEN ls_p-multi_value = abap_true AND ls_p-range_allowed = abap_true THEN `多值或范围`
+                                   WHEN ls_p-multi_value = abap_true THEN `多值`
+                                   WHEN ls_p-range_allowed = abap_true THEN `范围(从,至)`
+                                   ELSE `单值` ).
+      DATA(lv_dflt) = COND string( WHEN to_upper( ls_p-default_type ) = 'TODAY' THEN |今天{ ls_p-default_value }| ).
+      lv_pj = |{ lv_pj }{ COND string( WHEN lv_pj IS NOT INITIAL THEN `,` ) }| &&
+              |\{"param_id":"{ json_text( ls_p-param_id ) }","label":"{ json_text( ls_p-display_label ) }",| &&
+              |"type":"{ json_text( ls_p-data_type ) }",| &&
+              |"required":{ COND string( WHEN ls_p-required = abap_true THEN `true` ELSE `false` ) },| &&
+              |"input":"{ lv_kind }"| &&
+              COND string( WHEN ls_p-help_text IS NOT INITIAL THEN |,"help":"{ json_text( ls_p-help_text ) }"| ) &&
+              COND string( WHEN ls_p-enum_json IS NOT INITIAL THEN |,"options":{ ls_p-enum_json }| ) &&
+              COND string( WHEN lv_dflt IS NOT INITIAL THEN |,"default":"{ json_text( lv_dflt ) }"| ) &&
+              `}`.
+    ENDLOOP.
+    rv = |\{"ok":true,"tcode":"{ json_text( ls_def-tcode ) }","name":"{ json_text( ls_def-report_name ) }",| &&
+         |"description":"{ json_text( ls_def-description ) }",| &&
+         |"exec_enabled":{ COND string( WHEN ls_def-exec_enabled = abap_true THEN `true` ELSE `false` ) },| &&
+         |"params":[{ lv_pj }],| &&
+         |"note":"用户话里已经给出的值按 param_id 填进 open_report 的 params; 没给的不填, 参数卡上登记了默认值的会自动带出"\}|.
+
+  ENDMETHOD.
+
+
+  METHOD chat_prefill.
+
+    CLEAR: ev_extra, ev_note.
+    " 只认 args 里扁平的 "params":{"编号":"值",...}
+    DATA lv_obj TYPE string.
+    FIND FIRST OCCURRENCE OF REGEX `"params"\s*:\s*(\{[^{}]*\})` IN iv_args SUBMATCHES lv_obj.
+    IF sy-subrc <> 0 OR lv_obj IS INITIAL.
+      RETURN.
+    ENDIF.
+    DATA(lt_kv) = zcl_ai_report_service=>parse_flat_kv( lv_obj ).
+    IF lt_kv IS INITIAL.
+      RETURN.
+    ENDIF.
+    DATA(ls_def) = zcl_ai_report_service=>get_def_by_tcode( iv_tcode ).
+    DATA(lt_p) = zcl_ai_report_service=>get_params( iv_report_id      = ls_def-report_id
+                                                    iv_config_version = ls_def-config_version ).
+    DATA: lt_vj   TYPE string_table,
+          lt_done TYPE string_table,
+          lt_skip TYPE string_table,
+          ls_p    LIKE LINE OF lt_p,
+          lv_hit  TYPE abap_bool.
+    LOOP AT lt_kv INTO DATA(ls_kv).
+      DATA(lv_val) = condense( ls_kv-value ).
+      IF lv_val IS INITIAL.
+        CONTINUE.
+      ENDIF.
+      DATA(lv_kname) = to_upper( condense( ls_kv-name ) ).
+      lv_hit = abap_false.
+      LOOP AT lt_p INTO ls_p.
+        IF to_upper( ls_p-param_id ) = lv_kname.
+          lv_hit = abap_true.
+          EXIT.
+        ENDIF.
+      ENDLOOP.
+      IF lv_hit = abap_false.
+        APPEND lv_kname TO lt_skip.
+        CONTINUE.
+      ENDIF.
+      " 日期参数: 模型常写 2026-11-09, 参数卡要 20261109
+      IF to_upper( ls_p-data_type ) CS 'DAT'.
+        REPLACE ALL OCCURRENCES OF REGEX `[-/.]` IN lv_val WITH ``.
+      ENDIF.
+      IF strlen( lv_val ) > 4000.
+        lv_val = lv_val(4000).
+      ENDIF.
+      APPEND |"{ json_text( ls_p-param_id ) }":"{ json_text( lv_val ) }"| TO lt_vj.
+      APPEND |{ ls_p-display_label } = { COND string( WHEN strlen( lv_val ) > 60 THEN |{ substring( val = lv_val len = 60 ) }…| ELSE lv_val ) }|
+        TO lt_done.
+    ENDLOOP.
+    IF lt_vj IS NOT INITIAL.
+      ev_extra = |"values":\{{ concat_lines_of( table = lt_vj sep = `,` ) }\}|.
+      ev_note  = |已按你的话预填: { concat_lines_of( table = lt_done sep = `、` ) }。请核对参数卡后提交。|.
+    ENDIF.
+    IF lt_skip IS NOT INITIAL.
+      ev_note = |{ ev_note }(没有带入: { concat_lines_of( table = lt_skip sep = `、` ) }, 这张报表没有这个参数)|.
+    ENDIF.
+
+  ENDMETHOD.
+
+
   METHOD build_report_intro.
 
     CLEAR: ev_found, ev_answer, ev_pending, ev_needs.
@@ -4004,11 +4136,20 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                                cv_csv    = lv_tools_csv ).
     ENDIF.
     IF lv_rpt_on = abap_true.
-      brun_add_tool( EXPORTING iv_name   = `open_report`
-                               iv_desc   = `打开一张已登记报表的参数卡给用户填写(只出参数卡, 不执行; 用户在卡上核对后提交后台运行, ` &&
-                                           `结果出来后可以接着分析)。用户要"执行 / 跑 / 查"某张报表时用; 可用的报表见系统说明。` &&
-                                           `调用成功后本次运行立即结束, 不要再调用其他工具。`
+      brun_add_tool( EXPORTING iv_name   = `get_report_parameters`
+                               iv_desc   = `查一张已登记报表的用途和参数(参数编号、名称、类型、必填、单值 / 多值 / 范围、说明、可选项)。` &&
+                                           `打开报表参数卡前先调它, 再把用户话里的值按参数编号填进 open_report 的 params。只读, 不执行报表。`
                                iv_params = `{"type":"object","properties":{"tcode":{"type":"string","description":"报表事务码"}},"required":["tcode"]}`
+                     CHANGING  cv_json   = lv_tools_json
+                               cv_csv    = lv_tools_csv ).
+      brun_add_tool( EXPORTING iv_name   = `open_report`
+                               iv_desc   = `打开一张已登记报表的参数卡给用户核对(只出参数卡, 不执行; 用户在卡上核对后提交后台运行, ` &&
+                                           `结果出来后可以接着分析)。params 只填用户话里已经给出的值, 参数编号用 get_report_parameters 返回的 param_id, ` &&
+                                           `没说的不要猜; 值一律写成字符串: 日期 YYYYMMDD, 范围写 "从,至", 多个值用逗号分隔。` &&
+                                           `调用成功后本次运行立即结束, 不要再调用其他工具。`
+                               iv_params = `{"type":"object","properties":{"tcode":{"type":"string","description":"报表事务码"},` &&
+                                           `"params":{"type":"object","description":"预填值 {参数编号: 值}, 值都写成字符串",` &&
+                                           `"additionalProperties":{"type":"string"}}},"required":["tcode"]}`
                      CHANGING  cv_json   = lv_tools_json
                                cv_csv    = lv_tools_csv ).
     ENDIF.
@@ -4093,21 +4234,55 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     ENDIF.
     IF lv_rpt_on = abap_true.
       DATA lv_rpt_list TYPE string.
-      DATA lv_rpt_n TYPE i.
       DATA(lt_rdefs) = zcl_ai_report_service=>list_defs( ).   " 已按报表授权过滤
+      " V15.27: 报表多时按与问题的相关度挑(名称 / 说明命中同技能; 问题里写了事务码 +20), 同分保持原顺序
+      DATA(lv_rpt_max)   = read_cfg_int( iv_key = 'BROWSER_MAX_RPT' iv_default = 40 iv_min = 10 iv_max = 200 ).
+      DATA(lv_rpt_total) = lines( lt_rdefs ).
+      IF lv_rpt_total > lv_rpt_max.
+        TYPES: BEGIN OF lty_rrank,
+                 score TYPE i,
+                 pos   TYPE i,
+               END OF lty_rrank.
+        DATA: lt_rrank TYPE STANDARD TABLE OF lty_rrank WITH DEFAULT KEY,
+              lt_rkeep LIKE lt_rdefs.
+        DATA(lv_q_up) = to_upper( iv_question ).
+        LOOP AT lt_rdefs INTO DATA(ls_rd0).
+          DATA(lv_rpos) = sy-tabix.
+          DATA(lv_rsc) = skill_score( iv_question = iv_question iv_name = ls_rd0-report_name iv_desc = ls_rd0-description ).
+          IF ls_rd0-tcode IS NOT INITIAL AND lv_q_up CS to_upper( ls_rd0-tcode ).
+            lv_rsc = lv_rsc + 20.
+          ENDIF.
+          APPEND VALUE #( score = lv_rsc pos = lv_rpos ) TO lt_rrank.
+        ENDLOOP.
+        SORT lt_rrank STABLE BY score DESCENDING.
+        LOOP AT lt_rrank INTO DATA(ls_rr) TO lv_rpt_max.
+          APPEND lt_rdefs[ ls_rr-pos ] TO lt_rkeep.
+        ENDLOOP.
+        lt_rdefs = lt_rkeep.
+      ENDIF.
       LOOP AT lt_rdefs INTO DATA(ls_rdef).
-        lv_rpt_n = lv_rpt_n + 1.
-        IF lv_rpt_n > 80.
-          lv_rpt_list = |{ lv_rpt_list }\n- ……(还有更多, 用户点名的事务码直接用 open_report 试)|.
-          EXIT.
+        DATA(lv_rdesc) = condense( ls_rdef-description ).
+        IF strlen( lv_rdesc ) > 40.
+          lv_rdesc = |{ substring( val = lv_rdesc len = 40 ) }…|.
         ENDIF.
         lv_rpt_list = |{ lv_rpt_list }\n- { ls_rdef-tcode }: { ls_rdef-report_name }| &&
+                      COND string( WHEN lv_rdesc IS NOT INITIAL THEN | —— { lv_rdesc }| ) &&
                       COND string( WHEN ls_rdef-exec_enabled = abap_true THEN `` ELSE `(暂未开放执行)` ).
       ENDLOOP.
+      IF lv_rpt_total > lines( lt_rdefs ).
+        lv_rpt_list = |{ lv_rpt_list }\n- ……(共 { lv_rpt_total } 张, 上面只列出和本次问题最相关的 { lines( lt_rdefs ) } 张; | &&
+                      |用户点名的事务码不在清单里也可以直接用 get_report_parameters 试)|.
+      ENDIF.
       IF lv_rpt_list IS INITIAL.
         lv_rpt_list = |\n(暂无你可以用的已登记报表)|.
       ENDIF.
-      lv_sys = |{ lv_sys }\n\n【报表】用户要执行 / 跑某张报表时调用 open_report 打开参数卡; 参数由用户在卡上核对后提交后台运行, | &&
+      lv_sys = |{ lv_sys }\n\n【报表】业务数据的问题(工单、库存、采购、出货、发料等)先看下面的已登记报表能不能回答 —— | &&
+               |报表的口径和数据权限由 SAP 程序把关, 比自己写 SQL 可靠:\n| &&
+               |1. 有一张明显合适: 先 get_report_parameters 看参数, 再调 open_report, 把用户话里已经给出的值(工厂、日期、料号、单号等)| &&
+               |按参数编号填进 params; 「今天 / 本月 / 上周」这类相对日期按今天 { sy-datum } 换算成 YYYYMMDD。用户在参数卡上核对后提交执行。\n| &&
+               |2. 有两三张都可能合适: 用 ask_user 让用户选, 每个选项写成「事务码 名称: 能看到什么」; 只有一张合适时不要问。\n| &&
+               |3. 结果出来后, 先回答用户原来的问题(例如「今天开了 12 张工单」), 再说明数字来自哪张报表; 要统计时用 query_result 在全部行上算。\n| &&
+               |4. 没有能回答的报表: 如实说明「没有对应的已登记报表」; 有查表 / SQL 工具时可以查表, 但要说明是直接查表、口径未与公司报表核对。\n| &&
                |你不能直接执行报表, 也不要编造报表结果。可用的报表:{ lv_rpt_list }|.
     ELSEIF lv_scene = zcl_ai_intent_router=>gc_scene_report.
       lv_sys = |{ lv_sys }\n\n【说明】报表读取能力未开启(REPORT_READ_ENABLED)或你没有报表场景权限, 不能打开报表参数卡; 如实告诉用户。|.
@@ -4150,6 +4325,23 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       lv_tools_csv = |{ lv_tools_csv }{ COND string( WHEN lv_tools_csv IS NOT INITIAL THEN `,` ) }{ gc_adt_tools }|.
     ELSE.
       lv_adt = abap_false.
+    ENDIF.
+
+    " ---- 8c. V15.27 IT 自由 SQL(浏览器经 ADT datapreview/freestyle 执行, 用用户本人的权限) ----
+    " 条件: 已开 ADT + BROWSER_ADT_SQL = X + 用户开放了数据分析 + SQL_ANALYSIS_ENABLED; 执行前报备时过 ZCL_AI_SQL_GUARD
+    DATA(lv_adt_sql) = xsdbool( lv_adt = abap_true AND brun_cfg( 'BROWSER_ADT_SQL' ) = 'X'
+                                AND line_exists( lt_doms[ table_line = zcl_ai_domain_cards=>gc_dom_data ] )
+                                AND zcl_ai_sql_guard=>is_enabled( ) = abap_true ).
+    IF lv_adt_sql = abap_true AND strlen( lv_tools_csv ) + strlen( gc_adt_sql_tool ) + 1 <= 1000.
+      brun_add_tool( EXPORTING iv_name   = gc_adt_sql_tool
+                               iv_desc   = `执行一条只读 ABAP SQL(Open SQL)查询, 和 Eclipse 的 SQL 控制台一样由 SAP 直接执行, 用你本人的权限。` &&
+                                           `只能是单条 SELECT; 不要写 INTO / UP TO, 返回行数用 max_rows 控制(默认 100, 最多 1000)。` &&
+                                           `字段用 别名~字段, 常量用单引号, 日期写 YYYYMMDD; 报错时按报错改了再试。`
+                               iv_params = `{"type":"object","properties":{"sql":{"type":"string","description":"单条 SELECT 语句"},` &&
+                                           `"max_rows":{"type":"integer","description":"最多返回几行, 默认 100, 最多 1000"},` &&
+                                           `"purpose":{"type":"string","description":"这条查询查什么(简短中文, 作为结果名称)"}},"required":["sql"]}`
+                     CHANGING  cv_json   = lv_tools_json
+                               cv_csv    = lv_tools_csv ).
     ENDIF.
 
     " ---- 9. 运行号 ----
@@ -4387,6 +4579,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
     " ---- V15.19: 报表 / 结果工具(参数是嵌套 JSON, 不走扁平 kv; 结果号每次核对本人 + 本会话 + AVAILABLE) ----
     IF lv_tool = 'list_results' OR lv_tool = 'read_result' OR lv_tool = 'open_report' OR lv_tool = 'open_fiori_report'
+       OR lv_tool = 'get_report_parameters'
        OR lv_tool = zcl_ai_result_query=>gc_tool OR lv_tool = zcl_ai_result_lookup=>gc_tool
        OR lv_tool = zcl_ai_report_relay=>gc_tool.
       TYPES: BEGIN OF lty_rargs,
@@ -4405,7 +4598,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       ENDTRY.
       DATA(lv_rid) = condense( ls_ra-result_id ).
       DATA(lv_rtc) = to_upper( condense( ls_ra-tcode ) ).
-      IF lv_tool <> 'list_results' AND lv_tool <> 'open_report' AND lv_tool <> 'open_fiori_report'.
+      IF lv_tool <> 'list_results' AND lv_tool <> 'open_report' AND lv_tool <> 'open_fiori_report'
+         AND lv_tool <> 'get_report_parameters'.
         lv_rerr = brun_art( is_run = ls_run iv_result_id = lv_rid ).
         IF lv_rerr IS NOT INITIAL.
           ev_ok      = abap_true.
@@ -4461,6 +4655,14 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           ENDIF.
           IF lv_rerr IS INITIAL.
             ev_datasets = brun_ds_json( VALUE #( ( ls_r_ds ) ) ).   " V15.20: 界面表格 / 图表
+          ENDIF.
+
+        WHEN 'get_report_parameters'.
+          " V15.27: 报表用途 + 参数(只读; 登记 / 授权同 open_report)
+          IF lv_rtc IS INITIAL OR strlen( lv_rtc ) > 40.
+            lv_rj = `{"ok":false,"error":"缺少报表事务码 tcode"}`.
+          ELSE.
+            lv_rj = report_params_json( lv_rtc ).
           ENDIF.
 
         WHEN 'open_fiori_report'.
@@ -4535,6 +4737,21 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           IF lv_tool = zcl_ai_report_relay=>gc_tool.
             lv_i_pend = zcl_ai_report_relay=>merge_pending( iv_pending = lv_i_pend iv_extra = lv_rl_extra ).
             lv_i_ans  = |{ lv_i_ans }\n\n{ lv_rl_note }|.
+          ENDIF.
+          " V15.27: open_report 带了 params → 参数卡预填(同报表接力的 "values")
+          IF lv_tool = 'open_report'.
+            DATA: lv_or_extra TYPE string,
+                  lv_or_note  TYPE string.
+            chat_prefill( EXPORTING iv_tcode = lv_rtc
+                                    iv_args  = iv_args
+                          IMPORTING ev_extra = lv_or_extra
+                                    ev_note  = lv_or_note ).
+            IF lv_or_extra IS NOT INITIAL.
+              lv_i_pend = zcl_ai_report_relay=>merge_pending( iv_pending = lv_i_pend iv_extra = lv_or_extra ).
+            ENDIF.
+            IF lv_or_note IS NOT INITIAL.
+              lv_i_ans = |{ lv_i_ans }\n\n{ lv_or_note }|.
+            ENDIF.
           ENDIF.
           ev_card = brun_card( is_run    = ls_run
                                iv_tool   = lv_tool
@@ -4946,12 +5163,26 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       IF ev_ok = abap_false.
         ev_message = '没有这条 ADT 记录'.
       ENDIF.
+      " V15.27: adt_run_sql 的 SQL 与结果也记进 ZAI_SQL_LOG(和 run_sql 同一张审计表)
+      IF ev_ok = abap_true.
+        SELECT SINGLE tool, target FROM zai_bstep
+          WHERE run_id = @ls_run-run_id AND seq = @iv_seq AND kind = 'ADT'
+          INTO @DATA(ls_sq_bs).
+        IF sy-subrc = 0 AND ls_sq_bs-tool = gc_adt_sql_tool.
+          zcl_ai_sql_executor=>log_run( iv_sql        = CONV string( ls_sq_bs-target )
+                                        iv_status     = COND #( WHEN lv_st = 'OK' THEN `OK` ELSE `ERROR` )
+                                        iv_rows       = iv_rows
+                                        iv_error      = COND #( WHEN lv_st <> 'OK' THEN |ADT freestyle { lv_st }| )
+                                        iv_session_id = CONV string( ls_run-session_id ) ).
+        ENDIF.
+      ENDIF.
       RETURN.
     ENDIF.
 
     " ---- 报备: 工具必须是 ADT 工具且在本次运行开始时下发的清单里 ----
     DATA(lv_tool) = to_lower( condense( iv_tool ) ).
-    IF strlen( lv_tool ) < 5 OR lv_tool(4) <> 'adt_' OR |,{ gc_adt_tools },| NS |,{ lv_tool },|
+    IF strlen( lv_tool ) < 5 OR lv_tool(4) <> 'adt_'
+       OR ( |,{ gc_adt_tools },| NS |,{ lv_tool },| AND lv_tool <> gc_adt_sql_tool )
        OR |,{ ls_run-tools },| NS |,{ lv_tool },|.
       ev_message = |工具 { iv_tool } 不在本次运行允许的范围内|.
       RETURN.
@@ -4968,6 +5199,26 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       RETURN.
     ENDIF.
     SELECT SINGLE tool_calls FROM zai_brun WHERE run_id = @ls_run-run_id INTO @DATA(lv_calls).
+
+    " V15.27: adt_run_sql —— 浏览器发 SQL 前先过同一个守卫(只读单条 SELECT、表存在、敏感表、表权限)
+    IF lv_tool = gc_adt_sql_tool.
+      DATA: lv_sq_clean TYPE string,
+            lt_sq_tabs  TYPE zcl_ai_sql_guard=>tt_names,
+            lv_sq_err   TYPE string.
+      zcl_ai_sql_guard=>validate_sql( EXPORTING iv_sql       = iv_target
+                                      IMPORTING ev_sql_clean = lv_sq_clean
+                                                et_tables    = lt_sq_tabs
+                                                ev_error     = lv_sq_err ).
+      IF lv_sq_err IS NOT INITIAL.
+        zcl_ai_sql_executor=>log_run( iv_sql        = iv_target
+                                      iv_status     = `REJECTED`
+                                      iv_rows       = 0
+                                      iv_error      = lv_sq_err
+                                      iv_session_id = CONV string( ls_run-session_id ) ).
+        ev_message = |SQL 被拒绝: { lv_sq_err }|.
+        RETURN.
+      ENDIF.
+    ENDIF.
 
     DATA: ls_bs  TYPE zai_bstep,
           lv_now TYPE timestampl.

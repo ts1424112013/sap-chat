@@ -51,6 +51,11 @@
 *   ② 编译报错改为回填出错行及上一行(原为生成源码前 200 字符)
 *   ★ 重贴后核对标记: 私有常量 gc_seg_max = 180; run_sql 内有 count( val = lv_lead sub = `'` );
 *     不再有 "IF lv_segl <= 230"
+* V1.4 20261109(11.8 #04: ZAI_SQL_LOG 里 8 条 UNION 失败): 含 UNION 的语句不再拼 UP TO n ROWS
+*   (Open SQL 不许 UNION 带 UP TO, 编译报 "UP TO n ROWS" cannot currently be used in "UNION"),
+*   改为取回后在生成程序里删掉第 n 行之后的行; log_run 提为 PUBLIC —— 新引擎经 ADT 执行的
+*   自由 SQL(adt_run_sql)也记进 ZAI_SQL_LOG, 与 run_sql 同一张审计表
+*   ★ 重贴后核对标记: run_sql 内有 lv_union; PUBLIC 有 log_run
 
 *=======================================================================
 CLASS zcl_ai_sql_executor DEFINITION
@@ -77,6 +82,15 @@ CLASS zcl_ai_sql_executor DEFINITION
                 iv_session_id TYPE string DEFAULT ''
       RETURNING VALUE(rs_run) TYPE ty_run.
 
+    " 动态写审计表(表未建/写入失败时静默跳过, 不影响主流程)
+    " V1.4: 提为 PUBLIC —— AGENT_SERVICE 记新引擎经 ADT 执行的 SQL
+    CLASS-METHODS log_run
+      IMPORTING iv_sql        TYPE string
+                iv_status     TYPE string
+                iv_rows       TYPE i
+                iv_error      TYPE string
+                iv_session_id TYPE string.
+
   PRIVATE SECTION.
 
     TYPES: ty_srcline TYPE c LENGTH 200,
@@ -95,13 +109,6 @@ CLASS zcl_ai_sql_executor DEFINITION
                 io_desc   TYPE REF TO cl_abap_structdescr
       EXPORTING et_cells  TYPE zcl_ai_data_analysis_service=>tt_cells.
 
-    " 动态写审计表(表未建/写入失败时静默跳过, 不影响主流程)
-    CLASS-METHODS log_run
-      IMPORTING iv_sql        TYPE string
-                iv_status     TYPE string
-                iv_rows       TYPE i
-                iv_error      TYPE string
-                iv_session_id TYPE string.
 
 ENDCLASS.
 
@@ -217,7 +224,19 @@ CLASS zcl_ai_sql_executor IMPLEMENTATION.
       lv_spos = lv_scut + 1.
     ENDWHILE.
 
-    APPEND |INTO TABLE @DATA(lt_result) UP TO { lv_max } ROWS.| TO lt_source.
+    " V1.4: UNION 不能带 UP TO —— 不加, 取回后删掉第 iv_max 行之后的行
+    DATA(lv_union) = to_upper( lv_clean ).
+    REPLACE ALL OCCURRENCES OF REGEX `'([^']|'')*'` IN lv_union WITH `''`.
+    FIND REGEX `[^A-Z0-9_]UNION[^A-Z0-9_]` IN | { lv_union } |.
+    IF sy-subrc = 0.
+      APPEND |INTO TABLE @DATA(lt_result).| TO lt_source.
+      APPEND |DATA(lv_cut) = iv_max + 1.| TO lt_source.
+      APPEND |IF lines( lt_result ) > iv_max.| TO lt_source.
+      APPEND |DELETE lt_result FROM lv_cut.| TO lt_source.
+      APPEND |ENDIF.| TO lt_source.
+    ELSE.
+      APPEND |INTO TABLE @DATA(lt_result) UP TO { lv_max } ROWS.| TO lt_source.
+    ENDIF.
     " V1.2.5: 栈引用在 FORM 返回后 FREED(调试实锤 FREED STACK) —— 必须堆上创建
     APPEND |FIELD-SYMBOLS <lt_copy> TYPE ANY TABLE.| TO lt_source.
     APPEND |CREATE DATA cr_data LIKE lt_result.| TO lt_source.

@@ -4,7 +4,10 @@
  *
  * 安全边界：
  *   - 只拼白名单里的几类对象地址（报表 / 包含程序 / 类 / 接口 / 函数组与函数 / CDS / 表 / 结构 / 数据元素 / 域 / 包），
- *     模型给不了任意 URL；不碰 datapreview（自由 SQL）、写源码、加锁、激活、执行代码。
+ *     模型给不了任意 URL；不写源码、不加锁、不激活、不执行代码。
+ *   - 唯一的例外是 adt_run_sql（0.10.0，IT 自由 SQL）：只调 datapreview/freestyle（同 Eclipse SQL 控制台），
+ *     SAP 只给开了 BROWSER_ADT_SQL 且有数据分析权限的人下发；执行前报备时 SAP 用 ZCL_AI_SQL_GUARD 校验（只读单条 SELECT、
+ *     敏感表、表权限），被拒就不发；数据权限仍由 SAP 按用户本人判断。
  *   - 权限由 SAP 自己判断（S_ADT_RES / S_DEVELOP）；没权限时如实告诉模型。
  *   - 每次调用先向灵犀 SAP 服务报备（/tools/audit：校验运行号、计入工具次数、写审计），被拒就不调。
  */
@@ -15,6 +18,8 @@ const TIMEOUT_MS = 60000;
 const PAGE_LINES = 400;
 const MAX_HITS = 60;
 const MAX_CHECK_BYTES = 1024 * 1024;
+const SQL_MAX_ROWS = 1000;
+const SQL_LLM_ROWS = 200;
 
 /** 对象名：字母数字下划线，可带命名空间（/ABC/ 或 %2fabc%2f），$ 开头的本地包 */
 const NAME = "(?:%2f[a-z0-9_]+%2f|/[a-z0-9_]+/)?(?:%24|\\$)?[a-z0-9_]+";
@@ -381,8 +386,68 @@ export function createAdtClient({ fetch: f }) {
       msgs.slice(0, 100).map(m => `${m.type}  行 ${m.line || "?"}  ${m.text}${m.where ? "  （" + m.where + "）" : ""}${m.code ? "\n      代码：" + m.code : ""}`).join("\n"), rows: msgs.length };
   }
 
-  return { call, search, resolve, readSource, structure, whereUsed, packageContents, syntaxCheck };
+  /**
+   * 执行一条只读 SQL（datapreview/freestyle，同 Eclipse SQL 控制台）。
+   * → { text（给模型：总行数 + 前 200 行 TSV）, rows, dataset（给界面：表格 / 图表，格式同 SAP 的数据集） }
+   */
+  async function runSql({ sql, max_rows, purpose }, signal) {
+    const q = String(sql || "").trim().replace(/;\s*$/, "");
+    if (!/^select\s/i.test(q)) throw new AdtError("只能执行单条 SELECT 语句", 0);
+    const n = Math.min(Math.max(parseInt(max_rows, 10) || 100, 1), SQL_MAX_ROWS);
+    const t0 = Date.now();
+    const r = await call(`${ADT_ROOT}/datapreview/freestyle?rowNumber=${n}`, {
+      method: "POST", body: q, contentType: "text/plain; charset=utf-8",
+      accept: "application/xml, application/vnd.sap.adt.datapreview.table.v1+xml", signal
+    });
+    const ds = parseDataPreview(r.text, String(purpose || "").trim().slice(0, 60) || "SQL 查询结果");
+    ds.elapsed_ms = Date.now() - t0;
+    const rows = ds.rows;
+    const head = `${ds.name}：共 ${ds.total_rows} 行` + (ds.total_rows > rows.length ? `（只取回前 ${rows.length} 行，要全量请先 GROUP BY 汇总或加条件）` : "") +
+      (rows.length > SQL_LLM_ROWS ? `；下面只列前 ${SQL_LLM_ROWS} 行` : "") + `；耗时 ${ds.elapsed_ms} 毫秒。`;
+    if (!ds.columns.length) return { text: head + "\n（没有返回列）", rows: 0, dataset: ds };
+    const tsv = [ds.columns.map(c => c.label && c.label !== c.name ? `${c.name}(${c.label})` : c.name).join("\t")]
+      .concat(rows.slice(0, SQL_LLM_ROWS).map(rw => rw.map(v => String(v == null ? "" : v).replace(/[\t\n]/g, " ")).join("\t")));
+    return { text: head + "\n" + tsv.join("\n"), rows: rows.length, dataset: ds };
+  }
+
+  return { call, search, resolve, readSource, structure, whereUsed, packageContents, syntaxCheck, runSql };
 }
+
+/** ABAP 内部类型里算数字的（D = 日期、T = 时间、N = 数字文本都按文本） */
+const NUM_TYPE = /^(I|INT[1248]?|B|S|P|F|DEC|CURR|QUAN|FLTP|DECFLOAT(16|34)?|D16[DNR]?|D34[DNR]?)$/i;
+
+/** datapreview 结果 XML → 数据集 { name, status, total_rows, truncated, columns, rows, source } */
+export function parseDataPreview(text, name) {
+  const doc = parseXml(text);
+  if (!doc) throw new AdtError("SQL 结果解析失败", 0);
+  const cols = all(doc, "columns").map(c => {
+    const md = all(c, "metadata")[0];
+    const nm = attr(md, "name");
+    return { name: nm, label: attr(md, "description") || nm, numeric: NUM_TYPE.test(attr(md, "type")), vals: all(c, "data").map(d => d.textContent) };
+  });
+  const n = cols.reduce((m, c) => Math.max(m, c.vals.length), 0);
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    rows.push(cols.map(c => {
+      const v = c.vals[i] == null ? "" : c.vals[i];
+      if (!c.numeric) return v;
+      const x = Number(String(v).trim());
+      return String(v).trim() !== "" && Number.isFinite(x) ? x : v;
+    }));
+  }
+  const totEl = all(doc, "totalRows")[0];
+  const total = Math.max(Number(totEl ? totEl.textContent : 0) || 0, rows.length);
+  return { name, status: "OK", total_rows: total, truncated: total > rows.length,
+    columns: cols.map(c => ({ name: c.name, label: c.label, numeric: c.numeric })), rows, source: "ADT SQL" };
+}
+
+/** adt_run_sql 的用法说明（SAP 下发了这个工具才加） */
+export const ADT_SQL_PROMPT = `可以用 adt_run_sql 直接查 SAP 表（只读，由 SAP 执行，权限和你在 Eclipse SQL 控制台里一样）：
+- 业务数据的问题先看有没有合适的已登记报表；没有，或用户就是要查表时，再写 SQL。有 adt_run_sql 时不要用 run_sql。
+- 写之前用 describe_table 确认表和字段，不要猜字段名；字段写 别名~字段，常量用单引号，日期写 YYYYMMDD，编号字段补前导零到字段长度。
+- 大表（MATDOC、MSEG、ACDOCA、BSEG、VBFA、CDPOS、RESB 等）必须带过滤条件（日期范围、工厂、单号或料号）；统计类先 GROUP BY，不要拉大量明细。
+- 报错时按报错改了再试，同一个错不要试两次以上；被拒绝（受保护表、没有表权限）时如实告诉用户，不要换表绕过。
+- 回答里附上最后执行的 SQL，并说明是直接查表的结果、口径没有和公司报表核对。`;
 
 /** 六个工具的说明与参数（给模型） */
 export const ADT_TOOL_SPECS = [

@@ -1259,7 +1259,7 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     /ls_run-skill_id\s+= ls_skill-id/.test(bs) && /es_start-skills_json/.test(bs) && /es_start-export\s+= lv_res_on/.test(bs));
   check('browser_tool：报表 / 结果工具先于扁平 kv 处理；除 list_results / open_report 外结果号都过 brun_art',
     bt.indexOf("lv_tool = 'list_results'") > -1 && bt.indexOf("lv_tool = 'list_results'") < bt.indexOf('parse_flat_json(') &&
-    /IF lv_tool <> 'list_results' AND lv_tool <> 'open_report' AND lv_tool <> 'open_fiori_report'\.\s*lv_rerr = brun_art\(/.test(bt));
+    /IF lv_tool <> 'list_results' AND lv_tool <> 'open_report' AND lv_tool <> 'open_fiori_report'\s+AND lv_tool <> 'get_report_parameters'\.\s*lv_rerr = brun_art\(/.test(bt));
   check('browser_tool：出卡前过 build_report_intro（登记 + 授权），不出卡时原因交给模型；prefill 合并预填值',
     /build_report_intro\( EXPORTING iv_tcode\s+= lv_rtc/.test(bt) && /lv_i_found = abap_false OR lv_i_needs = abap_false/.test(bt) &&
     /zcl_ai_report_relay=>merge_pending\(/.test(bt) && /ev_card = brun_card\(/.test(bt));
@@ -1355,6 +1355,38 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     /IF iv_title IS NOT INITIAL AND iv_status = 'OK'\./.test(bf) && /lv_def_title = lv_def_title\(60\) && '\.\.\.'/.test(bf) &&
     /UPDATE zai_chat_sess SET title = @lv_new_title\s+WHERE session_id = @ls_run-session_id AND created_by = @sy-uname AND title = @lv_def_title/.test(bf) &&
     /^\*\s+V1\.6 20261108/m.test(httpRaw) && /iv_title\s+= ls_fin-title/.test(hr));
+
+  /* ---- 20261109 业务问题先找报表 + IT 自由 SQL 经 ADT（AGENT_SERVICE V15.27）+ SQL 成功率（GUARD V1.2.4 / EXECUTOR V1.4 / 域卡 V1.7） ---- */
+  {
+    const gRaw = read('ZCL_AI_SQL_GUARD.abap'), g = codeOnly(gRaw), gv = methodOf(g, 'validate_sql'), gn = methodOf(g, 'normalize_sql');
+    const eRaw = read('ZCL_AI_SQL_EXECUTOR.abap'), e = codeOnly(eRaw), er = methodOf(e, 'run_sql');
+    const cRaw = read('ZCL_AI_DOMAIN_CARDS.abap');
+    const rpj = methodOf(ag2, 'report_params_json'), cpf = methodOf(ag2, 'chat_prefill');
+    check('GUARD V1.2.4：校验前机械修正（括号内侧补空格、|| → &&，常量内不动），修正后再查长度，再做词法扫描',
+      /^\* V1\.2\.4 20261109/m.test(gRaw) && gn && /lv_work = normalize_sql\( lv_work \)\./.test(gv) &&
+      gv.indexOf('normalize_sql(') < gv.indexOf('strip_literals(') && /strlen\( lv_work \) > gc_sql_max_len/.test(gv) &&
+      /WHEN `\(`\./.test(gn) && /WHEN `\)`\./.test(gn) && /rv_sql = rv_sql && ` && `\./.test(gn) && /lv_open = abap_true/.test(gn));
+    check('EXECUTOR V1.4：含 UNION 不拼 UP TO，取回后删掉第 n 行之后；log_run 为 PUBLIC',
+      /^\* V1\.4 20261109/m.test(eRaw) && /lv_union/.test(er) && /\[\^A-Z0-9_\]UNION\[\^A-Z0-9_\]/.test(er) &&
+      /DELETE lt_result FROM lv_cut\./.test(er) && /UP TO \{ lv_max \} ROWS/.test(er) &&
+      e.indexOf('CLASS-METHODS log_run') > -1 && e.indexOf('CLASS-METHODS log_run') < e.indexOf('PRIVATE SECTION'));
+    check('域卡 V1.7：不再推荐 UNION ALL 合并；补零长度正好等于字段长度；业务问题先找报表',
+      /V1\.7\s+20261109/.test(cRaw) && !/优先用 UNION ALL 合并/.test(cRaw) && /正好等于字段长度/.test(cRaw) && /【业务问题先找报表】/.test(cRaw));
+    check('V15.27：报表清单带说明，超过 BROWSER_MAX_RPT 按相关度挑（skill_score + 事务码 +20）；系统说明写「先找报表」的做法',
+      /^\* V15\.27 20261109/m.test(agRaw2) && /read_cfg_int\( iv_key = 'BROWSER_MAX_RPT'/.test(bs) &&
+      /skill_score\( iv_question = iv_question iv_name = ls_rd0-report_name/.test(bs) && /lv_rsc = lv_rsc \+ 20/.test(bs) &&
+      /SORT lt_rrank STABLE BY score DESCENDING/.test(bs) && /ls_rdef-description/.test(bs) && /业务数据的问题/.test(bs) && /get_report_parameters/.test(bs));
+    check('V15.27：get_report_parameters 只读、登记 / 授权同 open_report；open_report 的 params 按登记参数核对后预填（同接力 values）',
+      rpj && /build_report_intro\(/.test(rpj) && /"params":\[/.test(rpj) && /WHEN 'get_report_parameters'\./.test(bt) &&
+      cpf && /parse_flat_kv\(/.test(cpf) && /to_upper\( ls_p-param_id \) = lv_kname/.test(cpf) && /"values":/.test(cpf) &&
+      /IF lv_tool = 'open_report'\.\s*DATA:/.test(bt) && /chat_prefill\(/.test(bt) && bt.indexOf('chat_prefill(') < bt.indexOf('ev_card = brun_card( is_run    = ls_run'));
+    check('V15.27：adt_run_sql 只在 ADT + BROWSER_ADT_SQL + 数据分析 + SQL 开关时下发；报备先过 SQL 守卫（拒绝记 REJECTED），回填记 ZAI_SQL_LOG',
+      /gc_adt_sql_tool TYPE string VALUE `adt_run_sql`/.test(ag2) && /brun_cfg\( 'BROWSER_ADT_SQL' \) = 'X'/.test(bs) &&
+      /gc_dom_data/.test(bs) && /zcl_ai_sql_guard=>is_enabled\( \)/.test(bs) &&
+      /AND lv_tool <> gc_adt_sql_tool/.test(bau) && /zcl_ai_sql_guard=>validate_sql\(/.test(bau) && /iv_status\s+= `REJECTED`/.test(bau) &&
+      bau.indexOf('validate_sql(') > bau.indexOf('tool_calls + 1') && bau.indexOf('validate_sql(') < bau.indexOf('INSERT zai_bstep') &&
+      /ls_sq_bs-tool = gc_adt_sql_tool/.test(bau) && (bau.match(/zcl_ai_sql_executor=>log_run\(/g) || []).length === 2);
+  }
 
   /* ---- 20261108 上下文超长（AGENT_SERVICE V15.21 / HTTP V1.3） ---- */
   check('V15.21：上下文上限 BRUN_CTX_TOKENS 下发；请求体上限默认跟上下文走，超限消息带 maximum context length',

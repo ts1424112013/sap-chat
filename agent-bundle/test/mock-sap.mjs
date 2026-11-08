@@ -82,7 +82,16 @@ const SCRIPT9 = [
   () => [call("adt_syntax_check", { object: "ZCL_AI_AGENT_SERVICE", file: "/代码/zcl_ai_agent_service.abap" })],
   () => null
 ];
-const adt = { log: [], token: "TOK1", rotated: false, audits: [] };
+// 场景十：IT 自由 SQL（adt_run_sql，0.10.0）—— SAP 下发工具说明，浏览器经 ADT datapreview/freestyle 执行
+const SQL_TOOL = { name: "adt_run_sql", description: "执行一条只读 ABAP SQL（模拟）",
+  parameters: { type: "object", properties: { sql: { type: "string" }, max_rows: { type: "integer" }, purpose: { type: "string" } }, required: ["sql"] } };
+const SCRIPT10 = [
+  () => [call("adt_run_sql", { sql: "SELECT WERKS, COUNT( * ) AS CNT FROM AUFK GROUP BY WERKS;", max_rows: 50, purpose: "各工厂工单数" })],
+  () => [call("adt_run_sql", { sql: "SELECT BNAME FROM USR02" })],
+  () => [call("adt_run_sql", { sql: "SELECT BADCOL FROM AUFK" })],
+  () => null
+];
+const adt = { log: [], token: "TOK1", rotated: false, audits: [], sqlBodies: [] };
 const ref = (name, type, uri, pkg, desc) =>
   `<adtcore:objectReference adtcore:uri="${uri}" adtcore:type="${type}" adtcore:name="${name}" adtcore:packageName="${pkg}"${desc ? ` adtcore:description="${desc}"` : ""}/>`;
 const SRC = ["CLASS zcl_ai_agent_service DEFINITION PUBLIC.", "  PUBLIC SECTION.", "    CLASS-METHODS browser_start.", "    CLASS-METHODS browser_tool.",
@@ -110,6 +119,16 @@ function adtRoute(req, res, url, body) {
       ref("SHKZG", "DOMA/DD", "/sap/bc/adt/ddic/domains/shkzg", "BF", "借贷标识")
     ].filter(s => { const n = /adtcore:name="([^"]+)"/.exec(s)[1]; return q.endsWith("*") ? n.startsWith(q.slice(0, -1)) : n === q; });
     return xml(200, `<?xml version="1.0" encoding="utf-8"?><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">${all.join("")}</adtcore:objectReferences>`);
+  }
+  if (p === "/datapreview/freestyle" && req.method === "POST") {
+    adt.sqlBodies.push({ body, rowNumber: url.searchParams.get("rowNumber"), ctype: req.headers["content-type"] || "" });
+    if (/BADCOL/.test(body)) return xml(400, `<?xml version="1.0" encoding="utf-8"?><exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><namespace id="com.sap.adt"/><type id="ExceptionDataPreview"/><localizedMessage lang="ZH">"BADCOL" 未知</localizedMessage></exc:exception>`);
+    const col = (name, desc, type, vals) => `<dataPreview:columns><dataPreview:metadata dataPreview:name="${name}" dataPreview:type="${type}" dataPreview:description="${desc}"/>` +
+      `<dataPreview:dataSet>${vals.map(v => `<dataPreview:data>${v}</dataPreview:data>`).join("")}</dataPreview:dataSet></dataPreview:columns>`;
+    return xml(200, `<?xml version="1.0" encoding="utf-8"?><dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">` +
+      `<dataPreview:totalRows>3</dataPreview:totalRows><dataPreview:isHanaAnalyticalView>false</dataPreview:isHanaAnalyticalView>` +
+      `<dataPreview:executedQueryString>${body.replace(/</g, "&lt;")}</dataPreview:executedQueryString><dataPreview:queryExecutionTime>12.5</dataPreview:queryExecutionTime>` +
+      col("WERKS", "工厂", "C", ["ABG1", "ABZ1", "AAD1"]) + col("CNT", "", "I", ["120", "45", "7"]) + `</dataPreview:tableData>`);
   }
   if (p === "/oo/classes/zcl_secret/source/main") return exc(403, "No authorization to access the resource /sap/bc/adt/oo/classes/zcl_secret");
   if (p === "/oo/classes/zcl_ai_agent_service/source/main") { res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" }); return res.end(SRC); }
@@ -205,6 +224,9 @@ const server = http.createServer(async (req, res) => {
         card: { tool: "fiori", taskId: "F1", taskModule: "FIORI", taskStatus: "WAITING_INPUT", needsInput: true,
           pendingParamsJson: JSON.stringify({ kind: "FIORI", report_id: "FR1", report_name: "测试", params: [] }), answer: "x" } });
     }
+    if (String(data.question || "").includes("场景十")) {
+      return send(res, 200, { runId, model: "mock-model", tools: [...SAP_TOOLS, SQL_TOOL], adt: true, limits: { recursionLimit: 80 }, systemPrompt: "场景：DATA（模拟）" });
+    }
     if (String(data.question || "").includes("场景九")) {
       return send(res, 200, { runId, model: "mock-model", tools: SAP_TOOLS, adt: true, limits: { recursionLimit: 80 }, systemPrompt: "场景：CODE（模拟）" });
     }
@@ -283,6 +305,17 @@ const server = http.createServer(async (req, res) => {
       }
       return reply({ role: "assistant", content: `完成 场景六 summaries=${run.summaries || 0}` });
     }
+    if (run.question && run.question.includes("场景十")) {
+      run.step10 = (run.step10 || 0) + 1;
+      if (run.step10 === 1) {
+        run.hasSqlTool = (data.tools || []).some(t => t.function && t.function.name === "adt_run_sql");
+        run.sysHasSqlRule = sys.includes("有 adt_run_sql 时不要用 run_sql");
+      }
+      const c10 = (SCRIPT10[run.step10 - 1] || (() => null))();
+      if (c10) return reply({ role: "assistant", content: "", tool_calls: c10 }, c10);
+      run.toolTexts10 = msgs.filter(m => m.role === "tool").map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content));
+      return reply({ role: "assistant", content: "完成 场景十" });
+    }
     if (run.question && run.question.includes("场景九")) {
       run.step9 = (run.step9 || 0) + 1;
       const c9 = (SCRIPT9[run.step9 - 1] || (() => null))();
@@ -355,12 +388,17 @@ const server = http.createServer(async (req, res) => {
     const bad = checkHeaders(req, true);
     if (bad.length || data.runId !== req.headers["x-lingxi-run"]) return send(res, 400, { ok: false, message: bad.join("；") || "运行号不一致" });
     const run = runs.get(data.runId);
-    if (!run.adtOk) run.adtOk = String(run.question || "").includes("场景九");
+    if (!run.adtOk) run.adtOk = /场景九|场景十/.test(String(run.question || ""));
     if (!run.adtOk) return send(res, 200, { ok: false, message: "这次运行没有开放 ADT" });
     if (data.seq) {
       const a = adt.audits.find(x => x.runId === data.runId && x.seq === data.seq);
       if (a) Object.assign(a, { status: data.status, ms: data.ms, rows: data.rows });
       return send(res, 200, { ok: true });
+    }
+    // SAP 端 SQL 守卫：受保护表直接拒绝（浏览器不应再发 ADT 请求）
+    if (data.tool === "adt_run_sql" && /USR02/i.test(data.target || "")) {
+      adt.audits.push({ runId: data.runId, seq: 0, tool: data.tool, target: data.target, status: "REJECTED" });
+      return send(res, 200, { ok: false, message: "SQL 被拒绝: 表 USR02 属于受保护表, 不允许查询" });
     }
     run.toolCalls++;
     const seq = adt.audits.filter(x => x.runId === data.runId).length + 1;

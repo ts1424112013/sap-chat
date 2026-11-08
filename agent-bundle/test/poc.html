@@ -201,6 +201,23 @@ async function main() {
     const st9 = (run9.steps || []).filter(s => s.k === "tool");
     check("ADT 过程记录：一句话结果", st9.some(s => s.tool === "adt_where_used" && /被 2 个对象使用/.test(s.sum)) &&
       st9.some(s => s.tool === "adt_syntax_check" && /错误 0 个，警告 1 个/.test(s.sum)), JSON.stringify(st9.map(s => s.sum)));
+    // ---- 场景十：IT 自由 SQL（adt_run_sql）----
+    const ev10 = [];
+    const r10 = await LingxiAgent.run({ question: "场景十 各工厂工单数", sap: { base: "/sap/bc/zai_agent" }, onEvent: e => ev10.push(e) });
+    const run10 = Object.values(await (await fetch("/__runs")).json()).find(x => /场景十/.test(x.question)) || {};
+    const adt10 = await (await fetch("/__adt")).json();
+    const t10 = run10.toolTexts10 || [];
+    check("ADT SQL：SAP 下发 adt_run_sql 时挂上工具和用法说明，不走 /tools/exec", run10.hasSqlTool === true && run10.sysHasSqlRule === true &&
+      /完成 场景十/.test(r10.answer) && run10.toolCalls === 2, JSON.stringify({ t: run10.hasSqlTool, s: run10.sysHasSqlRule, a: r10.answer }));
+    check("ADT SQL：先报审计（target = SQL 全文）再 POST freestyle，行数上限、去掉结尾分号",
+      adt10.sqlBodies.length === 2 && adt10.sqlBodies[0].body === "SELECT WERKS, COUNT( * ) AS CNT FROM AUFK GROUP BY WERKS" && adt10.sqlBodies[0].rowNumber === "50" &&
+      adt10.audits.some(a => a.tool === "adt_run_sql" && /COUNT\( \* \)/.test(a.target) && a.status === "OK" && a.rows === 3), JSON.stringify(adt10.sqlBodies));
+    check("ADT SQL：结果解析成表（列说明、数字列、总行数）", /各工厂工单数：共 3 行/.test(t10[0]) && /WERKS\(工厂\)\tCNT/.test(t10[0]) && /ABG1\t120/.test(t10[0]), t10[0]);
+    const ds10 = (r10.datasets || [])[0] || {};
+    check("ADT SQL：数据集交给界面（数字列是数字）", ds10.name === "各工厂工单数" && ds10.total_rows === 3 && ds10.columns[1].numeric === true && ds10.rows[0][1] === 120 && ds10.source === "ADT SQL",
+      JSON.stringify(ds10));
+    check("ADT SQL：SAP 守卫拒绝时不发 ADT 请求，如实转告", /SQL 被拒绝: 表 USR02 属于受保护表/.test(t10[1]) && !adt10.sqlBodies.some(b => /USR02/.test(b.body)), t10[1]);
+    check("ADT SQL：SQL 报错时转告 SAP 的报错，审计记 ERROR", /BADCOL/.test(t10[2]) && adt10.audits.some(a => a.tool === "adt_run_sql" && /BADCOL/.test(a.target) && a.status === "ERROR"), t10[2]);
     check("网关报超出上下文：压缩后重试，运行照常完成", run6.overflowSent === true && /完成 场景六/.test(r6.answer) && run6.status === "OK", r6.answer);
     $("state").textContent = checks.every(c => c.ok) ? "全部通过" : "有失败";
   } catch (e) {

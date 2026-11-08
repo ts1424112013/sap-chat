@@ -19,9 +19,9 @@ import {
 } from "./folder-backend.js";
 import { ReadonlyMemBackend, skillFiles } from "./readonly-backend.js";
 import { summarizeStep, mainArg } from "./step-summary.js";
-import { createAdtClient, ADT_TOOL_SPECS, ADT_PROMPT, normalizeUri } from "./adt-client.js";
+import { createAdtClient, ADT_TOOL_SPECS, ADT_PROMPT, ADT_SQL_PROMPT, normalizeUri, parseDataPreview } from "./adt-client.js";
 
-export const VERSION = "0.9.0";
+export const VERSION = "0.10.0";
 export const MEMORY_FILE = "/灵犀记忆.md";
 /** SAP 管理员维护的技能（只读，SAP /run/start 下发） */
 export const SAP_SKILL_DIR = "/SAP技能/";
@@ -133,7 +133,8 @@ function rid() {
  * 工具结果带 card（报表参数卡）时交给 onCard：引擎随即结束本次运行，由界面显示参数卡。
  */
 function buildSapTools(client, run, emit, signal, onCard, onDatasets) {
-  return (run.tools || []).map(t => tool(
+  // adt_run_sql 由 SAP 下发说明，但在浏览器里经 ADT 执行（见 buildAdtSqlTool），不走 /tools/exec
+  return (run.tools || []).filter(t => t && t.name !== ADT_SQL_TOOL).map(t => tool(
     async (args, config) => {
       const requestId = rid();
       const r = await client.execTool({ runId: run.runId, tool: t.name, args: args || {}, requestId }, { signal });
@@ -238,6 +239,48 @@ function buildExportTool(client, run, folderBackend, signal) {
  * ADT 代码工具（只读，浏览器直连 /sap/bc/adt）。每次调用先报 SAP /tools/audit（校验运行号、计入工具次数、写审计），
  * SAP 拒绝或报不了就不调 ADT；调完再报一次结果（失败不影响回答）。
  */
+const ADT_SQL_TOOL = "adt_run_sql";
+
+/**
+ * IT 自由 SQL（0.10.0）：SAP 下发了 adt_run_sql 才挂。先报 /tools/audit（target = SQL 全文，SAP 用 SQL 守卫校验，
+ * 被拒就不发），再调 ADT datapreview/freestyle；数据集交给界面画表格，调完回填状态和行数（SAP 记进 ZAI_SQL_LOG）。
+ */
+function buildAdtSqlTool(adt, client, run, signal, onDatasets) {
+  const spec = (run.tools || []).find(t => t && t.name === ADT_SQL_TOOL);
+  if (!spec) return null;
+  return tool(
+    async (args, config) => {
+      const a = args || {};
+      const sql = String(a.sql || "").trim();
+      if (!sql) return "工具执行失败：缺少 sql";
+      if (sql.length > 4000) return "工具执行失败：SQL 超过 4000 字符";
+      let seq = 0;
+      try {
+        const r = await client.auditAdt({ runId: run.runId, tool: ADT_SQL_TOOL, target: sql }, { signal });
+        if (!r || r.ok === false) return `工具执行失败：${(r && r.message) || "SAP 没有允许这次查询"}`;
+        seq = r.seq || 0;
+      } catch (e) {
+        if (signal && signal.aborted) throw e;
+        return `工具执行失败：${(e && e.message) || "SAP 审计接口不可用，不能执行 SQL"}`;
+      }
+      const t0 = Date.now();
+      let out, status = "OK";
+      try {
+        out = await adt.runSql(a, signal);
+        if (out.dataset && onDatasets) onDatasets(ADT_SQL_TOOL, [out.dataset], config && config.toolCall && config.toolCall.id);
+      } catch (e) {
+        if (signal && signal.aborted) throw e;
+        status = e && (e.status === 401 || e.status === 403) ? "DENIED" : "ERROR";
+        out = { text: `工具执行失败：${(e && e.message) || e}`, rows: 0 };
+      }
+      client.auditAdt({ runId: run.runId, seq, status, ms: Date.now() - t0, rows: out.rows || 0 }, {}).catch(() => {});
+      return clip(out.text);
+    },
+    { name: ADT_SQL_TOOL, description: spec.description || ADT_SQL_TOOL,
+      schema: spec.parameters && typeof spec.parameters === "object" ? spec.parameters : { type: "object", properties: { sql: { type: "string" } }, required: ["sql"] } }
+  );
+}
+
 function buildAdtTools(adt, client, run, signal, folderBackend) {
   // 语法检查带 file：从用户选的文件夹读代码（只读文本文件）
   const readCode = async file => {
@@ -509,7 +552,10 @@ export async function run(o) {
   if (canExport) tools.push(buildExportTool(client, runInfo, folderBackend, inner.signal));
   // ADT 代码工具：SAP 说这次可以用（开关 + 代码分析权限 + 开发显示权限）才挂上
   const canAdt = runInfo.adt === true && typeof client.adtFetch === "function" && typeof client.auditAdt === "function";
-  if (canAdt) tools.push(...buildAdtTools(createAdtClient({ fetch: client.adtFetch }), client, runInfo, inner.signal, folderBackend));
+  const adtClient = canAdt ? createAdtClient({ fetch: client.adtFetch }) : null;
+  if (canAdt) tools.push(...buildAdtTools(adtClient, client, runInfo, inner.signal, folderBackend));
+  const sqlTool = canAdt ? buildAdtSqlTool(adtClient, client, runInfo, inner.signal, onDatasets) : null;
+  if (sqlTool) tools.push(sqlTool);
   // 问用户：选「我直接说」时和参数卡一样立即停，问题就是这次的回答
   let askOther = "";
   const canAsk = typeof o.ask === "function";
@@ -542,6 +588,7 @@ export async function run(o) {
       canExport ? EXPORT_PROMPT : "",
       canAsk ? ASK_PROMPT : "",
       canAdt ? ADT_PROMPT : "",
+      sqlTool ? ADT_SQL_PROMPT : "",
       runInfo.systemPrompt || ""
     ].filter(Boolean).join("\n\n"),
     backend,
@@ -666,5 +713,5 @@ export async function run(o) {
 export {
   createSapClient, SapAgentError,
   FolderBackend, folderSupported, pickFolder, restoreFolder, requestFolderPermission, forgetFolder,
-  summarizeStep, mainArg, createAdtClient, normalizeUri
+  summarizeStep, mainArg, createAdtClient, normalizeUri, parseDataPreview
 };
