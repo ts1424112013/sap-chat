@@ -475,10 +475,7 @@ sap.ui.define([
 				return;
 			}
 			var a = [];
-			var sFolder = oChat.getProperty("/ba/folderName");
-			if (sFolder) {
-				a.push("<span>文件夹 " + esc(sFolder) + "</span>");
-			}
+			// 20261108：不再写「文件夹 xxx」—— 左边的文件夹胶囊已经显示了，重复
 			if (s) {
 				var ctx = (s.limits && s.limits.contextTokens) || 0;
 				if (ctx && s.ctxUsed) {
