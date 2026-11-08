@@ -1,6 +1,3 @@
-# Dependencies (uploaded separately as a ZIP)
-node_modules/
-**/node_modules/
 
 # Build and local output
 .codex-pptx-build/
