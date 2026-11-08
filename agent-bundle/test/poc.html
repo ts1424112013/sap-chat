@@ -218,6 +218,37 @@ async function main() {
       JSON.stringify(ds10));
     check("ADT SQL：SAP 守卫拒绝时不发 ADT 请求，如实转告", /SQL 被拒绝: 表 USR02 属于受保护表/.test(t10[1]) && !adt10.sqlBodies.some(b => /USR02/.test(b.body)), t10[1]);
     check("ADT SQL：SQL 报错时转告 SAP 的报错，审计记 ERROR", /BADCOL/.test(t10[2]) && adt10.audits.some(a => a.tool === "adt_run_sql" && /BADCOL/.test(a.target) && a.status === "ERROR"), t10[2]);
+    // ---- 场景记忆：超过 6000 字只载入前 6000 字；回答后整理（确认、备份、可撤回）；拒绝过同一份不再问 ----
+    const bigMem = "# 灵犀记忆\n\n- MEM-HEAD 工单号一律四位\n" +
+      Array.from({ length: 420 }, (_, i) => `- 出货按过账日期统计（重复 ${i}）\n`).join("") + "- MEM-TAIL 尾部规则\n";
+    const writeMem = async t => { const w = await (await root.getFileHandle("灵犀记忆.md", { create: true })).createWritable(); await w.write(t); await w.close(); };
+    await writeMem(bigMem);
+    const evM = [], confM = [];
+    const rM = await LingxiAgent.run({ question: "场景记忆 一", folderBackend: r.folder, sap: { base: "/sap/bc/zai_agent" },
+      onEvent: e => evM.push(e), confirm: async req => { confM.push(req); return true; } });
+    const runM = Object.values(await (await fetch("/__runs")).json()).find(x => x.question === "场景记忆 一") || {};
+    check("记忆：超过上限只载入前 6000 字并说明，不用框架的英文记忆说明",
+      runM.sysMemHead === true && runM.sysMemTail === false && runM.sysMemOverNote === true && runM.sysFrameworkMem === false, JSON.stringify(runM));
+    const endM = evM.find(e => e.type === "tool_end" && e.tool === "compact_memory") || {};
+    const memAfter = await text(root, "/灵犀记忆.md");
+    check("记忆：回答后整理一次，写入前确认（整理记忆，带前后对比）",
+      runM.memCompactCalls === 1 && confM.length === 1 && confM[0].action === "整理记忆" && confM[0].path === "/灵犀记忆.md" &&
+      confM[0].before.includes("MEM-TAIL") && /^# 灵犀记忆/.test(confM[0].after) && !/```/.test(confM[0].after), JSON.stringify(confM.map(c => c.action)));
+    check("记忆：整理后变短、保留首尾规则，步骤显示字数变化",
+      memAfter.length < 1000 && memAfter.includes("MEM-HEAD") && memAfter.includes("MEM-TAIL") && endM.ok === true && /→/.test(endM.summary) && /完成 场景记忆/.test(rM.answer),
+      JSON.stringify({ len: memAfter.length, sum: endM.summary }));
+    const undoM = await r.folder.undoLast();
+    check("记忆：整理可撤回（恢复原文）", !undoM.error && undoM.action === "整理记忆" && (await text(root, "/灵犀记忆.md")) === bigMem, JSON.stringify(undoM));
+    const evM2 = [], confM2 = [];
+    await LingxiAgent.run({ question: "场景记忆 二", folderBackend: r.folder, sap: { base: "/sap/bc/zai_agent" },
+      onEvent: e => evM2.push(e), confirm: async req => { confM2.push(req); return { approved: false, message: "先别动" }; } });
+    const endM2 = evM2.find(e => e.type === "tool_end" && e.tool === "compact_memory") || {};
+    check("记忆：拒绝整理时文件不变，步骤如实说明", (await text(root, "/灵犀记忆.md")) === bigMem && endM2.ok === false && /没有同意/.test(endM2.summary || ""), endM2.summary);
+    const evM3 = [], confM3 = [];
+    await LingxiAgent.run({ question: "场景记忆 三", folderBackend: r.folder, sap: { base: "/sap/bc/zai_agent" },
+      onEvent: e => evM3.push(e), confirm: async req => { confM3.push(req); return true; } });
+    const runM3 = Object.values(await (await fetch("/__runs")).json()).find(x => x.question === "场景记忆 三") || {};
+    check("记忆：同一份内容拒绝过，本页面不再反复问", confM3.length === 0 && !runM3.memCompactCalls && !evM3.some(e => e.tool === "compact_memory"));
     check("网关报超出上下文：压缩后重试，运行照常完成", run6.overflowSent === true && /完成 场景六/.test(r6.answer) && run6.status === "OK", r6.answer);
     $("state").textContent = checks.every(c => c.ok) ? "全部通过" : "有失败";
   } catch (e) {

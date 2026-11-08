@@ -21,8 +21,12 @@ import { ReadonlyMemBackend, skillFiles } from "./readonly-backend.js";
 import { summarizeStep, mainArg } from "./step-summary.js";
 import { createAdtClient, ADT_TOOL_SPECS, ADT_PROMPT, ADT_SQL_PROMPT, normalizeUri, parseDataPreview } from "./adt-client.js";
 
-export const VERSION = "0.10.0";
+export const VERSION = "0.11.0";
 export const MEMORY_FILE = "/灵犀记忆.md";
+/** 记忆上限（字符）：超过时只载入前这么多，回答后让模型整理一次 */
+export const MEMORY_MAX_CHARS = 6000;
+/** 整理目标：上限的 2/3，留出余量，免得下一轮又超 */
+export const MEMORY_TARGET_CHARS = 4000;
 /** SAP 管理员维护的技能（只读，SAP /run/start 下发） */
 export const SAP_SKILL_DIR = "/SAP技能/";
 /** 文件夹自带的技能：.lingxi/技能/<名字>/SKILL.md */
@@ -74,8 +78,82 @@ const FOLDER_PROMPT = `用户已授权一个本地文件夹，文件工具里的
 - 改文件前先读；尽量用 edit_file 做小范围修改，不要整份重写。
 - 写文件会先让用户确认，用户拒绝时不要换个方式再写。
 - .lingxi/ 目录是灵犀的备份和修改记录，只读。
-- ${MEMORY_FILE} 是这个文件夹的长期记忆：学到对以后有用的规则（口径、格式、命名习惯）时，用 edit_file / write_file 记进去，保持简短。
+- ${MEMORY_FILE} 是这个文件夹的长期记忆（上限 ${MEMORY_MAX_CHARS} 字）：只记以后还用得上的规则（口径、格式、命名习惯、用户纠正过的做法），不记一次性的数字、查询结果、临时安排，不记密码、令牌等凭据。
+  记之前先看已有条目：同类的用 edit_file 改那一条，不要再追加一条重复的；每条一行，写短。
 - /草稿/ 下的文件只在本次对话里存在，不会写进用户文件夹，可以放中间结果。`;
+
+/**
+ * 记忆正文进系统提示（替换框架自带的记忆说明：那段是英文、约 4000 字，还要求「每次先写记忆」，记忆涨得快）。
+ * 超过上限只放前 MEMORY_MAX_CHARS 字，并告诉模型本次结束后会整理。
+ */
+export function memorySection(text) {
+  const t = String(text || "").replace(/^\uFEFF/, "").trim();
+  if (!t) return "";
+  const over = t.length > MEMORY_MAX_CHARS;
+  return `以下是 ${MEMORY_FILE} 的内容（这个文件夹以前记下的规则）：和当前问题相关的要遵守；和用户这次说的冲突时，以用户这次说的为准，并用 edit_file 改掉记忆里那一条。
+<灵犀记忆>
+${over ? t.slice(0, MEMORY_MAX_CHARS) : t}
+</灵犀记忆>` + (over ? `\n（记忆共 ${t.length} 字，超过上限 ${MEMORY_MAX_CHARS} 字，只载入了前 ${MEMORY_MAX_CHARS} 字；本次回答后会整理。）` : "");
+}
+
+export const MEMORY_COMPACT_PROMPT = `你在整理「灵犀」（SAP 业务助手）的长期记忆文件。记忆是以前记下的规则，会放进以后每次对话的系统提示里。
+整理要求：
+1. 重复或意思相同的规则合并成一条；
+2. 前后矛盾的，保留写在后面（更新）的那条；
+3. 删掉一次性、已过时的内容（某天的具体数字、查询结果、临时安排）；
+4. 表名、字段名、报表名、事务码、口径、数值原样保留；不改变规则的意思，不新增原文没有的规则；
+5. 用 Markdown：第一行「# 灵犀记忆」，下面按主题分组「## 主题」，每条规则一行「- 」开头；
+6. 整理后不超过 ${MEMORY_TARGET_CHARS} 字。
+只输出整理后的文件全文：不要解释，不要代码块标记。`;
+
+/** 模型整理结果的清理与校验：不合格返回 { error } */
+export function cleanMemory(out, before) {
+  let t = String(out || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  t = t.replace(/^```[a-zA-Z]*\s*\n/, "").replace(/\n```\s*$/, "").trim();
+  if (!t) return { error: "模型没有返回内容" };
+  if (!/^#\s*灵犀记忆/.test(t)) t = "# 灵犀记忆\n\n" + t;
+  const n0 = String(before || "").trim().length;
+  if (t.length > MEMORY_MAX_CHARS) return { error: `整理后仍有 ${t.length} 字，超过上限` };
+  if (n0 && t.length >= n0) return { error: "整理后没有变短" };
+  // 重复多的记忆可以缩得很短，不按比例判断；只要求还有规则行（防止模型只回一句「已整理」）
+  if (!/^\s*[-*]\s+\S/m.test(t)) return { error: "整理结果里没有规则条目" };
+  return { text: t + "\n" };
+}
+
+/**
+ * 回答后整理记忆：文件超过上限时让模型合并重复规则，写回前走正常的改文件确认（有对比、有备份、可撤回）。
+ * 用户拒绝或整理失败都不影响本次运行；同一份内容被拒绝过就不再问（同一个文件夹后端内）。
+ */
+async function compactMemoryAfterRun(folderBackend, makeModel, track, signal) {
+  const r = await folderBackend.read(MEMORY_FILE, 0, 100000);
+  if (r.error || typeof r.content !== "string") return;
+  const before = r.content.replace(/^\uFEFF/, "");
+  const n0 = before.trim().length;
+  if (n0 <= MEMORY_MAX_CHARS) return;
+  if (folderBackend._memSkip === before) return;
+  const id = "memory-compact-" + Date.now();
+  track({ type: "tool_start", id, tool: "compact_memory", args: { file_path: MEMORY_FILE }, arg: MEMORY_FILE });
+  let ok = false, summary = "";
+  try {
+    const m = await makeModel().invoke([
+      { role: "system", content: MEMORY_COMPACT_PROMPT },
+      { role: "user", content: `当前记忆（${n0} 字）：\n\n${before}` }
+    ], { signal });
+    const c = cleanMemory(textOf(m), before);
+    if (c.error) {
+      summary = "没有整理：" + c.error;
+    } else {
+      const w = await folderBackend.write(MEMORY_FILE, c.text, "整理记忆");
+      if (w.error) summary = /拒绝/.test(w.error) ? "你没有同意，记忆保持原样" : "没有写入：" + w.error.replace(/^Error:\s*/, "");
+      else { ok = true; summary = `${n0.toLocaleString()} → ${c.text.trim().length.toLocaleString()} 字`; }
+    }
+  } catch (e) {
+    if (signal && signal.aborted) summary = "已停止";
+    else summary = "整理失败：" + ((e && e.message) || e);
+  }
+  if (!ok) folderBackend._memSkip = before;
+  track({ type: "tool_end", id, tool: "compact_memory", ok, summary, preview: "" });
+}
 
 const NO_FOLDER_PROMPT = `用户没有授权本地文件夹；文件工具只能用来存放本次对话里的中间结果（浏览器内存，刷新即失）。`;
 
@@ -512,10 +590,11 @@ export async function run(o) {
     return folderBackend || sapSkillBackend ? new CompositeBackend(folderBackend || mem, routes) : mem;
   };
 
-  let memoryFiles;
+  // 记忆：自己读、自己放进系统提示（有上限），不用框架的 memory 选项
+  let memoryText = "";
   if (folderBackend) {
-    const m = await folderBackend.read(MEMORY_FILE, 0, 1);
-    if (!m.error) memoryFiles = [MEMORY_FILE];
+    const m = await folderBackend.read(MEMORY_FILE, 0, 100000);
+    if (!m.error && typeof m.content === "string") memoryText = m.content;
   }
 
   // 报表参数卡：工具拿到卡就停下（和原 Agent 一样，参数由用户在卡上确认后提交，聊天里不执行报表）
@@ -589,10 +668,10 @@ export async function run(o) {
       canAsk ? ASK_PROMPT : "",
       canAdt ? ADT_PROMPT : "",
       sqlTool ? ADT_SQL_PROMPT : "",
-      runInfo.systemPrompt || ""
+      runInfo.systemPrompt || "",
+      memorySection(memoryText)
     ].filter(Boolean).join("\n\n"),
     backend,
-    memory: memoryFiles,
     skills: skillSources.length ? skillSources : undefined,
     // deepagents 1.16 起待办工具只给部分模型默认开启，这里显式加上。
     // 改文件确认不用框架的 interrupt（浏览器里没有异步上下文），由文件夹后端自己等用户点确认。
@@ -700,6 +779,17 @@ export async function run(o) {
       title
     });
   } catch (e) { emit({ type: "warn", message: "运行结果未能写回 SAP 会话：" + e.message }); }
+
+  // 记忆超过上限：回答已经给出、会话已写回，再整理（要用户确认写入）
+  if (folderBackend && status === "OK" && !(o.signal && o.signal.aborted)) {
+    const makeModel = () => new ChatOpenAI({
+      model: runInfo.model || "lingxi", apiKey: "sap-session", temperature: 0, maxTokens: 8000, maxRetries: 0,
+      timeout: (runInfo.limits && runInfo.limits.modelTimeoutMs) || 240000, streaming: false,
+      configuration: { baseURL: client.root, fetch: client.modelFetch(runInfo.runId), dangerouslyAllowBrowser: true }
+    });
+    try { await compactMemoryAfterRun(folderBackend, makeModel, track, o.signal); }
+    catch (e) { emit({ type: "warn", message: "整理记忆失败：" + ((e && e.message) || e) }); }
+  }
 
   emit({ type: "phase", phase: "done", status });
   if (status !== "OK") throw Object.assign(new Error(errorMsg || status), { status, trace, runId: runInfo.runId });

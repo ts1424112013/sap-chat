@@ -347,17 +347,19 @@ export class FolderBackend {
     await w.close();
   }
 
-  async write(path, content) {
+  /** @param {string} [action] 确认框和修改记录里的说法，默认「覆盖 / 新建」（引擎整理记忆时传「整理记忆」） */
+  async write(path, content, action) {
     const bad = this._guardWrite(path);
     if (bad) return { error: bad };
     try {
       const existed = await this._exists(path);
+      const act = action || (existed ? "覆盖" : "新建");
       // 对比时去掉开头的 BOM（读文本时浏览器会吃掉它，不去掉第一行会显示成「改了」）
-      const denied = await this._confirm(existed ? "覆盖" : "新建", path, existed ? await this._textOrNull(path) : null, String(content).replace(/^\uFEFF/, ""));
+      const denied = await this._confirm(act, path, existed ? await this._textOrNull(path) : null, String(content).replace(/^\uFEFF/, ""));
       if (denied) return { error: denied };
       const backup = existed ? await this._backup(path) : null;
       await this._writeText(path, String(content));
-      const rec = await this._log(existed ? "覆盖" : "新建", path, `${String(content).length} 字符`);
+      const rec = await this._log(act, path, `${String(content).length} 字符`);
       this.changes.push({ ...rec, backup, created: !existed });
       this.opts.onChange && this.opts.onChange(this.changes[this.changes.length - 1]);
       return { path, filesUpdate: null };

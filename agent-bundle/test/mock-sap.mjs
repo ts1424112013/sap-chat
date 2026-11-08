@@ -258,6 +258,19 @@ const server = http.createServer(async (req, res) => {
       run.titleUserMsg = firstUser;
       return reply({ role: "assistant", content: "标题：「ZCL_AI_AGENT_SERVICE 结构与调用方」。" });
     }
+    // 场景记忆（引擎 0.11.0）：记忆超过 6000 字只载入前 6000 字；回答后整理一次（单独一次模型调用，要确认）
+    if (run.question && run.question.includes("场景记忆")) {
+      if (sys.startsWith("你在整理「灵犀」")) {
+        run.memCompactCalls = (run.memCompactCalls || 0) + 1;
+        run.memCompactInput = firstUser.length;
+        return reply({ role: "assistant", content: "```markdown\n# 灵犀记忆\n\n## 口径\n- MEM-HEAD 工单号一律四位\n- 出货按过账日期统计\n- MEM-TAIL 尾部规则\n```" });
+      }
+      run.sysMemHead = sys.includes("MEM-HEAD");
+      run.sysMemTail = sys.includes("MEM-TAIL");
+      run.sysMemOverNote = /超过上限 6000 字/.test(sys);
+      run.sysFrameworkMem = sys.includes("agent_memory");
+      return reply({ role: "assistant", content: "完成 场景记忆" });
+    }
     if (run.question && run.question.includes("场景八")) {
       // 不清楚就问：第一步 ask_user，第二步按用户选的回答（选「我直接说」时引擎应停下，不再有第二步）
       run.step8 = (run.step8 || 0) + 1;

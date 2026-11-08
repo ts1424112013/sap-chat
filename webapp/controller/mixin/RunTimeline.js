@@ -30,7 +30,7 @@ sap.ui.define([
 		task: "子任务进行中", read_program_source: "读源码中", resolve_material: "查物料", get_stock_snapshot: "查库存",
 		get_daily_movement: "查出入库", get_batch_stock: "查批次库存",
 		adt_search: "找对象中", adt_read_source: "读源码中", adt_structure: "看结构", adt_where_used: "查使用处",
-		adt_package: "看包内容", adt_syntax_check: "语法检查中"
+		adt_package: "看包内容", adt_syntax_check: "语法检查中", compact_memory: "整理记忆中"
 	};
 
 	/* 小图标（16×16，currentColor） */
@@ -441,8 +441,9 @@ sap.ui.define([
 					: '<div class="rtNote rtOk">' + IC.ok + "<span>已同意" + esc(req.action) + " " + esc(req.path) +
 						(x.done === "all" ? "（本次运行后面的写入不再询问）" : "") + "</span></div>";
 			}
-			var sQ = req.action === "删除" ? "要删除这个文件吗？" : req.action === "新建" ? "要新建这个文件吗？" : "要" + (req.action || "修改") + "这个文件吗？";
-			var aOpt = [req.action === "删除" ? "删除" : "是，" + (req.action || "修改"), "是，本次运行写文件都不再询问", "不要，告诉灵犀怎么改"];
+			var bMem = req.action === "整理记忆";   // 记忆超过上限，回答后合并重复规则（原文件会备份，可撤回）
+			var sQ = bMem ? "记忆超过上限，用整理后的版本替换吗？" : req.action === "删除" ? "要删除这个文件吗？" : req.action === "新建" ? "要新建这个文件吗？" : "要" + (req.action || "修改") + "这个文件吗？";
+			var aOpt = [req.action === "删除" ? "删除" : "是，" + (req.action || "修改"), "是，本次运行写文件都不再询问", bMem ? "不要，保持原样" : "不要，告诉灵犀怎么改"];
 			return '<div class="rtAsk"><div class="rtAskHead"><b>' + esc(sQ) + '</b><span class="rtSub">' + esc(req.path) + "</span></div>" +
 				'<div class="rtAskDiff">' + (this._baDiffHtml ? this._baDiffHtml(req) : "") + "</div>" +
 				aOpt.map(function (t, k) {
