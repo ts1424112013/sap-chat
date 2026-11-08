@@ -28,6 +28,13 @@
 [data-theme="dark"] .modeNav::before { box-shadow: 0 1px 2px rgba(0, 0, 0, .4); }
 .modeNav.modeNavAgentOn::before { transform: translateX(100%); }
 .modeNav > .sapMFlexItem { position: relative; z-index: 1; }
+/* 按钮和滑块一样高、垂直居中（Horizon 默认按钮 36px 比格子高，文字会落到滑块下沿外） */
+.modeNav > .sapMFlexItem { display: flex; align-items: stretch; }
+.modeNav .modeNavBtn { margin: 0 !important; padding: 0 !important; height: 100% !important; width: 100%; }
+.modeNav .modeNavBtn .sapMBtnInner { height: 100% !important; min-height: 0 !important; margin: 0 !important; padding: 0 .5rem !important;
+	display: flex !important; align-items: center; justify-content: center; border: none !important; }
+.modeNav .modeNavBtn .sapMBtnIcon { margin: 0 .35rem 0 0 !important; line-height: 1 !important; }
+.modeNav .modeNavBtn .sapMBtnContent { line-height: 1 !important; }
 .modeNavBtn.modeNavActive .sapMBtnInner, .modeNavBtn .sapMBtnInner { background: transparent !important; box-shadow: none !important; }
 .modeNavBtn .sapMBtnIcon, .modeNavBtn .sapMBtnText { transition: color .2s ease; }
 .modeNavBtn:active .sapMBtnContent { transform: scale(.96); }
@@ -39,11 +46,15 @@
 .sideNewRow [id$="newChatBtn"] .sapMBtnText { font-weight: 600; }
 .sideNewRow [id$="newChatBtn"]:active .sapMBtnInner { transform: scale(.98) !important; }
 .sideSearchBtn, .sideSearchBtn .sapMBtnInner { width: 2.3rem !important; min-width: 2.3rem !important; height: 2.3rem !important; }
-.sideSearchBtn .sapMBtnInner { border-radius: 10px !important; border: 1px solid transparent !important; background: transparent !important; }
+.sideNewRow > .sapMFlexItem { display: flex; align-items: center; }
+.sideNewRow .sapMBtn { margin: 0 !important; padding: 0 !important; }
+.sideNewRow [id$="newChatBtn"], .sideNewRow [id$="newChatBtn"] .sapMBtnInner { height: 2.3rem !important; min-height: 2.3rem !important; }
+.sideSearchBtn .sapMBtnInner { display: flex !important; align-items: center; justify-content: center; padding: 0 !important; }
+.sideSearchBtn .sapMBtnInner { border-radius: 10px !important; border: 1px solid var(--line-strong, var(--line)) !important; background: var(--surface) !important; box-shadow: var(--shadow-1, none) !important; }
 .sideSearchBtn .sapMBtnIcon { color: var(--sub) !important; font-size: .9rem !important; }
-.sideSearchBtn:hover .sapMBtnInner { background: var(--hover) !important; }
+.sideSearchBtn:hover .sapMBtnInner { border-color: var(--accent) !important; }
 .sideSearchBtn:hover .sapMBtnIcon, .sideSearchBtn.sideSearchOn .sapMBtnIcon { color: var(--accent) !important; }
-.sideSearchBtn.sideSearchOn .sapMBtnInner { background: var(--hover) !important; }
+.sideSearchBtn.sideSearchOn .sapMBtnInner { border-color: var(--accent) !important; background: color-mix(in srgb, var(--accent) 8%, var(--surface)) !important; }
 
 .sessSearch { max-height: 3rem; opacity: 1; overflow: hidden; margin: .25rem 0 .2rem !important; width: 100% !important;
 	transition: max-height .22s ease, opacity .18s ease, margin .22s ease; }
