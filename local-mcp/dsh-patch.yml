@@ -1,0 +1,14 @@
+- insert:
+    - id: mcp-lingxi-sap
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: lingxi-sap
+        transport: stdio
+        command: node
+        args:
+          - !!js 'process.cwd() + "/local-mcp/src/server.js"'
+        env:
+          SAP_ODATA_URL: !!js process.env.SAP_ODATA_URL
+          SAP_CLIENT: !!js process.env.SAP_CLIENT
+          SAP_USER: !!js process.env.SAP_USER
+          SAP_PASSWORD: !!js process.env.SAP_PASSWORD

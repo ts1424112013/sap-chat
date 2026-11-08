@@ -1,0 +1,10 @@
+{
+  "name": "lingxi-sap-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "灵犀 SAP 报表查询的本地 MCP 服务",
+  "engines": { "node": ">=20.3" },
+  "scripts": { "start": "node src/server.js", "test": "node --test" },
+  "dependencies": { "@modelcontextprotocol/sdk": "1.32.2", "zod": "^3.25.0" }
+}

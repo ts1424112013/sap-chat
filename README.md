@@ -87,6 +87,8 @@
 
 ## 六、本地运行
 
+本地 SAP MCP 适配服务及接入说明见 [local-mcp/README.md](local-mcp/README.md)。
+
 ```bash
 npm install        # 首次
 npm start          # http://localhost:8080（V9.4 起 UI5 与 highlight.js 均随包本地加载，离线可用）
