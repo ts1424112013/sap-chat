@@ -20,6 +20,14 @@ sap.ui.define([
          * 真正的拦截在后端（ZCL_AI_ACCESS），这里只是维护界面。
          */
 
+        /* 20261108：用户卡菜单的图标（16px 线条） */
+        var UM_ICON = {
+                key: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg>',
+                approve: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4h6v3H9z"/><path d="M15 5h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h3"/><path d="M9 14l2 2 4-4"/></svg>',
+                gear: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+                out: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>'
+        };
+
         var ICON = {
                 REPORT: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
                 FIORI: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>',
@@ -81,6 +89,65 @@ sap.ui.define([
                                 this.getView().addDependent(this._oLogoutPop);
                         }
                         this._oLogoutPop.openBy(oBtn);
+                },
+
+                /* ======================= 20261108 侧栏改版：用户卡菜单 ======================= */
+
+                /** 点用户卡（或右边的小箭头）：申请权限 / 权限审批（管理员，带待审批数）/ 设置（管理员）/ 退出登录 */
+                onOpenUserMenu: function () {
+                        var that = this;
+                        var oFoot = this.byId("sideFoot");
+                        if (!oFoot) {
+                                return;
+                        }
+                        if (this._oUserMenu && this._oUserMenu.isOpen()) {
+                                this._oUserMenu.close();
+                                return;
+                        }
+                        var oS = this.getView().getModel("settings");
+                        var bAdmin = !!oS.getProperty("/isAdmin");
+                        var iPend = Number(oS.getProperty("/authPending")) || 0;
+                        var row = function (k, ic, t, extra) {
+                                return '<button type="button" class="umItem" data-um="' + k + '">' + ic +
+                                        '<span class="umText">' + t + '</span>' + (extra || "") + '</button>';
+                        };
+                        var sHtml = '<div class="umMenu">' +
+                                '<div class="umHead"><div class="umName">' + Formatter.escapeHtml(oS.getProperty("/userName") || "") + '</div>' +
+                                '<div class="umSub">' + (bAdmin ? "管理员" : "用户") + '</div></div>' +
+                                row("apply", UM_ICON.key, "申请权限") +
+                                (bAdmin ? row("approve", UM_ICON.approve, "权限审批", iPend > 0 ? '<span class="umBadge">' + (iPend > 99 ? "99+" : iPend) + '</span>' : "") : "") +
+                                (bAdmin ? row("settings", UM_ICON.gear, "设置") : "") +
+                                '<div class="umSep"></div>' +
+                                row("logout", UM_ICON.out, "退出登录") +
+                                '</div>';
+                        if (!this._oUserMenu) {
+                                this._oUserMenuHtml = new HTML({ preferDOM: false, sanitizeContent: false, content: sHtml });
+                                this._oUserMenuHtml.attachAfterRendering(function () {
+                                        var root = that._oUserMenuHtml.getDomRef();
+                                        if (!root) { return; }
+                                        root.onclick = function (ev) {
+                                                var b = ev.target.closest("[data-um]");
+                                                if (!b) { return; }
+                                                var k = b.getAttribute("data-um");
+                                                that._oUserMenu.close();
+                                                if (k === "apply") { that.onOpenAuth(); }
+                                                else if (k === "approve") { that.onOpenAuthApprove(); }
+                                                else if (k === "settings") { that.onOpenSettings(); }
+                                                else if (k === "logout") {
+                                                        // 退出前照旧先确认（锚在用户卡上）
+                                                        that.onSideLogout({ getSource: function () { return oFoot; } });
+                                                }
+                                        };
+                                });
+                                this._oUserMenu = new Popover({
+                                        showHeader: false, showArrow: false, placement: "Top", contentWidth: "15.5rem",
+                                        offsetY: -6, content: [this._oUserMenuHtml]
+                                }).addStyleClass("uaPop umPop");
+                                this.getView().addDependent(this._oUserMenu);
+                        } else {
+                                this._oUserMenuHtml.setContent(sHtml);
+                        }
+                        this._oUserMenu.openBy(oFoot);
                 },
 
                 /* ======================= 用户管理：开关与列表 ======================= */
@@ -214,7 +281,7 @@ sap.ui.define([
 
                         // ---- 场景 ----
                         if (!ua.isPublic) {
-                                h += '<div class="uaSec"><div class="uaSecHead"><span class="uaSecTitle">Agent 场景</span>';
+                                h += '<div class="uaSec"><div class="uaSecHead"><span class="uaSecTitle">任务场景</span>';
                                 if (ua.isAdmin) {
                                         h += '</div><div class="uaNote">' + ICON.info + '<span>管理员不受限制，四个场景和全部报表都能用。</span></div></div>';
                                 } else {

@@ -29,6 +29,7 @@ sap.ui.define([
         "zai/chat/utils/WelcomeToast",
         "zai/chat/utils/HeroGreeting",
         "zai/chat/utils/UndoToast",
+        "zai/chat/utils/SessionGroups",
         "zai/chat/controller/mixin/SceneModels",
         "zai/chat/controller/mixin/SettingsPanel",
         "zai/chat/controller/mixin/EvalPanel",
@@ -45,7 +46,7 @@ sap.ui.define([
         "zai/chat/controller/mixin/SchedulePanel",
         "zai/chat/controller/mixin/BrowserAgentPanel",
         "zai/chat/controller/mixin/RunTimeline"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel, BrowserAgentPanel, RunTimeline) {
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SessionGroups, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel, BrowserAgentPanel, RunTimeline) {
         "use strict";
 
         /**
@@ -96,6 +97,15 @@ sap.ui.define([
 
                 onInit: function () {
                         var that = this;
+                        // 20261108 侧栏改版：整张用户卡都能点开菜单（右边小箭头自己有 press）
+                        var oSideFoot = this.byId("sideFoot");
+                        if (oSideFoot) {
+                                oSideFoot.attachBrowserEvent("click", function (oEv) {
+                                        if (!(oEv.target && oEv.target.closest && oEv.target.closest(".sideMenuBtn"))) {
+                                                that.onOpenUserMenu();
+                                        }
+                                });
+                        }
                         // 20261105：参数卡填到一半切换会话 / 刷新，填过的值按任务存在本机，卡片重建时填回（ResultRestore._askDraft*）
                         AskCard.setEditHook(this._askDraftSave.bind(this));
 
@@ -2159,6 +2169,11 @@ sap.ui.define([
                         if (oAgentNav) {
                                 oAgentNav.toggleStyleClass("modeNavActive", sMode === "AGENT");
                         }
+                        // 20261108：分段控件的白色滑块跟着选中项滑过去（CSS 按这个类平移）
+                        var oNav = this.byId("modeNav");
+                        if (oNav) {
+                                oNav.toggleStyleClass("modeNavAgentOn", sMode === "AGENT");
+                        }
                         // V16：新建按钮两模式统一样式(仅文案切换)，不再做主次跳变
                         // V13：徽标只显示模式本身，不拼接 Agent 类型
                         var oScene = sMode === "AGENT" ? this._sceneDef(this._curScene()) : null;
@@ -2234,6 +2249,10 @@ sap.ui.define([
                         var mHidden = this._mDelHidden || {};
                         aList = aList.filter(function (s) { return !mHidden[s.SessionId]; });
                         var bMore = bHits ? oHits.more : (!sQ && !!(this._mSessMore || {})[sMode]);
+                        // 20261108 侧栏改版：没有搜索词时按「已固定 / 今天 / 昨天 / 本周 / 本月 / 更早」分组
+                        if (!sQ) {
+                                aList = SessionGroups.group(aList);
+                        }
                         if (bMore) {
                                 aList.push({ SessionId: "", Title: "", _more: true });
                         }
@@ -3165,6 +3184,36 @@ sap.ui.define([
                   * V12：会话搜索（仅当前工作模式内按标题过滤；不跨模式混排）
                   * 20261011（BE-09）：先在已加载的会话里即时过滤，再查服务端（覆盖更早的会话）
                   */
+                /** 20261108 侧栏改版：点放大镜展开 / 收起搜索框（收起时清掉搜索词） */
+                onToggleSideSearch: function () {
+                        var oSF = this.byId("sessionSearch");
+                        if (!oSF) {
+                                return;
+                        }
+                        var bOpen = oSF.hasStyleClass("sessSearchCollapsed");
+                        oSF.toggleStyleClass("sessSearchCollapsed", !bOpen);
+                        this.byId("sideSearchBtn").toggleStyleClass("sideSearchOn", bOpen);
+                        if (bOpen) {
+                                setTimeout(function () { oSF.focus(); }, 60);
+                                if (!this._bSideSearchWired) {
+                                        // 搜索框空着失去焦点就收回去
+                                        this._bSideSearchWired = true;
+                                        var that = this;
+                                        oSF.attachBrowserEvent("focusout", function () {
+                                                setTimeout(function () {
+                                                        if (!oSF.getValue() && !oSF.hasStyleClass("sessSearchCollapsed")) {
+                                                                that.onToggleSideSearch();
+                                                        }
+                                                }, 150);
+                                        });
+                                }
+                        } else if (oSF.getValue()) {
+                                oSF.setValue("");
+                                this._sSessQuery = "";
+                                this._applySessionFilter();
+                        }
+                },
+
                 onSearchSession: function (oEvent) {
                         this._sSessQuery = (oEvent.getSource().getValue() || "").trim().toLowerCase();
                         this._iSearchN = this.SESS_PAGE;
@@ -3304,6 +3353,7 @@ sap.ui.define([
                         var oText = oItem && oItem.data("titleCtrl");
                         if (oText) {
                                 oText.setText(sTitle);
+                                oText.setTooltip(sTitle);   // 20261108：单行省略后靠悬停看全名
                         }
                         if (oSessionModel.getProperty("/currentId") === sSid) {
                                 oSessionModel.setProperty("/title", sTitle);
@@ -3378,56 +3428,44 @@ sap.ui.define([
                                         content: [new Text({ text: oRB.getText("sessMore") }).addStyleClass("sessMoreText")]
                                 }).addStyleClass("sessionItem sessMoreItem");
                         }
+                        // 20261108 侧栏改版：分组标题行
+                        if (o._group) {
+                                return new CustomListItem({
+                                        type: "Inactive",
+                                        content: [new Text({ text: o._group, wrapping: false }).addStyleClass("sessGroupText")]
+                                }).addStyleClass("sessionItem sessGroupItem sessGroup-" + (o._gkey || ""));
+                        }
                         var bAgent = o.Mode === "AGENT";
-
-                        var oBox = new VBox({ alignItems: "Start" }).addStyleClass("sessItemBox");
-
-                        // V12/V13：Agent 会话标题行前置模式图标（对话会话保持原样）
-                        var oTitleRow = new HBox({ alignItems: "Center" }).addStyleClass("sessTitleRow");
                         // 20261104：定时任务的专属会话 = 时钟图标；有新结果 = 未读点
                         var oSched = bAgent && this._scSessInfo ? this._scSessInfo(o.SessionId) : null;
-                        if (bAgent) {
-                                oTitleRow.addItem(new sap.ui.core.Icon({
-                                        src: oSched ? "sap-icon://history" : "sap-icon://lightbulb",
-                                        tooltip: oSched ? "定时任务的专属会话" : ""
-                                }).addStyleClass("sessModeIcon" + (oSched ? " sessSchedIcon" : "")));
-                        }
-                        var oTitleText = new Text({ text: o.Title || o.SessionId, wrapping: true }).addStyleClass("sessItemTitle");
-                        oTitleRow.addItem(oTitleText);
-                        if (oSched && oSched.unread) {
-                                oTitleRow.addItem(new Text({ text: "", tooltip: "有新结果" }).addStyleClass("sessSchedDot"));
-                        }
-                        oBox.addItem(oTitleRow);
+                        var sKind = SessionGroups.kind(o, !!oSched);
 
-                        // V12：时间行；Agent 任务附带状态徽标（进行中/已完成/部分完成/失败）
-                        var oTimeRow = new HBox({ alignItems: "Center" }).addStyleClass("sessTimeRow");
-                        oTimeRow.addItem(new Text({ text: Formatter.formatTime(o.ChangedAt) }).addStyleClass("sessItemTime"));
-                        // 20261011：Agent 会话场景标签（自动场景不显示）
-                        var oSc = bAgent ? this._sceneDef(o.AgentType) : null;
-                        if (oSc && oSc.key !== "AUTO") {
-                                oTimeRow.addItem(new Text({ text: oSc.text }).addStyleClass("sessSceneTag scene-" + oSc.key));
+                        // 20261108 侧栏改版：一行 = 类型小图标 · 标题（单行省略）· 右侧（时间 / 状态点；悬停换成操作按钮）
+                        var oTile = new sap.ui.core.Icon({ src: SessionGroups.ICON[sKind], tooltip: oSched ? "定时任务的专属会话" : "" })
+                                .addStyleClass("sessKindIcon sessKind-" + sKind);
+                        var oTitleText = new Text({ text: o.Title || o.SessionId, wrapping: false, tooltip: o.Title || "" }).addStyleClass("sessItemTitle");
+                        oTitleText.setLayoutData(new FlexItemData({ growFactor: 1, shrinkFactor: 1, minWidth: "0" }));
+
+                        var oSide = new HBox({ alignItems: "Center", renderType: "Bare" }).addStyleClass("sessSide");
+                        oSide.addItem(new Text({ text: SessionGroups.shortTime(o.ChangedAt), wrapping: false }).addStyleClass("sessItemTime"));
+                        // 只在要留意时出点：定时任务有新结果（蓝）/ 部分完成（黄）/ 失败（红）；完成不再挂「已完成」
+                        var sDot = oSched && oSched.unread ? "new" : (bAgent && o.Status === "FAILED" ? "fail" : (bAgent && o.Status === "PARTIAL" ? "partial" : ""));
+                        if (sDot) {
+                                oSide.addItem(new Text({
+                                        text: "",
+                                        tooltip: sDot === "new" ? "有新结果" : this._agentStatusText(o.Status)
+                                }).addStyleClass("sessDot sessDot-" + sDot + (sDot === "new" ? " sessSchedDot" : "")));
                         }
-                        if (bAgent) {
-                                oTimeRow.addItem(new Text({
-                                        text: this._agentStatusText(o.Status)
-                                }).addStyleClass("agentStChip agentSt-" + (o.Status || "IDLE")));
-                        }
-                        oBox.addItem(oTimeRow);
 
                         // V10：置顶（已置顶的图钉常亮）
                         var oPin = new Button({
-                                icon: "sap-icon://pushpin-off",
+                                icon: o.Pinned === "X" ? "sap-icon://pushpin-on" : "sap-icon://pushpin-off",
                                 type: "Transparent",
-                                tooltip: oRB.getText("sessPin"),
+                                tooltip: oRB.getText(o.Pinned === "X" ? "sessUnpin" : "sessPin"),
                                 press: this.onPinSession.bind(this)
-                        }).addStyleClass("sessPinBtn");
+                        }).addStyleClass("sessPinBtn" + (o.Pinned === "X" ? " pinned" : ""));
                         oPin.data("sid", o.SessionId);
                         oPin.data("pinned", o.Pinned || "");
-                        if (o.Pinned === "X") {
-                                oPin.setIcon("sap-icon://pushpin-on");
-                                oPin.addStyleClass("pinned");
-                                oPin.setTooltip(oRB.getText("sessUnpin"));
-                        }
 
                         // V10：重命名
                         var oRename = new Button({
@@ -3446,15 +3484,15 @@ sap.ui.define([
                         }).addStyleClass("sessDelBtn");
                         oDel.data("sid", o.SessionId);
 
-                        var oActions = new HBox({ alignItems: "Center" }).addStyleClass("sessActions");
+                        var oActions = new HBox({ alignItems: "Center", renderType: "Bare" }).addStyleClass("sessActions");
                         oActions.addItem(oPin);
                         oActions.addItem(oRename);
                         oActions.addItem(oDel);
 
                         var oRow = new HBox({ alignItems: "Center" }).addStyleClass("sessItemRow");
-                        // 注意: 新版 UI5(1.15x) 移除了 addLayoutData，统一使用 setLayoutData
-                        oBox.setLayoutData(new FlexItemData({ growFactor: 1 }));
-                        oRow.addItem(oBox);
+                        oRow.addItem(oTile);
+                        oRow.addItem(oTitleText);
+                        oRow.addItem(oSide);
                         oRow.addItem(oActions);
 
                         var oItem = new CustomListItem({
@@ -3666,8 +3704,10 @@ sap.ui.define([
                                 // V12：同步进全量缓存（切换模式后仍可见）
                                 if (this._aAllSessions) {
                                         this._aAllSessions.unshift(Object.assign({}, aSessions[0]));
+                                        this._applySessionFilter();   // 20261108：重新分组，新会话落在「今天」下面
+                                } else {
+                                        oSessionModel.setProperty("/sessions", aSessions);
                                 }
-                                oSessionModel.setProperty("/sessions", aSessions);
                         } else if (sStatus) {
                                 oExist.Status = sStatus;
                         }

@@ -13,6 +13,10 @@
                                                         <core:CustomData key="on" value="{= ${chat>ModelId} === ${chat>/currentModel} ? 'yes' : 'no' }" writeToDom="true"/>
                                                 </customData>
                                                 <HBox alignItems="Center" class="mpRow">
+                                                        <!-- 20261108：模型系列图标（css/style-models.css） -->
+                                                        <HBox renderType="Bare" class="zLogo mpLogo">
+                                                                <customData><core:CustomData key="logo" value="{path: 'chat>', formatter: '.fmtModelLogo'}" writeToDom="true"/></customData>
+                                                        </HBox>
                                                         <VBox class="mpText">
                                                                 <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
                                                                 <Text text="{chat>ModelName}" class="mpName" wrapping="false"/>

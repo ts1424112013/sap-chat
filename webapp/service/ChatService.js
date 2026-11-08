@@ -426,7 +426,7 @@ sap.ui.define([
 
                 _sendAgentRaw: function (oPayload) {
                         if (oPayload.skillId && oPayload.skillId !== "NONE") {
-                                return Promise.reject(new Error("技能请求必须使用 AnalyzeTask，不能降级到旧 Agent 接口"));
+                                return Promise.reject(new Error("技能请求必须使用 AnalyzeTask，不能降级到旧接口"));
                         }
                         if (this._sConfig.mode === "mock") {
                                 return this._mockSendAgent(oPayload);

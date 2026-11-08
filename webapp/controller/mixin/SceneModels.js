@@ -3,8 +3,9 @@ sap.ui.define([
         "sap/m/Button",
         "zai/chat/service/ChatService",
         "zai/chat/utils/Formatter",
-        "zai/chat/utils/UserAccess"
-], function (MessageToast, Button, ChatService, Formatter, UserAccess) {
+        "zai/chat/utils/UserAccess",
+        "zai/chat/utils/ModelLogo"
+], function (MessageToast, Button, ChatService, Formatter, UserAccess, ModelLogo) {
         "use strict";
 
         /**
@@ -253,12 +254,18 @@ sap.ui.define([
                         this._syncModelList();   // 校验 Agent 场景白名单，并刷新胶囊上的模型名
                 },
 
+                /** 20261108：模型选择列表每行的系列图标（data-logo） */
+                fmtModelLogo: function (m) {
+                        return ModelLogo.family(m);
+                },
+
                 /** 输入框模型胶囊显示实际模型名；无可用配置时明确显示空状态。 */
                 _syncModelLabel: function () {
                         var oChat = this.getView().getModel("chat");
                         var sCur = oChat.getProperty("/currentModel") || "";
                         var oHit = (oChat.getProperty("/models") || []).filter(function (m) { return m.ModelId === sCur; })[0];
                         oChat.setProperty("/currentModelName", oHit ? oHit.ModelName : this._rb().getText("modelPickEmpty"));
+                        oChat.setProperty("/currentModelLogo", ModelLogo.family(oHit));   // 20261108：胶囊上的模型系列图标
                         // 20261108：新引擎信息栏里的模型名跟着变（不在运行中时）
                         if (this._rtInfo && !(this._rtActiveUid && this._rtActiveUid())) {
                                 this._rtInfo(null);

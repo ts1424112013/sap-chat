@@ -166,10 +166,10 @@ sap.ui.define([
 			if (bOn) {
 				this._baWarm();
 				MessageToast.show(oChat.getProperty("/ba/mock")
-					? "已切到浏览器 Agent（演示模式：固定剧本，不连 SAP）"
-					: "已切到浏览器 Agent：可以列计划、调用子任务，选了文件夹后还能读写文件");
+					? "已切到新引擎（演示模式：固定剧本，不连 SAP）"
+					: "已切到新引擎：可以列计划、调用子任务，选了文件夹后还能读写文件");
 			} else {
-				MessageToast.show("已切回原 Agent");
+				MessageToast.show("已切回原引擎");
 			}
 		},
 
@@ -316,9 +316,12 @@ sap.ui.define([
 			this._rtStart(sUid, p.sessionId);
 			var oAbort = new AbortController();
 			this._baAbort = oAbort;
+			var aHist = this._baHistory();
+			var sTitleAtStart = String(((this._findSession && this._findSession(p.sessionId)) || {}).Title || "");
 			return BrowserAgentService.send({
 				question: p.question,
-				history: this._baHistory(),
+				history: aHist,
+				genTitle: !aHist.length,   // 20261108：会话第一轮 → 回答后让模型起标题
 				sessionId: p.sessionId,
 				scene: p.scene,
 				modelId: p.modelId,
@@ -364,6 +367,13 @@ sap.ui.define([
 				// 演示模式没有 SAP 的 run/finish：本地记进会话，左侧列表与重开会话都能看到
 				if (ChatService.getMode() === "mock" && r && r.status === "OK" && ChatService._mockRecordExchange) {
 					ChatService._mockRecordExchange({ sessionId: p.sessionId, question: p.question, modelId: p.modelId, scene: p.scene }, r.answer);
+					if (r.title) {
+						ChatService.updateSession({ sessionId: p.sessionId, title: r.title }).catch(function () { /* 演示：存不了就算了 */ });
+					}
+				}
+				// 20261108：模型起的会话标题（SAP 收尾时已经替换了默认标题）→ 侧栏这一行换字并轻闪
+				if (r && r.title && p.sessionId) {
+					that._applyGenTitle(p.sessionId, r.title, sTitleAtStart);
 				}
 				return r;
 			}, function (e) {
@@ -377,6 +387,23 @@ sap.ui.define([
 				if (that._baAbort === oAbort) { that._baAbort = null; }
 				throw e;
 			});
+		},
+
+		/**
+		 * 20261108：模型总结的会话标题（只在会话第一轮请求）。运行期间用户自己改过名（标题和开始时不同）就不动，
+		 * 和 SAP 端「只替换默认标题」一致。
+		 */
+		_applyGenTitle: function (sSid, sTitle, sTitleAtStart) {
+			var oMeta = this._findSession && this._findSession(sSid);
+			var sNow = String((oMeta && oMeta.Title) || "");
+			if (sTitleAtStart && sNow && sNow !== sTitleAtStart) {
+				return;
+			}
+			if (sNow === sTitle) {
+				return;
+			}
+			this._setSessionTitle(sSid, sTitle);
+			this._flashSessItem(sSid);
 		},
 
 		/** 停止生成时中断浏览器里的运行（已发到 SAP 的请求以 SAP 状态为准） */

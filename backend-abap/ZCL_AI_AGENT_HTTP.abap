@@ -31,6 +31,7 @@
 *         V1.4 20261108 /run/finish 收 steps(精简过程记录); 新路径 /run/steps(依赖 ZCL_AI_AGENT_SERVICE V15.22)
 *         V1.5 20261108 ADT 代码工具: /run/start 回 adt; 新路径 /tools/audit(浏览器调 ADT 前报备 / 调完回填)
 *              (依赖 ZCL_AI_AGENT_SERVICE V15.25)
+*         V1.6 20261108 /run/finish 收 title(模型总结的会话标题; 依赖 ZCL_AI_AGENT_SERVICE V15.26)
 *         ★ 重贴后核对标记: INTERFACES if_http_extension; handle_request 里有
 *           WHEN '/run/start' / '/chat/completions' / '/tools/exec' / '/tools/audit' / '/results/export' / '/run/finish' / '/run/steps'
 *=======================================================================
@@ -66,6 +67,7 @@ CLASS zcl_ai_agent_http DEFINITION
              message     TYPE string,
              skills_used TYPE string_table,   " V1.1: 模型读过的 SAP 技能编号
              steps       TYPE zcl_ai_agent_service=>tt_bstep_in,   " V1.4: 精简过程记录
+             title       TYPE string,                               " V1.6: 模型总结的会话标题
            END OF ty_finish_req.
     TYPES: BEGIN OF ty_audit_req,      " V1.5: ADT 调用报备(seq = 0)/ 回填(seq > 0)
              run_id TYPE string,
@@ -310,6 +312,7 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                         iv_message = ls_fin-message
                         it_skills  = ls_fin-skills_used
                         it_steps   = ls_fin-steps
+                        iv_title   = ls_fin-title
               IMPORTING ev_error   = lv_err
                         ev_http    = lv_http ).
             IF lv_err IS NOT INITIAL.

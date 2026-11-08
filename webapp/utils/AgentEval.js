@@ -289,7 +289,7 @@ sap.ui.define([], function () {
                                         o.errors + " / " + o.timeouts + " / " + o.protocolErrors + " | " + o.rejected + " |";
                         };
                         var a = [
-                                "# Agent 测评报告",
+                                "# 任务测评报告",
                                 "",
                                 "- 时间：" + (oRun.startedAt || "") + "（用时 " + Math.round((oRun.durationMs || 0) / 1000) + "s）",
                                 "- 模型：" + (oRun.modelId || "AUTO") + "；每题次数：" + (oRun.repeat || 1) +

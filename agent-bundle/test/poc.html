@@ -161,7 +161,7 @@ async function main() {
     check("SAP 没开 ADT 时不给 adt_ 工具", run8c.hasAdtTools === false && run8c.sysHasAdtRule === false);
     // ---- 场景九：ADT 代码工具 ----
     const ev9 = [];
-    const r9 = await LingxiAgent.run({ question: "场景九 看看 ZCL_AI_AGENT_SERVICE", sap: { base: "/sap/bc/zai_agent" }, onEvent: e => ev9.push(e) });
+    const r9 = await LingxiAgent.run({ question: "场景九 看看 ZCL_AI_AGENT_SERVICE", sap: { base: "/sap/bc/zai_agent" }, title: true, onEvent: e => ev9.push(e) });
     const run9 = Object.values(await (await fetch("/__runs")).json()).find(x => /场景九/.test(x.question)) || {};
     const adt9 = await (await fetch("/__adt")).json();
     const t9 = run9.toolTexts9 || [];
@@ -180,6 +180,11 @@ async function main() {
       adt9.audits.length === 9 && adt9.audits.every(a => a.status !== "CALL") &&
       adt9.log.every(l => !l.auth && !l.agentHdr) && adt9.log.filter(l => l.method === "POST").every(l => l.csrf),
       JSON.stringify(adt9.audits.map(a => a.tool + ":" + a.status)));
+    check("会话标题：回答后让模型起标题，清掉前缀 / 引号 / 句号，交给 SAP 收尾并返回界面",
+      run9.titleCalls === 1 && r9.title === "ZCL_AI_AGENT_SERVICE 结构与调用方" && run9.title === r9.title &&
+      ev9.some(e => e.type === "title") && /用户的问题：场景九/.test(run9.titleUserMsg || "") && /助手的回答/.test(run9.titleUserMsg || ""),
+      JSON.stringify({ calls: run9.titleCalls, t: r9.title, saved: run9.title }));
+    check("没要标题时不多调模型", !run8c.titleCalls && !run8c.title);
     const st9 = (run9.steps || []).filter(s => s.k === "tool");
     check("ADT 过程记录：一句话结果", st9.some(s => s.tool === "adt_where_used" && /被 2 个对象使用/.test(s.sum)) &&
       st9.some(s => s.tool === "adt_syntax_check" && /错误 0 个，警告 1 个/.test(s.sum)), JSON.stringify(st9.map(s => s.sum)));

@@ -106,12 +106,12 @@ sap.ui.define([], function () {
 	function answer(aMsgs, sQ, bFolder, sKind) {
 		var aTool = aMsgs.filter(function (m) { return m.role === "tool"; }).map(textOf);
 		if (sKind === "ADT") {
-			return "**ZCL_AI_AGENT_SERVICE**（包 ZIDPPP）是 Agent 的编排类（演示数据）。\n\n" +
-				"- 新引擎相关的方法：`BROWSER_START`（第 3690 行）、`BROWSER_TOOL`（第 4287 行）、`BROWSER_FINISH`（第 4698 行）；原 Agent 入口是 `ANALYZE_AGENT`（第 412 行）。\n" +
+			return "**ZCL_AI_AGENT_SERVICE**（包 ZIDPPP）是任务模式的编排类（演示数据）。\n\n" +
+				"- 新引擎相关的方法：`BROWSER_START`（第 3690 行）、`BROWSER_TOOL`（第 4287 行）、`BROWSER_FINISH`（第 4698 行）；原引擎入口是 `ANALYZE_AGENT`（第 412 行）。\n" +
 				"- 被 3 个对象使用：`ZCL_AI_AGENT_HTTP`、`ZCL_AI_DPC_EXT`、`ZCL_AI_SCHEDULE_SERVICE`。\n\n" +
 				"（演示模式：ADT 回应是假的，没有连 SAP。）";
 		}
-		var aLines = ["（演示模式：没有连接 SAP 和模型，下面是固定剧本的结果，用来看浏览器 Agent 的流程。）", ""];
+		var aLines = ["（演示模式：没有连接 SAP 和模型，下面是固定剧本的结果，用来看任务的流程。）", ""];
 		if (sKind === "ASK") {
 			var mPick = /用户选择：(.+)/.exec(aTool.join("\n"));
 			aLines.push("- 按你选的「" + (mPick ? mPick[1].trim() : "") + "」这一列去重后带进下一张报表的料号参数。",
@@ -197,6 +197,18 @@ sap.ui.define([], function () {
 		return iStep === 0 ? [call("call_function", { "function": "Z_AI_DEMO_PO_OPEN", purpose: "工厂 1000 未清采购", params: { IV_WERKS: "1000" } })] : null;
 	}
 
+	/** 演示标题：从问题里挑出对象名 + 动作（真实环境由模型起） */
+	function mockTitle(sQ, sKind) {
+		var q = String(sQ || "");
+		var mObj = /\b([ZY][A-Z0-9_]{3,}|[A-Z]{2,}\d{2,}[A-Z0-9_]*)\b/i.exec(q);
+		var sObj = mObj ? mObj[1].toUpperCase() : "";
+		var sAct = ({ ADT: "方法与调用方", REPORT: "报表参数", RESULT: "结果排名与导出", PLAN: "分布统计", FUNC: "未清采购", ASK: "结果接力" })[sKind] || "";
+		if (sObj && sAct) {
+			return sObj + " " + sAct;
+		}
+		return q.replace(/^(请|帮我|麻烦|看一下|查一下|看看)/, "").replace(/[，。？！,.?!].*$/, "").slice(0, 16) || "新任务";
+	}
+
 	/** ADT 代码工具：找类 → 看结构 → 查谁在用 */
 	function scriptAdt(iStep) {
 		return [
@@ -222,7 +234,7 @@ sap.ui.define([], function () {
 		}
 		if (p === "/sap/bc/adt/repository/informationsystem/search") {
 			var q = decodeURIComponent((/query=([^&]+)/.exec(sPath) || [])[1] || "").toUpperCase();
-			var a = [ref("ZCL_AI_AGENT_SERVICE", "Agent 编排（演示）"), ref("ZCL_AI_AGENT_HTTP", "新引擎 HTTP 入口（演示）")].filter(function (r) {
+			var a = [ref("ZCL_AI_AGENT_SERVICE", "任务编排（演示）"), ref("ZCL_AI_AGENT_HTTP", "新引擎 HTTP 入口（演示）")].filter(function (r) {
 				var n = /adtcore:name="([^"]+)"/.exec(r)[1];
 				return /\*$/.test(q) ? n.indexOf(q.slice(0, -1)) === 0 : n === q;
 			});
@@ -517,6 +529,14 @@ sap.ui.define([], function () {
 						aMsgs = aMsgs.slice(Math.max(0, iLastUser));   // 剧本只看本轮的工具结果
 						var calls;
 						var sText = "";
+						// 20261108：会话标题请求（引擎在第一轮回答后发）——按问题起一个演示标题
+						if (/^你在给一段 SAP 业务助手的对话起标题/.test(sSys)) {
+							return wait(300).then(function () {
+								return fnResp({ id: "mock-title", object: "chat.completion", created: Math.floor(Date.now() / 1000), model: "mock",
+									choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: mockTitle(sQuestion, sKind) } }],
+									usage: { prompt_tokens: 60, completion_tokens: 8, total_tokens: 68 } });
+							});
+						}
 						if (/^子任务/.test(sFirst)) {
 							sText = "子任务完成（演示）";
 						} else {

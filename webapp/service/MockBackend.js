@@ -89,7 +89,9 @@ sap.ui.define(["zai/chat/utils/UserAccess"], function (UserAccess) {
                                         fnResolve([
                                                 { ModelId: "MOCK_OLLAMA_QWEN", ModelName: "本地 Ollama - Qwen2.5:14B", ModelDesc: "演示：本地私有化模型", ModelType: "OLLAMA", EndpointUrl: "http://192.168.1.50:11434/api/chat", IsActive: "X", ApiKeySet: "" },
                                                 { ModelId: "MOCK_DEEPSEEK", ModelName: "DeepSeek Chat API", ModelDesc: "演示：云端模型", ModelType: "OPENAI", EndpointUrl: "https://api.deepseek.com/v1/chat/completions", IsActive: "X", ApiKeySet: "X" },
-                                                { ModelId: "MOCK_VLLM", ModelName: "vLLM 私有服务 - Llama3.1:8B", ModelDesc: "演示：OpenAI 兼容私有服务", ModelType: "OPENAI", EndpointUrl: "http://192.168.1.60:8000/v1/chat/completions", IsActive: "X", ApiKeySet: "" }
+                                                { ModelId: "MOCK_VLLM", ModelName: "vLLM 私有服务 - Llama3.1:8B", ModelDesc: "演示：OpenAI 兼容私有服务", ModelType: "OPENAI", EndpointUrl: "http://192.168.1.60:8000/v1/chat/completions", IsActive: "X", ApiKeySet: "" },
+                                                { ModelId: "MOCK_CLAUDE", ModelName: "Claude Sonnet", ModelDesc: "演示：Anthropic 接口", ModelType: "OPENAI", EndpointUrl: "https://api.anthropic.com/v1/", IsActive: "X", ApiKeySet: "X" },
+                                                { ModelId: "MOCK_GPT", ModelName: "ChatGPT GPT-4o", ModelDesc: "演示：OpenAI 接口", ModelType: "OPENAI", EndpointUrl: "https://api.openai.com/v1/chat/completions", IsActive: "X", ApiKeySet: "X" }
                                         ]);
                                 }, 300);
                         });
@@ -180,7 +182,7 @@ sap.ui.define(["zai/chat/utils/UserAccess"], function (UserAccess) {
                                                         "2. 按《ABAP 后端实施文档》在 SAP 端创建 ZAI_CHAT_SRV 服务",
                                                         "3. 在 **设置 → 模型管理** 中维护你的本地私有化大模型",
                                                         "",
-                                                        "对话模式是纯 AI 问答，不读取 SAP 系统数据；要解读系统里的程序 / 查表 / 跑报表，请切到 Agent 选择对应场景。回复中的代码块可一键复制：",
+                                                        "对话模式是纯 AI 问答，不读取 SAP 系统数据；要解读系统里的程序 / 查表 / 跑报表，请新建任务。回复中的代码块可一键复制：",
                                                         "",
                                                         "```abap",
                                                         "\" 连接真实后端后的典型分析回复示例",
@@ -337,7 +339,7 @@ sap.ui.define(["zai/chat/utils/UserAccess"], function (UserAccess) {
                                                         "  - 库位 1001: 80 ｜ 库位 1002: 40",
                                                         "◆ 当天收发: 收 50（101 入库），发 30（261 生产领料），净增 20",
                                                         "",
-                                                        "> 【演示模式】以上数字为内置示例。切换后端模式后，Agent 将按需调用",
+                                                        "> 【演示模式】以上数字为内置示例。切换后端模式后，灵犀将按需调用",
                                                         "> 库存只读工具实时查询，并在「已思考」卡中展示真实阶段摘要。"
                                                 ].join("\n");
                                         } else if (bData) {
@@ -408,12 +410,12 @@ sap.ui.define(["zai/chat/utils/UserAccess"], function (UserAccess) {
                                                         "我按以下思路处理了你的问题：先理解目标与上下文，再检查可用工具，",
                                                         "最后整理回答。当前为**演示模式**，未连接真实模型与 SAP 工具。",
                                                         "",
-                                                        "- 若问题需要库存等系统数据，后端模式下的 Agent 会自动选择并调用",
+                                                        "- 若问题需要库存等系统数据，后端模式下灵犀会自动选择并调用",
                                                         "  已注册的只读工具，回答中的数字均可溯源到具体查询；",
-                                                        "- 若不需要工具（如解释、写作、方案设计），Agent 会直接基于分析回答，",
+                                                        "- 若不需要工具（如解释、写作、方案设计），灵犀会直接基于分析回答，",
                                                         "  不会虚构「已查询系统」。",
                                                         "",
-                                                        "你可以在 Agent 模式直接继续追问，我会沿用当前会话上下文。"
+                                                        "你可以在任务里直接继续追问，我会沿用当前会话上下文。"
                                                 ].join("\n");
                                         }
 

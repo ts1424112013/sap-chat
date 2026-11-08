@@ -1140,7 +1140,7 @@ sap.ui.define([
                         var iFree = aRows.length;
                         oFree = new Input({
                                 value: oAsk.freeText || "",
-                                placeholder: oAsk.freePh || "告诉 Agent 接下来应该怎么做…",
+                                placeholder: oAsk.freePh || "告诉灵犀接下来应该怎么做…",
                                 width: "100%",
                                 liveChange: function (e) {
                                         oAsk.freeText = e.getParameter("value");

@@ -209,13 +209,19 @@ const server = http.createServer(async (req, res) => {
     const step = msgs.filter(m => m.role === "assistant").length;
     const sys = msgs.filter(m => m.role === "system").map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n");
     const firstUser = String((msgs.find(m => m.role === "user") || {}).content || "");
-    if (!firstUser.startsWith("你在为")) run.hasAdtTools = (data.tools || []).some(t => t.function && /^adt_/.test(t.function.name));
-    if (!firstUser.startsWith("你在为")) run.sysHasAdtRule = sys.includes("adt_search");
+    if (!firstUser.startsWith("你在为") && !sys.startsWith("你在给一段")) run.hasAdtTools = (data.tools || []).some(t => t.function && /^adt_/.test(t.function.name));
+    if (!firstUser.startsWith("你在为") && !sys.startsWith("你在给一段")) run.sysHasAdtRule = sys.includes("adt_search");
     const reply = (message, calls) => send(res, 200, {
       id: "chatcmpl-" + run.modelCalls, object: "chat.completion", created: Math.floor(Date.now() / 1000), model: "mock-model",
       choices: [{ index: 0, message, finish_reason: calls ? "tool_calls" : "stop" }],
       usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }
     });
+    // 会话标题请求（引擎 0.8.0：第一轮回答后）：不进剧本
+    if (sys.startsWith("你在给一段 SAP 业务助手的对话起标题")) {
+      run.titleCalls = (run.titleCalls || 0) + 1;
+      run.titleUserMsg = firstUser;
+      return reply({ role: "assistant", content: "标题：「ZCL_AI_AGENT_SERVICE 结构与调用方」。" });
+    }
     if (run.question && run.question.includes("场景八")) {
       // 不清楚就问：第一步 ask_user，第二步按用户选的回答（选「我直接说」时引擎应停下，不再有第二步）
       run.step8 = (run.step8 || 0) + 1;
@@ -355,7 +361,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (p === "/run/finish") {
     const run = runs.get(data.runId);
-    if (run) Object.assign(run, { status: data.status, answer: data.answer, skillsUsed: data.skillsUsed, steps: data.steps });
+    if (run) Object.assign(run, { status: data.status, answer: data.answer, skillsUsed: data.skillsUsed, steps: data.steps, title: data.title });
     return send(res, 200, { ok: true });
   }
   return send(res, 404, { message: "unknown " + p });

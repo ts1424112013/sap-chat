@@ -81,6 +81,12 @@
                                 },
                                 {
                                         "uri": "css/style-lingxi.css"
+                                },
+                                {
+                                        "uri": "css/style-models.css"
+                                },
+                                {
+                                        "uri": "css/style-sidebar.css"
                                 }
                         ]
                 },

@@ -256,6 +256,7 @@ sap.ui.define([
 					folderBackend: oFB || undefined,
 					confirm: o.confirm,
 					ask: o.ask,
+					title: !!o.genTitle,   // 20261108：任务第一轮回答后让模型起会话标题
 					onEvent: onEvent,
 					signal: o.signal,
 					sap: { base: cfg().path }
@@ -272,6 +273,7 @@ sap.ui.define([
 							aChanges.map(function (c) { return "- " + c.action + "　`" + c.path + "`"; }).join("\n");
 					}
 					var res = that._result(r, sAnswer, aSteps, iTools, t0, "OK", "", o.modelId);
+					res.title = r.title || "";
 					// 报表参数卡：和原 Agent 同形的任务字段，控制器照常挂内联参数卡（_updateTaskState / _attachAskCard）
 					// 工具带回的数据集：原样交给控制器（ChatService._sanitizeAnalysis 清洗后画表格 / 图表）
 					if (r.datasets && r.datasets.length) {
@@ -306,12 +308,12 @@ sap.ui.define([
 		_errText: function (e) {
 			var s = (e && e.message) || String(e);
 			if (e && (e.status === 404 || /404/.test(s))) {
-				return "SAP 上还没有浏览器 Agent 服务（/sap/bc/zai_agent），请先部署后端或切回原引擎。";
+				return "SAP 上还没有新引擎服务（/sap/bc/zai_agent），请先部署后端或切回原引擎。";
 			}
 			if (e && (e.status === 401 || e.status === 403)) {
-				return "没有使用浏览器 Agent 的权限（" + s + "）。请联系管理员开通，或切回原引擎。";
+				return "没有使用新引擎的权限（" + s + "）。请联系管理员开通，或切回原引擎。";
 			}
-			return "浏览器 Agent 出错：" + s;
+			return "新引擎出错：" + s;
 		},
 
 		_result: function (r, sAnswer, aSteps, iTools, t0, sStatus, sMsg, sModelId) {

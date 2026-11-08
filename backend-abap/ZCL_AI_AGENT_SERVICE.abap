@@ -315,6 +315,9 @@
 *   依赖: ZAI_BSTEP(〇-AJ, 不加字段); ZCL_AI_AGENT_HTTP V1.5
 *   ★ 重贴后核对标记: PUBLIC 有 browser_audit 与 ty_brun_start-adt; browser_start 有 brun_cfg( 'BROWSER_ADT_ON' );
 *     browser_finish 有 AND kind <> 'ADT'
+* V15.26 20261108(会话标题由模型总结): 只改 browser_finish —— 新可选参数 iv_title(浏览器在任务第一轮回答后让模型起的短标题);
+*   只在会话标题还是默认值(第一句问题, 超 60 字截断加 ...)时改写, 用户改过名的不动; 标题去掉换行、最多 60 字
+*   ★ 重贴后核对标记: browser_finish 有 iv_title 与 UPDATE zai_chat_sess SET title = @lv_new_title
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -475,6 +478,7 @@ CLASS zcl_ai_agent_service DEFINITION
                 iv_message TYPE string OPTIONAL
                 it_skills  TYPE string_table OPTIONAL
                 it_steps   TYPE tt_bstep_in OPTIONAL
+                iv_title   TYPE string OPTIONAL   " V15.26: 模型总结的会话标题(只替换默认标题)
       EXPORTING ev_error   TYPE string
                 ev_http    TYPE i.
 
@@ -4867,6 +4871,22 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     " V15.25: ADT 审计行(KIND = ADT)是调用时写的, 不删; 只补上这次回答的消息序号
     DELETE FROM zai_bstep WHERE run_id = @ls_run-run_id AND kind <> 'ADT'.
     UPDATE zai_bstep SET msg_seq = @lv_seq WHERE run_id = @ls_run-run_id AND kind = 'ADT'.
+
+    " ---- V15.26: 模型总结的会话标题 —— 标题还是默认值(第一句问题)时才换, 用户改过名的不动 ----
+    IF iv_title IS NOT INITIAL AND iv_status = 'OK'.
+      DATA(lv_new_title) = condense( replace( val = iv_title regex = `[\r\n\t]+` with = ` ` occ = 0 ) ).
+      IF strlen( lv_new_title ) > 60.
+        lv_new_title = lv_new_title(60).
+      ENDIF.
+      DATA(lv_def_title) = CONV string( ls_run-question ).
+      IF strlen( lv_def_title ) > 60.
+        lv_def_title = lv_def_title(60) && '...'.
+      ENDIF.
+      IF lv_new_title IS NOT INITIAL.
+        UPDATE zai_chat_sess SET title = @lv_new_title
+          WHERE session_id = @ls_run-session_id AND created_by = @sy-uname AND title = @lv_def_title.
+      ENDIF.
+    ENDIF.
     LOOP AT it_steps INTO DATA(ls_in).
       lv_bn = lv_bn + 1.
       IF lv_bn > 200.

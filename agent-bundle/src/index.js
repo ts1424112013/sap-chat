@@ -21,7 +21,7 @@ import { ReadonlyMemBackend, skillFiles } from "./readonly-backend.js";
 import { summarizeStep, mainArg } from "./step-summary.js";
 import { createAdtClient, ADT_TOOL_SPECS, ADT_PROMPT, normalizeUri } from "./adt-client.js";
 
-export const VERSION = "0.7.0";
+export const VERSION = "0.8.0";
 export const MEMORY_FILE = "/灵犀记忆.md";
 /** SAP 管理员维护的技能（只读，SAP /run/start 下发） */
 export const SAP_SKILL_DIR = "/SAP技能/";
@@ -87,6 +87,37 @@ const ASK_PROMPT = `不清楚就先问，不要猜：
 - 能从对话、结果、技能、系统说明里确定的不要问；同一件事不要反复问；用户说「你定」时按最常见的做法做并在回答里说明。`;
 
 const EXPORT_PROMPT = `用户要把报表结果存到文件夹（导出、另存、存成 CSV / Excel）时，用 save_result_to_folder：数据由 SAP 直接写进文件，不经过你，不要自己拼表格内容再 write_file。`;
+
+/** 会话标题：任务第一轮回答后让模型起一个短标题（多一次很短的模型调用；失败就不改标题） */
+export const TITLE_PROMPT = `你在给一段 SAP 业务助手的对话起标题。根据用户的问题和助手的回答，写一个 6~16 个字的中文标题：
+点出具体对象（报表名 / 事务码 / 表 / 程序 / 物料 / 工厂等）和要做的事，如「ZDPMM702 成品可用库存」「ZCL_AI_ACCESS 调用方」「工厂 1000 未清采购」。
+只输出标题本身：不要引号、书名号、句号，不要「标题：」前缀。`;
+
+export function cleanTitle(s) {
+  let t = String(s || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim().split("\n").map(x => x.trim()).filter(Boolean)[0] || "";
+  t = t.replace(/^(标题|会话标题|title)\s*[:：]\s*/i, "").replace(/^[「『《"'“‘【\s]+|[」』》"'”’】。.!！?？\s]+$/g, "").replace(/\*\*/g, "").trim();
+  if (t.length > 32) t = t.slice(0, 32);
+  return t.length >= 2 ? t : "";
+}
+
+async function makeTitle(model, question, answer, signal) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(new Error("timeout")), 20000);
+  const onAbort = () => ctl.abort(signal.reason);
+  if (signal) { if (signal.aborted) return ""; signal.addEventListener("abort", onAbort, { once: true }); }
+  try {
+    const m = await model.invoke([
+      { role: "system", content: TITLE_PROMPT },
+      { role: "user", content: `用户的问题：${String(question || "").slice(0, 500)}\n\n助手的回答（开头）：${String(answer || "").slice(0, 600)}` }
+    ], { signal: ctl.signal });
+    return cleanTitle(textOf(m));
+  } catch (e) {
+    return "";
+  } finally {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener("abort", onAbort);
+  }
+}
 
 function clip(s, n = MAX_TOOL_CHARS) {
   s = typeof s === "string" ? s : JSON.stringify(s);
@@ -327,6 +358,7 @@ function textOf(m) {
  * @param {(req:{action,path,before,after})=>Promise<boolean|{approved:boolean,message?:string}>} [o.confirm] 写文件确认
  * @param {(req:{question:string, options:string[]})=>Promise<{answer?:string, other?:boolean, cancel?:boolean}>} [o.ask]
  *        问用户（ask_user 工具）；不传时不给模型这个工具
+ * @param {boolean} [o.title] 任务第一轮：回答后让模型起会话标题（结果 title，SAP 收尾时替换默认标题）
  * @param {AbortSignal} [o.signal]
  * @param {object} [o.sap] createSapClient 参数（base 等）
  * @param {object} [o.client] 测试时注入
@@ -588,18 +620,31 @@ export async function run(o) {
   if (card && status === "OK") answer = String(card.answer || answer || "请在下面的参数卡里核对参数后提交。");
   else if (askOther && status === "OK") answer = askOther + "\n\n请在输入框里直接说明。";
 
+  // 会话标题：只在任务第一轮、正常结束时起；用一个不开流式、输出很短的模型实例
+  let title = "";
+  if (o.title && status === "OK" && answer) {
+    const titleModel = new ChatOpenAI({
+      model: runInfo.model || "lingxi", apiKey: "sap-session", temperature: 0.3, maxTokens: 40, maxRetries: 0,
+      timeout: 20000, streaming: false,
+      configuration: { baseURL: client.root, fetch: client.modelFetch(runInfo.runId), dangerouslyAllowBrowser: true }
+    });
+    title = await makeTitle(titleModel, o.question, answer, o.signal);
+    if (title) emit({ type: "title", title });
+  }
+
   try {
     await client.finishRun({
       runId: runInfo.runId, status, answer, message: errorMsg,
       skillsUsed: [...skillsUsed.keys()].filter(k => !k.startsWith("folder:")),
-      steps: compactSteps(trace)
+      steps: compactSteps(trace),
+      title
     });
   } catch (e) { emit({ type: "warn", message: "运行结果未能写回 SAP 会话：" + e.message }); }
 
   emit({ type: "phase", phase: "done", status });
   if (status !== "OK") throw Object.assign(new Error(errorMsg || status), { status, trace, runId: runInfo.runId });
   return {
-    answer, runId: runInfo.runId, trace, card, datasets,
+    answer, runId: runInfo.runId, trace, card, datasets, title,
     skills: [...skillsUsed.values()],
     changes: folderBackend ? folderBackend.changes.slice() : [], elapsedMs: Date.now() - started, folder: folderBackend
   };

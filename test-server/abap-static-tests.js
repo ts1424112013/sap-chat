@@ -1350,6 +1350,12 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     hr.includes("'/tools/audit'") && /zcl_ai_agent_service=>browser_audit\(/.test(hr) && /iv_seq\s+= ls_aud-seq/.test(hr) &&
     /ls_aud-run_id <> server->request->get_header_field\( 'x-lingxi-run' \)/.test(hr));
 
+  check('V15.26：收尾收 iv_title，只在 OK 且会话标题还是默认值（问题截 60 字 + ...）时改写，本人会话；HTTP V1.6 转 title',
+    /^\* V15\.26 20261108/m.test(agRaw2) && /iv_title\s+TYPE string OPTIONAL/.test(ag2) &&
+    /IF iv_title IS NOT INITIAL AND iv_status = 'OK'\./.test(bf) && /lv_def_title = lv_def_title\(60\) && '\.\.\.'/.test(bf) &&
+    /UPDATE zai_chat_sess SET title = @lv_new_title\s+WHERE session_id = @ls_run-session_id AND created_by = @sy-uname AND title = @lv_def_title/.test(bf) &&
+    /^\*\s+V1\.6 20261108/m.test(httpRaw) && /iv_title\s+= ls_fin-title/.test(hr));
+
   /* ---- 20261108 上下文超长（AGENT_SERVICE V15.21 / HTTP V1.3） ---- */
   check('V15.21：上下文上限 BRUN_CTX_TOKENS 下发；请求体上限默认跟上下文走，超限消息带 maximum context length',
     /^\* V15\.21 20261108/m.test(agRaw2) && /es_start-ctx_tokens = read_cfg_int\( iv_key = 'BRUN_CTX_TOKENS'/.test(bs) &&
