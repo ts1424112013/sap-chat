@@ -152,3 +152,10 @@
 .umBadge { min-width: 1.1rem; height: 1.1rem; padding: 0 .3rem; border-radius: 999px; background: #DC2626; color: #FFF; font-size: .66rem; font-weight: 700;
 	line-height: 1.1rem; text-align: center; box-sizing: border-box; }
 .umSep { height: 1px; background: var(--line); margin: .3rem .2rem; }
+
+/* 20261108：定时任务收进用户卡菜单 —— 有新结果时用户卡和菜单项上是蓝色数字（红色留给待审批） */
+.sideFootBadge.sideFootBadgeSched { background: var(--accent) !important; }
+.umBadge.umBadgeSched { background: var(--accent); }
+/* 侧栏底部行按钮：内容撑满行高并垂直居中（同模式切换，Horizon 默认 36px 比行高） */
+.sideAuthRow .sideAuthBtn, .sideAuth > .sideAuthBtn { margin: 0 !important; }
+.sideAuthBtn .sapMBtnInner { height: 100% !important; min-height: 0 !important; margin: 0 !important; display: flex !important; align-items: center; }

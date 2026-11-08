@@ -22,6 +22,7 @@ sap.ui.define([
 
         /* 20261108：用户卡菜单的图标（16px 线条） */
         var UM_ICON = {
+                clock: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
                 key: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg>',
                 approve: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4h6v3H9z"/><path d="M15 5h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h3"/><path d="M9 14l2 2 4-4"/></svg>',
                 gear: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
@@ -93,7 +94,7 @@ sap.ui.define([
 
                 /* ======================= 20261108 侧栏改版：用户卡菜单 ======================= */
 
-                /** 点用户卡（或右边的小箭头）：申请权限 / 权限审批（管理员，带待审批数）/ 设置（管理员）/ 退出登录 */
+                /** 点用户卡（或右边的小箭头）：申请权限 / 定时任务（带新结果数）/ 设置（管理员）/ 退出登录；权限审批在侧栏 */
                 onOpenUserMenu: function () {
                         var that = this;
                         var oFoot = this.byId("sideFoot");
@@ -106,7 +107,8 @@ sap.ui.define([
                         }
                         var oS = this.getView().getModel("settings");
                         var bAdmin = !!oS.getProperty("/isAdmin");
-                        var iPend = Number(oS.getProperty("/authPending")) || 0;
+                        var bSched = !!oS.getProperty("/schedAvail");
+                        var iUnread = Number(oS.getProperty("/schedUnread")) || 0;
                         var row = function (k, ic, t, extra) {
                                 return '<button type="button" class="umItem" data-um="' + k + '">' + ic +
                                         '<span class="umText">' + t + '</span>' + (extra || "") + '</button>';
@@ -115,7 +117,7 @@ sap.ui.define([
                                 '<div class="umHead"><div class="umName">' + Formatter.escapeHtml(oS.getProperty("/userName") || "") + '</div>' +
                                 '<div class="umSub">' + (bAdmin ? "管理员" : "用户") + '</div></div>' +
                                 row("apply", UM_ICON.key, "申请权限") +
-                                (bAdmin ? row("approve", UM_ICON.approve, "权限审批", iPend > 0 ? '<span class="umBadge">' + (iPend > 99 ? "99+" : iPend) + '</span>' : "") : "") +
+                                (bSched ? row("sched", UM_ICON.clock, "定时任务", iUnread > 0 ? '<span class="umBadge umBadgeSched">' + (iUnread > 99 ? "99+" : iUnread) + '</span>' : "") : "") +
                                 (bAdmin ? row("settings", UM_ICON.gear, "设置") : "") +
                                 '<div class="umSep"></div>' +
                                 row("logout", UM_ICON.out, "退出登录") +
@@ -131,7 +133,7 @@ sap.ui.define([
                                                 var k = b.getAttribute("data-um");
                                                 that._oUserMenu.close();
                                                 if (k === "apply") { that.onOpenAuth(); }
-                                                else if (k === "approve") { that.onOpenAuthApprove(); }
+                                                else if (k === "sched") { that.onOpenSchedules(); }
                                                 else if (k === "settings") { that.onOpenSettings(); }
                                                 else if (k === "logout") {
                                                         // 退出前照旧先确认（锚在用户卡上）
