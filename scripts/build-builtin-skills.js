@@ -1,5 +1,5 @@
 /*
- * 内置技能打包：builtin-skills/<目录>/SKILL.md → webapp/skills/builtin-skills.json
+ * 内置技能打包：builtin-skills/<目录>/SKILL.md（+ 同目录下其他 .md 附带资料）→ webapp/skills/builtin-skills.json
  * 随前端包（dist）一起上传 BSP；新引擎运行时读这个文件，挂成只读目录 /内置技能/。
  * 改了 builtin-skills 下的文件后运行：node scripts/build-builtin-skills.js（npm run build 前会自动跑）
  * 加 --check：只检查 JSON 是否和源文件一致，不写文件（测试用）
@@ -31,6 +31,17 @@ function parseFront(text, file) {
   return out;
 }
 
+/** 目录下所有 .md（相对路径，/ 分隔，按名字排序） */
+function listMd(dir, base = '') {
+  const out = [];
+  for (const d of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const rel = base ? base + '/' + d.name : d.name;
+    if (d.isDirectory()) out.push(...listMd(path.join(dir, d.name), rel));
+    else if (d.name.endsWith('.md')) out.push(rel);
+  }
+  return out;
+}
+
 function collect() {
   const dirs = fs.readdirSync(srcDir, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name).sort();
   return dirs.map(dir => {
@@ -40,7 +51,12 @@ function collect() {
     if (f.name !== dir) throw new Error(file + '：name 必须和目录名一致（' + dir + '）');
     if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(dir)) throw new Error(file + '：目录名只用小写字母、数字和单个连字符');
     if (!f.description || f.description.length > 1024) throw new Error(file + '：description 必填，最多 1024 字');
-    return { dir, order: Number(f['meta.order']) || 9999, title: f['meta.title'] || dir, description: f.description, source: f['meta.source'] || '', content };
+    // 附带资料：技能目录下除 SKILL.md 以外的 .md 文件（如 references/xxx.md），模型按 SKILL.md 的指引再读
+    const files = listMd(path.join(root, 'builtin-skills', dir)).filter(r => r !== 'SKILL.md').map(r => {
+      if (!/^[A-Za-z0-9_-]+(\/[A-Za-z0-9_.-]+)*\.md$/.test(r) || r.includes('..')) throw new Error(file + '：附带文件名只用字母、数字、点、下划线和连字符：' + r);
+      return { path: r, content: fs.readFileSync(path.join(root, 'builtin-skills', dir, r), 'utf8') };
+    });
+    return { dir, order: Number(f['meta.order']) || 9999, title: f['meta.title'] || dir, description: f.description, source: f['meta.source'] || '', content, files };
   }).sort((a, b) => a.order - b.order || a.dir.localeCompare(b.dir)).map(({ order, ...s }) => s);
 }
 

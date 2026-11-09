@@ -114,6 +114,15 @@
                         <Text text="{skillAdmin>/bView/description}" class="skAdmBuiltinDesc"/>
                         <Text text="{skillAdmin>/bMeta}"
                               class="aplHint skAdmBuiltinMeta"/>
+                        <!-- 附带资料：SKILL.md + references/…，点文件名切换下面的正文（只有一份时不显示） -->
+                        <HBox renderType="Bare" wrap="Wrap" items="{skillAdmin>/bView/files}" visible="{= (${skillAdmin>/bView/files} || []).length > 1 }"
+                              class="admPills skAdmBuiltinFiles">
+                            <Button text="{skillAdmin>path}" type="Transparent" press=".onSkAdmBuiltinFile" class="admPill">
+                                <customData>
+                                    <core:CustomData key="on" value="{skillAdmin>on}" writeToDom="true"/>
+                                </customData>
+                            </Button>
+                        </HBox>
                         <Text text="{skillAdmin>/bView/body}" renderWhitespace="true" class="skAdmBuiltinBody"/>
                     </VBox>
 

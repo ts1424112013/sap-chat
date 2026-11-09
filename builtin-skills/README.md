@@ -25,6 +25,17 @@
 | sap-auth | SAP 权限排查 | auth.md |
 | sap-print | SAP 打印与表单 | print.md |
 
+### ABAP 代码类（2026-11-10 加）
+
+| 目录 | 名称 | 来源（许可） | 附带资料 |
+|---|---|---|---|
+| abap-code-review | ABAP 代码审查 | [sap-engineering-skill](https://github.com/shrek-abaper/sap-engineering-skill) abap-code-review（MIT，845e920），主文件译成中文并按灵犀工具改写 | references/：安全规则、Clean ABAP 规则、报告模板（原文英文） |
+| clean-abap | Clean ABAP 规范 | [abap-skills](https://github.com/likweitan/abap-skills) abap（MIT，b3306be），去掉 abaplint，命名前缀按公司习惯 | references/：检查清单、正反例速查（原文英文） |
+| abap-unit-testing | ABAP 单元测试 | [abap-skills](https://github.com/likweitan/abap-skills) abap-unit-testing（MIT，b3306be），去掉 RAP 部分 | references/：测试环境例子（原文英文） |
+| abap-syntax-755 | ABAP 7.55 语法边界 | 参考 [superclaude-for-sap](https://github.com/babamba2/superclaude-for-sap) abap-release-reference（MIT，fab560a），按 7.55 重写并核对（原文有几处版本标错） | 无 |
+
+许可证原文：`LICENSE-sap-trench`、`LICENSE-sap-engineering-skill`、`LICENSE-likweitan-abap-skills`、`LICENSE-superclaude-for-sap`。
+
 ## 增加或修改技能
 
 1. 新建 `builtin-skills/<目录>/SKILL.md`，目录名只用小写字母、数字和连字符。开头写：
@@ -40,6 +51,7 @@
    ---
    ```
 
+   同目录下的其他 `.md`（如 `references/xxx.md`）会作为附带资料一起打包，在 SKILL.md 里写清什么时候读哪份。
 2. 运行 `node scripts/build-builtin-skills.js`，生成 `webapp/skills/builtin-skills.json`（`npm run build` 前也会自动跑）。
 3. 重新打包 dist、上传 BSP。SAP 后台不用改。
 

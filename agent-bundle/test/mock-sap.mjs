@@ -58,7 +58,8 @@ const RPT_TOOLS = [
 ];
 const SAP_SKILLS = [{ id: "SK1", name: "库存盘点", description: "盘点库存、导出库存结果时的做法", body: "MARKER-SKILL 先列结果再导出" }];
 const SCRIPT3 = [
-  () => [call("read_file", { file_path: "/SAP技能/SK1/SKILL.md" }), call("read_file", { file_path: "/内置技能/sap-mm/SKILL.md" })],
+  () => [call("read_file", { file_path: "/SAP技能/SK1/SKILL.md" }), call("read_file", { file_path: "/内置技能/sap-mm/SKILL.md" }),
+         call("read_file", { file_path: "/内置技能/sap-mm/references/obyc.md" }), call("read_file", { file_path: "/内置技能/bad.md" })],
   () => [call("list_results", {})],
   () => [call("save_result_to_folder", { result_id: "ART1", file_path: "/导出/库存.csv" })],
   () => [call("open_report", { tcode: "ZMM001" })],
@@ -405,6 +406,8 @@ const server = http.createServer(async (req, res) => {
       if (step === 1) {
         run.skillRead = toolTexts.some(t => t.includes("MARKER-SKILL"));
         run.builtinRead = toolTexts.some(t => t.includes("MARKER-BUILTIN"));
+        run.builtinRefRead = toolTexts.some(t => t.includes("MARKER-REF"));
+        run.builtinBadRefLeaked = toolTexts.some(t => t.includes("MARKER-BADREF"));
       }
       const c3 = (SCRIPT3[step] || (() => null))();
       if (c3) return reply({ role: "assistant", content: "", tool_calls: c3 }, c3);

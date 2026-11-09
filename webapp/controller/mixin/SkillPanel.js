@@ -428,6 +428,7 @@ sap.ui.define([
             var builtin = m.getProperty("/builtin") || [], bView = m.getProperty("/bView");
             var counts = { ALL: items.length, BUILTIN: builtin.length };
             m.setProperty("/bMeta", bView ? "目录 /内置技能/" + bView.dir + "/ · " + bView.content.length.toLocaleString() + " 字" +
+                ((bView.files || []).length > 1 ? " · 附带资料 " + (bView.files.length - 1) + " 份" : "") +
                 (bView.source ? " · 来源：" + bView.source : "") : "");
             Object.keys(SCENE_TEXT).forEach(function (k) { counts[k] = items.filter(function (s) { return s.scenes.indexOf(k) >= 0; }).length; });
             m.setProperty("/counts", counts);
@@ -436,7 +437,8 @@ sap.ui.define([
                 return !q || (b.title + " " + b.dir + " " + b.description).toLowerCase().indexOf(q) >= 0;
             }).map(function (b) {
                 return { id: "builtin:" + b.dir, name: b.title, stateText: "内置", stateOn: "yes", on: !!bView && bView.dir === b.dir,
-                    meta: "所有场景 · 只读 · " + b.content.length.toLocaleString() + " 字" };
+                    meta: "所有场景 · 只读 · " + b.content.length.toLocaleString() + " 字" +
+                        ((b.files || []).length ? " · 附带 " + b.files.length + " 份" : "") };
             }) : items.filter(function (s) {
                 return (f === "ALL" || s.scenes.indexOf(f) >= 0) &&
                     (!q || (s.name + " " + s.id + " " + s.description).toLowerCase().indexOf(q) >= 0);
@@ -473,9 +475,20 @@ sap.ui.define([
         },
         /** 内置技能的查看内容：说明去掉开头重复的名称，正文去掉开头的 --- 元数据 */
         _skAdmBuiltinView: function (b) {
-            return { dir: b.dir, title: b.title, source: b.source, content: b.content,
+            var body = b.content.replace(/^---\n[\s\S]*?\n---\n+/, "");
+            // files：SKILL.md + 附带资料（references/…），点文件名切换正文
+            var files = [{ path: "SKILL.md", body: body, on: "yes" }].concat((b.files || []).map(function (f) {
+                return { path: f.path, body: f.content, on: "no" };
+            }));
+            return { dir: b.dir, title: b.title, source: b.source, content: b.content, files: files,
                 description: b.description.indexOf(b.title + "：") === 0 ? b.description.slice(b.title.length + 1) : b.description,
-                body: b.content.replace(/^---\n[\s\S]*?\n---\n+/, "") };
+                body: body };
+        },
+        onSkAdmBuiltinFile: function (e) {
+            var m = this.getView().getModel("skillAdmin"), path = e.getSource().getBindingContext("skillAdmin").getProperty("path");
+            var files = (m.getProperty("/bView/files") || []).map(function (f) { return Object.assign({}, f, { on: f.path === path ? "yes" : "no" }); });
+            m.setProperty("/bView/files", files);
+            m.setProperty("/bView/body", files.filter(function (f) { return f.on === "yes"; })[0].body);
         },
         onSkillAdmSearch: function (e) {
             this.getView().getModel("skillAdmin").setProperty("/q", e.getParameter("value") || "");

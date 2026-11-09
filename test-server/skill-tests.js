@@ -243,24 +243,63 @@ test('技能胶囊选不了时仍可点：管理员直达技能管理，普通�
 });
 
 // ---------------------------------------------------------------- 20261110 内置技能随前端包发布（《04》〇-AV）
-test('内置技能：JSON 与 builtin-skills/ 一致；13 个，目录名合规、有中文名和说明、开头讲怎么用和 S/4 口径', () => {
+test('内置技能：JSON 与 builtin-skills/ 一致；17 个，目录名合规、有中文名和说明、来源和许可证齐全', () => {
   const {execFileSync} = require('child_process');
   execFileSync(process.execPath, [path.join(__dirname, '../scripts/build-builtin-skills.js'), '--check']);
   const j = require('../webapp/skills/builtin-skills.json');
-  assert.equal(j.skills.length, 13);
-  assert.equal(new Set(j.skills.map(s => s.dir)).size, 13);
+  assert.equal(j.skills.length, 17);
+  assert.equal(new Set(j.skills.map(s => s.dir)).size, 17);
   for (const s of j.skills) {
     assert.match(s.dir, /^[a-z0-9]+(-[a-z0-9]+)*$/);
     assert.match(s.content, new RegExp('^---\\nname: ' + s.dir + '\\n'));
     assert.equal(s.order, undefined);
-    assert.ok(/[一-龥]/.test(s.title) && s.description.startsWith(s.title + '：') && s.description.length <= 1024, s.dir);
-    assert.match(s.content, /## 怎么用[\s\S]*S\/4[\s\S]*这是知识，不是工具[\s\S]*## 内容/, s.dir);
-    assert.match(s.source, /sap-trench.*MIT/);
+    assert.ok(/[\u4e00-\u9fa5]/.test(s.title) && s.description.startsWith(s.title + '：') && s.description.length <= 1024, s.dir);
+    assert.match(s.source, /MIT/, s.dir);
+    assert.ok(Array.isArray(s.files), s.dir);
+    for (const f of s.files) assert.match(f.path, /^references\/[A-Za-z0-9_.-]+\.md$/, s.dir + ' ' + f.path);
   }
+  // sap-trench 拆出的 13 个：开头讲怎么用和 S/4 口径
+  for (const s of j.skills.filter(x => /sap-trench/.test(x.source))) {
+    assert.match(s.content, /## 怎么用[\s\S]*S\/4[\s\S]*这是知识，不是工具[\s\S]*## 内容/, s.dir);
+  }
+  assert.equal(j.skills.filter(x => /sap-trench/.test(x.source)).length, 13);
   assert.equal(j.skills[0].dir, 'sap-troubleshooting');
   assert.equal(j.skills[1].dir, 'sap-tcode-tables');
   assert.ok(/CASE-015/.test(j.skills[0].content));
-  assert.ok(fs.existsSync(path.join(__dirname, '../builtin-skills/LICENSE-sap-trench')));
+  for (const l of ['LICENSE-sap-trench', 'LICENSE-sap-engineering-skill', 'LICENSE-likweitan-abap-skills', 'LICENSE-superclaude-for-sap']) {
+    assert.ok(fs.existsSync(path.join(__dirname, '../builtin-skills', l)), l);
+  }
+});
+test('ABAP 代码类内置技能：7.55、不按 ABAP Cloud、用灵犀的 ADT 工具、只建议不改 SAP；附带资料齐全', () => {
+  const j = require('../webapp/skills/builtin-skills.json');
+  const by = d => j.skills.find(s => s.dir === d);
+  const order = j.skills.map(s => s.dir);
+  assert.deepEqual(order.slice(13), ['abap-code-review', 'clean-abap', 'abap-unit-testing', 'abap-syntax-755']);
+  for (const d of ['abap-code-review', 'clean-abap', 'abap-unit-testing', 'abap-syntax-755']) {
+    const s = by(d);
+    assert.match(s.content, /7\.55/, d);
+    assert.match(s.content, /不去改 SAP 里的代码/, d);
+    assert.match(s.content, /adt_syntax_check|adt_read_source/, d);
+  }
+  const cr = by('abap-code-review');
+  assert.deepEqual(cr.files.map(f => f.path), ['references/REF_ABAP_SECURITY.md', 'references/REF_CLEAN_ABAP.md', 'references/REPORT_TEMPLATE.md']);
+  assert.match(cr.content, /references\/REF_ABAP_SECURITY\.md[\s\S]*references\/REF_CLEAN_ABAP\.md[\s\S]*references\/REPORT_TEMPLATE\.md/);
+  assert.match(cr.content, /NO-GO[\s\S]*CONDITIONAL GO[\s\S]*GO/);
+  assert.match(cr.content, /报告用中文写/);
+  assert.match(cr.content, /命名前缀[\s\S]*不当作问题/);
+  const ca = by('clean-abap');
+  assert.deepEqual(ca.files.map(f => f.path), ['references/checklist.md', 'references/quick-reference.md']);
+  assert.match(ca.content, /命名前缀[\s\S]*不当作问题/);
+  assert.ok(!/abaplint -d|npm install/.test(ca.content));
+  const ut = by('abap-unit-testing');
+  assert.deepEqual(ut.files.map(f => f.path), ['references/test-environment-examples.md']);
+  assert.ok(!/RAP BO Test Doubles|cl_botd_/.test(ut.files[0].content), 'RAP 部分已去掉');
+  assert.match(ut.content, /cl_osql_test_environment[\s\S]*TEST-SEAM/);
+  const sx = by('abap-syntax-755');
+  assert.equal(sx.files.length, 0);
+  assert.match(sx.content, /FINAL\( \)[\s\S]*7\.57/);
+  assert.match(sx.content, /ABAP Cloud 的限制不适用/);
+  assert.match(sx.content, /7\.40 SP08 \| `FOR` 表达式、`REDUCE`、`FILTER`；`LOOP AT … GROUP BY`/);
 });
 test('旧的前端内置技能已移除：目录不再导出 builtin，管理页没有「导入内置技能」、有「全部停用」和「内置」只读查看', () => {
   assert.equal(Skills.builtin, undefined);

@@ -22,7 +22,7 @@ import { summarizeStep, mainArg } from "./step-summary.js";
 import { createAdtClient, ADT_TOOL_SPECS, ADT_PROMPT, ADT_SQL_PROMPT, normalizeUri, parseDataPreview } from "./adt-client.js";
 import { buildXlsx, buildDocx, officeToText, parseCsv, csvValue } from "./office.js";
 
-export const VERSION = "0.14.0";
+export const VERSION = "0.15.0";
 export const MEMORY_FILE = "/灵犀记忆.md";
 /** 记忆上限（字符）：超过时只载入前这么多，回答后让模型整理一次 */
 export const MEMORY_MAX_CHARS = 6000;
@@ -624,7 +624,8 @@ function textOf(m) {
  * @param {AbortSignal} [o.signal]
  * @param {object} [o.sap] createSapClient 参数（base 等）
  * @param {object} [o.client] 测试时注入
- * @param {Array<{dir:string,title?:string,content:string}>} [o.builtinSkills] 内置技能（随前端包发布），挂成只读 /内置技能/
+ * @param {Array<{dir:string,title?:string,content:string,files?:Array<{path:string,content:string}>}>} [o.builtinSkills]
+ *        内置技能（随前端包发布），挂成只读 /内置技能/<dir>/SKILL.md，附带资料挂在同一目录下
  */
 export async function run(o) {
   const emit = e => { try { o.onEvent && o.onEvent(e); } catch (x) { /* 界面错误不打断运行 */ } };
@@ -721,6 +722,12 @@ export async function run(o) {
     if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(dir) || typeof b.content !== "string" || !b.content) continue;
     builtinFiles[`/${dir}/SKILL.md`] = b.content;
     builtinTitle[dir] = String(b.title || dir).slice(0, 60);
+    // 附带资料（如 references/xxx.md）：同一目录下，SKILL.md 里写了什么时候读
+    for (const f of Array.isArray(b.files) ? b.files : []) {
+      const rel = String((f && f.path) || "");
+      if (!/^[A-Za-z0-9_-]+(\/[A-Za-z0-9_.-]+)*\.md$/.test(rel) || rel.includes("..") || rel === "SKILL.md" || typeof f.content !== "string") continue;
+      builtinFiles[`/${dir}/${rel}`] = f.content;
+    }
   }
   const builtinBackend = Object.keys(builtinFiles).length ? new ReadonlyMemBackend(builtinFiles, { owner: "随灵犀发布的内置技能" }) : null;
   const skillSources = [...(builtinBackend ? [BUILTIN_SKILL_DIR] : []), ...(sapSkillBackend ? [SAP_SKILL_DIR] : []),

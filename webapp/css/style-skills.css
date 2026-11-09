@@ -261,6 +261,7 @@
 .skAdmBuiltin .skAdmEditHead { margin-bottom: .5rem; }
 .skAdmBuiltinDesc { font-size: .84rem !important; line-height: 1.55; color: var(--text) !important; }
 .skAdmBuiltinMeta { margin: .45rem 0 .8rem; }
+.skAdmBuiltinFiles { margin: 0 0 .6rem; }
 .skAdmBuiltinBody { display: block; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 10px; background: var(--card, var(--surface));
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "PingFang SC", "Microsoft YaHei", monospace !important;
     font-size: .76rem !important; line-height: 1.6 !important; color: var(--text) !important; white-space: pre-wrap !important; word-break: break-word; }
