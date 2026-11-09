@@ -2,6 +2,7 @@
 name: sap-mm
 description: "MM 采购与库存：问科目自动确定（OBYC、事务键、评估类）、工厂间调拨 STO、寄售、分包、历史库存计算、MM 增强点（货物移动、采购订单、发票校验）、MM 常用 BAPI 时用。"
 metadata:
+  scenes: "DATA,CODE"
   order: 30
   title: "MM 采购与库存"
   source: "sap-trench（github.com/shrek-abaper/sap-functional-skill，MIT）references/mm.md"

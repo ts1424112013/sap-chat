@@ -1450,5 +1450,36 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     /^\*\s+V1\.7 20261109/m.test(htRaw) && /'\/admin\/mcp\/'/.test(ht) && /zcl_ai_mcp_service=>admin\(/.test(ht));
 }
 
+{
+  console.log('\n━━ 内置技能改由 SAP 下发（〇-AV）：ZCL_AI_BSKILL_SERVICE V1.0 / AGENT_SERVICE V15.30 / HTTP V1.8');
+  const bsRaw = read('ZCL_AI_BSKILL_SERVICE.abap'), bs = codeOnly(bsRaw);
+  const agRaw = read('ZCL_AI_AGENT_SERVICE.abap'), ag = codeOnly(agRaw);
+  const htRaw = read('ZCL_AI_AGENT_HTTP.abap'), ht = codeOnly(htRaw);
+  const admin = methodOf(bs, 'admin'), imp = methodOf(bs, 'import_pkg'), chk = methodOf(bs, 'check_skill'), fu = methodOf(bs, 'for_user');
+  check('BSKILL：管理接口只限管理员（list / get / import / active），只写自己的表 ZAI_BSKILL',
+    /zcl_ai_access=>is_admin\( \) = abap_false/.test(admin) && admin.indexOf('is_admin') < admin.indexOf('CASE') &&
+    /WHEN 'list'/.test(admin) && /WHEN 'get'/.test(admin) && /WHEN 'import'/.test(admin) && /WHEN 'active'/.test(admin) &&
+    ((bs.match(/\b(?:INSERT|UPDATE|MODIFY|DELETE FROM)\s+(zai_\w+)/gi) || []).every(x => /zai_bskill/i.test(x))));
+  check('BSKILL：导入先整包校验（目录名、名称、说明、正文 / 附带资料大小、路径不越界、场景）再写；保留启用状态，删包里没有的',
+    imp.indexOf('check_skill(') < imp.indexOf('MODIFY zai_bskill') && /gc_max_pkg/.test(imp) &&
+    /ls_db-active = ls_old-active/.test(imp) && /DELETE FROM zai_bskill WHERE dir = @ls_old-dir/.test(imp) &&
+    /\[a-z0-9\]\+\(-\[a-z0-9\]\+\)\*/.test(chk) && /CS '\.\.'/.test(chk) && /gc_max_content/.test(chk) &&
+    /zcl_ai_access=>gc_scenes/.test(chk) && /至少要有一个适用场景/.test(chk));
+  check('BSKILL：下发只给启用的、场景和用户开放的场景有交集的；版本号相同时不回正文',
+    /active = @abap_true/.test(fu) && /zcl_ai_access=>scene_ok\( lv_scn \)/.test(fu) && /lv_hit = abap_false/.test(fu) &&
+    /IF iv_known = ev_version\./.test(fu) && fu.indexOf('IF iv_known = ev_version.') < fu.indexOf('ev_json = |[{ lv_list }]|'));
+  check('BSKILL：头注释有版本与核对标记；只用 7.50 语法（无 FINAL( ) 内联声明）',
+    /^\* 版本:\s+V1\.0 20261110/m.test(bsRaw) && /★ 重贴后核对标记/.test(bsRaw) && !/\bFINAL\(/.test(bs));
+  check('AGENT_SERVICE V15.30：ty_brun_start 有 builtin_ver / builtin_json；browser_start 收 iv_builtin_ver，调 BSKILL=>for_user',
+    /^\* V15\.30 20261110/m.test(agRaw) && /builtin_ver\s+TYPE string/.test(ag) && /builtin_json TYPE string/.test(ag) &&
+    /iv_builtin_ver TYPE string OPTIONAL/.test(ag) &&
+    /zcl_ai_bskill_service=>for_user\( EXPORTING iv_known\s+= iv_builtin_ver/.test(methodOf(ag, 'browser_start')));
+  check('HTTP V1.8：/run/start 收 builtinVersion、回 builtinVersion（正文只在不同时回）；/admin/bskill/<动作> 交给 BSKILL=>admin，出错回滚',
+    /^\*\s+V1\.8 20261110/m.test(htRaw) && /builtin_version\s+TYPE string/.test(ht) && /iv_builtin_ver = ls_start-builtin_version/.test(ht) &&
+    /"builtinVersion":/.test(ht) && /WHEN ls_out-builtin_json IS NOT INITIAL THEN \|"builtinSkills":/.test(ht) &&
+    /'\/admin\/bskill\/'/.test(ht) && /zcl_ai_bskill_service=>admin\(/.test(ht) &&
+    /substring\( val = lv_path off = 14 \)/.test(ht));
+}
+
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);

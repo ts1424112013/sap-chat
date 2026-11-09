@@ -1,8 +1,9 @@
 /*
- * 内置技能打包：builtin-skills/<目录>/SKILL.md（+ 同目录下其他 .md 附带资料）→ webapp/skills/builtin-skills.json
- * 随前端包（dist）一起上传 BSP；新引擎运行时读这个文件，挂成只读目录 /内置技能/。
- * 改了 builtin-skills 下的文件后运行：node scripts/build-builtin-skills.js（npm run build 前会自动跑）
- * 加 --check：只检查 JSON 是否和源文件一致，不写文件（测试用）
+ * 内置技能包：builtin-skills/<目录>/SKILL.md（+ 同目录下其他 .md 附带资料）→ 部署产物/builtin-skills.json
+ * 20261110（《03》〇-AV）起不进前端包：管理员在「技能管理 → 内置 → 导入内置技能包」选这个文件，存进 SAP 表 ZAI_BSKILL，
+ * 每次提问由 SAP 按用户开放的场景下发给新引擎（没开对应场景的用户拿不到）。
+ * 改了 builtin-skills 下的文件后运行：node scripts/build-builtin-skills.js（npm run build 前也会自动跑）
+ * 加 --check：只检查包是否和源文件一致，不写文件（测试用）
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -10,9 +11,11 @@ const crypto = require('node:crypto');
 
 const root = path.resolve(__dirname, '..');
 const srcDir = path.join(root, 'builtin-skills');
-const outFile = path.join(root, 'webapp/skills/builtin-skills.json');
+const OUT_REL = '部署产物/builtin-skills.json';
+const outFile = path.join(root, OUT_REL);
+const SCENES = ['REPORT', 'FIORI', 'DATA', 'CODE'];
 
-/** 只认本项目 SKILL.md 用到的几种写法：name / description / metadata 下的 order（列表顺序）、title、source */
+/** 只认本项目 SKILL.md 用到的几种写法：name / description / metadata 下的 scenes、order（列表顺序）、title、source */
 function parseFront(text, file) {
   const m = /^---\n([\s\S]*?)\n---\n/.exec(text);
   if (!m) throw new Error(file + '：开头缺 --- 包起来的 name / description');
@@ -42,6 +45,8 @@ function listMd(dir, base = '') {
   return out;
 }
 
+const sha = s => crypto.createHash('sha1').update(s).digest('hex');
+
 function collect() {
   const dirs = fs.readdirSync(srcDir, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name).sort();
   return dirs.map(dir => {
@@ -49,33 +54,39 @@ function collect() {
     const content = fs.readFileSync(path.join(root, file), 'utf8');
     const f = parseFront(content, file);
     if (f.name !== dir) throw new Error(file + '：name 必须和目录名一致（' + dir + '）');
-    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(dir)) throw new Error(file + '：目录名只用小写字母、数字和单个连字符');
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(dir) || dir.length > 40) throw new Error(file + '：目录名只用小写字母、数字和单个连字符，最长 40');
     if (!f.description || f.description.length > 1024) throw new Error(file + '：description 必填，最多 1024 字');
+    const title = f['meta.title'] || dir;
+    if (title.length > 60) throw new Error(file + '：title 最长 60 字');
+    const scenes = String(f['meta.scenes'] || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+    if (!scenes.length || scenes.some(s => !SCENES.includes(s))) throw new Error(file + '：metadata.scenes 必填，只能是 ' + SCENES.join(' / '));
     // 附带资料：技能目录下除 SKILL.md 以外的 .md 文件（如 references/xxx.md），模型按 SKILL.md 的指引再读
     const files = listMd(path.join(root, 'builtin-skills', dir)).filter(r => r !== 'SKILL.md').map(r => {
       if (!/^[A-Za-z0-9_-]+(\/[A-Za-z0-9_.-]+)*\.md$/.test(r) || r.includes('..')) throw new Error(file + '：附带文件名只用字母、数字、点、下划线和连字符：' + r);
       return { path: r, content: fs.readFileSync(path.join(root, 'builtin-skills', dir, r), 'utf8') };
     });
-    return { dir, order: Number(f['meta.order']) || 9999, title: f['meta.title'] || dir, description: f.description, source: f['meta.source'] || '', content, files };
-  }).sort((a, b) => a.order - b.order || a.dir.localeCompare(b.dir)).map(({ order, ...s }) => s);
+    const version = sha(JSON.stringify([content, files])).slice(0, 12);
+    return { dir, title, description: f.description, source: f['meta.source'] || '', scenes: scenes.join(','),
+      sortNo: Number(f['meta.order']) || 9999, version, content, files };
+  }).sort((a, b) => a.sortNo - b.sortNo || a.dir.localeCompare(b.dir));
 }
 
 function build() {
   const skills = collect();
-  const version = crypto.createHash('sha1').update(JSON.stringify(skills)).digest('hex').slice(0, 10);
+  const version = sha(JSON.stringify(skills)).slice(0, 10);
   return JSON.stringify({ version, skills }, null, 1) + '\n';
 }
 
 const json = build();
 if (process.argv.includes('--check')) {
   const cur = fs.existsSync(outFile) ? fs.readFileSync(outFile, 'utf8') : '';
-  if (cur !== json) { console.error('webapp/skills/builtin-skills.json 和 builtin-skills/ 不一致，请运行 node scripts/build-builtin-skills.js'); process.exit(1); }
-  console.log('内置技能 JSON 与源文件一致');
+  if (cur !== json) { console.error(OUT_REL + ' 和 builtin-skills/ 不一致，请运行 node scripts/build-builtin-skills.js'); process.exit(1); }
+  console.log('内置技能包与源文件一致');
 } else {
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   fs.writeFileSync(outFile, json);
   const n = JSON.parse(json).skills.length;
-  console.log('内置技能：' + n + ' 个 → webapp/skills/builtin-skills.json（' + Math.round(json.length / 1024) + ' KB）');
+  console.log('内置技能包：' + n + ' 个 → ' + OUT_REL + '（' + Math.round(Buffer.byteLength(json) / 1024) + ' KB）；在技能管理 → 内置 → 导入');
 }
 
 module.exports = { parseFront };

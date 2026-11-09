@@ -2,6 +2,7 @@
 name: sap-qm
 description: "QM 质量管理：问质检入库流程、质量信息记录、检验计划、检验批及异常处理、使用决策、质量通知书的事务码和做法时用。"
 metadata:
+  scenes: "DATA,CODE"
   order: 80
   title: "QM 质量管理"
   source: "sap-trench（github.com/shrek-abaper/sap-functional-skill，MIT）references/qm.md"

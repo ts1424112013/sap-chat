@@ -2,6 +2,7 @@
 name: sap-print
 description: "SAP 打印与表单：问 SmartForms 打印程序写法、打印和输出参数、多单合并打印、NACE 输出控制配置、打印常见错误时用。"
 metadata:
+  scenes: "CODE"
   order: 130
   title: "SAP 打印与表单"
   source: "sap-trench（github.com/shrek-abaper/sap-functional-skill，MIT）references/print.md"

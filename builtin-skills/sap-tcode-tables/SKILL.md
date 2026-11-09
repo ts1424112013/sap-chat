@@ -2,6 +2,7 @@
 name: sap-tcode-tables
 description: "SAP 事务码与表速查：问某个业务在哪个事务码做、某类数据存在哪张表、各模块常用表和事务码时用。覆盖 ABAP 开发、传输、权限、MM、FI/CO、SD、接口、表单输出。"
 metadata:
+  scenes: "DATA,CODE"
   order: 20
   title: "SAP 事务码与表速查"
   source: "sap-trench（github.com/shrek-abaper/sap-functional-skill，MIT）references/reference-tables.md"

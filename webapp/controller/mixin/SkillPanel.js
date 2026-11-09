@@ -1,8 +1,8 @@
 sap.ui.define([
     "sap/ui/model/json/JSONModel", "sap/m/ResponsivePopover", "sap/m/FlexItemData", "zai/chat/utils/Toast",
     "sap/ui/core/HTML", "sap/ui/Device", "zai/chat/service/ChatService", "zai/chat/utils/SkillCatalog", "zai/chat/utils/Formatter",
-    "sap/m/MessageBox", "zai/chat/service/BrowserAgentService"
-], function (JSONModel, ResponsivePopover, FlexItemData, MessageToast, HTML, Device, Service, Skills, Formatter, MessageBox, BrowserAgent) {
+    "sap/m/MessageBox", "zai/chat/service/BuiltinSkillAdminService"
+], function (JSONModel, ResponsivePopover, FlexItemData, MessageToast, HTML, Device, Service, Skills, Formatter, MessageBox, BuiltinAdmin) {
     "use strict";
 
     /* ==========================================================================
@@ -14,6 +14,10 @@ sap.ui.define([
      * ========================================================================== */
     var esc = Formatter.escapeHtml;
     var SCENE_TEXT = { CODE: "代码分析", DATA: "数据分析", REPORT: "报表执行", FIORI: "Fiori 报表" };
+    /** "DATA,CODE" → "数据分析 / 代码分析" */
+    function sceneText(s) {
+        return String(s || "").split(",").filter(Boolean).map(function (k) { return SCENE_TEXT[k] || k; }).join(" / ") || "无";
+    }
     var ICON = {
         layers: '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l6.2 3.2L8 8.2 1.8 5z M1.8 8L8 11.2 14.2 8 M1.8 11L8 14.2 14.2 11"/></svg>',
         search: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M7 2.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9z M10.3 10.3L13.5 13.5"/></svg>',
@@ -377,16 +381,13 @@ sap.ui.define([
                 this.getView().addDependent(this._skillAdminDialog);
             }
             // enabled：null = 还没读到（开关先不显示状态，提示条也不出）
-            // builtin / bView：随前端包发布的内置技能（只读，《04》〇-AV）；bView 有值时右侧显示内置技能全文、不显示编辑区
+            // builtin / bView：内置技能（〇-AV：存在 SAP 表 ZAI_BSKILL，按用户场景下发）；bView 有值时右侧显示内置技能全文、不显示编辑区
             var m = new JSONModel({ items: [], view: [], filter: "ALL", q: "", counts: {},
                 edit: null, sceneOn: {}, toolOptions: [], toolNote: "", bodyLen: 0, title: "", footNote: "",
-                saving: false, error: "", enabled: null, switching: false, builtin: [], bView: null });
+                saving: false, error: "", enabled: null, switching: false, builtin: [], bView: null, bLoading: false });
             this.getView().setModel(m, "skillAdmin");
             this._skillAdminDialog.open(); this.onRefreshSkillAdmin();
-            var that = this;
-            BrowserAgent.loadBuiltinSkills().then(function (list) {
-                m.setProperty("/builtin", list); that._skAdmDerive();
-            });
+            this._skAdmLoadBuiltin();
             Service.getSkillEnabled().then(function (b) { m.setProperty("/enabled", b); })
                 .catch(function () { m.setProperty("/enabled", null); });
         },
@@ -427,7 +428,7 @@ sap.ui.define([
             var edit = m.getProperty("/edit") || {};
             var builtin = m.getProperty("/builtin") || [], bView = m.getProperty("/bView");
             var counts = { ALL: items.length, BUILTIN: builtin.length };
-            m.setProperty("/bMeta", bView ? "目录 /内置技能/" + bView.dir + "/ · " + bView.content.length.toLocaleString() + " 字" +
+            m.setProperty("/bMeta", bView ? "适用场景：" + sceneText(bView.scenes) + " · " + bView.content.length.toLocaleString() + " 字" +
                 ((bView.files || []).length > 1 ? " · 附带资料 " + (bView.files.length - 1) + " 份" : "") +
                 (bView.source ? " · 来源：" + bView.source : "") : "");
             Object.keys(SCENE_TEXT).forEach(function (k) { counts[k] = items.filter(function (s) { return s.scenes.indexOf(k) >= 0; }).length; });
@@ -436,9 +437,10 @@ sap.ui.define([
             m.setProperty("/view", f === "BUILTIN" ? builtin.filter(function (b) {
                 return !q || (b.title + " " + b.dir + " " + b.description).toLowerCase().indexOf(q) >= 0;
             }).map(function (b) {
-                return { id: "builtin:" + b.dir, name: b.title, stateText: "内置", stateOn: "yes", on: !!bView && bView.dir === b.dir,
-                    meta: "所有场景 · 只读 · " + b.content.length.toLocaleString() + " 字" +
-                        ((b.files || []).length ? " · 附带 " + b.files.length + " 份" : "") };
+                return { id: "builtin:" + b.dir, name: b.title, stateText: b.active ? "启用" : "停用", stateOn: b.active ? "yes" : "no",
+                    on: !!bView && bView.dir === b.dir,
+                    meta: sceneText(b.scenes) + " · " + Number(b.chars || 0).toLocaleString() + " 字" +
+                        (b.fileCount ? " · 附带 " + b.fileCount + " 份" : "") };
             }) : items.filter(function (s) {
                 return (f === "ALL" || s.scenes.indexOf(f) >= 0) &&
                     (!q || (s.name + " " + s.id + " " + s.description).toLowerCase().indexOf(q) >= 0);
@@ -470,8 +472,87 @@ sap.ui.define([
             m.setProperty("/filter", f);
             // 切到「内置」默认打开第一个；切回 SAP 技能时回到编辑区
             var first = (m.getProperty("/builtin") || [])[0];
-            m.setProperty("/bView", f === "BUILTIN" && first ? this._skAdmBuiltinView(first) : null);
+            m.setProperty("/bView", null);
             this._skAdmDerive();
+            if (f === "BUILTIN" && first) { this._skAdmOpenBuiltin(first.dir); }
+        },
+        /** 内置技能清单（不含正文）：SAP 表 ZAI_BSKILL，只限管理员 */
+        _skAdmLoadBuiltin: function () {
+            var that = this, m = this.getView().getModel("skillAdmin");
+            m.setProperty("/bLoading", true);
+            return BuiltinAdmin.call("list").then(function (r) {
+                m.setProperty("/builtin", r.skills || []);
+            }).catch(function (e) {
+                m.setProperty("/builtin", []);
+                m.setProperty("/error", "内置技能读取失败：" + e.message);
+            }).then(function () { m.setProperty("/bLoading", false); that._skAdmDerive(); });
+        },
+        /** 打开一个内置技能（正文和附带资料按需向 SAP 取） */
+        _skAdmOpenBuiltin: function (sDir) {
+            var that = this, m = this.getView().getModel("skillAdmin");
+            m.setProperty("/bLoading", true);
+            return BuiltinAdmin.call("get", { dir: sDir }).then(function (r) {
+                m.setProperty("/bView", that._skAdmBuiltinView(r.skill));
+                m.setProperty("/error", "");
+            }).catch(function (e) {
+                m.setProperty("/error", "内置技能读取失败：" + e.message);
+            }).then(function () { m.setProperty("/bLoading", false); that._skAdmDerive(); });
+        },
+        /** 右侧「启用」开关：停用后谁都拿不到这个内置技能 */
+        onSkAdmBuiltinActive: function (e) {
+            var that = this, m = this.getView().getModel("skillAdmin"), b = m.getProperty("/bView"), bOn = !!e.getParameter("state");
+            if (!b) { return; }
+            m.setProperty("/bLoading", true);
+            BuiltinAdmin.call("active", { dir: b.dir, active: bOn }).then(function () {
+                m.setProperty("/bView/active", bOn);
+                (m.getProperty("/builtin") || []).forEach(function (x) { if (x.dir === b.dir) { x.active = bOn; } });
+                MessageToast.show(bOn ? "已启用「" + b.title + "」" : "已停用「" + b.title + "」");
+            }).catch(function (err) {
+                m.setProperty("/bView/active", !bOn);
+                m.setProperty("/error", "保存失败：" + err.message);
+            }).then(function () { m.setProperty("/bLoading", false); that._skAdmDerive(); });
+        },
+        /** 导入内置技能包：选项目里的 部署产物/builtin-skills.json → SAP；包里没有的内置技能删除，已有的保留启用状态 */
+        onImportBuiltinPkg: function () {
+            var that = this, m = this.getView().getModel("skillAdmin");
+            var input = document.createElement("input");
+            input.type = "file";
+            input.accept = ".json,application/json";
+            input.onchange = function () {
+                var file = input.files && input.files[0];
+                if (!file) { return; }
+                file.text().then(function (t) {
+                    var pkg;
+                    try { pkg = BuiltinAdmin.checkPkg(JSON.parse(t)); } catch (x) {
+                        throw new Error(x instanceof SyntaxError ? "文件不是有效的 JSON" : x.message);
+                    }
+                    var have = (m.getProperty("/builtin") || []).map(function (x) { return x.dir; });
+                    var gone = have.filter(function (d) { return !pkg.skills.some(function (s) { return s.dir === d; }); });
+                    MessageBox.confirm("导入内置技能包（版本 " + (pkg.version || "?") + "，" + pkg.skills.length + " 个技能，" +
+                        Math.round(t.length / 1024) + " KB）？\n已有技能的启用状态保留" +
+                        (gone.length ? "；包里没有的 " + gone.length + " 个会被删除：" + gone.join("、") : "") + "。", {
+                        title: "导入内置技能包",
+                        actions: ["导入", MessageBox.Action.CANCEL],
+                        emphasizedAction: "导入",
+                        onClose: function (sAct) {
+                            if (sAct !== "导入") { return; }
+                            m.setProperty("/bLoading", true);
+                            BuiltinAdmin.call("import", pkg).then(function (r) {
+                                MessageToast.show("已导入：新增 " + r.added + "，更新 " + r.updated + "，删除 " + r.removed);
+                                m.setProperty("/error", "");
+                                m.setProperty("/bView", null);
+                                return that._skAdmLoadBuiltin().then(function () {
+                                    var first = (m.getProperty("/builtin") || [])[0];
+                                    if (first) { return that._skAdmOpenBuiltin(first.dir); }
+                                });
+                            }).catch(function (err) {
+                                m.setProperty("/error", "导入失败：" + err.message);
+                            }).then(function () { m.setProperty("/bLoading", false); });
+                        }
+                    });
+                }).catch(function (err) { m.setProperty("/error", "导入失败：" + err.message); });
+            };
+            input.click();
         },
         /** 内置技能的查看内容：说明去掉开头重复的名称，正文去掉开头的 --- 元数据 */
         _skAdmBuiltinView: function (b) {
@@ -480,7 +561,7 @@ sap.ui.define([
             var files = [{ path: "SKILL.md", body: body, on: "yes" }].concat((b.files || []).map(function (f) {
                 return { path: f.path, body: f.content, on: "no" };
             }));
-            return { dir: b.dir, title: b.title, source: b.source, content: b.content, files: files,
+            return { dir: b.dir, title: b.title, source: b.source, content: b.content, files: files, scenes: b.scenes, active: b.active !== false,
                 description: b.description.indexOf(b.title + "：") === 0 ? b.description.slice(b.title.length + 1) : b.description,
                 body: body };
         },
@@ -498,8 +579,7 @@ sap.ui.define([
             var m = this.getView().getModel("skillAdmin");
             var id = e.getSource().getBindingContext("skillAdmin").getProperty("id");
             if (id.indexOf("builtin:") === 0) {
-                var b = (m.getProperty("/builtin") || []).filter(function (x) { return "builtin:" + x.dir === id; })[0];
-                if (b) { m.setProperty("/bView", this._skAdmBuiltinView(b)); this._skAdmDerive(); }
+                this._skAdmOpenBuiltin(id.slice(8));
                 return;
             }
             var s = (m.getProperty("/items") || []).filter(function (x) { return x.id === id; })[0];

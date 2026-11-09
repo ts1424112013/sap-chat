@@ -346,6 +346,12 @@
 *   ③ browser_finish 不删 MCP 审计行、补消息序号; browser_steps 不读 MCP 行(同 ADT)
 *   依赖: ZAI_MCP_SRV / ZAI_MCP_TOOL、ZCL_AI_MCP_CLIENT / ZCL_AI_MCP_SERVICE(〇-AU)
 *   ★ 重贴后核对标记: browser_start 有 zcl_ai_mcp_service=>run_tools( ); browser_tool 有 zcl_ai_mcp_service=>call(
+* V15.30 20261110(内置技能改由 SAP 下发,《03》〇-AV): 只改 ty_brun_start 与 browser_start ——
+*   browser_start 新参数 iv_builtin_ver(浏览器手里那份内置技能的版本号); 在技能清单之后调
+*   ZCL_AI_BSKILL_SERVICE=>for_user: 回 builtin_ver(当前用户能用的内置技能版本号, 空 = 没有)和
+*   builtin_json(版本号与浏览器的不同时才回正文, 否则为空, 浏览器用缓存)。内置技能按用户开放的场景过滤
+*   依赖: 表 ZAI_BSKILL、ZCL_AI_BSKILL_SERVICE V1.0(〇-AV)先激活
+*   ★ 重贴后核对标记: ty_brun_start 有 builtin_json / builtin_ver; browser_start 有 zcl_ai_bskill_service=>for_user(
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -447,6 +453,8 @@ CLASS zcl_ai_agent_service DEFINITION
              answer     TYPE string,   " V15.20: 非空 = 确定性回答(Fiori 参数卡 / 候选 / 闸门提示), 浏览器不调模型
              card       TYPE string,   " V15.20: 确定性回答带的参数卡 JSON(同 browser_tool 的 ev_card)
              adt        TYPE abap_bool, " V15.25: X = 浏览器可以用 ADT 代码工具(直连 /sap/bc/adt, 只读)
+             builtin_ver  TYPE string,  " V15.30: 当前用户能用的内置技能版本号(空 = 没有)
+             builtin_json TYPE string,  " V15.30: 内置技能 [{dir,title,content,files}]; 浏览器版本号相同时为空
            END OF ty_brun_start.
 
     " 开始一次运行: 校验开通 / 开关 / 会话 / 场景 / 技能 / 模型, 建会话头, 返回可用工具
@@ -458,6 +466,7 @@ CLASS zcl_ai_agent_service DEFINITION
                 iv_skill_id   TYPE string OPTIONAL
                 iv_think      TYPE string OPTIONAL
                 iv_focus_artifact_id TYPE string OPTIONAL   " V15.20: 前端聚焦的结果(Fiori「交给模型分析」用)
+                iv_builtin_ver TYPE string OPTIONAL         " V15.30: 浏览器手里那份内置技能的版本号
       EXPORTING es_start      TYPE ty_brun_start
                 ev_error      TYPE string
                 ev_http       TYPE i.
@@ -4518,6 +4527,11 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
     es_start-skills_json = |[{ lv_sk_js }]|.
+
+    " ---- 11. V15.30 内置技能(〇-AV): 按用户开放的场景下发; 浏览器已有同一版本时不回正文 ----
+    zcl_ai_bskill_service=>for_user( EXPORTING iv_known   = iv_builtin_ver
+                                     IMPORTING ev_version = es_start-builtin_ver
+                                               ev_json    = es_start-builtin_json ).
 
   ENDMETHOD.
 

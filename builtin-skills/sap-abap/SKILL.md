@@ -2,6 +2,7 @@
 name: sap-abap
 description: "ABAP 增强与性能：问怎么找和实现增强（SMOD/CMOD、Enhancement Spot、BAdI）、ABAP 性能优化、ST05 SQL 追踪、消息类和消息配置、常用系统表时用。"
 metadata:
+  scenes: "CODE"
   order: 100
   title: "ABAP 增强与性能"
   source: "sap-trench（github.com/shrek-abaper/sap-functional-skill，MIT）references/abap.md"

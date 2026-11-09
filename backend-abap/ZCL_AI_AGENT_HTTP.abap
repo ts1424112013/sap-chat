@@ -4,7 +4,7 @@
 *         /sap/bc/zai_agent 的处理类(IF_HTTP_EXTENSION)
 *         设计: 功能计划书/Deep Agents浏览器接入/02-方案与开发计划_V2.0 §5.1
 *
-*         POST /run/start         { sessionId, scene, modelId, question, think, skillId }
+*         POST /run/start         { sessionId, scene, modelId, question, think, skillId, builtinVersion }
 *              → { runId, model, tools:[{name,description,parameters}], systemPrompt, limits }
 *         POST /chat/completions  OpenAI 兼容请求体; 头 X-Lingxi-Run = 运行号
 *              → 网关响应原文(SAP 用自己的模型配置与密钥转发, 透传 tools / tool_calls)
@@ -13,6 +13,7 @@
 *         POST /run/finish        { runId, status, answer, message, skillsUsed } → { ok }
 *         POST /results/export    { runId, resultId } → { ok, label, rows, columns, truncated, csv }(V1.1)
 *         POST /admin/mcp/<动作>  MCP 连接管理(V1.7, 只限管理员): list / get / save / delete / test / fetch / tools
+*         POST /admin/bskill/<动作> 内置技能管理(V1.8, 只限管理员): list / get / import / active
 *
 * 安全:   ① 只收 POST; ② 必须带 X-Lingxi-Agent: 1(跨站表单发不出自定义头; 跨站 fetch
 *           带它会触发预检, 本节点不回 CORS 头 → 浏览器拦下);
@@ -35,9 +36,13 @@
 *         V1.6 20261108 /run/finish 收 title(模型总结的会话标题; 依赖 ZCL_AI_AGENT_SERVICE V15.26)
 *         V1.7 20261109 MCP 连接 M1(《03》〇-AU): 新路径 /admin/mcp/<动作>, 交给 ZCL_AI_MCP_SERVICE=>admin
 *              (只限管理员, 在服务类里查); 工具执行仍走 /tools/exec(依赖 ZCL_AI_AGENT_SERVICE V15.29)
+*         V1.8 20261110 内置技能改由 SAP 下发(《03》〇-AV): /run/start 收 builtinVersion、回 builtinVersion /
+*              builtinSkills(版本号相同时不回); 新路径 /admin/bskill/<动作>(list / get / import / active, 只限管理员)
+*              交给 ZCL_AI_BSKILL_SERVICE=>admin(依赖 ZCL_AI_AGENT_SERVICE V15.30、ZCL_AI_BSKILL_SERVICE V1.0)
 *         ★ 重贴后核对标记: INTERFACES if_http_extension; handle_request 里有
 *           WHEN '/run/start' / '/chat/completions' / '/tools/exec' / '/tools/audit' / '/results/export' / '/run/finish' / '/run/steps';
-*           WHEN OTHERS 里有 '/admin/mcp/' 与 zcl_ai_mcp_service=>admin(
+*           WHEN OTHERS 里有 '/admin/mcp/' 与 zcl_ai_mcp_service=>admin( 、'/admin/bskill/' 与 zcl_ai_bskill_service=>admin(;
+*           /run/start 回 builtinVersion
 *=======================================================================
 CLASS zcl_ai_agent_http DEFINITION
   PUBLIC
@@ -58,6 +63,7 @@ CLASS zcl_ai_agent_http DEFINITION
              think      TYPE abap_bool,
              skill_id   TYPE string,
              focus_artifact_id TYPE string,   " V1.2: 前端聚焦的结果(Fiori「交给模型分析」)
+             builtin_version   TYPE string,   " V1.8: 浏览器手里那份内置技能的版本号
            END OF ty_start_req.
     TYPES: BEGIN OF ty_tool_req,
              run_id     TYPE string,
@@ -164,6 +170,7 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                         iv_skill_id   = ls_start-skill_id
                         iv_think      = COND #( WHEN ls_start-think = abap_true THEN `X` ELSE `` )
                         iv_focus_artifact_id = ls_start-focus_artifact_id
+                        iv_builtin_ver = ls_start-builtin_version
               IMPORTING es_start      = ls_out
                         ev_error      = lv_err
                         ev_http       = lv_http ).
@@ -179,6 +186,8 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                              |"skills":{ COND string( WHEN ls_out-skills_json IS INITIAL THEN `[]` ELSE ls_out-skills_json ) },| &&
                              |"export":{ COND string( WHEN ls_out-export = abap_true THEN `true` ELSE `false` ) },| &&
                              |"adt":{ COND string( WHEN ls_out-adt = abap_true THEN `true` ELSE `false` ) },| &&
+                             |"builtinVersion":{ jstr( ls_out-builtin_ver ) },| &&
+                             COND string( WHEN ls_out-builtin_json IS NOT INITIAL THEN |"builtinSkills":{ ls_out-builtin_json },| ) &&
                              |"answer":{ jstr( ls_out-answer ) },| &&
                              COND string( WHEN ls_out-card IS NOT INITIAL THEN |"card":{ ls_out-card },| ) &&
                              |"limits":\{"maxModelCalls":{ ls_out-max_model },"maxToolCalls":{ ls_out-max_tool },| &&
@@ -359,6 +368,21 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
               ENDIF.
               COMMIT WORK.
               reply( io_server = server iv_code = 200 iv_json = lv_mjs ).
+            " ---------------- V1.8: 内置技能管理(只限管理员, 在 ZCL_AI_BSKILL_SERVICE 里查) ----------------
+            ELSEIF strlen( lv_path ) > 14 AND substring( val = lv_path len = 14 ) = '/admin/bskill/'.
+              DATA lv_bjs TYPE string.
+              zcl_ai_bskill_service=>admin( EXPORTING iv_action = substring( val = lv_path off = 14 )
+                                                      iv_body   = lv_body
+                                            IMPORTING ev_json   = lv_bjs
+                                                      ev_http   = lv_http
+                                                      ev_error  = lv_err ).
+              IF lv_err IS NOT INITIAL.
+                ROLLBACK WORK.
+                fail( io_server = server iv_code = lv_http iv_msg = lv_err ).
+                RETURN.
+              ENDIF.
+              COMMIT WORK.
+              reply( io_server = server iv_code = 200 iv_json = lv_bjs ).
             ELSE.
               fail( io_server = server iv_code = 404 iv_msg = |未知路径 { lv_path }| ).
             ENDIF.

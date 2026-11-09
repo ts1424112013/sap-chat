@@ -2,6 +2,7 @@
 name: sap-troubleshooting
 description: "SAP 报错排查案例：遇到 SAP 报错、接口失败、BAPI 调用异常、增强不生效、配置传输出问题时用。收录 15 个真实案例（OData 建 STO 报通用错误、MRKO 寄售结算报错、BAPI 建交货单后冲销失败、GGB1 替换传输覆盖生产配置、MIGO 309 序列号重复等），按现象→根因→解决→经验总结写。"
 metadata:
+  scenes: "DATA,CODE"
   order: 10
   title: "SAP 报错排查案例"
   source: "sap-trench（github.com/shrek-abaper/sap-functional-skill，MIT）references/troubleshooting.md"

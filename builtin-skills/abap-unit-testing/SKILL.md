@@ -2,6 +2,7 @@
 name: abap-unit-testing
 description: "ABAP 单元测试：要给 ABAP 类或程序写单元测试、建测试类、写断言、做测试替身（模拟依赖）、隔离数据库（SQL / CDS 测试环境）、给老代码加测试缝，或问 ABAP Unit 怎么用时用。"
 metadata:
+  scenes: "CODE"
   order: 160
   title: "ABAP 单元测试"
   source: "abap-unit-testing（github.com/likweitan/abap-skills，MIT），去掉了 RAP 部分"

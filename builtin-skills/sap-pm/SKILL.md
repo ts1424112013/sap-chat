@@ -2,6 +2,7 @@
 name: sap-pm
 description: "PM 设备维护：问设备 / 功能位置、维护通知单、维护订单、维护计划、任务清单、测量点、序列号的事务码时用。"
 metadata:
+  scenes: "DATA,CODE"
   order: 90
   title: "PM 设备维护"
   source: "sap-trench（github.com/shrek-abaper/sap-functional-skill，MIT）references/pm.md"

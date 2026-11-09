@@ -2,6 +2,7 @@
 name: abap-code-review
 description: "ABAP 代码审查：要审查一个 ABAP 程序、类、函数或增强能不能上线，查安全漏洞、权限检查、性能、异常处理、编码规范、接口风险时用。按 9 个维度逐项审，每条问题带代码证据和规则编号，最后给出能否上线的结论（可以上线 / 有条件上线 / 不能上线）和一份审查报告。"
 metadata:
+  scenes: "CODE"
   order: 140
   title: "ABAP 代码审查"
   source: "abap-code-review（github.com/shrek-abaper/sap-engineering-skill，MIT）"

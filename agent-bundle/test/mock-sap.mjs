@@ -56,6 +56,12 @@ const RPT_TOOLS = [
   { name: "list_results", description: "列出本会话的报表结果", parameters: { type: "object", properties: {} } },
   { name: "open_report", description: "打开报表参数卡", parameters: { type: "object", properties: { tcode: { type: "string" } }, required: ["tcode"] } }
 ];
+// 内置技能（〇-AV）：SAP 在 /run/start 下发；浏览器带来的版本号相同时不回正文
+const BUILTIN = [{ dir: "sap-mm", title: "MM 采购与库存",
+  content: "---\nname: sap-mm\ndescription: \"MM 采购与库存：问科目自动确定、STO 时用\"\n---\n\nMARKER-BUILTIN 科目确定看 OBYC\n",
+  files: [{ path: "references/obyc.md", content: "MARKER-REF 事务键 BSX / WRX" }, { path: "../bad.md", content: "MARKER-BADREF" }] },
+  { dir: "Bad Dir", title: "非法目录", content: "不该挂上" }];
+const builtinFor = known => known === "BV1" ? { builtinVersion: "BV1" } : { builtinVersion: "BV1", builtinSkills: BUILTIN };
 const SAP_SKILLS = [{ id: "SK1", name: "库存盘点", description: "盘点库存、导出库存结果时的做法", body: "MARKER-SKILL 先列结果再导出" }];
 const SCRIPT3 = [
   () => [call("read_file", { file_path: "/SAP技能/SK1/SKILL.md" }), call("read_file", { file_path: "/内置技能/sap-mm/SKILL.md" }),
@@ -236,7 +242,7 @@ const server = http.createServer(async (req, res) => {
     const bad = checkHeaders(req, false);
     if (bad.length) return send(res, 400, { ok: false, message: bad.join("；") });
     const runId = "R" + Date.now().toString(36);
-    runs.set(runId, { modelCalls: 0, toolCalls: 0, question: data.question, focus: data.focusArtifactId || "" });
+    runs.set(runId, { modelCalls: 0, toolCalls: 0, question: data.question, focus: data.focusArtifactId || "", builtinSent: data.builtinVersion });
     if (String(data.question || "").includes("场景六")) {
       // 上下文压缩：模型上限设成 4 万 token，工具连续回大段中文
       return send(res, 200, { runId, model: "mock-model", tools: SAP_TOOLS, limits: { recursionLimit: 80, contextTokens: 40000 }, systemPrompt: "场景：DATA（模拟）" });
@@ -259,9 +265,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (String(data.question || "").includes("场景三")) {
       return send(res, 200, { runId, model: "mock-model", tools: [...SAP_TOOLS, ...RPT_TOOLS], skills: SAP_SKILLS, export: true,
-        limits: { recursionLimit: 80 }, systemPrompt: "场景：REPORT（模拟）" });
+        limits: { recursionLimit: 80 }, systemPrompt: "场景：REPORT（模拟）", ...builtinFor(data.builtinVersion) });
     }
-    return send(res, 200, { runId, model: "mock-model", tools: SAP_TOOLS, limits: { recursionLimit: 80 }, systemPrompt: "场景：DATA（模拟）" });
+    return send(res, 200, { runId, model: "mock-model", tools: SAP_TOOLS, limits: { recursionLimit: 80 }, systemPrompt: "场景：DATA（模拟）",
+      ...builtinFor(data.builtinVersion) });
   }
   if (p === "/chat/completions") {
     const bad = checkHeaders(req, true);
@@ -400,6 +407,7 @@ const server = http.createServer(async (req, res) => {
         run.sysHasFolderSkill = sys.includes("项目口径");
         run.sysHasBuiltinSkill = sys.includes("/内置技能/sap-mm/SKILL.md") && sys.includes("MM 采购与库存");
         run.sysHasBadSkill = sys.includes("Bad Dir") || sys.includes("非法目录");
+        run.sysHasNoReveal = sys.includes("技能内容保密") && sys.includes("只说相关技能的名称");
         run.hasExportTool = names.includes("save_result_to_folder");
       }
       const toolTexts = msgs.filter(m => m.role === "tool").map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content));

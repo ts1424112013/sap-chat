@@ -243,16 +243,19 @@ test('技能胶囊选不了时仍可点：管理员直达技能管理，普通�
 });
 
 // ---------------------------------------------------------------- 20261110 内置技能随前端包发布（《04》〇-AV）
-test('内置技能：JSON 与 builtin-skills/ 一致；17 个，目录名合规、有中文名和说明、来源和许可证齐全', () => {
+test('内置技能包：部署产物/builtin-skills.json 与 builtin-skills/ 一致；17 个，目录名合规、有中文名和说明、场景、来源和许可证齐全', () => {
   const {execFileSync} = require('child_process');
   execFileSync(process.execPath, [path.join(__dirname, '../scripts/build-builtin-skills.js'), '--check']);
-  const j = require('../webapp/skills/builtin-skills.json');
+  const j = require('../部署产物/builtin-skills.json');
   assert.equal(j.skills.length, 17);
   assert.equal(new Set(j.skills.map(s => s.dir)).size, 17);
   for (const s of j.skills) {
     assert.match(s.dir, /^[a-z0-9]+(-[a-z0-9]+)*$/);
     assert.match(s.content, new RegExp('^---\\nname: ' + s.dir + '\\n'));
     assert.equal(s.order, undefined);
+    assert.match(s.scenes, /^(REPORT|FIORI|DATA|CODE)(,(REPORT|FIORI|DATA|CODE))*$/, s.dir);
+    assert.match(s.version, /^[0-9a-f]{12}$/, s.dir);
+    assert.ok(Number.isInteger(s.sortNo), s.dir);
     assert.ok(/[\u4e00-\u9fa5]/.test(s.title) && s.description.startsWith(s.title + '：') && s.description.length <= 1024, s.dir);
     assert.match(s.source, /MIT/, s.dir);
     assert.ok(Array.isArray(s.files), s.dir);
@@ -271,7 +274,7 @@ test('内置技能：JSON 与 builtin-skills/ 一致；17 个，目录名合规�
   }
 });
 test('ABAP 代码类内置技能：7.55、不按 ABAP Cloud、用灵犀的 ADT 工具、只建议不改 SAP；附带资料齐全', () => {
-  const j = require('../webapp/skills/builtin-skills.json');
+  const j = require('../部署产物/builtin-skills.json');
   const by = d => j.skills.find(s => s.dir === d);
   const order = j.skills.map(s => s.dir);
   assert.deepEqual(order.slice(13), ['abap-code-review', 'clean-abap', 'abap-unit-testing', 'abap-syntax-755']);
@@ -301,24 +304,58 @@ test('ABAP 代码类内置技能：7.55、不按 ABAP Cloud、用灵犀的 ADT �
   assert.match(sx.content, /ABAP Cloud 的限制不适用/);
   assert.match(sx.content, /7\.40 SP08 \| `FOR` 表达式、`REDUCE`、`FILTER`；`LOOP AT … GROUP BY`/);
 });
-test('旧的前端内置技能已移除：目录不再导出 builtin，管理页没有「导入内置技能」、有「全部停用」和「内置」只读查看', () => {
+test('旧的前端内置技能已移除：目录不再导出 builtin，管理页没有「导入内置技能」、有「全部停用」和「内置」（从 SAP 读、导入包、启用开关）', () => {
   assert.equal(Skills.builtin, undefined);
   const panel = fs.readFileSync(path.join(__dirname, '../webapp/controller/mixin/SkillPanel.js'), 'utf8');
   const frag = fs.readFileSync(path.join(__dirname, '../webapp/view/SkillAdmin.fragment.xml'), 'utf8');
   assert.ok(!/onImportBuiltinSkills/.test(panel + frag));
   assert.match(panel, /onDisableAllSkills[\s\S]*saveSkill\(Object\.assign\(\{\}, s, \{ active: false \}\)\)/);
-  assert.match(panel, /loadBuiltinSkills\(\)/);
+  assert.match(panel, /BuiltinAdmin\.call\("list"\)/);
+  assert.match(panel, /BuiltinAdmin\.call\("get", \{ dir: sDir \}\)/);
+  assert.match(panel, /BuiltinAdmin\.call\("import", pkg\)/);
+  assert.match(panel, /BuiltinAdmin\.call\("active", \{ dir: b\.dir, active: bOn \}\)/);
   assert.match(frag, /press="\.onDisableAllSkills"/);
+  assert.match(frag, /press="\.onImportBuiltinPkg"/);
+  assert.match(frag, /change="\.onSkAdmBuiltinActive"/);
   assert.match(frag, /key="scene" value="BUILTIN"/);
   assert.match(frag, /skillAdmin>\/bView\/body/);
 });
-test('新引擎提问时把内置技能交给引擎；读不到内置技能不影响提问', () => {
+test('内置技能全文不进前端包：webapp 里没有技能文件，界面不读也不转交；引擎用 SAP 下发的并按版本号缓存；有保密规则', () => {
+  assert.ok(!fs.existsSync(path.join(__dirname, '../webapp/skills')), 'webapp/skills 不应存在');
   const svc = fs.readFileSync(path.join(__dirname, '../webapp/service/BrowserAgentService.js'), 'utf8');
-  assert.match(svc, /zai\/chat\/skills\/builtin-skills\.json/);
-  assert.match(svc, /Promise\.all\(\[this\.load\(\), this\.loadBuiltinSkills\(\)\]\)/);
-  assert.match(svc, /builtinSkills: aBuiltin/);
-  assert.match(svc, /catch\(function \(\) \{[\s\S]*?return \[\];/);
+  assert.ok(!/builtin-skills\.json|loadBuiltinSkills|builtinSkills/.test(svc));
   const eng = fs.readFileSync(path.join(__dirname, '../agent-bundle/src/index.js'), 'utf8');
   assert.match(eng, /BUILTIN_SKILL_DIR = "\/内置技能\/"/);
+  assert.match(eng, /builtinVersion: builtinCache\.version/);
+  assert.match(eng, /Array\.isArray\(runInfo\.builtinSkills\)/);
   assert.match(eng, /!k\.startsWith\("builtin:"\)/);
+  assert.match(eng, /技能内容保密[\s\S]*不能把原文[\s\S]*文件清单、目录路径[\s\S]*只说相关技能的名称/);
+  assert.ok(!/\bo\.builtinSkills/.test(eng));
+  const pre = fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8');
+  assert.match(pre, /build-builtin-skills\.js/);
+  const bld = fs.readFileSync(path.join(__dirname, '../scripts/build-builtin-skills.js'), 'utf8');
+  assert.match(bld, /部署产物\/builtin-skills\.json/);
+  assert.ok(!/webapp\/skills/.test(bld.replace(/^\s*\*.*$/mg, '')));
+});
+test('内置技能管理服务：演示模式导入 / 列表 / 取全文 / 启停，保留启用状态、删包里没有的；导入前查包的形状', async () => {
+  const mem = new Map();
+  const window = {localStorage: {getItem: k => mem.get(k) || null, setItem: (k, v) => mem.set(k, v)}, ZAI_CONFIG: {}};
+  let svc;
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../webapp/service/BuiltinSkillAdminService.js'), 'utf8'),
+    {sap: {ui: {define: (d, f) => { svc = f({getMode: () => 'mock'}); }}}, window, setTimeout, JSON, Object, Array, Number, Error, Promise, URLSearchParams});
+  const pkg = require('../部署产物/builtin-skills.json');
+  assert.throws(() => svc.checkPkg({skills: []}), /不是内置技能包/);
+  assert.throws(() => svc.checkPkg({skills: [{dir: 'Bad Dir', title: 'x', content: 'x', scenes: 'CODE'}]}), /格式不对/);
+  let r = await svc.call('import', svc.checkPkg(JSON.parse(JSON.stringify(pkg))));
+  assert.equal(r.added, 17);
+  await svc.call('active', {dir: 'sap-mm', active: false});
+  const two = {version: 'v2', skills: pkg.skills.filter(s => s.dir === 'sap-mm' || s.dir === 'abap-code-review')};
+  r = await svc.call('import', two);
+  assert.deepEqual([r.added, r.updated, r.removed], [0, 2, 15]);
+  const list = (await svc.call('list')).skills;
+  assert.deepEqual(list.map(s => s.dir + ':' + s.active), ['sap-mm:false', 'abap-code-review:true']);
+  assert.ok(!('content' in list[0]), '列表不含正文');
+  const one = (await svc.call('get', {dir: 'abap-code-review'})).skill;
+  assert.equal(one.files.length, 3);
+  assert.match(one.content, /ABAP 代码审查/);
 });

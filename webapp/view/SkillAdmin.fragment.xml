@@ -74,14 +74,17 @@
                             </Button>
                             <!-- 20261110（《04》〇-AV）：随前端包发布的内置技能，只读 -->
                             <Button text="{= '内置 ' + (${skillAdmin>/counts/BUILTIN} || 0) }" type="Transparent" press=".onSkillAdmFilter" class="admPill"
-                                    tooltip="随灵犀前端包发布的技能：所有用户都能用，这里只能查看">
+                                    tooltip="内置技能：从内置技能包导入，按适用场景下发给开放了该场景的用户；内容只有管理员能看">
                                 <customData>
                                     <core:CustomData key="scene" value="BUILTIN"/>
                                     <core:CustomData key="on" value="{= ${skillAdmin>/filter} === 'BUILTIN' ? 'yes' : 'no' }" writeToDom="true"/>
                                 </customData>
                             </Button>
                         </HBox>
-                        <List items="{skillAdmin>/view}" showSeparators="None" noDataText="没有匹配的技能" class="skAdmList">
+                        <List items="{skillAdmin>/view}" showSeparators="None" busy="{= ${skillAdmin>/filter} === 'BUILTIN' &amp;&amp; ${skillAdmin>/bLoading} }"
+                              busyIndicatorDelay="300"
+                              noDataText="{= ${skillAdmin>/filter} === 'BUILTIN' ? '还没有内置技能：点下面「导入内置技能包」，选项目里的 部署产物/builtin-skills.json' : '没有匹配的技能' }"
+                              class="skAdmList">
                             <CustomListItem type="Active" press=".onSkillAdmPick" class="skAdmRow">
                                 <customData>
                                     <core:CustomData key="on" value="{= ${skillAdmin>on} ? 'yes' : 'no' }" writeToDom="true"/>
@@ -103,13 +106,24 @@
                         <Link text="全部停用" tooltip="把 SAP 里所有启用的技能停用（内容保留，可以单个再启用）；内置技能不受影响"
                               press=".onDisableAllSkills" enabled="{= ${skillAdmin>/activeCount} > 0 &amp;&amp; !${skillAdmin>/saving} }"
                               visible="{= ${skillAdmin>/filter} !== 'BUILTIN' }" class="skAdmImport"/>
+                        <Link text="导入内置技能包" tooltip="选项目里的 部署产物/builtin-skills.json；包里没有的内置技能会删除，已有技能的启用状态保留"
+                              press=".onImportBuiltinPkg" enabled="{= !${skillAdmin>/bLoading} }"
+                              visible="{= ${skillAdmin>/filter} === 'BUILTIN' }" class="skAdmImport"/>
                     </VBox>
 
                     <!-- ===== 右：内置技能（只读全文） ===== -->
                     <VBox renderType="Bare" class="skAdmEdit skAdmBuiltin" visible="{= !!${skillAdmin>/bView} }">
-                        <HBox alignItems="Center" class="skAdmEditHead">
-                            <Title text="{skillAdmin>/bView/title}" level="H4" class="skAdmName"/>
-                            <Text text="内置" class="skVerTag"/>
+                        <HBox alignItems="Center" justifyContent="SpaceBetween" class="skAdmEditHead">
+                            <HBox alignItems="Center" class="skAdmEditTitle">
+                                <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                <Title text="{skillAdmin>/bView/title}" level="H4" class="skAdmName"/>
+                                <Text text="内置" class="skVerTag"/>
+                            </HBox>
+                            <HBox alignItems="Center" class="admEnable">
+                                <Text text="启用" class="admEnableText"/>
+                                <Switch state="{skillAdmin>/bView/active}" change=".onSkAdmBuiltinActive" enabled="{= !${skillAdmin>/bLoading} }"
+                                        tooltip="停用后所有人都拿不到这个内置技能"/>
+                            </HBox>
                         </HBox>
                         <Text text="{skillAdmin>/bView/description}" class="skAdmBuiltinDesc"/>
                         <Text text="{skillAdmin>/bMeta}"
@@ -228,7 +242,7 @@
 
                 <!-- ===== 页脚 ===== -->
                 <HBox alignItems="Center" class="aplFoot skAdmFoot">
-                    <Text text="{= ${skillAdmin>/bView} ? '内置技能随前端包发布：所有用户都能用，模型觉得相关时自动读取。要修改请改项目里的 builtin-skills/，重新打包上传' : ${skillAdmin>/footNote} }" class="aplHint admFootHint">
+                    <Text text="{= ${skillAdmin>/bView} ? '内置技能存在 SAP，提问时只下发给开放了适用场景的用户，模型觉得相关时才读；用户看不到内容。要修改请改项目里的 builtin-skills/，重新生成内置技能包后在这里导入' : ${skillAdmin>/footNote} }" class="aplHint admFootHint">
                         <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
                     </Text>
                     <Button text="用测评用例试跑" press=".onEvalSkill" visible="{= !${skillAdmin>/bView} }" enabled="{= !!${skillAdmin>/edit/version} &amp;&amp; !${skillAdmin>/saving} }"

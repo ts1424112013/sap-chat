@@ -2,6 +2,7 @@
 name: sap-sd
 description: "SD 销售、交货与开票：问销售订单、交货、开票、信贷、合作伙伴确定的事务码和表，SD 常用 BAPI（建销售订单、合并开票、交货过账和修改），SD 增强点时用。"
 metadata:
+  scenes: "DATA,CODE"
   order: 40
   title: "SD 销售、交货与开票"
   source: "sap-trench（github.com/shrek-abaper/sap-functional-skill，MIT）references/sd.md"

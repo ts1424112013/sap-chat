@@ -2,6 +2,7 @@
 name: sap-auth
 description: "SAP 权限排查：问用户缺权限怎么查（SU53、SU56、SUIM）、AUTHORITY-CHECK 写法、常用权限对象、角色维护、FI / MM 权限对象时用。"
 metadata:
+  scenes: "DATA,CODE"
   order: 120
   title: "SAP 权限排查"
   source: "sap-trench（github.com/shrek-abaper/sap-functional-skill，MIT）references/auth.md"

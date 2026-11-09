@@ -2,6 +2,7 @@
 name: sap-pp
 description: "PP 生产计划：问 BOM、工作中心、工艺路线、生产订单、MRP、ATP 可用性检查、MTO 可配置 BOM 的事务码、表、BAPI 和配置，COOIS 增强时用。"
 metadata:
+  scenes: "DATA,CODE"
   order: 60
   title: "PP 生产计划"
   source: "sap-trench（github.com/shrek-abaper/sap-functional-skill，MIT）references/pp.md"

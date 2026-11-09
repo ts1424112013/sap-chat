@@ -2,6 +2,7 @@
 name: abap-syntax-755
 description: "ABAP 7.55 语法边界：要写、改或审查 ABAP 代码，需要确认某个写法在本系统（ABAP 7.55）能不能用、新旧写法怎么换、为什么激活报语法错时用。列出 7.55 能用的新语法（内联声明、构造表达式、新 Open SQL、FOR / REDUCE、ENUM、CTE 等）和不能用的（7.57 的 FINAL( ) 等），以及 ABAP Cloud 限制不适用。"
 metadata:
+  scenes: "CODE"
   order: 170
   title: "ABAP 7.55 语法边界"
   source: "参考 superclaude-for-sap common/abap-release-reference.md（github.com/babamba2/superclaude-for-sap，MIT），按本系统 7.55 重写并核对"

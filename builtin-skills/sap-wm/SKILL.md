@@ -2,6 +2,7 @@
 name: sap-wm
 description: "WM 仓库管理：问转储需求、转储单、仓位、盘点、WM 监控报表、WM 配置和表时用（经典 LE-WM）。"
 metadata:
+  scenes: "DATA,CODE"
   order: 70
   title: "WM 仓库管理"
   source: "sap-trench（github.com/shrek-abaper/sap-functional-skill，MIT）references/wm.md"

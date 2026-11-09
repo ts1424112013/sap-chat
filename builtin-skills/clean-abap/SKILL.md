@@ -2,6 +2,7 @@
 name: clean-abap
 description: "Clean ABAP 规范：要看一段 ABAP 写得好不好、怎么写更清楚、重构建议、命名 / 方法 / 条件 / 内表 / 异常 / 注释的写法时用。按 Clean ABAP 规范逐类检查，每条指出位置、影响和最小改法，分严重 / 主要 / 次要。上线前的安全和权限审查用「ABAP 代码审查」。"
 metadata:
+  scenes: "CODE"
   order: 150
   title: "Clean ABAP 规范"
   source: "abap（github.com/likweitan/abap-skills，MIT）；规范出自 SAP Clean ABAP 风格指南（CC BY 3.0）"

@@ -2,6 +2,7 @@
 name: sap-fico
 description: "FI/CO 财务与成本：问财务凭证、科目、清账、付款运行、汇率、税、COPA、标准成本的事务码和表，BAPI_ACC_DOCUMENT_POST 记账，FI 凭证增强点，替换与验证（GGB0/GGB1，含传输风险），汇率确定时用。"
 metadata:
+  scenes: "DATA,CODE"
   order: 50
   title: "FI/CO 财务与成本"
   source: "sap-trench（github.com/shrek-abaper/sap-functional-skill，MIT）references/fico.md"

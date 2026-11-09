@@ -2,6 +2,7 @@
 name: sap-integration
 description: "SAP 接口集成：问 PI/PO 接口排查、OData 服务调试、IDoc 开发和状态码（如状态 51）、ABAP Proxy、JSON / XML 处理时用。"
 metadata:
+  scenes: "CODE"
   order: 110
   title: "SAP 接口集成"
   source: "sap-trench（github.com/shrek-abaper/sap-functional-skill，MIT）references/integration.md"
