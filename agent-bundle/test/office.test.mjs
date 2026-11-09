@@ -154,6 +154,31 @@ test("xlsx：读真实格式 —— 共享字符串富文本、行内字符串�
   assert.ok(lines.includes("2\t\t#N/A"), t);
 });
 
+test("xlsx：合并单元格、图片位置、文本框文字、批注（需求文档常用）", async () => {
+  const W = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+  const anchor = (col, row, body) => `<xdr:twoCellAnchor><xdr:from><xdr:col>${col}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${row}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>9</xdr:col><xdr:row>9</xdr:row></xdr:to>${body}<xdr:clientData/></xdr:twoCellAnchor>`;
+  const files = [
+    { name: "xl/workbook.xml", data: `<workbook ${W}><sheets><sheet name="需求" sheetId="1" r:id="rId1"/></sheets></workbook>` },
+    { name: "xl/_rels/workbook.xml.rels", data: '<Relationships><Relationship Id="rId1" Type="x/worksheet" Target="worksheets/sheet1.xml"/></Relationships>' },
+    { name: "xl/worksheets/sheet1.xml", data: `<worksheet ${W}><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>标题</t></is></c></row></sheetData>` +
+      '<mergeCells count="2"><mergeCell ref="A1:D1"/><mergeCell ref="B3:C4"/></mergeCells><drawing r:id="rId5"/><legacyDrawing r:id="rId6"/></worksheet>' },
+    { name: "xl/worksheets/_rels/sheet1.xml.rels", data: '<Relationships>' +
+      '<Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>' +
+      '<Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="/xl/comments1.xml"/></Relationships>' },
+    { name: "xl/drawings/drawing1.xml", data: '<xdr:wsDr xmlns:xdr="x" xmlns:a="a">' +
+      anchor(0, 2, '<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="2" name="图片 1" descr="界面截图"/></xdr:nvPicPr></xdr:pic>') +
+      anchor(5, 0, '<xdr:sp><xdr:nvSpPr><xdr:cNvPr id="3" name="文本框 2"/></xdr:nvSpPr><xdr:txBody><a:bodyPr/><a:p><a:r><a:t>1. 工厂必填</a:t></a:r></a:p><a:p><a:r><a:t>2. 校验 &amp; 报错</a:t></a:r></a:p></xdr:txBody></xdr:sp>') +
+      anchor(7, 10, '<xdr:graphicFrame><a:graphic/></xdr:graphicFrame>') + "</xdr:wsDr>" },
+    { name: "xl/comments1.xml", data: '<comments><authors><author>张三</author></authors><commentList><comment ref="A1" authorId="0"><text><r><t>张三:</t></r><r><t xml:space="preserve">\n标题要改</t></r></text></comment></commentList></comments>' }
+  ];
+  const t = await officeToText("/q.xlsx", await makeZip(files));
+  const lines = t.split("\n");
+  assert.ok(lines.includes("合并单元格（2）：A1:D1；B3:C4"), t);
+  assert.ok(lines.includes("图片（内容读不到，只有位置和名称）（2）：A3 附近「界面截图」；H11 附近（图表）"), t);
+  assert.ok(lines.includes("文本框（1）：F1 附近「1. 工厂必填 / 2. 校验 & 报错」"), t);
+  assert.ok(lines.includes("批注（1）：A1（张三）「张三: 标题要改」"), t);
+});
+
 test("xlsx：单元格太多时拒绝生成", async () => {
   const rows = Array.from({ length: 1001 }, () => Array(500).fill(1));
   await assert.rejects(() => buildXlsx([{ rows }]), /单元格太多/);

@@ -206,6 +206,21 @@ export function topLevel(xml, names) {
   return out;
 }
 
+/** 某个部件的关系清单：[{ id, type（Type 网址的最后一段，如 drawing / comments）, path }] */
+async function relsOf(zip, part) {
+  const i = part.lastIndexOf("/");
+  const dir = part.slice(0, i + 1);
+  const xml = await zip.text(`${dir}_rels/${part.slice(i + 1)}.rels`);
+  if (!xml) return [];
+  const out = [];
+  for (const m of xml.matchAll(/<Relationship\b[^>]*>/g)) {
+    const id = attr(m[0], "Id"), target = attr(m[0], "Target"), type = attr(m[0], "Type") || "";
+    if (!id || !target || attr(m[0], "TargetMode") === "External") continue;
+    out.push({ id, type: type.split("/").pop(), path: resolvePath(dir, target) });
+  }
+  return out;
+}
+
 /** 解析 .rels：Id → 规范后的包内路径 */
 function parseRels(xml, baseDir) {
   const map = {};
@@ -279,6 +294,62 @@ function richText(xml) {
   let out = "";
   for (const m of s.matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)) out += decodeXml(m[1]);
   return out;
+}
+
+const EXTRA_MAX = 50;
+
+/**
+ * 工作表里单元格以外的东西（需求文档常用）：合并单元格、图片位置、文本框文字、批注。
+ * 图片本身的内容读不到，只告诉模型在哪、叫什么。
+ */
+async function sheetExtras(zip, sheetPath, xml) {
+  const lines = [];
+  const list = (label, items) => {
+    if (!items.length) return;
+    lines.push(`${label}（${items.length}）：` + items.slice(0, EXTRA_MAX).join("；") + (items.length > EXTRA_MAX ? `；……另有 ${items.length - EXTRA_MAX} 个` : ""));
+  };
+  list("合并单元格", [...xml.matchAll(/<mergeCell\b[^>]*\sref="([^"]+)"/g)].map(m => m[1]));
+
+  const rels = await relsOf(zip, sheetPath);
+  const pics = [], boxes = [], notes = [];
+  for (const d of rels.filter(r => r.type === "drawing")) {
+    const dx = await zip.text(d.path);
+    if (!dx) continue;
+    for (const a of topLevel(dx, ["xdr:twoCellAnchor", "xdr:oneCellAnchor", "xdr:absoluteAnchor"])) {
+      const from = /<xdr:from>[\s\S]*?<xdr:col>(\d+)<\/xdr:col>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/.exec(a.inner);
+      const at = from ? colName(Number(from[1])) + (Number(from[2]) + 1) : "";
+      const where = at ? `${at} 附近` : "位置不明";
+      // 一个锚点里可能是组合（多个图片 / 文本框）
+      for (const p of a.inner.matchAll(/<xdr:pic\b[\s\S]*?<\/xdr:pic>/g)) {
+        const c = /<xdr:cNvPr\b[^>]*>/.exec(p[0]);
+        const name = c ? (attr(c[0], "descr") || attr(c[0], "name") || "") : "";
+        pics.push(where + (name ? `「${oneLine(name)}」` : ""));
+      }
+      for (const s of a.inner.matchAll(/<xdr:sp\b[\s\S]*?<\/xdr:sp>/g)) {
+        const tb = /<xdr:txBody>([\s\S]*?)<\/xdr:txBody>/.exec(s[0]);
+        if (!tb) continue;
+        const t = topLevel(tb[1], ["a:p"]).map(p => [...p.inner.matchAll(/<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>/g)].map(m => decodeXml(m[1])).join(""))
+          .filter(x => x.trim()).join(" / ");
+        if (t) boxes.push(`${where}「${clipCell(oneLine(t))}」`);
+      }
+      if (/<xdr:graphicFrame\b/.test(a.inner)) pics.push(where + "（图表）");
+    }
+  }
+  for (const c of rels.filter(r => r.type === "comments")) {
+    const cx = await zip.text(c.path);
+    if (!cx) continue;
+    const authors = [...cx.matchAll(/<author>([\s\S]*?)<\/author>/g)].map(m => decodeXml(m[1]));
+    for (const m of cx.matchAll(/<comment\b([^>]*)>([\s\S]*?)<\/comment>/g)) {
+      const ref = attr(m[1], "ref") || "";
+      const who = authors[Number(attr(m[1], "authorId"))] || "";
+      const t = richText(m[2]).trim();
+      if (t) notes.push(`${ref}${who ? `（${who}）` : ""}「${clipCell(oneLine(t))}」`);
+    }
+  }
+  list("图片（内容读不到，只有位置和名称）", pics);
+  list("文本框", boxes);
+  list("批注", notes);
+  return lines;
 }
 
 async function xlsxToText(zip) {
@@ -358,6 +429,7 @@ async function xlsxToText(zip) {
       out.push("行\t" + Array.from({ length: maxCol + 1 }, (_, i) => colName(i)).join("\t"));
       out.push(...rows);
     }
+    out.push(...await sheetExtras(zip, sh.path, xml));
   }
   if (cut) out.push("", `（整个文件超过 ${XLSX_MAX_ROWS} 行，后面的行没有转出来。需要全部数据时请用户另存为 CSV 再读。）`);
   return out.join("\n");
