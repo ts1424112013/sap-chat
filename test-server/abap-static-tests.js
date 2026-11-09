@@ -1235,7 +1235,14 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
   const lcRaw2 = read('ZCL_AI_LLM_CLIENT.abap'), lc2 = codeOnly(lcRaw2);
   const fw = methodOf(lc2, 'forward_openai'), ob = methodOf(lc2, 'openai_body');
   check('LLM_CLIENT V1.7：forward_openai 不重试、拒绝 Ollama；chat 仍是原样（DO 2 TIMES 重试还在）',
-    /^\* V1\.7 20261107/m.test(lcRaw2) && fw && !/DO 2 TIMES/.test(fw) && /model_type = 'OLLAMA'/.test(fw) && /DO 2 TIMES/.test(methodOf(lc2, 'chat')));
+    /^\* V1\.7 20261107/m.test(lcRaw2) && fw && !/is_retryable|ENQUE_SLEEP/.test(fw) &&
+    (!/DO 2 TIMES/.test(fw) || /lv_body_plain/.test(fw)) && /model_type = 'OLLAMA'/.test(fw) && /DO 2 TIMES/.test(methodOf(lc2, 'chat')));
+  // V1.8（20261109）：带思考参数被拒 400 / 422 → 去掉思考参数再发一次（chat 与 forward_openai）
+  check('LLM_CLIENT V1.8：思考参数被拒（400 / 422）时去掉它再发一次；forward_openai 的第二次只用于这个兜底',
+    /^\* V1\.8 20261109/m.test(lcRaw2) &&
+    /lv_body_plain/.test(methodOf(lc2, 'chat')) && /lv_no_think = abap_true/.test(methodOf(lc2, 'chat')) &&
+    /lv_code = 400 OR lv_code = 422/.test(methodOf(lc2, 'chat')) &&
+    /lv_pass = 1 AND ev_error IS INITIAL AND \( ev_code = 400 OR ev_code = 422 \)/.test(fw) && /lv_body = lv_body_plain/.test(fw));
   check('openai_body：顶层字段白名单、model / stream / max_tokens 由 SAP 写，缺 messages 拒绝',
     /\|messages\|tools\|tool_choice\|temperature\|top_p\|stop\|response_format\|parallel_tool_calls\|/.test(lcRaw2) &&
     /value = 'model'/.test(ob) && /value = 'stream'/.test(ob) && /value = 'max_tokens'/.test(ob) && /缺少 messages/.test(ob));

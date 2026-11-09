@@ -52,6 +52,11 @@
 *         chat 及其余方法未改动。
 *         ★ 重贴后核对标记: PUBLIC 有 forward_openai 声明; PRIVATE 有 openai_body 声明;
 *           openai_body 里有 cl_sxml_string_writer=>create( type = if_sxml=>co_xt_json )
+* V1.8 20261109: 不支持思考的模型配了参数写法(如 Qwen 写法 QW0)时, 关思考会显式传
+*         "chat_template_kwargs":{"enable_thinking":false}, 有的模型 / 服务不认 → HTTP 400 报错。
+*         现在带思考参数的请求被拒(400 / 422)时, 自动去掉思考参数马上再发一次(chat 与
+*         forward_openai 都是); 仍失败时错误信息带「已去掉思考参数重试 1 次」。没配写法的模型不受影响
+*         ★ 重贴后核对标记: chat 与 forward_openai 里都有 lv_body_plain; chat 有 lv_no_think
 *=======================================================================
 CLASS zcl_ai_llm_client DEFINITION
   PUBLIC
@@ -353,6 +358,9 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
     ENDIF.
     DATA(lv_think_on) = xsdbool( lv_think CP '++1' ).
     DATA(lv_frag)     = think_fragment( iv_mode = lv_think iv_model_type = is_cfg-model_type ).
+    " V1.8: 留一份不带思考参数的请求体, 被模型服务拒绝时用它重发
+    DATA(lv_body_plain) = lv_body.
+    DATA lv_no_think TYPE abap_bool.
     IF lv_frag IS NOT INITIAL.
       DATA(lv_brace) = find( val = lv_body sub = `}` occ = -1 ).
       IF lv_brace > 0.
@@ -455,6 +463,16 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
         lv_fail = |HTTP { lv_code } { lv_reason }: { lv_snippet }|.
       ENDIF.
 
+      " V1.8: 带思考参数被模型服务拒绝(400 / 422: 模型不支持思考, 或服务不认 chat_template_kwargs / think)
+      "       → 去掉思考参数马上再发一次(不算瞬时重试, iv_no_retry 也照做)
+      IF lv_comm = abap_false AND ( lv_code = 400 OR lv_code = 422 )
+         AND lv_frag IS NOT INITIAL AND lv_no_think = abap_false.
+        lv_body     = lv_body_plain.
+        lv_no_think = abap_true.
+        lv_think_on = abap_false.
+        CONTINUE.
+      ENDIF.
+
       IF iv_no_retry = abap_true OR lv_try >= 2
          OR is_retryable( iv_code       = lv_code
                           iv_comm_fail  = lv_comm
@@ -481,7 +499,8 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
 
     " ---------------- 5. 解析响应 ----------------
     IF lv_fail IS NOT INITIAL.
-      ev_error = COND #( WHEN lv_try > 1 THEN |{ lv_fail }(已自动重试 1 次)| ELSE lv_fail ).
+      ev_error = COND #( WHEN lv_no_think = abap_true THEN |{ lv_fail }(已去掉思考参数重试 1 次)|
+                         WHEN lv_try > 1 THEN |{ lv_fail }(已自动重试 1 次)| ELSE lv_fail ).
       RETURN.
     ENDIF.
 
@@ -832,6 +851,8 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
       lv_think = substring( val = lv_think len = 2 ) && COND string( WHEN iv_think = 'X' THEN `1` ELSE `0` ).
     ENDIF.
     DATA(lv_frag) = think_fragment( iv_mode = lv_think iv_model_type = is_cfg-model_type ).
+    " V1.8: 留一份不带思考参数的请求体, 被模型服务拒绝时用它重发
+    DATA(lv_body_plain) = lv_body.
     IF lv_frag IS NOT INITIAL.
       DATA(lv_brace) = find( val = lv_body sub = `}` occ = -1 ).
       IF lv_brace > 0.
@@ -845,58 +866,70 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
       lv_timeout = 300.
     ENDIF.
 
-    " ---- 2. 发送(只发一次; 重试由浏览器决定) ----
+    " ---- 2. 发送(只发一次, 重试由浏览器决定; V1.8: 带思考参数被拒 400 / 422 时去掉它再发一次) ----
+    DATA lv_pass TYPE i.
     GET RUN TIME FIELD lv_t1.
-    TRY.
-        IF is_cfg-destination IS NOT INITIAL.
-          cl_http_client=>create_by_destination(
-            EXPORTING destination = CONV rfcdest( is_cfg-destination )
-            IMPORTING client      = lo_http ).
-        ELSE.
-          cl_http_client=>create_by_url(
-            EXPORTING url     = CONV #( is_cfg-endpoint_url )
-            IMPORTING client  = lo_http ).
-        ENDIF.
-      CATCH cx_root INTO lx.
-        ev_error = |创建 HTTP 客户端失败: { lx->get_text( ) }|.
-        RETURN.
-    ENDTRY.
+    DO 2 TIMES.
+      lv_pass = lv_pass + 1.
+      CLEAR: ev_code, ev_resp, ev_error, lv_reason.
+      TRY.
+          IF is_cfg-destination IS NOT INITIAL.
+            cl_http_client=>create_by_destination(
+              EXPORTING destination = CONV rfcdest( is_cfg-destination )
+              IMPORTING client      = lo_http ).
+          ELSE.
+            cl_http_client=>create_by_url(
+              EXPORTING url     = CONV #( is_cfg-endpoint_url )
+              IMPORTING client  = lo_http ).
+          ENDIF.
+        CATCH cx_root INTO lx.
+          ev_error = |创建 HTTP 客户端失败: { lx->get_text( ) }|.
+          RETURN.
+      ENDTRY.
 
-    lo_http->request->set_method( if_http_request=>co_request_method_post ).
-    lo_http->request->set_header_field( name  = 'Content-Type'
-                                        value = 'application/json; charset=utf-8' ).
-    CASE is_cfg-auth_type.
-      WHEN 'BEARER'.
-        lo_http->request->set_header_field( name  = 'Authorization'
-                                            value = |Bearer { is_cfg-api_key }| ).
-      WHEN 'X_API_KEY'.
-        lo_http->request->set_header_field( name  = 'x-api-key'
-                                            value = is_cfg-api_key ).
-      WHEN OTHERS.
-    ENDCASE.
-    lo_http->request->set_cdata( lv_body ).
+      lo_http->request->set_method( if_http_request=>co_request_method_post ).
+      lo_http->request->set_header_field( name  = 'Content-Type'
+                                          value = 'application/json; charset=utf-8' ).
+      CASE is_cfg-auth_type.
+        WHEN 'BEARER'.
+          lo_http->request->set_header_field( name  = 'Authorization'
+                                              value = |Bearer { is_cfg-api_key }| ).
+        WHEN 'X_API_KEY'.
+          lo_http->request->set_header_field( name  = 'x-api-key'
+                                              value = is_cfg-api_key ).
+        WHEN OTHERS.
+      ENDCASE.
+      lo_http->request->set_cdata( lv_body ).
 
-    lo_http->send( EXPORTING timeout = lv_timeout
-                   EXCEPTIONS http_communication_failure = 1
-                              http_invalid_state          = 2
-                              http_processing_failed      = 3
-                              OTHERS                      = 4 ).
-    IF sy-subrc <> 0.
-      ev_error = |发送请求失败(subrc={ sy-subrc }), 检查网络/白名单/SM59 目的地|.
-    ELSE.
-      lo_http->receive( EXCEPTIONS http_communication_failure = 1
-                                   http_invalid_state          = 2
-                                   http_processing_failed      = 3
-                                   OTHERS                      = 4 ).
+      lo_http->send( EXPORTING timeout = lv_timeout
+                     EXCEPTIONS http_communication_failure = 1
+                                http_invalid_state          = 2
+                                http_processing_failed      = 3
+                                OTHERS                      = 4 ).
       IF sy-subrc <> 0.
-        ev_error = |接收响应失败(subrc={ sy-subrc }), 可能是模型服务超时({ lv_timeout }s)|.
+        ev_error = |发送请求失败(subrc={ sy-subrc }), 检查网络/白名单/SM59 目的地|.
       ELSE.
-        lo_http->response->get_status( IMPORTING code   = ev_code
-                                                 reason = lv_reason ).
-        ev_resp = lo_http->response->get_cdata( ).
+        lo_http->receive( EXCEPTIONS http_communication_failure = 1
+                                     http_invalid_state          = 2
+                                     http_processing_failed      = 3
+                                     OTHERS                      = 4 ).
+        IF sy-subrc <> 0.
+          ev_error = |接收响应失败(subrc={ sy-subrc }), 可能是模型服务超时({ lv_timeout }s)|.
+        ELSE.
+          lo_http->response->get_status( IMPORTING code   = ev_code
+                                                   reason = lv_reason ).
+          ev_resp = lo_http->response->get_cdata( ).
+        ENDIF.
       ENDIF.
-    ENDIF.
-    lo_http->close( ).
+      lo_http->close( ).
+
+      IF lv_pass = 1 AND ev_error IS INITIAL AND ( ev_code = 400 OR ev_code = 422 )
+         AND lv_frag IS NOT INITIAL.
+        lv_body = lv_body_plain.
+        CONTINUE.
+      ENDIF.
+      EXIT.
+    ENDDO.
 
     GET RUN TIME FIELD lv_t2.
     ev_elapsed = ( lv_t2 - lv_t1 ) / 1000.
