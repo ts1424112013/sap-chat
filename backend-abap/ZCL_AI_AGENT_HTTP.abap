@@ -12,6 +12,7 @@
 *              card = 报表参数卡(open_report / prefill_report), 浏览器拿到即结束运行
 *         POST /run/finish        { runId, status, answer, message, skillsUsed } → { ok }
 *         POST /results/export    { runId, resultId } → { ok, label, rows, columns, truncated, csv }(V1.1)
+*         POST /admin/mcp/<动作>  MCP 连接管理(V1.7, 只限管理员): list / get / save / delete / test / fetch / tools
 *
 * 安全:   ① 只收 POST; ② 必须带 X-Lingxi-Agent: 1(跨站表单发不出自定义头; 跨站 fetch
 *           带它会触发预检, 本节点不回 CORS 头 → 浏览器拦下);
@@ -32,8 +33,11 @@
 *         V1.5 20261108 ADT 代码工具: /run/start 回 adt; 新路径 /tools/audit(浏览器调 ADT 前报备 / 调完回填)
 *              (依赖 ZCL_AI_AGENT_SERVICE V15.25)
 *         V1.6 20261108 /run/finish 收 title(模型总结的会话标题; 依赖 ZCL_AI_AGENT_SERVICE V15.26)
+*         V1.7 20261109 MCP 连接 M1(《03》〇-AU): 新路径 /admin/mcp/<动作>, 交给 ZCL_AI_MCP_SERVICE=>admin
+*              (只限管理员, 在服务类里查); 工具执行仍走 /tools/exec(依赖 ZCL_AI_AGENT_SERVICE V15.29)
 *         ★ 重贴后核对标记: INTERFACES if_http_extension; handle_request 里有
-*           WHEN '/run/start' / '/chat/completions' / '/tools/exec' / '/tools/audit' / '/results/export' / '/run/finish' / '/run/steps'
+*           WHEN '/run/start' / '/chat/completions' / '/tools/exec' / '/tools/audit' / '/results/export' / '/run/finish' / '/run/steps';
+*           WHEN OTHERS 里有 '/admin/mcp/' 与 zcl_ai_mcp_service=>admin(
 *=======================================================================
 CLASS zcl_ai_agent_http DEFINITION
   PUBLIC
@@ -340,7 +344,24 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
             ENDIF.
 
           WHEN OTHERS.
-            fail( io_server = server iv_code = 404 iv_msg = |未知路径 { lv_path }| ).
+            " ---------------- V1.7: MCP 连接管理(只限管理员, 在 ZCL_AI_MCP_SERVICE 里查) ----------------
+            IF strlen( lv_path ) > 11 AND substring( val = lv_path len = 11 ) = '/admin/mcp/'.
+              DATA lv_mjs TYPE string.
+              zcl_ai_mcp_service=>admin( EXPORTING iv_action = substring( val = lv_path off = 11 )
+                                                   iv_body   = lv_body
+                                         IMPORTING ev_json   = lv_mjs
+                                                   ev_http   = lv_http
+                                                   ev_error  = lv_err ).
+              IF lv_err IS NOT INITIAL.
+                ROLLBACK WORK.
+                fail( io_server = server iv_code = lv_http iv_msg = lv_err ).
+                RETURN.
+              ENDIF.
+              COMMIT WORK.
+              reply( io_server = server iv_code = 200 iv_json = lv_mjs ).
+            ELSE.
+              fail( io_server = server iv_code = 404 iv_msg = |未知路径 { lv_path }| ).
+            ENDIF.
         ENDCASE.
 
       CATCH cx_root INTO DATA(lx).

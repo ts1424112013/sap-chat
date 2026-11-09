@@ -285,3 +285,26 @@
     .skillPill .sapMBtnInner { max-width: 8rem; }
     .skPopMeta > span + span { display: none; }
 }
+
+/* ---------------- MCP 连接（《04》〇-AU；外壳同技能管理 .skAdm*） ---------------- */
+.mcpAdmCount { font-size: .78rem !important; color: var(--sub) !important; }
+.mcpAdmWarn { color: var(--warning) !important; }
+.mcpAdmNums { display: flex !important; gap: 1.25rem; }
+.mcpAdmActs { gap: .5rem; margin: .2rem 0 1rem; }
+.mcpAdmDel .sapMBtnInner { color: var(--danger) !important; }
+.mcpAdmTest { margin-left: .35rem; font-size: .76rem !important; }
+.mcpAdmTest[data-ok="yes"] { color: var(--apv-green) !important; }
+.mcpAdmToolsBox { border-top: 1px solid var(--line); padding-top: .9rem; gap: .5rem; }
+.mcpAdmToolsHead { gap: .75rem; }
+.mcpAdmTable { margin-top: .4rem; }
+.mcpAdmTable .sapMListTblCell { vertical-align: top !important; padding-top: .45rem !important; padding-bottom: .45rem !important; }
+.mcpAdmTool { font-size: .84rem !important; font-weight: 600 !important; color: var(--text) !important; }
+.mcpAdmFlag { font-size: .72rem !important; color: var(--warning) !important; }
+@media (max-width: 700px) {
+    .mcpAdmDialog .skAdmBody { flex-direction: column; }
+    .mcpAdmDialog .skAdmSide { flex: none; max-height: 14rem; border-right: 0; border-bottom: 1px solid var(--line); }
+    .mcpAdmDialog .skAdmGrid { grid-template-columns: minmax(0, 1fr); }
+}
+.mcpAdmDialog .skAdmState { white-space: nowrap; }
+.mcpAdmToolCell { gap: .3rem; min-width: 0; }
+.mcpAdmToolName { gap: .5rem; }

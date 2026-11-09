@@ -13,6 +13,7 @@
     "test:auth": "node auth-tests.js",
     "test:fiori": "node fiori-tests.js",
     "test:abap": "node abap-static-tests.js",
+    "test:mcp": "node mcp-client-ref-tests.js",
     "test:skills": "node --test skill-tests.js",
     "test:rptscan": "node rpt-scan-tests.js",
     "test:rfcscan": "node rfc-scan-tests.js",

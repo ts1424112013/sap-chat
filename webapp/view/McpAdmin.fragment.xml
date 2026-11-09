@@ -1,0 +1,210 @@
+<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
+
+    <!-- ======================= MCP 连接（仅 ADMIN；《04》〇-AU，方案 04-MCP连接入口方案 §4） =======================
+         外壳同技能管理（.apvDialog / .skAdm*）：左边服务列表，右边服务设置 + 工具勾选表。
+         调用一律经 SAP（/sap/bc/zai_agent/admin/mcp/*），连接信息与密钥在 SM59，这里只填目标名。
+         第一期只能开放只读工具；会改数据的工具要等确认流程（第二期）。 -->
+    <Dialog showHeader="false" contentWidth="66rem" contentHeight="44rem" verticalScrolling="false" horizontalScrolling="false"
+            stretchOnPhone="true" class="apvDialog skAdmDialog mcpAdmDialog" busy="{mcpAdmin>/busy}" busyIndicatorDelay="200">
+        <content>
+            <VBox renderType="Bare" class="apvRoot">
+
+                <!-- ===== 头部 ===== -->
+                <VBox class="apvHead skAdmHead">
+                    <HBox alignItems="Start" class="apvHeadRow">
+                        <VBox class="apvHeadText">
+                            <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                            <Title level="H3" text="MCP 连接" class="apvTitle"/>
+                            <Text text="登记公司里的 MCP 服务，勾选开放给灵犀的工具。调用一律经 SAP，地址、证书和令牌在 SM59 里维护" class="apvSub"/>
+                        </VBox>
+                        <Button icon="sap-icon://refresh" tooltip="刷新" type="Transparent" press=".onMcpRefresh" class="apvHeadBtn"/>
+                        <Button icon="sap-icon://decline" tooltip="关闭" type="Transparent" press=".onCloseMcpManager" class="apvHeadBtn"/>
+                    </HBox>
+                    <MessageStrip text="演示模式：数据只存在本浏览器里，「测试连接」「拉取工具」返回固定的演示服务。"
+                                  type="Information" showIcon="true" visible="{mcpAdmin>/mock}" class="apvStrip"/>
+                </VBox>
+
+                <HBox renderType="Bare" class="skAdmBody">
+
+                    <!-- ===== 左：服务列表 ===== -->
+                    <VBox renderType="Bare" class="skAdmSide">
+                        <HBox renderType="Bare" class="skAdmTools">
+                            <Text text="{= (${mcpAdmin>/servers}.length || 0) + ' 个服务' }" class="mcpAdmCount">
+                                <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                            </Text>
+                            <Button text="新建" icon="sap-icon://add" type="Emphasized" press=".onMcpNew" class="apvBtn skAdmNew"/>
+                        </HBox>
+                        <List items="{mcpAdmin>/servers}" showSeparators="None" noDataText="还没有登记 MCP 服务，点「新建」" class="skAdmList">
+                            <CustomListItem type="Active" press=".onMcpPick" class="skAdmRow">
+                                <customData>
+                                    <core:CustomData key="on" value="{= ${mcpAdmin>srvId} === ${mcpAdmin>/sel} ? 'yes' : 'no' }" writeToDom="true"/>
+                                </customData>
+                                <HBox alignItems="Center" class="skAdmRowIn">
+                                    <VBox class="skAdmRowText">
+                                        <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                        <Text text="{mcpAdmin>name}" wrapping="false" class="skAdmRowName"/>
+                                        <Text text="{mcpAdmin>meta}" wrapping="false" class="skAdmRowMeta"/>
+                                        <Text text="{mcpAdmin>warn}" wrapping="false" visible="{= !!${mcpAdmin>warn} }" class="skAdmRowMeta mcpAdmWarn"/>
+                                    </VBox>
+                                    <Text text="{= ${mcpAdmin>active} ? '启用' : '停用' }" class="skAdmState">
+                                        <customData>
+                                            <core:CustomData key="on" value="{= ${mcpAdmin>active} ? 'yes' : 'no' }" writeToDom="true"/>
+                                        </customData>
+                                    </Text>
+                                </HBox>
+                            </CustomListItem>
+                        </List>
+                    </VBox>
+
+                    <!-- ===== 右：服务设置 + 工具 ===== -->
+                    <VBox renderType="Bare" class="skAdmEdit" visible="{= !!${mcpAdmin>/edit} }">
+                        <MessageStrip text="{mcpAdmin>/error}" type="Error" showIcon="true" visible="{= !!${mcpAdmin>/error} }" class="apvStrip"/>
+                        <MessageStrip text="{mcpAdmin>/info}" type="Success" showIcon="true" visible="{= !!${mcpAdmin>/info} }" class="apvStrip"/>
+                        <HBox alignItems="Center" justifyContent="SpaceBetween" class="skAdmEditHead">
+                            <Title text="{= ${mcpAdmin>/isNew} ? '新服务' : ${mcpAdmin>/edit/name} }" level="H4" class="skAdmName">
+                                <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                            </Title>
+                            <HBox alignItems="Center" class="admEnable">
+                                <Text text="启用" class="admEnableText"/>
+                                <Switch state="{mcpAdmin>/edit/active}"/>
+                            </HBox>
+                        </HBox>
+
+                        <HBox renderType="Bare" class="skAdmGrid">
+                            <VBox class="aplField">
+                                <Label text="服务编号" required="true" class="aplLabel"/>
+                                <Input value="{mcpAdmin>/edit/srvId}" maxLength="16" editable="{mcpAdmin>/isNew}"
+                                    placeholder="例如 SAPMCP（大写字母 / 数字 / 下划线，保存后不能改）" class="aplInput aplMono"/>
+                            </VBox>
+                            <VBox class="aplField">
+                                <Label text="名称" class="aplLabel"/>
+                                <Input value="{mcpAdmin>/edit/name}" maxLength="60" placeholder="例如「Nomi 的 sap-mcp」" class="aplInput"/>
+                            </VBox>
+                            <VBox class="aplField">
+                                <Label text="SM59 目标（类型 G）" required="true" class="aplLabel"/>
+                                <Input value="{mcpAdmin>/edit/dest}" maxLength="32" placeholder="Basis 建的 HTTP 目标名，如 ZMCP_SAPMCP" class="aplInput aplMono"/>
+                                <Text text="主机、端口、HTTPS 证书和令牌都在 SM59 里维护，这里不填密钥" class="aplHint"/>
+                            </VBox>
+                            <VBox class="aplField">
+                                <Label text="路径" class="aplLabel"/>
+                                <Input value="{mcpAdmin>/edit/path}" maxLength="255" placeholder="/mcp" class="aplInput aplMono"/>
+                                <Text text="Streamable HTTP 的地址（一个地址，POST JSON-RPC）" class="aplHint"/>
+                            </VBox>
+                            <VBox class="aplField">
+                                <Label text="身份模式" class="aplLabel"/>
+                                <Select selectedKey="{mcpAdmin>/edit/idMode}" width="100%" class="skAdmSelect">
+                                    <items>
+                                        <core:Item key="USER" text="用户本人（推荐）"/>
+                                        <core:Item key="TECH" text="技术账号"/>
+                                    </items>
+                                </Select>
+                                <Text text="{= ${mcpAdmin>/edit/idMode} === 'USER'
+                                    ? '请求头带 X-Lingxi-User = 当前 SAP 用户，MCP 服务要按这个人的权限办事'
+                                    : 'MCP 服务用固定账号办事、不分调用人：可用用户留空时只有管理员能用' }" class="aplHint" wrapping="true"/>
+                            </VBox>
+                            <VBox class="aplField">
+                                <Label text="可用用户（SAP 用户名，逗号分隔）" class="aplLabel"/>
+                                <Input value="{mcpAdmin>/edit/users}" placeholder="{= ${mcpAdmin>/edit/idMode} === 'USER' ? '空 = 所有开通用户' : '空 = 只有管理员' }"
+                                    class="aplInput aplMono"/>
+                            </VBox>
+                            <VBox class="aplField">
+                                <Label text="适用场景（不选 = 不限）" class="aplLabel"/>
+                                <HBox renderType="Bare" wrap="Wrap" class="admPills skAdmScenes">
+                                    <Button text="报表执行" type="Transparent" press=".onMcpSceneToggle" class="admPill skScenePill">
+                                        <customData>
+                                            <core:CustomData key="scene" value="REPORT"/>
+                                            <core:CustomData key="on" value="{= ${mcpAdmin>/sceneOn/REPORT} ? 'yes' : 'no' }" writeToDom="true"/>
+                                        </customData>
+                                    </Button>
+                                    <Button text="数据分析" type="Transparent" press=".onMcpSceneToggle" class="admPill skScenePill">
+                                        <customData>
+                                            <core:CustomData key="scene" value="DATA"/>
+                                            <core:CustomData key="on" value="{= ${mcpAdmin>/sceneOn/DATA} ? 'yes' : 'no' }" writeToDom="true"/>
+                                        </customData>
+                                    </Button>
+                                    <Button text="代码分析" type="Transparent" press=".onMcpSceneToggle" class="admPill skScenePill">
+                                        <customData>
+                                            <core:CustomData key="scene" value="CODE"/>
+                                            <core:CustomData key="on" value="{= ${mcpAdmin>/sceneOn/CODE} ? 'yes' : 'no' }" writeToDom="true"/>
+                                        </customData>
+                                    </Button>
+                                    <Button text="Fiori 报表" type="Transparent" press=".onMcpSceneToggle" class="admPill skScenePill">
+                                        <customData>
+                                            <core:CustomData key="scene" value="FIORI"/>
+                                            <core:CustomData key="on" value="{= ${mcpAdmin>/sceneOn/FIORI} ? 'yes' : 'no' }" writeToDom="true"/>
+                                        </customData>
+                                    </Button>
+                                </HBox>
+                                <Text text="用户至少开放了其中一个场景，才会给他这个服务的工具" class="aplHint"/>
+                            </VBox>
+                            <HBox renderType="Bare" class="mcpAdmNums">
+                                <VBox class="aplField">
+                                    <Label text="超时（秒）" class="aplLabel"/>
+                                    <StepInput value="{mcpAdmin>/edit/timeoutSec}" min="5" max="600" width="8rem" class="skAdmStep"/>
+                                </VBox>
+                                <VBox class="aplField">
+                                    <Label text="每次运行最多调用" class="aplLabel"/>
+                                    <StepInput value="{mcpAdmin>/edit/maxCalls}" min="1" max="200" width="8rem" class="skAdmStep"/>
+                                </VBox>
+                            </HBox>
+                        </HBox>
+
+                        <HBox alignItems="Center" wrap="Wrap" class="mcpAdmActs">
+                            <Button text="保存服务" type="Emphasized" press=".onMcpSave" class="apvBtn"/>
+                            <Button text="测试连接" icon="sap-icon://connected" press=".onMcpTest" enabled="{= !${mcpAdmin>/isNew} }" class="apvBtn apvBtnReject"/>
+                            <Button text="拉取工具" icon="sap-icon://download" press=".onMcpFetch" enabled="{= !${mcpAdmin>/isNew} }" class="apvBtn apvBtnReject"/>
+                            <Button text="删除" icon="sap-icon://delete" type="Transparent" press=".onMcpDelete" visible="{= !${mcpAdmin>/isNew} }" class="mcpAdmDel"/>
+                            <Text text="{mcpAdmin>/testText}" class="aplHint mcpAdmTest" wrapping="true">
+                                <customData>
+                                    <core:CustomData key="ok" value="{= ${mcpAdmin>/edit/testOk} ? 'yes' : 'no' }" writeToDom="true"/>
+                                </customData>
+                            </Text>
+                        </HBox>
+
+                        <!-- ===== 工具 ===== -->
+                        <VBox class="mcpAdmToolsBox" visible="{= !${mcpAdmin>/isNew} }">
+                            <HBox alignItems="Center" class="mcpAdmToolsHead">
+                                <Title level="H5" text="{= '工具（' + (${mcpAdmin>/tools}.length || 0) + '）' }" class="codeAclTitle">
+                                    <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
+                                </Title>
+                                <Button text="保存工具设置" type="Emphasized" press=".onMcpSaveTools" enabled="{= ${mcpAdmin>/tools}.length > 0 }" class="apvBtn"/>
+                            </HBox>
+                            <Text text="新拉到的工具默认关闭。类别按服务自报的标注预填（没标注的当「会改数据」），以你选的为准；第一期只能开放只读工具。工具的说明或参数变了会自动停用、标「待复核」，复核后重新勾上即可。"
+                                class="aplHint" wrapping="true"/>
+                            <Table items="{mcpAdmin>/tools}" noDataText="还没有工具：先「测试连接」，再「拉取工具」" class="setTable mcpAdmTable">
+                                <columns>
+                                    <Column width="3.2rem"><Text text="开放"/></Column>
+                                    <Column><Text text="工具 · 给模型看的说明（空 = 用服务给的）"/></Column>
+                                    <Column width="7.5rem"><Text text="类别"/></Column>
+                                    <Column width="7rem"><Text text="可用用户"/></Column>
+                                </columns>
+                                <items>
+                                    <ColumnListItem>
+                                        <cells>
+                                            <CheckBox selected="{mcpAdmin>active}" enabled="{= ${mcpAdmin>category} === 'READ' &amp;&amp; !${mcpAdmin>gone} }"/>
+                                            <VBox class="mcpAdmToolCell">
+                                                <HBox alignItems="Baseline" wrap="Wrap" class="mcpAdmToolName">
+                                                    <Text text="{mcpAdmin>toolName}" class="mcpAdmTool" wrapping="true"/>
+                                                    <Text text="{mcpAdmin>llmName}" class="aplHint aplMono" wrapping="true"/>
+                                                </HBox>
+                                                <Text text="{mcpAdmin>flag}" visible="{= !!${mcpAdmin>flag} }" class="mcpAdmFlag" wrapping="true"/>
+                                                <Input value="{mcpAdmin>descr}" placeholder="{mcpAdmin>descrSrc}" tooltip="{mcpAdmin>descrSrc}" maxLength="1333" width="100%" class="aplInput"/>
+                                            </VBox>
+                                            <Select selectedKey="{mcpAdmin>category}" width="100%" change=".onMcpCategory">
+                                                <items>
+                                                    <core:Item key="READ" text="只读"/>
+                                                    <core:Item key="WRITE" text="会改数据"/>
+                                                </items>
+                                            </Select>
+                                            <Input value="{mcpAdmin>users}" placeholder="同服务" class="aplInput aplMono"/>
+                                        </cells>
+                                    </ColumnListItem>
+                                </items>
+                            </Table>
+                        </VBox>
+                    </VBox>
+                </HBox>
+            </VBox>
+        </content>
+    </Dialog>
+</core:FragmentDefinition>

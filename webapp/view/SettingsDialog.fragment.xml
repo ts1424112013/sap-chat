@@ -53,6 +53,13 @@
                                                                 <core:CustomData key="on" value="{= ${settings>/setTab} === 'skills' ? 'yes' : 'no' }" writeToDom="true"/>
                                                         </customData>
                                                 </Button>
+                                                <!-- 20261109（《04》〇-AU）：MCP 连接（仅管理员） -->
+                                                <Button text="MCP 连接" type="Transparent" press=".onSetTab" class="apvTabBtn" visible="{settings>/isAdmin}">
+                                                        <customData>
+                                                                <core:CustomData key="tab" value="mcp"/>
+                                                                <core:CustomData key="on" value="{= ${settings>/setTab} === 'mcp' ? 'yes' : 'no' }" writeToDom="true"/>
+                                                        </customData>
+                                                </Button>
                                         </HBox>
                                 </VBox>
 
@@ -308,6 +315,14 @@
                                                 <Text text="{i18n>skillsIntro}" wrapping="true" class="hintText"/>
                                                 <HBox>
                                                         <Button text="{i18n>skillsOpen}" icon="sap-icon://learning-assistant" press=".onOpenSkillManager" type="Emphasized" class="sapUiSmallMarginTop"/>
+                                                </HBox>
+                                        </VBox>
+
+                                        <!-- ========== MCP 连接（仅管理员；《04》〇-AU） ========== -->
+                                        <VBox renderType="Bare" class="apvPane setGap" visible="{= ${settings>/setTab} === 'mcp' }">
+                                                <Text text="把公司里的 MCP 服务（如 sap-mcp）接给灵犀：登记服务、测试连接、拉取工具，逐个勾选开放。新引擎提问时，用户能用的工具会自动出现（名称以 mcp_ 开头）。调用一律经 SAP，有次数上限和调用记录；连接信息与密钥由 Basis 在 SM59 维护。第一期只开放只读工具。" wrapping="true" class="hintText"/>
+                                                <HBox>
+                                                        <Button text="管理 MCP 连接" icon="sap-icon://chain-link" press=".onOpenMcpManager" type="Emphasized" class="sapUiSmallMarginTop"/>
                                                 </HBox>
                                         </VBox>
                                 </VBox>

@@ -43,7 +43,7 @@ sap.ui.define([
                         oSettings.setProperty("/loginRoleText", sName && sName.toUpperCase() !== sId.toUpperCase() ? sName + " · " + sRole : sRole);
                         // 20261024：页签改由 /setTab 切换；普通用户停在管理员页签上时退回「连接」
                         var sTab = oSettings.getProperty("/setTab");
-                        if (!sTab || (!bAdmin && ["eval", "users", "skills"].indexOf(sTab) >= 0)) {
+                        if (!sTab || (!bAdmin && ["eval", "users", "skills", "mcp"].indexOf(sTab) >= 0)) {
                                 oSettings.setProperty("/setTab", "connection");
                         }
                         this._oSettingsDialog.open();
@@ -180,7 +180,7 @@ sap.ui.define([
                         }
                 },
 
-                /** 20261024：设置对话框下划线页签（按钮 customData tab = connection / models / eval / users / skills） */
+                /** 20261024：设置对话框下划线页签（按钮 customData tab = connection / models / eval / users / skills / mcp） */
                 onSetTab: function (oEvent) {
                         var sTab = oEvent.getSource().data("tab");
                         if (sTab) {

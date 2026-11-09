@@ -58,6 +58,10 @@ sap.ui.define([
 
 		/** 工具的中文名（时间线、步骤用） */
 		toolLabel: function (sTool) {
+			// 20261109（《04》〇-AU）：MCP 工具 mcp_<服务>_<工具> → 「MCP · 工具」（服务名在 SAP 给模型的说明里）
+			if (!TOOL_LABEL[sTool] && /^mcp_[a-z0-9]+_./.test(sTool || "")) {
+				return "MCP · " + String(sTool).replace(/^mcp_[a-z0-9]+_/, "");
+			}
 			return TOOL_LABEL[sTool] || sTool || "";
 		},
 

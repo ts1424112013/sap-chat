@@ -45,8 +45,9 @@ sap.ui.define([
         "zai/chat/controller/mixin/UserAccessPanel",
         "zai/chat/controller/mixin/SchedulePanel",
         "zai/chat/controller/mixin/BrowserAgentPanel",
-        "zai/chat/controller/mixin/RunTimeline"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SessionGroups, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel, BrowserAgentPanel, RunTimeline) {
+        "zai/chat/controller/mixin/RunTimeline",
+        "zai/chat/controller/mixin/McpPanel"
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SessionGroups, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel, BrowserAgentPanel, RunTimeline, McpPanel) {
         "use strict";
 
         /**
@@ -5455,5 +5456,5 @@ sap.ui.define([
                 hasText: function (s) {
                         return !!(s && s.length);
                 }
-        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel, BrowserAgentPanel, RunTimeline));
+        }, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel, BrowserAgentPanel, RunTimeline, McpPanel));
 });
