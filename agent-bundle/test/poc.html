@@ -270,6 +270,34 @@ async function main() {
       (await exists11("灵犀记忆.md")), JSON.stringify(t11.slice(5, 8)));
     const undo11 = await r.folder.undoLast();
     check("#02 删除可以撤回：从备份恢复", undo11.action === "删除" && (await exists11("删我.txt")) && (await text(root, "/删我.txt")) === "旧数据", JSON.stringify(undo11));
+    // ---- 场景办公：Office 文件读写（引擎 0.13.0，真实浏览器的解压 / 压缩）----
+    const putBytes = async (n, bytes) => { const w = await (await root.getFileHandle(n, { create: true })).createWritable(); await w.write(bytes); await w.close(); };
+    await putBytes("办公-库存.xlsx", await LingxiAgent.buildXlsx([{ name: "库存", columns: ["物料", "工厂", "数量"], rows: [["000123", "1000", 12.5], ["ABC", "1000", 3]] }]));
+    await putBytes("办公-说明.docx", await LingxiAgent.buildDocx("# 盘点说明\n\n先盘成品，再盘原料。\n\n| 仓库 | 负责人 |\n|---|---|\n| W01 | 张三 |"));
+    await putBytes("办公-旧.xls", new Uint8Array([0xd0, 0xcf, 0x11, 0xe0]));
+    const confOf = [];
+    const rOf = await LingxiAgent.run({ question: "场景办公", folderBackend: r.folder, sap: { base: "/sap/bc/zai_agent" },
+      confirm: async req => { confOf.push({ act: req.action + " " + req.path, after: req.after || "" }); return { approved: true }; } });
+    const runOf = Object.values(await (await fetch("/__runs")).json()).find(x => x.question === "场景办公") || {};
+    const tOf = runOf.toolTextsOffice || [];
+    const bytesOf = async n => new Uint8Array(await (await (await root.getFileHandle(n)).getFile()).arrayBuffer());
+    check("办公：有文件夹时给 create_excel_file / create_word_file，系统说明讲了 Office 读写", runOf.hasOfficeTools === true && runOf.sysHasOfficeRule === true && /完成 场景办公/.test(rOf.answer),
+      JSON.stringify({ tools: runOf.hasOfficeTools, sys: runOf.sysHasOfficeRule }));
+    check("办公：read_file 读 Excel 转成按行号、Tab 分隔的文本（料号前导 0 保留）", /2\t000123\t1000\t12\.5/.test(tOf[0] || ""), (tOf[0] || "").slice(0, 300));
+    check("办公：read_file 读 Word 出标题和表格", /# 盘点说明/.test(tOf[1] || "") && /\| W01 \| 张三 \|/.test(tOf[1] || ""), (tOf[1] || "").slice(0, 300));
+    check("办公：旧格式 .xls 说明要另存", /旧格式/.test(tOf[2] || "") && /\.xlsx/.test(tOf[2] || ""), tOf[2]);
+    const xOf = await LingxiAgent.officeToText("/a.xlsx", await bytesOf("办公-汇总.xlsx"));
+    check("办公：新建 Excel 先确认（确认框给文本预览），写出的文件能读回", confOf[0] && confOf[0].act === "新建 /办公-汇总.xlsx" && /2\t000123\t12\.5/.test(confOf[0].after) &&
+      /3\tABC\t3/.test(xOf) && /已保存/.test(tOf[3] || ""), JSON.stringify({ conf: confOf[0] && confOf[0].act, t: tOf[3] }));
+    const dOf = await LingxiAgent.officeToText("/a.docx", await bytesOf("办公-报告.docx"));
+    check("办公：新建 Word 先确认，标题 / 列表 / 表格都在", confOf[1] && confOf[1].act === "新建 /办公-报告.docx" && /# 库存报告/.test(dOf) && /• 物料 000123/.test(dOf) && /\| 000123 \| 12\.5 \|/.test(dOf), dOf.slice(0, 300));
+    const eOf = await LingxiAgent.officeToText("/a.xlsx", await bytesOf("办公-导出.xlsx"));
+    check("办公：报表结果存成 .xlsx（数字成数字、带千分位的保留原样）", confOf[2] && confOf[2].act === "新建 /办公-导出.xlsx" && /2\tM1\t10/.test(eOf) && /3\tM2\t1,200/.test(eOf) && /已保存/.test(tOf[5] || ""),
+      JSON.stringify({ t: tOf[5], e: eOf.slice(-80) }));
+    check("办公：write_file 仍不能写 .docx，提示用 create_word_file", /不能写 \.docx/.test(tOf[6] || "") && /create_word_file/.test(tOf[6] || "") && confOf.length === 3, JSON.stringify({ t: tOf[6], n: confOf.length }));
+    const undoOf = await r.folder.undoLast();
+    let goneOf = false; try { await root.getFileHandle("办公-导出.xlsx"); } catch (e) { goneOf = true; }
+    check("办公：新建的 Excel 可以撤回", undoOf.path === "/办公-导出.xlsx" && goneOf, JSON.stringify(undoOf));
     check("网关报超出上下文：压缩后重试，运行照常完成", run6.overflowSent === true && /完成 场景六/.test(r6.answer) && run6.status === "OK", r6.answer);
     $("state").textContent = checks.every(c => c.ok) ? "全部通过" : "有失败";
   } catch (e) {

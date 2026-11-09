@@ -30,6 +30,8 @@ sap.ui.define([
 		// 20261107 M2：报表 / 结果 / 存到文件夹
 		list_results: "我的结果", read_result: "读结果", lookup_by_result: "关联查表",
 		open_report: "报表参数卡", prefill_report: "预填参数卡", save_result_to_folder: "存到文件夹",
+		// 20261109 新建 Excel / Word（引擎 0.13.0）
+		create_excel_file: "新建 Excel", create_word_file: "新建 Word",
 		// 20261108 ADT 代码工具（只读，浏览器直连 /sap/bc/adt）
 		adt_search: "找对象", adt_read_source: "读源码", adt_structure: "对象结构", adt_where_used: "被谁使用",
 		adt_package: "包内容", adt_syntax_check: "语法检查",

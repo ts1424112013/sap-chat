@@ -120,6 +120,8 @@ export function summarizeStep(tool, args, text, ok) {
     case "delete_file":
       return /^已删除/.test(t) ? `已删除 ${cut(a.file_path, 50)}` : cut(t, 80);
     case "save_result_to_folder":
+    case "create_excel_file":
+    case "create_word_file":
       return cut(t, 100);
     case "task":
       return "子任务完成：" + cut(t, 60);

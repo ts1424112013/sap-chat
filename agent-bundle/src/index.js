@@ -20,8 +20,9 @@ import {
 import { ReadonlyMemBackend, skillFiles } from "./readonly-backend.js";
 import { summarizeStep, mainArg } from "./step-summary.js";
 import { createAdtClient, ADT_TOOL_SPECS, ADT_PROMPT, ADT_SQL_PROMPT, normalizeUri, parseDataPreview } from "./adt-client.js";
+import { buildXlsx, buildDocx, officeToText, parseCsv, csvValue } from "./office.js";
 
-export const VERSION = "0.12.0";
+export const VERSION = "0.13.0";
 export const MEMORY_FILE = "/灵犀记忆.md";
 /** 记忆上限（字符）：超过时只载入前这么多，回答后让模型整理一次 */
 export const MEMORY_MAX_CHARS = 6000;
@@ -77,7 +78,9 @@ const BASE_PROMPT = `你是「灵犀」，公司内部的 SAP 业务助手，运
 const FOLDER_PROMPT = `用户已授权一个本地文件夹，文件工具里的 "/" 就是这个文件夹的根目录。
 - 改文件前先读；尽量用 edit_file 做小范围修改，不要整份重写。
 - 写文件会先让用户确认，用户拒绝时不要换个方式再写。
-- 只能写文本文件（txt / md / csv / tsv / json / xml / yaml / sql / abap / html 等）：表格存成 .csv，文档存成 .md；不写 .bat / .ps1 / .vbs / .js / .sh 等脚本，不写 Excel / Word / PDF / 图片。
+- read_file 能读 Excel（.xlsx）、Word（.docx）、PowerPoint（.pptx）：引擎先转成文本再给你（Excel 每行开头是行号、各列用 Tab 分隔），大文件用 offset / limit 分页读；grep 不搜这几种文件里的内容。旧格式 .xls / .doc / .ppt 读不了，请用户另存为新格式。
+- write_file / edit_file 只能写文本文件（txt / md / csv / tsv / json / xml / yaml / sql / abap / html 等）；不写 .bat / .ps1 / .vbs / .js / .sh 等脚本，不写 PDF / 图片。
+- 用户要 Excel 文件时用 create_excel_file，要 Word 文件时用 create_word_file：都是整份新建，不能在原文件上局部修改。改用户已有的 Excel / Word 时，先读原文件，再新建一份（如「原名_修改.xlsx」），不要覆盖原文件，除非用户明确要求覆盖（覆盖会丢掉原来的格式、公式、图片）。
 - 只有用户明确说要删某个文件时才用 delete_file，一次删一个，每次都会让用户确认；不要为了「整理」自己删文件，删文件夹做不到。
 - .lingxi/ 目录是灵犀的备份和修改记录，只读。
 - ${MEMORY_FILE} 是这个文件夹的长期记忆（上限 ${MEMORY_MAX_CHARS} 字）：只记以后还用得上的规则（口径、格式、命名习惯、用户纠正过的做法），不记一次性的数字、查询结果、临时安排，不记密码、令牌等凭据。
@@ -166,7 +169,7 @@ const ASK_PROMPT = `不清楚就先问，不要猜：
 - 一次只问一个问题，给 2~4 个具体候选（如列名、报表名），候选写短；问题里说清为什么要问。
 - 能从对话、结果、技能、系统说明里确定的不要问；同一件事不要反复问；用户说「你定」时按最常见的做法做并在回答里说明。`;
 
-const EXPORT_PROMPT = `用户要把报表结果存到文件夹（导出、另存、存成 CSV / Excel）时，用 save_result_to_folder：数据由 SAP 直接写进文件，不经过你，不要自己拼表格内容再 write_file。`;
+const EXPORT_PROMPT = `用户要把报表结果存到文件夹（导出、另存、存成 CSV / Excel）时，用 save_result_to_folder：数据由 SAP 直接写进文件，不经过你，不要自己拼表格内容再 write_file / create_excel_file。要 Excel 就把 file_path 写成 .xlsx，否则用 .csv。`;
 
 /** 会话标题：任务第一轮回答后让模型起一个短标题（多一次很短的模型调用；失败就不改标题） */
 export const TITLE_PROMPT = `你在给一段 SAP 业务助手的对话起标题。根据用户的问题和助手的回答，写一个 6~16 个字的中文标题：
@@ -304,12 +307,98 @@ function buildDeleteTool(folderBackend) {
   );
 }
 
+/** 新建 Excel / Word（0.13.0）：模型给内容，引擎生成文件；写前同样要用户确认、先备份、可撤回 */
+function buildOfficeTools(folderBackend) {
+  const checkPath = (p, ext) => {
+    const path = String(p || "").trim();
+    if (!path.startsWith("/")) return [null, "工具执行失败：file_path 要以 / 开头，是文件夹里的路径"];
+    if (/^\/(草稿|SAP技能|large_tool_results|conversation_history)\//.test(path)) return [null, "工具执行失败：只能存进用户文件夹"];
+    if (!path.toLowerCase().endsWith("." + ext)) return [null, `工具执行失败：file_path 要以 .${ext} 结尾`];
+    return [path, null];
+  };
+  const excel = tool(
+    async ({ file_path, sheets }) => {
+      const [path, bad] = checkPath(file_path, "xlsx");
+      if (bad) return bad;
+      let list = sheets;
+      if (typeof list === "string") { try { list = JSON.parse(list); } catch (e) { return "工具执行失败：sheets 要是数组"; } }
+      if (!Array.isArray(list) || !list.length) return "工具执行失败：sheets 至少要有一个工作表";
+      let bytes, preview;
+      try {
+        bytes = await buildXlsx(list);
+        preview = await officeToText(path, bytes);
+      } catch (e) { return `工具执行失败：${(e && e.message) || e}`; }
+      const nRows = list.reduce((n, s) => n + ((s && Array.isArray(s.rows)) ? s.rows.length : 0), 0);
+      const w = await folderBackend.writeOffice(path, bytes, preview, `${list.length} 个工作表，${nRows} 行数据`);
+      if (w && w.error) return w.error;
+      return `已保存 ${path}：${list.length} 个工作表，共 ${nRows} 行数据（不含表头）。`;
+    },
+    {
+      name: "create_excel_file",
+      description: "在用户文件夹里新建一个 Excel（.xlsx）文件（写前会让用户确认；同名文件会被整份覆盖，原文件先备份）。" +
+        "有表头时第一行加粗并冻结。数字用数值类型传（能求和）；料号、工单号等编号用字符串传（保留前导 0）。" +
+        "报表结果要存成 Excel 时不要用这个，用 save_result_to_folder。",
+      schema: {
+        type: "object",
+        properties: {
+          file_path: { type: "string", description: "文件夹里的路径，以 .xlsx 结尾，如 /分析/库存汇总.xlsx" },
+          sheets: {
+            type: "array",
+            description: "工作表（至少一个）",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string", description: "工作表名（≤ 31 字）" },
+                columns: { type: "array", items: { type: "string" }, description: "表头（列名）" },
+                rows: { type: "array", items: { type: "array", items: {} }, description: "数据行，每行是一个数组，顺序和表头一致" }
+              },
+              required: ["rows"]
+            }
+          }
+        },
+        required: ["file_path", "sheets"]
+      }
+    }
+  );
+  const word = tool(
+    async ({ file_path, content }) => {
+      const [path, bad] = checkPath(file_path, "docx");
+      if (bad) return bad;
+      const text = String(content || "");
+      if (!text.trim()) return "工具执行失败：content 不能为空";
+      let bytes, preview;
+      try {
+        bytes = await buildDocx(text);
+        preview = await officeToText(path, bytes);
+      } catch (e) { return `工具执行失败：${(e && e.message) || e}`; }
+      const w = await folderBackend.writeOffice(path, bytes, preview, `${text.length} 字`);
+      if (w && w.error) return w.error;
+      return `已保存 ${path}（${text.length} 字）。`;
+    },
+    {
+      name: "create_word_file",
+      description: "在用户文件夹里新建一个 Word（.docx）文件（写前会让用户确认；同名文件会被整份覆盖，原文件先备份）。" +
+        "content 用简单 Markdown：# / ## / ### 标题，- 或 1. 列表，| 表格 |（第二行 |---|），**粗体**，空行分段；其余每行一段。不支持图片。",
+      schema: {
+        type: "object",
+        properties: {
+          file_path: { type: "string", description: "文件夹里的路径，以 .docx 结尾，如 /报告/月度库存分析.docx" },
+          content: { type: "string", description: "文档内容（简单 Markdown）" }
+        },
+        required: ["file_path", "content"]
+      }
+    }
+  );
+  return [excel, word];
+}
+
 /** 把一份报表结果整份写进文件夹（数据 SAP → 浏览器 → 文件，不经过模型；写前同样要用户确认） */
 function buildExportTool(client, run, folderBackend, signal) {
   return tool(
     async ({ result_id, file_path }) => {
       const path = String(file_path || "").trim();
-      if (!/\.csv$/i.test(path)) return "工具执行失败：file_path 要以 .csv 结尾（Excel 可以直接打开 CSV）";
+      const asXlsx = /\.xlsx$/i.test(path);
+      if (!asXlsx && !/\.csv$/i.test(path)) return "工具执行失败：file_path 要以 .csv 或 .xlsx 结尾";
       let r;
       try {
         r = await client.exportResult({ runId: run.runId, resultId: String(result_id || "") }, { signal });
@@ -318,20 +407,31 @@ function buildExportTool(client, run, folderBackend, signal) {
         return `工具执行失败：${(e && e.message) || e}`;
       }
       if (!r || typeof r.csv !== "string") return "工具执行失败：SAP 没有返回数据";
-      // 带 BOM：Excel 直接双击打开时中文不乱码
-      const w = await folderBackend.write(path, "﻿" + r.csv);
+      let w;
+      if (asXlsx) {
+        // 0.13.0：存成 Excel。普通数字存成数字（能求和），料号等有前导 0 的保留文本
+        const rows = parseCsv(r.csv).filter(x => x.length > 1 || (x[0] || "") !== "");
+        const head = rows.shift() || [];
+        try {
+          const bytes = await buildXlsx([{ name: r.label || "结果", columns: head, rows: rows.map(x => x.map(csvValue)) }]);
+          w = await folderBackend.writeOffice(path, bytes, await officeToText(path, bytes), `${r.rows} 行 × ${r.columns} 列`);
+        } catch (e) { return `工具执行失败：生成 Excel 出错：${(e && e.message) || e}`; }
+      } else {
+        // 带 BOM：Excel 直接双击打开时中文不乱码
+        w = await folderBackend.write(path, "﻿" + r.csv);
+      }
       if (w && w.error) return w.error;
       return `已保存 ${path}：「${r.label || result_id}」${r.rows} 行 × ${r.columns} 列` +
         (r.truncated ? `（结果超过导出上限，只导出了前 ${r.rows} 行）` : "") + "。";
     },
     {
       name: "save_result_to_folder",
-      description: "把一份报表结果的全部行存成 CSV 文件，放进用户授权的文件夹（写前会让用户确认）。result_id 用 list_results 查到的结果号。",
+      description: "把一份报表结果的全部行存成 CSV 或 Excel（.xlsx）文件，放进用户授权的文件夹（写前会让用户确认）。result_id 用 list_results 查到的结果号。",
       schema: {
         type: "object",
         properties: {
           result_id: { type: "string", description: "结果号（list_results 返回的 id）" },
-          file_path: { type: "string", description: "文件夹里的路径，以 .csv 结尾，如 /报表结果/库存.csv" }
+          file_path: { type: "string", description: "文件夹里的路径，以 .csv 或 .xlsx 结尾，如 /报表结果/库存.xlsx" }
         },
         required: ["result_id", "file_path"]
       }
@@ -656,7 +756,7 @@ export async function run(o) {
       })) });
   };
   const tools = buildSapTools(client, runInfo, emit, inner.signal, onCard, onDatasets);
-  if (folderBackend && !(folderBackend.opts && folderBackend.opts.readOnly)) tools.push(buildDeleteTool(folderBackend));
+  if (folderBackend && !(folderBackend.opts && folderBackend.opts.readOnly)) tools.push(buildDeleteTool(folderBackend), ...buildOfficeTools(folderBackend));
   const canExport = !!(folderBackend && runInfo.export);
   if (canExport) tools.push(buildExportTool(client, runInfo, folderBackend, inner.signal));
   // ADT 代码工具：SAP 说这次可以用（开关 + 代码分析权限 + 开发显示权限）才挂上
@@ -833,5 +933,6 @@ export async function run(o) {
 export {
   createSapClient, SapAgentError,
   FolderBackend, folderSupported, pickFolder, restoreFolder, requestFolderPermission, forgetFolder,
-  summarizeStep, mainArg, createAdtClient, normalizeUri, parseDataPreview
+  summarizeStep, mainArg, createAdtClient, normalizeUri, parseDataPreview,
+  officeToText, buildXlsx, buildDocx
 };

@@ -82,6 +82,17 @@ const SCRIPT9 = [
   () => [call("adt_syntax_check", { object: "ZCL_AI_AGENT_SERVICE", file: "/代码/zcl_ai_agent_service.abap" })],
   () => null
 ];
+// 场景办公（0.13.0）：读 Excel / Word / 旧格式，新建 Excel / Word，报表结果存成 Excel
+const SCRIPT_OFFICE = [
+  () => [call("read_file", { file_path: "/办公-库存.xlsx" })],
+  () => [call("read_file", { file_path: "/办公-说明.docx" })],
+  () => [call("read_file", { file_path: "/办公-旧.xls" })],
+  () => [call("create_excel_file", { file_path: "/办公-汇总.xlsx", sheets: [{ name: "汇总", columns: ["物料", "数量"], rows: [["000123", 12.5], ["ABC", 3]] }] })],
+  () => [call("create_word_file", { file_path: "/办公-报告.docx", content: "# 库存报告\n\n- 物料 000123 数量 12.5\n\n| 物料 | 数量 |\n|---|---|\n| 000123 | 12.5 |" })],
+  () => [call("save_result_to_folder", { result_id: "ART1", file_path: "/办公-导出.xlsx" })],
+  () => [call("write_file", { file_path: "/办公-偷写.docx", content: "x" })],
+  () => null
+];
 // 场景十一：写文件只许文本类型（11.8 #01）；删除单个文件、每次确认（11.8 #02）
 const SCRIPT11 = [
   () => [call("write_file", { file_path: "/清理.bat", content: "del /q *.*" })],
@@ -242,6 +253,9 @@ const server = http.createServer(async (req, res) => {
     if (String(data.question || "").includes("场景九")) {
       return send(res, 200, { runId, model: "mock-model", tools: SAP_TOOLS, adt: true, limits: { recursionLimit: 80 }, systemPrompt: "场景：CODE（模拟）" });
     }
+    if (String(data.question || "").includes("场景办公")) {
+      return send(res, 200, { runId, model: "mock-model", tools: SAP_TOOLS, export: true, limits: { recursionLimit: 80 }, systemPrompt: "场景：DATA（模拟）" });
+    }
     if (String(data.question || "").includes("场景三")) {
       return send(res, 200, { runId, model: "mock-model", tools: [...SAP_TOOLS, ...RPT_TOOLS], skills: SAP_SKILLS, export: true,
         limits: { recursionLimit: 80 }, systemPrompt: "场景：REPORT（模拟）" });
@@ -329,6 +343,20 @@ const server = http.createServer(async (req, res) => {
         return reply({ role: "assistant", content: "", tool_calls: c }, c);
       }
       return reply({ role: "assistant", content: `完成 场景六 summaries=${run.summaries || 0}` });
+    }
+    if (run.question && run.question.includes("场景办公")) {
+      run.stepOf = (run.stepOf || 0) + 1;
+      if (run.stepOf === 1) {
+        const names = (data.tools || []).map(t => t.function && t.function.name);
+        run.hasOfficeTools = names.includes("create_excel_file") && names.includes("create_word_file");
+        run.sysHasOfficeRule = sys.includes("create_excel_file") && sys.includes("另存为新格式");
+      }
+      const co = (SCRIPT_OFFICE[run.stepOf - 1] || (() => null))();
+      if (co) return reply({ role: "assistant", content: "", tool_calls: co }, co);
+      // read_file 的结果是内容块数组：取出文字再比（JSON 化会把 Tab 变成 \t）
+      run.toolTextsOffice = msgs.filter(m => m.role === "tool").map(m => typeof m.content === "string" ? m.content
+        : Array.isArray(m.content) ? m.content.map(b => (b && b.text) || "").join("") : JSON.stringify(m.content));
+      return reply({ role: "assistant", content: "完成 场景办公" });
     }
     if (run.question && run.question.includes("场景十一")) {
       run.step11 = (run.step11 || 0) + 1;

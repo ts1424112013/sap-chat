@@ -1,12 +1,12 @@
 {
   "name": "lingxi-agent-bundle",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
   "description": "灵犀浏览器 Agent 引擎打包工程：把 deepagents/browser 及依赖打成 webapp/lib/lingxi-agent.js",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node --test test/"
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "@langchain/core": "1.3.5",

@@ -9,10 +9,14 @@
  *   - 单个文本文件读取上限 2 MB，grep/glob 最多遍历 3000 个文件。
  */
 
+import { officeToText, OFFICE_READ_EXT, OFFICE_WRITE_EXT, OFFICE_OLD_EXT, extOf } from "./office.js";
+
 export const META_DIR = ".lingxi";
 const BACKUP_DIR = "备份";
 const LOG_FILE = "修改记录.md";
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
+/** Office 文件（压缩后）读取上限：30 MB */
+const MAX_OFFICE_BYTES = 30 * 1024 * 1024;
 const MAX_WALK_FILES = 3000;
 const SKIP_DIRS = new Set([".git", "node_modules", ".svn", "__pycache__"]);
 
@@ -39,10 +43,16 @@ const MIME = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 };
 
-function extOf(p) {
-  const name = p.split("/").pop() || "";
-  const i = name.lastIndexOf(".");
-  return i > 0 ? name.slice(i + 1).toLowerCase() : "";
+/** 文本按行分页（read_file 的 offset / limit） */
+function pageText(text, offset, limit, mimeType = "text/plain") {
+  const lines = text.split("\n");
+  const total = lines[lines.length - 1] === "" ? lines.length - 1 : lines.length;
+  const off = Math.max(0, Number(offset) || 0);
+  const lim = Math.max(0, limit == null ? 500 : Number(limit));
+  const sel = lines.slice(off, off + lim);
+  if (sel.length === 0 || off >= total || lim === 0) return { content: sel.join("\n"), mimeType };
+  const end = Math.min(off + sel.length, total);
+  return { content: sel.join("\n"), mimeType, totalLines: total, startLine: off + 1, endLine: end, nextOffset: end < total ? end : undefined };
 }
 export function mimeOf(p) {
   const e = extOf(p);
@@ -166,7 +176,7 @@ export class FolderBackend {
     if (!canWritePath(path)) {
       const e = extOf(path);
       return `Error: 不能写 ${e ? "." + e : "没有扩展名的"} 文件（${path}）。只能写文本文件：${[...WRITE_EXT].join(" / ")}。` +
-        "表格存成 .csv（Excel 能直接打开；报表结果用 save_result_to_folder），文档存成 .md；不要写脚本文件。";
+        "Excel / Word 用 create_excel_file / create_word_file 新建（报表结果用 save_result_to_folder），其他存成 .csv / .md；不要写脚本文件。";
     }
     return null;
   }
@@ -199,6 +209,13 @@ export class FolderBackend {
 
   async read(path, offset = 0, limit = 500) {
     try {
+      const e = extOf(path);
+      // Office 文件（0.13.0）：转成文本再分页；旧格式直接说明要另存
+      if (OFFICE_READ_EXT.has(e) || OFFICE_OLD_EXT[e]) {
+        const t = await this._officeText(path);
+        if (t.error) return { error: t.error };
+        return pageText(t.text, offset, limit);
+      }
       const f = await this._readFile(path);
       const mimeType = mimeOf(path);
       if (!isTextPath(path)) {
@@ -206,16 +223,26 @@ export class FolderBackend {
         return { content: new Uint8Array(await f.arrayBuffer()), mimeType };
       }
       if (f.size > MAX_TEXT_BYTES) return { error: `Error: '${path}' is ${f.size} bytes; text files over 2 MB are not read. Use grep to find the part you need.` };
-      const text = await f.text();
-      const lines = text.split("\n");
-      const total = lines[lines.length - 1] === "" ? lines.length - 1 : lines.length;
-      const off = Math.max(0, Number(offset) || 0);
-      const lim = Math.max(0, limit == null ? 500 : Number(limit));
-      const sel = lines.slice(off, off + lim);
-      if (sel.length === 0 || off >= total || lim === 0) return { content: sel.join("\n"), mimeType };
-      const end = Math.min(off + sel.length, total);
-      return { content: sel.join("\n"), mimeType, totalLines: total, startLine: off + 1, endLine: end, nextOffset: end < total ? end : undefined };
+      return pageText(await f.text(), offset, limit, mimeType);
     } catch (e) { return { error: fsError(e, path) }; }
+  }
+
+  /** Office 文件转文本；同一文件（大小、修改时间不变）只转一次，分页读不重复解析 */
+  async _officeText(path) {
+    const e = extOf(path);
+    if (OFFICE_OLD_EXT[e]) return { error: `Error: .${e} 是旧格式，读不了。请用户在 Office 里把它另存为 .${OFFICE_OLD_EXT[e]} 再读。` };
+    try {
+      const f = await this._readFile(path);
+      if (f.size > MAX_OFFICE_BYTES) return { error: `Error: '${path}' 有 ${Math.round(f.size / 1048576)} MB，超过 ${MAX_OFFICE_BYTES / 1048576} MB 不读。请用户另存为 CSV 或拆小后再读。` };
+      const key = `${path}|${f.size}|${f.lastModified}`;
+      if (this._officeCache && this._officeCache.key === key) return { text: this._officeCache.text };
+      const text = await officeToText(path, new Uint8Array(await f.arrayBuffer()));
+      this._officeCache = { key, text };
+      return { text };
+    } catch (err) {
+      if (err && err.name && /Error$/.test(err.name) && err.name !== "Error" && err.name !== "TypeError") return { error: fsError(err, path) };
+      return { error: `Error: 读不了 '${path}'：${(err && err.message) || err}` };
+    }
   }
 
   async readRaw(path) {
@@ -361,6 +388,10 @@ export class FolderBackend {
   }
 
   async _textOrNull(path) {
+    if (OFFICE_READ_EXT.has(extOf(path))) {
+      const t = await this._officeText(path);
+      return t.error ? null : t.text;
+    }
     if (!isTextPath(path)) return null;
     try { const f = await this._readFile(path); return f.size > MAX_TEXT_BYTES ? null : await f.text(); } catch (e) { return null; }
   }
@@ -385,6 +416,30 @@ export class FolderBackend {
       const backup = existed ? await this._backup(path) : null;
       await this._writeText(path, String(content));
       const rec = await this._log(act, path, `${String(content).length} 字符`);
+      this.changes.push({ ...rec, backup, created: !existed });
+      this.opts.onChange && this.opts.onChange(this.changes[this.changes.length - 1]);
+      return { path, filesUpdate: null };
+    } catch (e) { return { error: fsError(e, path) }; }
+  }
+
+  /**
+   * 写 Office 文件（0.13.0）：只允许 .xlsx / .docx，内容由引擎生成（不是模型直接写的字节）。
+   * 和 write 一样先确认（确认框里给转成文本后的内容）、先备份、记修改记录、可撤回。
+   * @param {Uint8Array} bytes  @param {string} preview 新内容转成的文本  @param {string} detail 修改记录里的说明
+   */
+  async writeOffice(path, bytes, preview, detail) {
+    const bad = this._guardPath(path);
+    if (bad) return { error: bad };
+    if (!OFFICE_WRITE_EXT.has(extOf(path))) return { error: `Error: 只能新建 .xlsx / .docx 文件（${path}）` };
+    try {
+      const existed = await this._exists(path);
+      const act = existed ? "覆盖" : "新建";
+      const denied = await this._confirm(act, path, existed ? await this._textOrNull(path) : null, preview);
+      if (denied) return { error: denied };
+      const backup = existed ? await this._backup(path) : null;
+      await this._writeText(path, bytes);
+      this._officeCache = null;
+      const rec = await this._log(act, path, detail || `${bytes.length} 字节`);
       this.changes.push({ ...rec, backup, created: !existed });
       this.opts.onChange && this.opts.onChange(this.changes[this.changes.length - 1]);
       return { path, filesUpdate: null };
