@@ -58,7 +58,7 @@ const RPT_TOOLS = [
 ];
 const SAP_SKILLS = [{ id: "SK1", name: "库存盘点", description: "盘点库存、导出库存结果时的做法", body: "MARKER-SKILL 先列结果再导出" }];
 const SCRIPT3 = [
-  () => [call("read_file", { file_path: "/SAP技能/SK1/SKILL.md" })],
+  () => [call("read_file", { file_path: "/SAP技能/SK1/SKILL.md" }), call("read_file", { file_path: "/内置技能/sap-mm/SKILL.md" })],
   () => [call("list_results", {})],
   () => [call("save_result_to_folder", { result_id: "ART1", file_path: "/导出/库存.csv" })],
   () => [call("open_report", { tcode: "ZMM001" })],
@@ -397,10 +397,15 @@ const server = http.createServer(async (req, res) => {
       if (step === 0) {
         run.sysHasSapSkill = sys.includes("/SAP技能/SK1/SKILL.md") && sys.includes("库存盘点");
         run.sysHasFolderSkill = sys.includes("项目口径");
+        run.sysHasBuiltinSkill = sys.includes("/内置技能/sap-mm/SKILL.md") && sys.includes("MM 采购与库存");
+        run.sysHasBadSkill = sys.includes("Bad Dir") || sys.includes("非法目录");
         run.hasExportTool = names.includes("save_result_to_folder");
       }
       const toolTexts = msgs.filter(m => m.role === "tool").map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content));
-      if (step === 1) run.skillRead = toolTexts.some(t => t.includes("MARKER-SKILL"));
+      if (step === 1) {
+        run.skillRead = toolTexts.some(t => t.includes("MARKER-SKILL"));
+        run.builtinRead = toolTexts.some(t => t.includes("MARKER-BUILTIN"));
+      }
       const c3 = (SCRIPT3[step] || (() => null))();
       if (c3) return reply({ role: "assistant", content: "", tool_calls: c3 }, c3);
       return reply({ role: "assistant", content: "不应该走到这里：拿到参数卡后应当停止" });

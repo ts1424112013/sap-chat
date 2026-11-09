@@ -22,7 +22,7 @@ import { summarizeStep, mainArg } from "./step-summary.js";
 import { createAdtClient, ADT_TOOL_SPECS, ADT_PROMPT, ADT_SQL_PROMPT, normalizeUri, parseDataPreview } from "./adt-client.js";
 import { buildXlsx, buildDocx, officeToText, parseCsv, csvValue } from "./office.js";
 
-export const VERSION = "0.13.0";
+export const VERSION = "0.14.0";
 export const MEMORY_FILE = "/灵犀记忆.md";
 /** 记忆上限（字符）：超过时只载入前这么多，回答后让模型整理一次 */
 export const MEMORY_MAX_CHARS = 6000;
@@ -30,6 +30,8 @@ export const MEMORY_MAX_CHARS = 6000;
 export const MEMORY_TARGET_CHARS = 4000;
 /** SAP 管理员维护的技能（只读，SAP /run/start 下发） */
 export const SAP_SKILL_DIR = "/SAP技能/";
+/** 随前端包发布的内置技能（只读，webapp/skills/builtin-skills.json，由界面读好后经 o.builtinSkills 传入） */
+export const BUILTIN_SKILL_DIR = "/内置技能/";
 /** 文件夹自带的技能：.lingxi/技能/<名字>/SKILL.md */
 export const FOLDER_SKILL_DIR = "/.lingxi/技能/";
 const MAX_TOOL_CHARS = 60000;
@@ -578,7 +580,7 @@ export function compactSteps(trace) {
         out.push({ k: "note", st: e.approved ? "OK" : "ERROR",
           text: (e.approved ? (e.auto ? "已按本次允许自动" : "已同意") : "已拒绝") + e.action + " " + String(e.path || "").slice(0, 120) });
         break;
-      case "skill": out.push({ k: "skill", text: String(e.name || "").slice(0, 60) }); break;
+      case "skill": out.push({ k: "skill", text: (String(e.name || "") + (e.source === "BUILTIN" ? "（内置）" : e.source === "FOLDER" ? "（文件夹）" : "")).slice(0, 60) }); break;
       case "asked":
         if (!e.cancel) out.push({ k: "note", st: "OK", text: ("问：" + String(e.question || "").slice(0, 120) + " → " + String(e.answer || "")).slice(0, 300) });
         break;
@@ -622,6 +624,7 @@ function textOf(m) {
  * @param {AbortSignal} [o.signal]
  * @param {object} [o.sap] createSapClient 参数（base 等）
  * @param {object} [o.client] 测试时注入
+ * @param {Array<{dir:string,title?:string,content:string}>} [o.builtinSkills] 内置技能（随前端包发布），挂成只读 /内置技能/
  */
 export async function run(o) {
   const emit = e => { try { o.onEvent && o.onEvent(e); } catch (x) { /* 界面错误不打断运行 */ } };
@@ -710,13 +713,25 @@ export async function run(o) {
     const l = await folderBackend.ls(FOLDER_SKILL_DIR);
     folderHasSkills = !l.error && (l.files || []).some(f => f.is_dir);
   }
-  const skillSources = [...(sapSkillBackend ? [SAP_SKILL_DIR] : []), ...(folderHasSkills ? [FOLDER_SKILL_DIR] : [])];
+  // 内置技能：顺序在最前，同名时后面的 SAP 技能 / 文件夹技能优先
+  const builtinFiles = {};
+  const builtinTitle = {};
+  for (const b of Array.isArray(o.builtinSkills) ? o.builtinSkills : []) {
+    const dir = String((b && b.dir) || "");
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(dir) || typeof b.content !== "string" || !b.content) continue;
+    builtinFiles[`/${dir}/SKILL.md`] = b.content;
+    builtinTitle[dir] = String(b.title || dir).slice(0, 60);
+  }
+  const builtinBackend = Object.keys(builtinFiles).length ? new ReadonlyMemBackend(builtinFiles, { owner: "随灵犀发布的内置技能" }) : null;
+  const skillSources = [...(builtinBackend ? [BUILTIN_SKILL_DIR] : []), ...(sapSkillBackend ? [SAP_SKILL_DIR] : []),
+    ...(folderHasSkills ? [FOLDER_SKILL_DIR] : [])];
 
   const backend = (cfg) => {
     const mem = new StateBackend(cfg);
     const routes = { "/large_tool_results/": mem, "/conversation_history/": mem, "/草稿/": mem };
     if (sapSkillBackend) routes[SAP_SKILL_DIR] = sapSkillBackend;
-    return folderBackend || sapSkillBackend ? new CompositeBackend(folderBackend || mem, routes) : mem;
+    if (builtinBackend) routes[BUILTIN_SKILL_DIR] = builtinBackend;
+    return folderBackend || sapSkillBackend || builtinBackend ? new CompositeBackend(folderBackend || mem, routes) : mem;
   };
 
   // 记忆：自己读、自己放进系统提示（有上限），不用框架的 memory 选项
@@ -821,6 +836,12 @@ export async function run(o) {
       track({ type: "skill", source: "SAP", id: skillIdByDir[m[1]].id, name: skillIdByDir[m[1]].name });
       return;
     }
+    m = p.match(/^\/内置技能\/([^/]+)\/SKILL\.md$/);
+    if (m && builtinTitle[m[1]] && !skillsUsed.has("builtin:" + m[1])) {
+      skillsUsed.set("builtin:" + m[1], builtinTitle[m[1]]);
+      track({ type: "skill", source: "BUILTIN", id: m[1], name: builtinTitle[m[1]] });
+      return;
+    }
     m = p.match(/^\/\.lingxi\/技能\/([^/]+)\/SKILL\.md$/);
     if (m && !skillsUsed.has("folder:" + m[1])) {
       skillsUsed.set("folder:" + m[1], m[1]);
@@ -904,7 +925,7 @@ export async function run(o) {
   try {
     await client.finishRun({
       runId: runInfo.runId, status, answer, message: errorMsg,
-      skillsUsed: [...skillsUsed.keys()].filter(k => !k.startsWith("folder:")),
+      skillsUsed: [...skillsUsed.keys()].filter(k => !k.startsWith("folder:") && !k.startsWith("builtin:")),
       steps: compactSteps(trace),
       title
     });

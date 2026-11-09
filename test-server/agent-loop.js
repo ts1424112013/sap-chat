@@ -211,7 +211,7 @@ async function runAgent(question, options = {}) {
   const startTime = Date.now();
   const scene = options.scene || '';
   const skillId = options.skillId || '';
-  const skill = skillId && skillId !== 'NONE' ? Skills.builtin.find(s => s.id === skillId) : null;
+  const skill = skillId && skillId !== 'NONE' ? require('./sample-skills').find(s => s.id === skillId) : null;
   if (skillId && skillId !== 'NONE' && (!skill || !Skills.available(skill, scene, options.isAdmin === true))) {
     throw new Error('技能不存在、不可见或不适用于当前场景');
   }

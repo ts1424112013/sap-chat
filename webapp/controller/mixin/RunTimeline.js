@@ -140,7 +140,7 @@ sap.ui.define([
 				}
 				break;
 			case "skill":
-				s.items.push({ k: "skill", text: e.name + (e.source === "FOLDER" ? "（文件夹）" : "") });
+				s.items.push({ k: "skill", text: e.name + (e.source === "FOLDER" ? "（文件夹）" : e.source === "BUILTIN" ? "（内置）" : "") });
 				break;
 			case "compacted":
 				s.items.push({ k: "note", text: "对话较长，已自动压缩（早期内容总结成一段，原文留在本次运行的草稿里）" });

@@ -91,6 +91,10 @@ async function main() {
     const confirms3 = [];
     const r3 = await LingxiAgent.run({
       question: "场景三", folderBackend: r.folder, sap: { base: "/sap/bc/zai_agent" },
+      builtinSkills: [
+        { dir: "sap-mm", title: "MM 采购与库存", content: "---\nname: sap-mm\ndescription: \"MM 采购与库存：问科目自动确定、STO 时用\"\n---\n\nMARKER-BUILTIN 科目确定看 OBYC\n" },
+        { dir: "Bad Dir", title: "非法目录", content: "不该挂上" }
+      ],
       onEvent: e => { ev3.push(e); events.push(e); },
       confirm: async req => { confirms3.push(req.action + " " + req.path); return true; }
     });
@@ -99,7 +103,11 @@ async function main() {
     check("系统提示里列出 SAP 技能", run3.sysHasSapSkill);
     check("系统提示里列出文件夹技能", run3.sysHasFolderSkill);
     check("读到 SAP 技能正文", run3.skillRead);
-    check("技能使用写回 SAP（skillsUsed）", JSON.stringify(run3.skillsUsed) === '["SK1"]', JSON.stringify(run3.skillsUsed));
+    check("系统提示里列出内置技能（目录名非法的不挂）", run3.sysHasBuiltinSkill && !run3.sysHasBadSkill);
+    check("读到内置技能正文", run3.builtinRead);
+    check("内置技能事件（来源 BUILTIN，显示中文名）", ev3.some(e => e.type === "skill" && e.source === "BUILTIN" && e.name === "MM 采购与库存"));
+    check("运行结果列出用过的内置技能", r3.skills.includes("MM 采购与库存"), JSON.stringify(r3.skills));
+    check("技能使用写回 SAP（skillsUsed，只含 SAP 技能，内置 / 文件夹的不报）", JSON.stringify(run3.skillsUsed) === '["SK1"]', JSON.stringify(run3.skillsUsed));
     check("有选文件夹时才有导出工具", run3.hasExportTool);
     const csv = await text(root, "/导出/库存.csv");   // .text() 会吃掉 BOM，BOM 看原始字节
     const head = new Uint8Array(await (await (await (await root.getDirectoryHandle("导出")).getFileHandle("库存.csv")).getFile()).slice(0, 3).arrayBuffer());

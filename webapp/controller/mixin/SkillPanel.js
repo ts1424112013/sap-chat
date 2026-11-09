@@ -1,7 +1,8 @@
 sap.ui.define([
     "sap/ui/model/json/JSONModel", "sap/m/ResponsivePopover", "sap/m/FlexItemData", "zai/chat/utils/Toast",
-    "sap/ui/core/HTML", "sap/ui/Device", "zai/chat/service/ChatService", "zai/chat/utils/SkillCatalog", "zai/chat/utils/Formatter"
-], function (JSONModel, ResponsivePopover, FlexItemData, MessageToast, HTML, Device, Service, Skills, Formatter) {
+    "sap/ui/core/HTML", "sap/ui/Device", "zai/chat/service/ChatService", "zai/chat/utils/SkillCatalog", "zai/chat/utils/Formatter",
+    "sap/m/MessageBox", "zai/chat/service/BrowserAgentService"
+], function (JSONModel, ResponsivePopover, FlexItemData, MessageToast, HTML, Device, Service, Skills, Formatter, MessageBox, BrowserAgent) {
     "use strict";
 
     /* ==========================================================================
@@ -376,11 +377,16 @@ sap.ui.define([
                 this.getView().addDependent(this._skillAdminDialog);
             }
             // enabled：null = 还没读到（开关先不显示状态，提示条也不出）
+            // builtin / bView：随前端包发布的内置技能（只读，《04》〇-AV）；bView 有值时右侧显示内置技能全文、不显示编辑区
             var m = new JSONModel({ items: [], view: [], filter: "ALL", q: "", counts: {},
                 edit: null, sceneOn: {}, toolOptions: [], toolNote: "", bodyLen: 0, title: "", footNote: "",
-                saving: false, error: "", enabled: null, switching: false });
+                saving: false, error: "", enabled: null, switching: false, builtin: [], bView: null });
             this.getView().setModel(m, "skillAdmin");
             this._skillAdminDialog.open(); this.onRefreshSkillAdmin();
+            var that = this;
+            BrowserAgent.loadBuiltinSkills().then(function (list) {
+                m.setProperty("/builtin", list); that._skAdmDerive();
+            });
             Service.getSkillEnabled().then(function (b) { m.setProperty("/enabled", b); })
                 .catch(function () { m.setProperty("/enabled", null); });
         },
@@ -419,15 +425,24 @@ sap.ui.define([
             var m = this.getView().getModel("skillAdmin"); if (!m) { return; }
             var items = m.getProperty("/items") || [], f = m.getProperty("/filter"), q = String(m.getProperty("/q") || "").trim().toLowerCase();
             var edit = m.getProperty("/edit") || {};
-            var counts = { ALL: items.length };
+            var builtin = m.getProperty("/builtin") || [], bView = m.getProperty("/bView");
+            var counts = { ALL: items.length, BUILTIN: builtin.length };
+            m.setProperty("/bMeta", bView ? "目录 /内置技能/" + bView.dir + "/ · " + bView.content.length.toLocaleString() + " 字" +
+                (bView.source ? " · 来源：" + bView.source : "") : "");
             Object.keys(SCENE_TEXT).forEach(function (k) { counts[k] = items.filter(function (s) { return s.scenes.indexOf(k) >= 0; }).length; });
             m.setProperty("/counts", counts);
             m.setProperty("/activeCount", items.filter(function (s) { return s.active && s.body; }).length);
-            m.setProperty("/view", items.filter(function (s) {
+            m.setProperty("/view", f === "BUILTIN" ? builtin.filter(function (b) {
+                return !q || (b.title + " " + b.dir + " " + b.description).toLowerCase().indexOf(q) >= 0;
+            }).map(function (b) {
+                return { id: "builtin:" + b.dir, name: b.title, stateText: "内置", stateOn: "yes", on: !!bView && bView.dir === b.dir,
+                    meta: "所有场景 · 只读 · " + b.content.length.toLocaleString() + " 字" };
+            }) : items.filter(function (s) {
                 return (f === "ALL" || s.scenes.indexOf(f) >= 0) &&
                     (!q || (s.name + " " + s.id + " " + s.description).toLowerCase().indexOf(q) >= 0);
             }).map(function (s) {
                 return { id: s.id, name: s.name, version: s.version, active: s.active, on: s.id === edit.id && !!edit.version,
+                    stateText: s.active ? "启用" : "停用", stateOn: s.active ? "yes" : "no",
                     meta: s.scenes.map(function (k) { return SCENE_TEXT[k] || k; }).join(" / ") + " · v" + s.version +
                         (s.visibility === "ADMIN" ? " · 仅管理员" : "") };
             }));
@@ -449,8 +464,18 @@ sap.ui.define([
                 : "新技能保存后为 v1");
         },
         onSkillAdmFilter: function (e) {
-            this.getView().getModel("skillAdmin").setProperty("/filter", e.getSource().data("scene"));
+            var m = this.getView().getModel("skillAdmin"), f = e.getSource().data("scene");
+            m.setProperty("/filter", f);
+            // 切到「内置」默认打开第一个；切回 SAP 技能时回到编辑区
+            var first = (m.getProperty("/builtin") || [])[0];
+            m.setProperty("/bView", f === "BUILTIN" && first ? this._skAdmBuiltinView(first) : null);
             this._skAdmDerive();
+        },
+        /** 内置技能的查看内容：说明去掉开头重复的名称，正文去掉开头的 --- 元数据 */
+        _skAdmBuiltinView: function (b) {
+            return { dir: b.dir, title: b.title, source: b.source, content: b.content,
+                description: b.description.indexOf(b.title + "：") === 0 ? b.description.slice(b.title.length + 1) : b.description,
+                body: b.content.replace(/^---\n[\s\S]*?\n---\n+/, "") };
         },
         onSkillAdmSearch: function (e) {
             this.getView().getModel("skillAdmin").setProperty("/q", e.getParameter("value") || "");
@@ -459,11 +484,18 @@ sap.ui.define([
         onSkillAdmPick: function (e) {
             var m = this.getView().getModel("skillAdmin");
             var id = e.getSource().getBindingContext("skillAdmin").getProperty("id");
+            if (id.indexOf("builtin:") === 0) {
+                var b = (m.getProperty("/builtin") || []).filter(function (x) { return "builtin:" + x.dir === id; })[0];
+                if (b) { m.setProperty("/bView", this._skAdmBuiltinView(b)); this._skAdmDerive(); }
+                return;
+            }
             var s = (m.getProperty("/items") || []).filter(function (x) { return x.id === id; })[0];
-            if (s) { m.setProperty("/edit", JSON.parse(JSON.stringify(s))); m.setProperty("/error", ""); this._skAdmDerive(); }
+            if (s) { m.setProperty("/bView", null); m.setProperty("/edit", JSON.parse(JSON.stringify(s))); m.setProperty("/error", ""); this._skAdmDerive(); }
         },
         onNewSkill: function () {
             var m = this.getView().getModel("skillAdmin"), f = m.getProperty("/filter");
+            if (f === "BUILTIN") { f = "ALL"; m.setProperty("/filter", f); }
+            m.setProperty("/bView", null);
             m.setProperty("/edit", {
                 id: "", name: "", description: "", scenes: [SCENE_TEXT[f] ? f : "CODE"], tools: [], body: "", placeholder: "",
                 visibility: "PUBLIC", active: true, version: 0, maxRounds: 10 });
@@ -496,14 +528,32 @@ sap.ui.define([
                 MessageToast.show("已保存为 v" + s.version);
             }).catch(function (e) { m.setProperty("/error", e.message); }).then(function () { m.setProperty("/saving", false); });
         },
-        onImportBuiltinSkills: function () {
-            var that = this, m = this.getView().getModel("skillAdmin"), rows = m.getProperty("/items") || [];
-            if (m.getProperty("/saving")) { return; }
-            m.setProperty("/saving", true); m.setProperty("/error", "");
-            var add = Skills.builtin.filter(function (s) { return !rows.some(function (r) { return r.id === s.id; }); });
-            add.reduce(function (p, s) { return p.then(function () { return Service.saveSkill(Object.assign({}, s, {version: 0})); }); }, Promise.resolve())
-                .then(function () { MessageToast.show("已补入 " + add.length + " 个内置技能"); that.onRefreshSkillAdmin(); that._syncSkills(true); })
-                .catch(function (e) { m.setProperty("/error", e.message); }).then(function () { m.setProperty("/saving", false); });
+        /** 把 SAP 里所有启用的技能逐个停用（20261110：旧的内置做法不再用；数据保留，单个打开「启用」即可恢复） */
+        onDisableAllSkills: function () {
+            var that = this, m = this.getView().getModel("skillAdmin");
+            var on = (m.getProperty("/items") || []).filter(function (s) { return s.active; });
+            if (m.getProperty("/saving") || !on.length) { return; }
+            MessageBox.confirm("停用全部 " + on.length + " 个 SAP 技能？停用后模型不再用它们；内容保留，以后打开单个技能的「启用」就能恢复。内置技能不受影响。", {
+                title: "全部停用",
+                actions: ["全部停用", MessageBox.Action.CANCEL],
+                emphasizedAction: "全部停用",
+                onClose: function (sAct) {
+                    if (sAct !== "全部停用") { return; }
+                    m.setProperty("/saving", true); m.setProperty("/error", "");
+                    var done = 0;
+                    on.reduce(function (p, s) {
+                        return p.then(function () { return Service.saveSkill(Object.assign({}, s, { active: false })); })
+                            .then(function () { done++; });
+                    }, Promise.resolve()).then(function () {
+                        MessageToast.show("已停用 " + done + " 个技能");
+                    }).catch(function (e) {
+                        m.setProperty("/error", "停到第 " + (done + 1) + " 个时失败（已停用 " + done + " 个）：" + e.message);
+                    }).then(function () {
+                        m.setProperty("/saving", false); m.setProperty("/edit", null);
+                        that.onRefreshSkillAdmin(); that._syncSkills(true);
+                    });
+                }
+            });
         },
         onEvalSkill: function () {
             var s = this.getView().getModel("skillAdmin").getProperty("/edit");

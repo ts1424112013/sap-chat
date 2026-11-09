@@ -72,6 +72,14 @@
                                     <core:CustomData key="on" value="{= ${skillAdmin>/filter} === 'FIORI' ? 'yes' : 'no' }" writeToDom="true"/>
                                 </customData>
                             </Button>
+                            <!-- 20261110（《04》〇-AV）：随前端包发布的内置技能，只读 -->
+                            <Button text="{= '内置 ' + (${skillAdmin>/counts/BUILTIN} || 0) }" type="Transparent" press=".onSkillAdmFilter" class="admPill"
+                                    tooltip="随灵犀前端包发布的技能：所有用户都能用，这里只能查看">
+                                <customData>
+                                    <core:CustomData key="scene" value="BUILTIN"/>
+                                    <core:CustomData key="on" value="{= ${skillAdmin>/filter} === 'BUILTIN' ? 'yes' : 'no' }" writeToDom="true"/>
+                                </customData>
+                            </Button>
                         </HBox>
                         <List items="{skillAdmin>/view}" showSeparators="None" noDataText="没有匹配的技能" class="skAdmList">
                             <CustomListItem type="Active" press=".onSkillAdmPick" class="skAdmRow">
@@ -84,19 +92,33 @@
                                         <Text text="{skillAdmin>name}" wrapping="false" class="skAdmRowName"/>
                                         <Text text="{skillAdmin>meta}" wrapping="false" class="skAdmRowMeta"/>
                                     </VBox>
-                                    <Text text="{= ${skillAdmin>active} ? '启用' : '停用' }" class="skAdmState">
+                                    <Text text="{skillAdmin>stateText}" class="skAdmState">
                                         <customData>
-                                            <core:CustomData key="on" value="{= ${skillAdmin>active} ? 'yes' : 'no' }" writeToDom="true"/>
+                                            <core:CustomData key="on" value="{skillAdmin>stateOn}" writeToDom="true"/>
                                         </customData>
                                     </Text>
                                 </HBox>
                             </CustomListItem>
                         </List>
-                        <Link text="导入缺少的内置技能" tooltip="只补缺少的编号，不覆盖已经维护的内容" press=".onImportBuiltinSkills" class="skAdmImport"/>
+                        <Link text="全部停用" tooltip="把 SAP 里所有启用的技能停用（内容保留，可以单个再启用）；内置技能不受影响"
+                              press=".onDisableAllSkills" enabled="{= ${skillAdmin>/activeCount} > 0 &amp;&amp; !${skillAdmin>/saving} }"
+                              visible="{= ${skillAdmin>/filter} !== 'BUILTIN' }" class="skAdmImport"/>
+                    </VBox>
+
+                    <!-- ===== 右：内置技能（只读全文） ===== -->
+                    <VBox renderType="Bare" class="skAdmEdit skAdmBuiltin" visible="{= !!${skillAdmin>/bView} }">
+                        <HBox alignItems="Center" class="skAdmEditHead">
+                            <Title text="{skillAdmin>/bView/title}" level="H4" class="skAdmName"/>
+                            <Text text="内置" class="skVerTag"/>
+                        </HBox>
+                        <Text text="{skillAdmin>/bView/description}" class="skAdmBuiltinDesc"/>
+                        <Text text="{skillAdmin>/bMeta}"
+                              class="aplHint skAdmBuiltinMeta"/>
+                        <Text text="{skillAdmin>/bView/body}" renderWhitespace="true" class="skAdmBuiltinBody"/>
                     </VBox>
 
                     <!-- ===== 右：编辑区 ===== -->
-                    <VBox renderType="Bare" class="skAdmEdit" visible="{= !!${skillAdmin>/edit} }">
+                    <VBox renderType="Bare" class="skAdmEdit" visible="{= !!${skillAdmin>/edit} &amp;&amp; !${skillAdmin>/bView} }">
                         <MessageStrip text="{skillAdmin>/error}" type="Error" showIcon="true" visible="{= !!${skillAdmin>/error} }" class="apvStrip"/>
                         <HBox alignItems="Center" justifyContent="SpaceBetween" class="skAdmEditHead">
                             <HBox alignItems="Center" class="skAdmEditTitle">
@@ -197,12 +219,12 @@
 
                 <!-- ===== 页脚 ===== -->
                 <HBox alignItems="Center" class="aplFoot skAdmFoot">
-                    <Text text="{skillAdmin>/footNote}" class="aplHint admFootHint">
+                    <Text text="{= ${skillAdmin>/bView} ? '内置技能随前端包发布：所有用户都能用，模型觉得相关时自动读取。要修改请改项目里的 builtin-skills/，重新打包上传' : ${skillAdmin>/footNote} }" class="aplHint admFootHint">
                         <layoutData><FlexItemData growFactor="1" minWidth="0"/></layoutData>
                     </Text>
-                    <Button text="用测评用例试跑" press=".onEvalSkill" enabled="{= !!${skillAdmin>/edit/version} &amp;&amp; !${skillAdmin>/saving} }"
+                    <Button text="用测评用例试跑" press=".onEvalSkill" visible="{= !${skillAdmin>/bView} }" enabled="{= !!${skillAdmin>/edit/version} &amp;&amp; !${skillAdmin>/saving} }"
                         class="apvBtn apvBtnReject"/>
-                    <Button text="保存" type="Emphasized" press=".onSaveSkill" enabled="{= !!${skillAdmin>/edit} &amp;&amp; !${skillAdmin>/saving} }"
+                    <Button text="保存" type="Emphasized" press=".onSaveSkill" visible="{= !${skillAdmin>/bView} }" enabled="{= !!${skillAdmin>/edit} &amp;&amp; !${skillAdmin>/saving} }"
                         class="apvBtn"/>
                 </HBox>
             </VBox>

@@ -18,6 +18,8 @@ sap.ui.define([
 	 */
 
 	var BUNDLE = "zai/chat/thirdparty/lingxi-agent/lingxi-agent.js";
+	// 20261110（《04》〇-AV）：内置技能随前端包发布（builtin-skills/ → scripts/build-builtin-skills.js 生成）
+	var BUILTIN_SKILLS = "zai/chat/skills/builtin-skills.json";
 	var FOLDER_KEY_PREFIX = "lingxi-folder:";
 
 	var TOOL_LABEL = {
@@ -94,6 +96,31 @@ sap.ui.define([
 		/** 能不能选文件夹（Chrome / Edge + HTTPS） */
 		folderSupported: function () {
 			return !!window.isSecureContext && typeof window.showDirectoryPicker === "function";
+		},
+
+		/**
+		 * 内置技能（只读一次；读不到返回空清单，不影响提问）
+		 * @returns {Promise<Array<{dir,title,description,source,content}>>}
+		 */
+		loadBuiltinSkills: function () {
+			if (this._pBuiltin) {
+				return this._pBuiltin;
+			}
+			var that = this;
+			this._pBuiltin = fetch(sap.ui.require.toUrl(BUILTIN_SKILLS), { credentials: "same-origin" }).then(function (r) {
+				if (!r.ok) {
+					throw new Error("HTTP " + r.status);
+				}
+				return r.json();
+			}).then(function (j) {
+				return (j && Array.isArray(j.skills)) ? j.skills.filter(function (x) {
+					return x && typeof x.dir === "string" && typeof x.content === "string";
+				}) : [];
+			}).catch(function () {
+				that._pBuiltin = null;   // 下次再试
+				return [];
+			});
+			return this._pBuiltin;
 		},
 
 		/** 加载引擎（只加载一次） */
@@ -227,7 +254,8 @@ sap.ui.define([
 		send: function (o) {
 			var that = this;
 			var t0 = Date.now();
-			return this.load().then(function (LA) {
+			return Promise.all([this.load(), this.loadBuiltinSkills()]).then(function (a) {
+				var LA = a[0], aBuiltin = a[1];
 					// 20261108（界面改版）：过程由控制器的 RunTimeline 按引擎事件画；这里只原样转发事件，
 				// 另外记下工具步骤（给结果的 trace / 轮数）和改动的文件（回答末尾列出）
 				var aSteps = [];
@@ -262,6 +290,7 @@ sap.ui.define([
 					context: { sessionId: o.sessionId, scene: o.scene, modelId: o.modelId, think: !!o.think, skillId: o.skillId || "",
 						focusArtifactId: o.focusArtifactId || "" },
 					folderBackend: oFB || undefined,
+					builtinSkills: aBuiltin,
 					confirm: o.confirm,
 					ask: o.ask,
 					title: !!o.genTitle,   // 20261108：任务第一轮回答后让模型起会话标题

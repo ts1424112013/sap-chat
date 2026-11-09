@@ -5,8 +5,12 @@
 import { globToRegExp, splitPath } from "./folder-backend.js";
 
 export class ReadonlyMemBackend {
-  /** @param {Record<string,string>} files 绝对路径（以 / 开头）→ 文本内容 */
-  constructor(files = {}) {
+  /**
+   * @param {Record<string,string>} files 绝对路径（以 / 开头）→ 文本内容
+   * @param {{owner?:string}} [opts] owner：拒绝写入时说明这个目录由谁维护
+   */
+  constructor(files = {}, opts = {}) {
+    this.owner = opts.owner || "由 SAP 管理员维护";
     this.files = new Map();
     for (const [p, c] of Object.entries(files)) {
       const parts = splitPath(p);
@@ -92,9 +96,9 @@ export class ReadonlyMemBackend {
     return { matches };
   }
 
-  async write(path) { return { error: `Error: '${path}' 是只读目录（由 SAP 管理员维护），不能写。` }; }
-  async edit(path) { return { error: `Error: '${path}' 是只读目录（由 SAP 管理员维护），不能改。` }; }
-  async delete(path) { return { error: `Error: '${path}' 是只读目录（由 SAP 管理员维护），不能删。` }; }
+  async write(path) { return { error: `Error: '${path}' 是只读目录（${this.owner}），不能写。` }; }
+  async edit(path) { return { error: `Error: '${path}' 是只读目录（${this.owner}），不能改。` }; }
+  async delete(path) { return { error: `Error: '${path}' 是只读目录（${this.owner}），不能删。` }; }
 }
 
 /** SAP 技能 → SKILL.md（Agent Skills 格式：YAML 头 name / description + 正文） */

@@ -4,9 +4,11 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const Skills = require('../webapp/utils/SkillCatalog');
+const Samples = require('./sample-skills');
 const {runAgent} = require('./agent-loop');
 function loadUI(overrides) {
-  const mem = new Map();
+  // 演示目录默认是空的（20261110 起不再内置样例）；测试先放入技能样例
+  const mem = new Map([['zaiChat.skillCatalog.v1', JSON.stringify(Samples)]]);
   const registry = Object.assign({'sap/base/Log': {}, 'sap/ui/model/odata/v2/ODataModel': function () {},
     'sap/ui/model/Filter': function () {}, 'sap/ui/model/FilterOperator': {}, 'sap/ui/model/Sorter': function () {}}, overrides || {});
   class Model {
@@ -29,16 +31,16 @@ function loadUI(overrides) {
   }
   const service=load('zai/chat/service/ChatService');service._testLoad=load;return service;
 }
-test('18 个内置技能均满足长度、场景、工具和版本约束，编号不重复', () => {
-  assert.equal(Skills.builtin.length, 18);
-  for (const s of Skills.builtin) assert.equal(Skills.validate(s).id, s.id);
-  assert.equal(new Set(Skills.builtin.map(s => s.id)).size, Skills.builtin.length);
+test('18 个技能样例均满足长度、场景、工具和版本约束，编号不重复', () => {
+  assert.equal(Samples.length, 18);
+  for (const s of Samples) assert.equal(Skills.validate(s).id, s.id);
+  assert.equal(new Set(Samples.map(s => s.id)).size, Samples.length);
 });
 test('10 个标准业务流程技能：数据分析场景、只用查表三件套、正文带通用取数纪律', () => {
   const ids = ['DATA_SD_SALES','DATA_SD_ORDER_TRACE','DATA_SD_BACKLOG','DATA_MM_PO_TRACE','DATA_MM_VENDOR',
     'DATA_MM_STOCK','DATA_MM_MOVEMENT','DATA_PP_ORDER','DATA_PP_SHORTAGE','DATA_PP_MASTER'];
   for (const id of ids) {
-    const s = Skills.builtin.find(x => x.id === id);
+    const s = Samples.find(x => x.id === id);
     assert.ok(s, id);
     assert.deepEqual(s.scenes, ['DATA']);
     assert.deepEqual(s.tools, ['search_tables','describe_table','run_sql']);
@@ -47,7 +49,7 @@ test('10 个标准业务流程技能：数据分析场景、只用查表三件�
   }
 });
 test('拒绝自动场景、保留编号、未知工具、跨场景工具、超长正文和非法轮数', () => {
-  const s = Skills.builtin[0];
+  const s = Samples[0];
   for (const patch of [{scenes:['AUTO']},{id:'NONE'},{tools:['delete_anything']},
     {scenes:['CODE','REPORT'],tools:['read_program_source']},{body:'x'.repeat(3001)},
     {maxRounds:11},{maxRounds:2.5},{visibility:'PRIVATE'},{version:-1},{version:2147483647}]) {
@@ -61,10 +63,10 @@ test('工具交集：空子集沿用场景，报表始终无工具，不认识�
   assert.deepEqual(Skills.allowedTools('AUTO',null), []);
 });
 test('目录权限、停用状态、搜索和斜杠解析', () => {
-  assert.equal(Skills.available({...Skills.builtin[0],visibility:'ADMIN'},'CODE',false), false);
-  assert.equal(Skills.available({...Skills.builtin[0],active:false},'CODE',true), false);
-  assert.equal(Skills.available(Skills.builtin[0],'DATA',true), false);
-  assert.equal(Skills.filter(Skills.builtin,'解读')[0].id,'CODE_EXPLAIN');
+  assert.equal(Skills.available({...Samples[0],visibility:'ADMIN'},'CODE',false), false);
+  assert.equal(Skills.available({...Samples[0],active:false},'CODE',true), false);
+  assert.equal(Skills.available(Samples[0],'DATA',true), false);
+  assert.equal(Skills.filter(Samples,'解读')[0].id,'CODE_EXPLAIN');
   assert.equal(Skills.slash('/性能'), '性能');
   assert.equal(Skills.slash('正常 / 问题'), null);
   assert.equal(Skills.slash('/a\nb'), null);
@@ -75,12 +77,12 @@ test('演示目录：按场景过滤，非管理员不能维护，保存有乐�
   const s = loadUI(); s._sAppUser={userId:'A',role:'USER'};
   let r=await s.getSkills({scene:'CODE',sessionId:'S'});
   assert.equal(r.skills.length,4);
-  await assert.rejects(()=>s.saveSkill(Skills.builtin[0]), /管理员/);
+  await assert.rejects(()=>s.saveSkill(Samples[0]), /管理员/);
   await assert.rejects(()=>s.getSkills({includeInactive:true}), /管理员/);
   s._sAppUser.role='ADMIN';
-  const saved=await s.saveSkill({...Skills.builtin[0],name:'新版性能审查'});
+  const saved=await s.saveSkill({...Samples[0],name:'新版性能审查'});
   assert.equal(saved.version,2);
-  await assert.rejects(()=>s.saveSkill(Skills.builtin[0]), /版本/);
+  await assert.rejects(()=>s.saveSkill(Samples[0]), /版本/);
   r=await s.getSkills({scene:'CODE'}); assert.equal(r.skills[0].name,'代码解读');
 });
 test('演示任务：选择、沿用、取消、任务/账号/会话隔离', async () => {
@@ -118,7 +120,7 @@ test('技能保存走长文本通道，正文与说明按普通文本传递', as
   let prepared, sent;
   s._prepareQuestion=async q=>{prepared=JSON.parse(q);return '@@ZAI_TEXT:TEST';};
   s._taskCall=async (action,params)=>{sent={action,params};return {success:true,result:{...prepared,version:2}};};
-  await s.saveSkill({...Skills.builtin[0],body:'<script>仅作为正文</script>'});
+  await s.saveSkill({...Samples[0],body:'<script>仅作为正文</script>'});
   assert.equal(sent.action,'SkillSave'); assert.equal(sent.params.Payload,'@@ZAI_TEXT:TEST');
   assert.equal(prepared.scenes,'CODE'); assert.equal(prepared.body,'<script>仅作为正文</script>');
 });
@@ -191,12 +193,12 @@ test('切换会话和同会话强制刷新时，迟到的技能目录不能覆�
     getView:()=>view,_curScene:()=> 'CODE',_wsMode:()=> 'AGENT',_paintSkill:()=>{},_renderHeroBubbles:()=>{}});
   const pending=[];s.getSkills=()=>new Promise(resolve=>pending.push(resolve));
   panel._syncSkills();models.chat.setProperty('/currentSession/id','B');panel._syncSkills();
-  pending[1]({supported:true,enabled:true,skills:[Skills.builtin[1]],selectedId:'CODE_EXPLAIN'});await Promise.resolve();
-  pending[0]({supported:true,enabled:true,skills:[Skills.builtin[0]],selectedId:'CODE_PERFORMANCE'});await Promise.resolve();
+  pending[1]({supported:true,enabled:true,skills:[Samples[1]],selectedId:'CODE_EXPLAIN'});await Promise.resolve();
+  pending[0]({supported:true,enabled:true,skills:[Samples[0]],selectedId:'CODE_PERFORMANCE'});await Promise.resolve();
   assert.equal(models.skill.getProperty('/selected/id'),'CODE_EXPLAIN');
   panel._syncSkills(true);panel._syncSkills(true);
-  pending[3]({supported:true,enabled:true,skills:[Skills.builtin[2]],selectedId:'CODE_ENHANCEMENTS'});await Promise.resolve();
-  pending[2]({supported:true,enabled:true,skills:[Skills.builtin[0]],selectedId:'CODE_PERFORMANCE'});await Promise.resolve();
+  pending[3]({supported:true,enabled:true,skills:[Samples[2]],selectedId:'CODE_ENHANCEMENTS'});await Promise.resolve();
+  pending[2]({supported:true,enabled:true,skills:[Samples[0]],selectedId:'CODE_PERFORMANCE'});await Promise.resolve();
   assert.equal(models.skill.getProperty('/selected/id'),'CODE_ENHANCEMENTS');
 });
 test('技能总开关（演示）：关时聊天拿不到技能、管理照常；只有管理员能开关（10.27 #03）', async () => {
@@ -208,7 +210,7 @@ test('技能总开关（演示）：关时聊天拿不到技能、管理照常�
   assert.equal(await s.getSkillEnabled(), false);                     // 关能存住（不是删键回到默认开）
   let r=await s.getSkills({scene:'CODE',sessionId:'S'});
   assert.equal(r.enabled,false); assert.equal(r.skills.length,0);
-  r=await s.getSkills({includeInactive:true}); assert.equal(r.skills.length,Skills.builtin.length);
+  r=await s.getSkills({includeInactive:true}); assert.equal(r.skills.length,Samples.length);
   s._mockSendAgent=async()=>({trace:[],answer:'演示',status:'OK'});
   await assert.rejects(()=>s.sendTask({scene:'CODE',sessionId:'S',taskId:'T',skillId:'CODE_EXPLAIN'}), /尚未启用/);
   await s.setSkillEnabled(true);
@@ -238,4 +240,46 @@ test('技能胶囊选不了时仍可点：管理员直达技能管理，普通�
   panel.onOpenSkills(ev); assert.equal(opened,1);
   models.chat.setProperty('/busy',true); m.setProperty('/enabled',false); panel._paintSkill();
   panel.onOpenSkills(ev); assert.equal(managed,1); assert.equal(opened,1);
+});
+
+// ---------------------------------------------------------------- 20261110 内置技能随前端包发布（《04》〇-AV）
+test('内置技能：JSON 与 builtin-skills/ 一致；13 个，目录名合规、有中文名和说明、开头讲怎么用和 S/4 口径', () => {
+  const {execFileSync} = require('child_process');
+  execFileSync(process.execPath, [path.join(__dirname, '../scripts/build-builtin-skills.js'), '--check']);
+  const j = require('../webapp/skills/builtin-skills.json');
+  assert.equal(j.skills.length, 13);
+  assert.equal(new Set(j.skills.map(s => s.dir)).size, 13);
+  for (const s of j.skills) {
+    assert.match(s.dir, /^[a-z0-9]+(-[a-z0-9]+)*$/);
+    assert.match(s.content, new RegExp('^---\\nname: ' + s.dir + '\\n'));
+    assert.equal(s.order, undefined);
+    assert.ok(/[一-龥]/.test(s.title) && s.description.startsWith(s.title + '：') && s.description.length <= 1024, s.dir);
+    assert.match(s.content, /## 怎么用[\s\S]*S\/4[\s\S]*这是知识，不是工具[\s\S]*## 内容/, s.dir);
+    assert.match(s.source, /sap-trench.*MIT/);
+  }
+  assert.equal(j.skills[0].dir, 'sap-troubleshooting');
+  assert.equal(j.skills[1].dir, 'sap-tcode-tables');
+  assert.ok(/CASE-015/.test(j.skills[0].content));
+  assert.ok(fs.existsSync(path.join(__dirname, '../builtin-skills/LICENSE-sap-trench')));
+});
+test('旧的前端内置技能已移除：目录不再导出 builtin，管理页没有「导入内置技能」、有「全部停用」和「内置」只读查看', () => {
+  assert.equal(Skills.builtin, undefined);
+  const panel = fs.readFileSync(path.join(__dirname, '../webapp/controller/mixin/SkillPanel.js'), 'utf8');
+  const frag = fs.readFileSync(path.join(__dirname, '../webapp/view/SkillAdmin.fragment.xml'), 'utf8');
+  assert.ok(!/onImportBuiltinSkills/.test(panel + frag));
+  assert.match(panel, /onDisableAllSkills[\s\S]*saveSkill\(Object\.assign\(\{\}, s, \{ active: false \}\)\)/);
+  assert.match(panel, /loadBuiltinSkills\(\)/);
+  assert.match(frag, /press="\.onDisableAllSkills"/);
+  assert.match(frag, /key="scene" value="BUILTIN"/);
+  assert.match(frag, /skillAdmin>\/bView\/body/);
+});
+test('新引擎提问时把内置技能交给引擎；读不到内置技能不影响提问', () => {
+  const svc = fs.readFileSync(path.join(__dirname, '../webapp/service/BrowserAgentService.js'), 'utf8');
+  assert.match(svc, /zai\/chat\/skills\/builtin-skills\.json/);
+  assert.match(svc, /Promise\.all\(\[this\.load\(\), this\.loadBuiltinSkills\(\)\]\)/);
+  assert.match(svc, /builtinSkills: aBuiltin/);
+  assert.match(svc, /catch\(function \(\) \{[\s\S]*?return \[\];/);
+  const eng = fs.readFileSync(path.join(__dirname, '../agent-bundle/src/index.js'), 'utf8');
+  assert.match(eng, /BUILTIN_SKILL_DIR = "\/内置技能\/"/);
+  assert.match(eng, /!k\.startsWith\("builtin:"\)/);
 });

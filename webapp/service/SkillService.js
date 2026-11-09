@@ -7,7 +7,7 @@ sap.ui.define(["zai/chat/utils/SkillCatalog"], function (Skills) {
     return {
         _skillOwner: function () { return String((this.getAppUser() || {}).userId || "anonymous").toUpperCase(); },
         _skillContextKey: function (p) { return "zaiChat.skill." + this._skillOwner() + "." + p.sessionId + "." + (p.taskId || ""); },
-        _skillRows: function () { return read("zaiChat.skillCatalog.v1", Skills.builtin).map(Skills.normalize); },
+        _skillRows: function () { return read("zaiChat.skillCatalog.v1", []).map(Skills.normalize); },
         /** 演示模式的技能总开关：没设过 = 开（演示方便）；关 = 存 "OFF"（存空串会被当成没设过） */
         _mockSkillEnabled: function () {
             var v = null;

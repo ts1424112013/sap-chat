@@ -484,9 +484,8 @@ check('DOMAIN_CARDS V1.4：DATA 卡讲前导零、点号、函数写法（带今
   /^\* V1\.4\s+20261028/m.test(dcRaw) && /'000000131002'/.test(dcData) && /不要写 H\.KUNNR/.test(dcData) &&
   /今天是 \{ sy-datum \}/.test(dcData) && /DIVISION\( 分子, 分母, 2 \)/.test(dcData) && /EXISTS \( SELECT J~OBJNR FROM JEST AS J/.test(dcData) &&
   /AFRU\(报工\)/.test(dcData));
-const skills = require('../webapp/utils/SkillCatalog.js');
-const ppOrder = skills.builtin.find((x) => x.id === 'DATA_PP_ORDER');
-check('技能「生产工单进度」：工单号补零、在制口径（标明暂定）、状态不和 SUM 同 JOIN、比率在回答里算；正文 ≤ 3000',
+const ppOrder = require('./sample-skills.js').find((x) => x.id === 'DATA_PP_ORDER');
+check('技能样例「生产工单进度」：工单号补零、在制口径（标明暂定）、状态不和 SUM 同 JOIN、比率在回答里算；正文 ≤ 3000',
   !!ppOrder && /'000000131002'/.test(ppOrder.body) && /在制数量（暂定口径/.test(ppOrder.body) && /不要和数量 SUM/.test(ppOrder.body) &&
   /在回答里算/.test(ppOrder.body) && ppOrder.body.length <= 3000);
 
