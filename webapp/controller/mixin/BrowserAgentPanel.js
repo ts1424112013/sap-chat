@@ -313,9 +313,10 @@ sap.ui.define([
 			var that = this;
 			var sUid = oPending.uid;
 			// 20261108（界面改版）：过程画在时间线里（RunTimeline），确认就地完成
-			this._rtStart(sUid, p.sessionId);
+			var oRt = this._rtStart(sUid, p.sessionId);
 			var oAbort = new AbortController();
 			this._baAbort = oAbort;
+			oRt.abort = oAbort;   // 20261109：停止只停当前任务这一轮（切走期间别的任务可能也在跑）
 			var aHist = this._baHistory();
 			var sTitleAtStart = String(((this._findSession && this._findSession(p.sessionId)) || {}).Title || "");
 			return BrowserAgentService.send({
@@ -416,9 +417,10 @@ sap.ui.define([
 			if (sRt && this._mRt[sRt].ask) {
 				this._rtCancelAsk(sRt);
 			}
-			if (this._baAbort) {
-				this._baAbort.abort(new Error("用户停止"));
-				this._baAbort = null;
+			var oAb = sRt ? this._mRt[sRt].abort : null;
+			if (oAb) {
+				oAb.abort(new Error("用户停止"));
+				if (this._baAbort === oAb) { this._baAbort = null; }
 			}
 		},
 

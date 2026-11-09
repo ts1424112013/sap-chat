@@ -511,6 +511,10 @@ sap.ui.define([
 			if (!oChat) {
 				return;
 			}
+			// 20261109：只显示正在看的会话的运行（别的会话后台在跑时不覆盖底栏）
+			if (s && s.sid && this._sMessagesSession && s.sid !== this._sMessagesSession) {
+				return;
+			}
 			var a = [];
 			// 20261108：不再写「文件夹 xxx」—— 左边的文件夹胶囊已经显示了，重复
 			if (s) {

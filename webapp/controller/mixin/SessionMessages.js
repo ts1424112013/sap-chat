@@ -101,6 +101,41 @@ sap.ui.define([
                 },
 
                 /**
+                 * 20261109：当前会话有浏览器引擎还在跑的一轮（切走再切回）→ 恢复忙碌态：发送键变停止，
+                 * 不能在同一任务里再并发一轮；底栏显示这一轮的计数。没有在跑的 → 解除这种恢复出来的忙碌态，
+                 * 底栏换成这个会话最近一轮的数字（不再显示别的会话的）。
+                 * 本页正常发送中的忙碌态（有发送令牌）不动。
+                 */
+                _syncLiveRunBusy: function () {
+                        if (!this._rtActiveUid) { return; }
+                        var oChat = this.getView().getModel("chat");
+                        var sUid = this._rtActiveUid();
+                        var oRun = sUid ? this._mRt[sUid] : null;
+                        if (oRun) {
+                                this._rtInfo(oRun);
+                                if (!oChat.getProperty("/busy")) {
+                                        oChat.setProperty("/busy", true);
+                                        this._setSendBtnBusy(true);
+                                        this._syncActivity();
+                                }
+                                return;
+                        }
+                        if (this._sStreamToken) { return; }
+                        // 底栏显示这个会话最近一轮的计数（本页没跑过就清空）
+                        var sCur = this._sMessagesSession, oLast = null;
+                        Object.keys(this._mRt || {}).forEach(function (k) {
+                                // 只认本页真跑过的（有 t0）；刷新后从精简记录画回来的时间线没有计数
+                                if (this._mRt[k].sid === sCur && this._mRt[k].t0) { oLast = this._mRt[k]; }
+                        }, this);
+                        this._rtInfo(oLast);
+                        if (oChat.getProperty("/busy")) {
+                                oChat.setProperty("/busy", false);
+                                this._setSendBtnBusy(false);
+                                this._syncActivity();
+                        }
+                },
+
+                /**
                  * 20261109（11.9 #01/#03）：浏览器引擎的一轮在用户切走后才结束 —— 回复没能写到界面上
                  * （SAP 已在 run/finish 存好问答）。标记这个会话要回读；正开着它就立刻回读，
                  * 否则下次切回来时回读。不回读的话这一轮会从界面和下一轮的对话历史里一起丢掉。
@@ -110,6 +145,7 @@ sap.ui.define([
                         if (!oState) { return; }
                         oState.refresh = true;
                         if (this._sMessagesSession === sSid) {
+                                this._syncLiveRunBusy();   // 这一轮已结束：解除切回时恢复的「运行中」
                                 this._readSessionHistory(sSid, true).catch(function (sErr) {
                                         console.warn("[ChatService] 历史加载失败: " + sErr);
                                 });
@@ -123,6 +159,7 @@ sap.ui.define([
                         var fnShow = function () {
                                 if (that._sMessagesSession !== sSid) { return; }
                                 that.getView().getModel("chat").setProperty("/messages", oState.messages);
+                                that._syncLiveRunBusy();
                                 that._setViewLayout(bAgent || oState.messages.length > 0);
                                 that._scrollToBottom();
                                 setTimeout(function () { that._highlightCodeBlocks(); }, 150);
