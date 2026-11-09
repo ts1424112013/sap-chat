@@ -1,4 +1,4 @@
-# Dependencies (zipped in deps/, see deps/README.md)
+# Dependencies (zipped on the deps branch, see deps/README.md)
 node_modules/
 **/node_modules/
 
@@ -6,7 +6,7 @@ node_modules/
 # Build and local output
 .codex-pptx-build/
 *.zip
-!deps/*.zip
+deps/LOCKS.txt
 .DS_Store
 
 # Local environment and secrets
