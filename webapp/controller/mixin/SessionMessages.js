@@ -64,10 +64,17 @@ sap.ui.define([
 
                 /** 回读被中断的回复时复用已有条目，并把本地报表结果留在原来的位置。 */
                 _mergeSessionHistory: function (aHistory, aCached) {
-                        var aOut = [], iNext = 0;
+                        var that = this;
+                        var aOut = [], iNext = 0, aLive = [];
                         aCached.forEach(function (oEntry) {
                                 if (oEntry.localResult) {
                                         aOut.push(oEntry);
+                                        return;
+                                }
+                                // 20261109（11.9 #01/#03）：浏览器引擎这一轮还在跑 —— SAP 要等跑完才存问答，
+                                // 历史里还没有它；保留本地的提问和过程条目，放在最后，跑完后再回读补齐
+                                if (that._isLiveRunEntry(oEntry)) {
+                                        aLive.push(oEntry);
                                         return;
                                 }
                                 if (oEntry.waiting || oEntry.requestPending || oEntry.streaming) { return; }
@@ -83,7 +90,30 @@ sap.ui.define([
                                         iNext = iMatch + 1;
                                 }
                         });
-                        return aOut.concat(aHistory.slice(iNext));
+                        return aOut.concat(aHistory.slice(iNext), aLive);
+                },
+
+                /** 条目属于浏览器引擎正在跑的一轮（占位回复本身，或它对应的那条提问） */
+                _isLiveRunEntry: function (oEntry) {
+                        var sUid = oEntry && (oEntry.runUid || (oEntry.tl ? oEntry.uid : ""));
+                        var s = sUid && this._mRt && this._mRt[sUid];
+                        return !!(s && s.status === "RUNNING");
+                },
+
+                /**
+                 * 20261109（11.9 #01/#03）：浏览器引擎的一轮在用户切走后才结束 —— 回复没能写到界面上
+                 * （SAP 已在 run/finish 存好问答）。标记这个会话要回读；正开着它就立刻回读，
+                 * 否则下次切回来时回读。不回读的话这一轮会从界面和下一轮的对话历史里一起丢掉。
+                 */
+                _reloadAfterDetachedRun: function (sSid) {
+                        var oState = this._mSessionMessages && this._mSessionMessages[sSid];
+                        if (!oState) { return; }
+                        oState.refresh = true;
+                        if (this._sMessagesSession === sSid) {
+                                this._readSessionHistory(sSid, true).catch(function (sErr) {
+                                        console.warn("[ChatService] 历史加载失败: " + sErr);
+                                });
+                        }
                 },
 
                 _readSessionHistory: function (sSid, bAgent) {

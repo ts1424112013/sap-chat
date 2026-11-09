@@ -1201,6 +1201,9 @@ sap.ui.define([
                                 oPending.thinkState = "wait";
                                 oPending.thinkHtml = this._thinkHtml(oPending);
                         }
+                        if (bBrowserRun) {
+                                oUserEntry.runUid = oPending.uid;   // 20261109：切走再回读历史时，这条提问随本轮一起保留
+                        }
                         var iAssistantIdx = oChatModel.getProperty("/messages").length;
                         oChatModel.getProperty("/messages").push(oPending);
                         this._refreshMessages();
@@ -1312,6 +1315,7 @@ sap.ui.define([
                         return pReq.then(function (oRes) {
                                 // V5：响应到达前用户已停止 → 丢弃本次回复（后端已存库）
                                 if (!fnIsCurrent()) {
+                                        if (bBrowser) { that._reloadAfterDetachedRun(sSessionId); }
                                         that._refreshSessions();
                                         return;
                                 }
@@ -1353,6 +1357,7 @@ sap.ui.define([
                                 }
                         }).catch(function (oErr) {
                                 if (!fnIsCurrent()) {
+                                        if (bBrowser) { that._reloadAfterDetachedRun(sSessionId); }
                                         that._refreshSessions();
                                         return;
                                 }

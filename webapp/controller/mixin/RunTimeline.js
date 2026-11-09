@@ -136,7 +136,7 @@ sap.ui.define([
 				break;
 			case "confirmed":
 				if (e.auto) {
-					s.items.push({ k: "note", st: "OK", text: "已按本次允许自动" + e.action + " " + e.path });
+					s.items.push({ k: "note", st: "OK", text: "已按你的允许自动" + e.action + " " + e.path });
 				}
 				break;
 			case "skill":
@@ -168,6 +168,12 @@ sap.ui.define([
 			var s = this._mRt && this._mRt[sUid];
 			if (!s) {
 				return Promise.resolve({ approved: false, message: "界面不支持确认" });
+			}
+			// 20261109（11.9 #02）：这个任务里选过「都不再询问」→ 后面每一轮的写和改都自动通过（删除照样问）
+			if (req.action !== "删除" && this._rtHasWriteGrant(s.sid)) {
+				s.items.push({ k: "note", st: "OK", text: "已按你的允许自动" + (req.action || "修改") + " " + (req.path || "") });
+				this._rtRenderSoon(sUid);
+				return Promise.resolve({ approved: true, always: true });
 			}
 			return new Promise(function (resolve) {
 				var oIt = { k: "ask", req: req, done: null };
@@ -239,10 +245,32 @@ sap.ui.define([
 				iOpt = 2;   // 删除卡第 2 项是「不要」
 			}
 			s.ask = null;
+			if (iOpt === 1) {
+				this._rtSetWriteGrant(s.sid);
+			}
 			a.item.done = iOpt === 2 ? "no" : (iOpt === 1 ? "all" : "yes");
 			this._rtRender(sUid);
 			this._rtInfo(s);
 			a.resolve(iOpt === 2 ? { approved: false, message: "用户选择了不要改" } : { approved: true, always: iOpt === 1 });
+		},
+
+		/**
+		 * 20261109（11.9 #02）：「写文件都不再询问」管整个任务（会话），不只一轮。
+		 * 只记在本页内存：刷新页面、换了文件夹就失效，要重新确认。
+		 */
+		_rtSetWriteGrant: function (sSid) {
+			var oF = BrowserAgentService.folderInfo() || {};
+			this._mWriteGrant = this._mWriteGrant || {};
+			this._mWriteGrant[sSid || ""] = String(oF.name || "");
+		},
+
+		_rtHasWriteGrant: function (sSid) {
+			var m = this._mWriteGrant || {};
+			if (!Object.prototype.hasOwnProperty.call(m, sSid || "")) {
+				return false;
+			}
+			var oF = BrowserAgentService.folderInfo() || {};
+			return m[sSid || ""] === String(oF.name || "");
 		},
 
 		/** 运行结束（成功 / 出错 / 停止） */
@@ -444,14 +472,14 @@ sap.ui.define([
 				return x.done === "no"
 					? '<div class="rtNote rtErr">' + IC.err + "<span>你拒绝了" + esc(req.action) + " " + esc(req.path) + "，没有改动文件</span></div>"
 					: '<div class="rtNote rtOk">' + IC.ok + "<span>已同意" + esc(req.action) + " " + esc(req.path) +
-						(x.done === "all" ? "（本次运行后面的写入不再询问）" : "") + "</span></div>";
+						(x.done === "all" ? "（这个任务后面的写入不再询问）" : "") + "</span></div>";
 			}
 			var bMem = req.action === "整理记忆";   // 记忆超过上限，回答后合并重复规则（原文件会备份，可撤回）
 			var sQ = bMem ? "记忆超过上限，用整理后的版本替换吗？" : req.action === "删除" ? "要删除这个文件吗？" : req.action === "新建" ? "要新建这个文件吗？" : "要" + (req.action || "修改") + "这个文件吗？";
 			// [显示文字, 选项值]；选项值 0 = 是，1 = 是且本次都不再询问，2 = 不要。删除每次都问，没有第 2 项
 			var aOpt = req.action === "删除"
 				? [["删除", 0], ["不要，保留这个文件", 2]]
-				: [["是，" + (req.action || "修改"), 0], ["是，本次运行写文件都不再询问", 1], [bMem ? "不要，保持原样" : "不要，告诉灵犀怎么改", 2]];
+				: [["是，" + (req.action || "修改"), 0], ["是，这个任务里写文件都不再询问", 1], [bMem ? "不要，保持原样" : "不要，告诉灵犀怎么改", 2]];
 			return '<div class="rtAsk"><div class="rtAskHead"><b>' + esc(sQ) + '</b><span class="rtSub">' + esc(req.path) + "</span></div>" +
 				'<div class="rtAskDiff">' + (this._baDiffHtml ? this._baDiffHtml(req) : "") + "</div>" +
 				aOpt.map(function (o, k) {
