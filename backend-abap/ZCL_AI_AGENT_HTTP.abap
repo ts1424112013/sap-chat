@@ -37,7 +37,7 @@
 *         V1.7 20261109 MCP 连接 M1(《03》〇-AU): 新路径 /admin/mcp/<动作>, 交给 ZCL_AI_MCP_SERVICE=>admin
 *              (只限管理员, 在服务类里查); 工具执行仍走 /tools/exec(依赖 ZCL_AI_AGENT_SERVICE V15.29)
 *         V1.8 20261110 内置技能改由 SAP 下发(《03》〇-AV): /run/start 收 builtinVersion、回 builtinVersion /
-*              builtinSkills(版本号相同时不回); 新路径 /admin/bskill/<动作>(list / get / import / active, 只限管理员)
+*              builtinSkills(版本号相同时不回)、skillsOpen(管理员不受技能内容保密限制); 新路径 /admin/bskill/<动作>(list / get / import / active, 只限管理员)
 *              交给 ZCL_AI_BSKILL_SERVICE=>admin(依赖 ZCL_AI_AGENT_SERVICE V15.30、ZCL_AI_BSKILL_SERVICE V1.0)
 *         ★ 重贴后核对标记: INTERFACES if_http_extension; handle_request 里有
 *           WHEN '/run/start' / '/chat/completions' / '/tools/exec' / '/tools/audit' / '/results/export' / '/run/finish' / '/run/steps';
@@ -187,6 +187,7 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                              |"export":{ COND string( WHEN ls_out-export = abap_true THEN `true` ELSE `false` ) },| &&
                              |"adt":{ COND string( WHEN ls_out-adt = abap_true THEN `true` ELSE `false` ) },| &&
                              |"builtinVersion":{ jstr( ls_out-builtin_ver ) },| &&
+                             |"skillsOpen":{ COND string( WHEN ls_out-skills_open = abap_true THEN `true` ELSE `false` ) },| &&
                              COND string( WHEN ls_out-builtin_json IS NOT INITIAL THEN |"builtinSkills":{ ls_out-builtin_json },| ) &&
                              |"answer":{ jstr( ls_out-answer ) },| &&
                              COND string( WHEN ls_out-card IS NOT INITIAL THEN |"card":{ ls_out-card },| ) &&

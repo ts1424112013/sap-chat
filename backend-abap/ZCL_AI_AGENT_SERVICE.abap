@@ -349,9 +349,10 @@
 * V15.30 20261110(内置技能改由 SAP 下发,《03》〇-AV): 只改 ty_brun_start 与 browser_start ——
 *   browser_start 新参数 iv_builtin_ver(浏览器手里那份内置技能的版本号); 在技能清单之后调
 *   ZCL_AI_BSKILL_SERVICE=>for_user: 回 builtin_ver(当前用户能用的内置技能版本号, 空 = 没有)和
-*   builtin_json(版本号与浏览器的不同时才回正文, 否则为空, 浏览器用缓存)。内置技能按用户开放的场景过滤
+*   builtin_json(版本号与浏览器的不同时才回正文, 否则为空, 浏览器用缓存)。内置技能按用户开放的场景过滤;
+*   skills_open = X 表示管理员(IT 账号): 浏览器不对他启用「技能内容保密」规则
 *   依赖: 表 ZAI_BSKILL、ZCL_AI_BSKILL_SERVICE V1.0(〇-AV)先激活
-*   ★ 重贴后核对标记: ty_brun_start 有 builtin_json / builtin_ver; browser_start 有 zcl_ai_bskill_service=>for_user(
+*   ★ 重贴后核对标记: ty_brun_start 有 builtin_json / builtin_ver / skills_open; browser_start 有 zcl_ai_bskill_service=>for_user(
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -455,6 +456,7 @@ CLASS zcl_ai_agent_service DEFINITION
              adt        TYPE abap_bool, " V15.25: X = 浏览器可以用 ADT 代码工具(直连 /sap/bc/adt, 只读)
              builtin_ver  TYPE string,  " V15.30: 当前用户能用的内置技能版本号(空 = 没有)
              builtin_json TYPE string,  " V15.30: 内置技能 [{dir,title,content,files}]; 浏览器版本号相同时为空
+             skills_open  TYPE abap_bool, " V15.30: X = 管理员(IT), 技能内容不对他保密
            END OF ty_brun_start.
 
     " 开始一次运行: 校验开通 / 开关 / 会话 / 场景 / 技能 / 模型, 建会话头, 返回可用工具
@@ -4532,6 +4534,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     zcl_ai_bskill_service=>for_user( EXPORTING iv_known   = iv_builtin_ver
                                      IMPORTING ev_version = es_start-builtin_ver
                                                ev_json    = es_start-builtin_json ).
+    " 管理员(IT 账号)不受「技能内容保密」限制: 可以让模型展示技能原文和目录(在 SAP 判断, 浏览器改不了)
+    es_start-skills_open = zcl_ai_access=>is_admin( ).
 
   ENDMETHOD.
 

@@ -263,6 +263,10 @@ const server = http.createServer(async (req, res) => {
     if (String(data.question || "").includes("场景办公")) {
       return send(res, 200, { runId, model: "mock-model", tools: SAP_TOOLS, export: true, limits: { recursionLimit: 80 }, systemPrompt: "场景：DATA（模拟）" });
     }
+    if (String(data.question || "").includes("场景三管理员")) {
+      return send(res, 200, { runId, model: "mock-model", tools: SAP_TOOLS, skills: SAP_SKILLS, skillsOpen: true,
+        limits: { recursionLimit: 80 }, systemPrompt: "场景：CODE（模拟）", ...builtinFor(data.builtinVersion) });
+    }
     if (String(data.question || "").includes("场景三")) {
       return send(res, 200, { runId, model: "mock-model", tools: [...SAP_TOOLS, ...RPT_TOOLS], skills: SAP_SKILLS, export: true,
         limits: { recursionLimit: 80 }, systemPrompt: "场景：REPORT（模拟）", ...builtinFor(data.builtinVersion) });
@@ -400,6 +404,11 @@ const server = http.createServer(async (req, res) => {
     const names = (data.tools || []).map(t => t.function && t.function.name);
     for (const need of ["write_todos", "ls", "read_file", "edit_file", "write_file", "task", "search_tables"]) {
       if (!names.includes(need)) return send(res, 400, { error: { message: "tools 里缺 " + need + "；实际：" + names.join(",") } });
+    }
+    if (run.question && run.question.includes("场景三管理员")) {
+      run.sysHasNoReveal = sys.includes("技能内容保密");
+      run.sysHasSkillList = sys.includes("/内置技能/sap-mm/SKILL.md");
+      return reply({ role: "assistant", content: "完成 场景三管理员" });
     }
     if (run.question && run.question.includes("场景三")) {
       if (step === 0) {

@@ -331,6 +331,7 @@ test('内置技能全文不进前端包：webapp 里没有技能文件，界面�
   assert.match(eng, /!k\.startsWith\("builtin:"\)/);
   assert.match(eng, /技能内容保密[\s\S]*不能把原文[\s\S]*文件清单、目录路径[\s\S]*只说相关技能的名称/);
   assert.ok(!/\bo\.builtinSkills/.test(eng));
+  assert.match(eng, /runInfo\.skillsOpen !== true \? SKILL_SECRET_PROMPT/, '管理员（IT）不受保密规则限制，由 SAP 判断');
   const pre = fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8');
   assert.match(pre, /build-builtin-skills\.js/);
   const bld = fs.readFileSync(path.join(__dirname, '../scripts/build-builtin-skills.js'), 'utf8');

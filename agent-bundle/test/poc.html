@@ -102,6 +102,12 @@ async function main() {
     check("系统提示里列出内置技能（目录名非法的不挂）", run3.sysHasBuiltinSkill && !run3.sysHasBadSkill);
     check("读到内置技能正文", run3.builtinRead);
     check("系统提示里有「技能内容保密」：不给用户看原文和目录", run3.sysHasNoReveal);
+    {
+      const r3a = await LingxiAgent.run({ question: "场景三管理员", sap: { base: "/sap/bc/zai_agent" }, onEvent: e => events.push(e) });
+      const run3a = Object.values(await (await fetch("/__runs")).json()).find(x => x.question === "场景三管理员") || {};
+      check("管理员（SAP 回 skillsOpen）：照样有内置技能，但没有「技能内容保密」规则", run3a.sysHasSkillList && run3a.sysHasNoReveal === false,
+        JSON.stringify({ a: r3a.answer, list: run3a.sysHasSkillList, secret: run3a.sysHasNoReveal }));
+    }
     check("内置技能由 SAP 下发并缓存：第一次带空版本号拿正文，之后带版本号、SAP 不再回正文仍能用",
       Object.values(runs).some(x => x.question !== "场景三" && (x.builtinSent || "") === "") && run3.builtinSent === "BV1" && run3.sysHasBuiltinSkill,
       JSON.stringify(Object.values(runs).map(x => x.builtinSent)));

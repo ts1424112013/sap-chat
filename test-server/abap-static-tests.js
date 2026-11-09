@@ -1473,10 +1473,11 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
   check('AGENT_SERVICE V15.30：ty_brun_start 有 builtin_ver / builtin_json；browser_start 收 iv_builtin_ver，调 BSKILL=>for_user',
     /^\* V15\.30 20261110/m.test(agRaw) && /builtin_ver\s+TYPE string/.test(ag) && /builtin_json TYPE string/.test(ag) &&
     /iv_builtin_ver TYPE string OPTIONAL/.test(ag) &&
-    /zcl_ai_bskill_service=>for_user\( EXPORTING iv_known\s+= iv_builtin_ver/.test(methodOf(ag, 'browser_start')));
+    /zcl_ai_bskill_service=>for_user\( EXPORTING iv_known\s+= iv_builtin_ver/.test(methodOf(ag, 'browser_start')) &&
+    /skills_open\s+TYPE abap_bool/.test(ag) && /es_start-skills_open = zcl_ai_access=>is_admin\( \)/.test(methodOf(ag, 'browser_start')));
   check('HTTP V1.8：/run/start 收 builtinVersion、回 builtinVersion（正文只在不同时回）；/admin/bskill/<动作> 交给 BSKILL=>admin，出错回滚',
     /^\*\s+V1\.8 20261110/m.test(htRaw) && /builtin_version\s+TYPE string/.test(ht) && /iv_builtin_ver = ls_start-builtin_version/.test(ht) &&
-    /"builtinVersion":/.test(ht) && /WHEN ls_out-builtin_json IS NOT INITIAL THEN \|"builtinSkills":/.test(ht) &&
+    /"builtinVersion":/.test(ht) && /"skillsOpen":/.test(ht) && /WHEN ls_out-builtin_json IS NOT INITIAL THEN \|"builtinSkills":/.test(ht) &&
     /'\/admin\/bskill\/'/.test(ht) && /zcl_ai_bskill_service=>admin\(/.test(ht) &&
     /substring\( val = lv_path off = 14 \)/.test(ht));
 }
