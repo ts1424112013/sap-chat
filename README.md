@@ -94,6 +94,8 @@ npm install        # 首次
 npm start          # http://localhost:8080（V9.4 起 UI5 与 highlight.js 均随包本地加载，离线可用）
 ```
 
+**不能联网装依赖时**：node_modules 压缩包放在单独的 `deps` 分支（main 不存）。在项目根目录运行 `scripts/deps-branch.sh fetch`，压缩包会取到本地 `deps/`（已被忽略），再按里面的 README 在根目录解压。依赖变了（`package-lock.json` 改了）用 `scripts/deps-branch.sh check` 查、`scripts/deps-branch.sh update --push` 更新 deps 分支。
+
 - **演示模式（mock）**：不请求任何服务；会话/角色/泡泡落浏览器 localStorage；登录框走本地校验（admin/123456 或"演示身份进入"）。
 - **后端模式**：默认。启动时按 `webapp/config.js` 探测后端：可达→真实登录；不可达→**自动降级演示模式**（提示条说明），保证任何时候打开都能看到界面。
 - **环境切换**：改 `webapp/config.js` 的 host/path 后重新部署；设置对话框的修改仅本次会话有效。

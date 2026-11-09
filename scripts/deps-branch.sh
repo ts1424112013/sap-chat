@@ -3,7 +3,7 @@
 #
 #   scripts/deps-branch.sh check            看哪个 package-lock.json 比 deps 分支里的压缩包新
 #   scripts/deps-branch.sh update [--push]  把有变化的 node_modules 重新打包，提交到 deps 分支（--push 顺便推送）
-#   scripts/deps-branch.sh fetch            从远端取压缩包到本地 deps/（不进 main 的提交）
+#   scripts/deps-branch.sh fetch            从远端取压缩包和说明到本地 deps/（main 里没有这个目录，已忽略）
 #
 # update 打包的是本机现在的 node_modules：先在对应目录 npm ci，再运行。
 set -euo pipefail
@@ -71,7 +71,6 @@ case "$cmd" in
     else GIT_INDEX_FILE=$tmpidx git read-tree --empty; fi
     add() { GIT_INDEX_FILE=$tmpidx git update-index --add --cacheinfo "100644,$1,$2"; }
     while IFS='|' read -r name dir zip; do add "$(git hash-object -w "$zip")" "$zip"; done <<<"$out"
-    add "$(git hash-object -w deps/README.md)" deps/README.md
     locks=$(for p in "${PARTS[@]}"; do IFS='|' read -r n d z <<<"$p"; echo "$n $(git hash-object "$(lock_of "$d")")"; done)
     add "$(printf '%s\n' "$locks" | git hash-object -w --stdin)" deps/LOCKS.txt
     tree=$(GIT_INDEX_FILE=$tmpidx git write-tree)
@@ -85,7 +84,7 @@ case "$cmd" in
   fetch)
     git fetch -q origin "$BRANCH"
     git restore --source="origin/$BRANCH" --worktree -- deps
-    echo "压缩包已取到 deps/，在项目根目录解压即可（见 deps/README.md）"
+    echo "压缩包已取到 deps/，按 deps/README.md 在项目根目录解压"
     ;;
 
   *) echo "用法：$0 check | update [--push] | fetch" >&2; exit 2 ;;
