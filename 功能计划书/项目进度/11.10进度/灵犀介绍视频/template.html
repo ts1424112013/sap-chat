@@ -304,12 +304,13 @@ body.nocap #cap{display:none}
 <script>
 const SCRIPT = {{SCRIPT}};
 const DUR = {{DUR}};
+const EXT = '{{EXT}}';
 const GAP = 0.8, LEAD = 0.6, TAIL = 3.0;
 
 // 场景时间轴：每段 = 配音时长；段与段之间停 GAP 秒
 let t = LEAD;
 const scenes = SCRIPT.map(s => { const d = DUR[s.id]; const o = { ...s, start: t, dur: d,
-  el: document.querySelector('[data-s="' + s.id + '"]'), audio: new Audio('audio/' + s.id + '.m4a') }; t += d + GAP; return o; });
+  el: document.querySelector('[data-s="' + s.id + '"]'), audio: new Audio('audio/' + s.id + '.' + EXT) }; t += d + GAP; return o; });
 const TOTAL = t - GAP + TAIL;
 scenes.forEach((s, i) => { s.end = i < scenes.length - 1 ? scenes[i + 1].start : TOTAL; s.audio.preload = 'auto';
   // 字幕：按句切，按字数分时间
