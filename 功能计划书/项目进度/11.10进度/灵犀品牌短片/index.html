@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>灵犀 · 品牌短片</title>
+<style>
+:root{--gold:#e6c58f;--warm:#fff3dc;--ink:#e9e2d3;--sub:#8d8a83;--bg:#0a0d13;--panel:#0e1219;--card:#141a24;--line:rgba(230,197,143,.16)}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#000;overflow:hidden;font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;color:var(--ink)}
+body.playing{cursor:none}
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;overflow:hidden;background:#06080c}
+#browser{position:absolute;inset:0;background:var(--bg);transform-origin:1110px 550px;will-change:transform,opacity}
+#cv{position:absolute;inset:0;width:1920px;height:1080px;pointer-events:none}
+.serif{font-family:"Songti SC","STSong","Noto Serif SC","SimSun",serif}
+
+/* 浏览器外框 */
+.chrome{height:56px;background:#07090d;border-bottom:1px solid rgba(255,255,255,.05);display:flex;align-items:center;padding:0 22px;gap:9px}
+.chrome i{width:12px;height:12px;border-radius:50%;background:#262b34}
+.chrome .url{margin-left:26px;width:620px;height:30px;border-radius:15px;background:#10141b;color:#6f6d68;font-size:14px;display:flex;align-items:center;padding:0 16px;letter-spacing:.5px}
+.side{position:absolute;left:0;top:56px;bottom:0;width:300px;background:var(--panel);border-right:1px solid rgba(255,255,255,.04);padding:28px 22px}
+.logo{display:flex;align-items:center;gap:12px;font-size:22px;font-weight:600;letter-spacing:2px}
+.logo b{width:10px;height:10px;border-radius:50%;background:var(--gold);box-shadow:0 0 14px rgba(230,197,143,.8)}
+.logo span{color:var(--sub);font-weight:300;font-size:17px;letter-spacing:1px}
+.new{margin-top:30px;height:46px;border:1px solid var(--line);border-radius:12px;display:flex;align-items:center;padding:0 16px;font-size:16px;color:var(--gold)}
+.side h6{margin-top:34px;font-size:13px;color:#5d5b57;font-weight:400;letter-spacing:2px}
+.side p{margin-top:16px;font-size:15px;color:#77746e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.side p.cur{color:var(--ink)}
+.hero{position:absolute;left:560px;top:380px;width:1100px;text-align:center}
+.hero h1{font-size:44px;font-weight:300;letter-spacing:6px;color:var(--warm)}
+.hero div{margin-top:18px;font-size:18px;color:var(--sub);letter-spacing:2px}
+.composer{position:absolute;left:560px;top:880px;width:1100px;height:84px;border-radius:22px;background:var(--card);border:1px solid var(--line);display:flex;align-items:center;padding:0 22px 0 30px;font-size:24px}
+.composer .ph{color:#5d5b57}
+.caret{display:inline-block;width:2px;height:28px;background:var(--gold);margin-left:3px;vertical-align:-5px}
+.send{margin-left:auto;width:48px;height:48px;border-radius:50%;background:#232a36;display:grid;place-items:center;flex:none}
+.send svg{width:22px;height:22px;stroke:#6f6d68;fill:none;stroke-width:2}
+.send.on{background:var(--gold)}.send.on svg{stroke:#1a1408}
+.bubble{position:absolute;right:260px;top:128px;max-width:900px;background:#1b222e;border:1px solid rgba(255,255,255,.05);color:var(--ink);font-size:23px;line-height:1.5;padding:15px 24px;border-radius:20px 20px 6px 20px}
+#task{position:absolute;left:560px;top:470px;width:1100px;height:160px;border-radius:18px;background:var(--card);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-direction:column}
+#task span{margin-top:74px;font-size:15px;color:var(--sub);letter-spacing:4px}
+#result{position:absolute;left:560px;top:250px;width:1100px;height:600px;border-radius:18px;background:var(--card);border:1px solid rgba(230,197,143,.3);padding:34px 40px;display:none}
+#result h3{font-size:19px;font-weight:500;color:var(--gold);letter-spacing:1px;display:flex;align-items:center;gap:10px}
+#result h3 b{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--gold);display:grid;place-items:center;font-size:12px}
+.concl{margin-top:22px;font-size:25px;line-height:1.7;color:var(--ink)}
+.concl em{font-style:normal;color:var(--warm);font-weight:600;font-size:30px}
+.tbl{position:absolute;left:40px;top:238px;width:540px;font-size:18px}
+.tbl div{display:grid;grid-template-columns:1.5fr 1fr 1.1fr;padding:12px 4px;border-bottom:1px solid rgba(255,255,255,.06)}
+.tbl div span:not(:first-child){text-align:right}
+.tbl .th{color:var(--sub);font-size:15px;border-bottom-color:var(--line)}
+.bars{position:absolute;left:650px;top:244px;width:410px}
+.bars .t{font-size:15px;color:var(--sub);margin-bottom:8px}
+.bar{margin-top:16px;font-size:16px;color:#b9b3a6}
+.bar u{display:block;margin-top:7px;height:8px;border-radius:4px;background:linear-gradient(90deg,rgba(230,197,143,.35),var(--gold));width:0}
+.file{position:absolute;left:40px;bottom:34px;height:58px;border-radius:14px;border:1px solid var(--line);background:#10151d;display:flex;align-items:center;gap:14px;padding:0 20px;font-size:18px}
+.file i{width:30px;height:36px;border-radius:5px;background:#2c6a4a;color:#dff3e6;font-style:normal;font-size:14px;font-weight:700;display:grid;place-items:center}
+.file span{color:var(--sub);font-size:15px;margin-left:8px}
+
+/* 节点名称、品牌 */
+#label{position:absolute;left:0;right:0;top:936px;text-align:center;font-size:30px;letter-spacing:18px;text-indent:18px;color:var(--gold);opacity:0}
+#label:before,#label:after{content:"";display:inline-block;width:70px;height:1px;background:linear-gradient(90deg,transparent,rgba(230,197,143,.6));vertical-align:middle;margin:0 34px 0 0}
+#label:after{transform:scaleX(-1);margin:0 0 0 16px}
+#brand{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+#bn{font-size:132px;letter-spacing:44px;text-indent:44px;font-weight:400;background:linear-gradient(180deg,#fff6e4,#e2c08a);-webkit-background-clip:text;background-clip:text;color:transparent;opacity:0}
+#bt{margin-top:40px;font-size:34px;letter-spacing:10px;text-indent:10px;color:#cfc4ad;font-weight:300;opacity:0}
+#black{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none}
+#start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(4,6,9,.9);z-index:9;gap:26px;cursor:pointer}
+#start .p{width:104px;height:104px;border-radius:50%;border:1px solid var(--gold);display:grid;place-items:center;color:var(--gold);font-size:34px;padding-left:6px}
+#start p{font-size:16px;color:#8d8a83;line-height:2;text-align:center;letter-spacing:1px}
+#start kbd{border:1px solid #33312d;border-radius:5px;padding:1px 8px;font-family:inherit;color:#b9b3a6}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="browser">
+    <div class="chrome"><i></i><i></i><i></i><div class="url">灵犀 Lynx · 工作台</div></div>
+    <div class="side">
+      <div class="logo"><b></b>灵犀 <span>Lynx</span></div>
+      <div class="new">＋ 新任务</div>
+      <h6>最近</h6>
+      <p class="cur" id="curTask" style="opacity:0">采购未清汇总 · 工厂 1001</p>
+      <p>库存周转分析</p><p>上周出货明细</p><p>工单完工情况</p>
+    </div>
+    <div class="hero" id="hero"><h1 class="serif">今天想做点什么？</h1><div>说出你的想法，剩下的交给灵犀</div></div>
+    <div class="bubble" id="bubble" style="opacity:0"></div>
+    <div id="task" style="opacity:0"><span>灵犀已收到</span></div>
+    <div id="result">
+      <h3 class="rv"><b>✓</b>已完成 · 采购未清汇总（工厂 1001 · 10 月）</h3>
+      <div class="concl rv">上月采购未清共 <em>326</em> 笔，金额 <em>¥ 482.6 万</em>；<br>前三家供应商占 <em>61%</em>。</div>
+      <div class="tbl">
+        <div class="th rv"><span>供应商</span><span>未清笔数</span><span>未清金额（万）</span></div>
+        <div class="rv"><span>华东精工</span><span>86</span><span>128.4</span></div>
+        <div class="rv"><span>恒锐电子</span><span>64</span><span>96.2</span></div>
+        <div class="rv"><span>明达包装</span><span>51</span><span>69.8</span></div>
+        <div class="rv"><span>其他</span><span>125</span><span>188.2</span></div>
+      </div>
+      <div class="bars">
+        <div class="t rv">未清金额占比</div>
+        <div class="bar rv">华东精工 · 27%<u data-w="27"></u></div>
+        <div class="bar rv">恒锐电子 · 20%<u data-w="20"></u></div>
+        <div class="bar rv">明达包装 · 14%<u data-w="14"></u></div>
+        <div class="bar rv">其他 · 39%<u data-w="39"></u></div>
+      </div>
+      <div class="file rv"><i>X</i>采购未清汇总_10月.xlsx<span>已生成</span></div>
+    </div>
+    <div class="composer"><div id="inp"></div><div class="send" id="send"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></div></div>
+  </div>
+  <canvas id="cv"></canvas>
+  <div id="label" class="serif"></div>
+  <div id="brand"><div id="bn" class="serif">灵犀</div><div id="bt" class="serif">让每个念头，慢慢成为现实。</div></div>
+  <div id="black"></div>
+</div>
+<div id="start"><div class="p">▶</div><p>点击开始播放（请打开声音）<br><kbd>空格</kbd> 暂停 / 继续　<kbd>←</kbd> <kbd>→</kbd> 上一段 / 下一段　<kbd>R</kbd> 从头　<kbd>F</kbd> 全屏</p></div>
+<audio id="music" src="music.m4a" preload="auto"></audio>
+
+<script>
+"use strict";
+// ───────── 基础 ─────────
+const W = 1920, H = 1080, T = 92, FOC = 1500;
+const AX0 = 1110, AY0 = 550;                         // 任务卡片中心（光点位置）
+const SECTIONS = [0, 12, 24, 36, 56, 68];            // 六段起点（秒），与配乐小节对齐
+const TASK = "帮我看看上个月工厂 1001 的采购未清，按供应商汇总，做成 Excel";
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const sm = (a, b, x) => { x = clamp((x - a) / (b - a)); return x * x * (3 - 2 * x); };
+const eo = (x) => 1 - Math.pow(1 - clamp(x), 3);
+const lerp = (a, b, k) => a + (b - a) * k;
+const win = (t, a, b, f = 1) => sm(a, a + f, t) * (1 - sm(b - f, b, t));
+function rng(a) { return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function keys(K, t, log) {                           // 关键帧平滑插值
+  if (t <= K[0][0]) return K[0][1];
+  for (let i = 1; i < K.length; i++) if (t <= K[i][0]) { const k = sm(K[i - 1][0], K[i][0], t); return log ? Math.exp(lerp(Math.log(K[i - 1][1]), Math.log(K[i][1]), k)) : lerp(K[i - 1][1], K[i][1], k); }
+  return K[K.length - 1][1];
+}
+
+// ───────── 世界：节点与连线 ─────────
+const R = rng(7);
+const nodes = [{ p: [0, 0, 0], lv: 0, par: -1, born: 9.6, r: R() }];
+const edges = [], edgeOf = {};
+const FRAG = ["上个月", "工厂 1001", "采购未清", "按供应商汇总", "做成 Excel"];
+const ANG = [-2.55, -1.2, -0.12, 1.02, 2.28];
+function addNode(par, ang, rad, zs, lv, t0, dur) {
+  const p = [Math.cos(ang) * rad, Math.sin(ang) * rad * 0.62, (R() - 0.5) * zs];
+  const i = nodes.push({ p, lv, par, ang, born: t0 + dur, r: R(), kids: 0 }) - 1;
+  edgeOf[i] = edges.push({ a: par, b: i, t0, dur, k: (R() - 0.5) * 0.42, sp: 0.2 + R() * 0.18, ph: R() }) - 1;
+  return i;
+}
+ANG.forEach((a, i) => {
+  const n = addNode(0, a, 215 + R() * 40, 160, 1, 16.8 + i * 0.5, 2.4);
+  nodes[n].p[1] = Math.sin(a) * 170;
+  nodes[n].start = [Math.cos(a + 0.55) * 390, Math.sin(a + 0.55) * 235, (R() - 0.5) * 300];
+  nodes[n].frag = i;
+});
+let c2 = 0;
+for (let i = 1; i <= 5; i++) { const n = 2 + (i % 2); for (let j = 0; j < n; j++) addNode(i, nodes[i].ang + (j - (n - 1) / 2) * 0.42 + (R() - 0.5) * 0.1, 470 + R() * 90, 300, 2, 24.6 + (c2++) * 0.28, 2.0); }
+const L2 = nodes.map((n, i) => i).filter((i) => nodes[i].lv === 2);
+for (const i of L2) { const n = 2 + (R() < 0.5 ? 1 : 0); for (let j = 0; j < n; j++) addNode(i, nodes[i].ang + (j - (n - 1) / 2) * 0.2 + (R() - 0.5) * 0.05, 790 + R() * 170, 500, 3, nodes[i].born + 0.2 + R() * 0.8, 2.2); }
+const L3 = nodes.map((n, i) => i).filter((i) => nodes[i].lv === 3);
+for (const i of L3) { const n = 1 + Math.floor(R() * 2.6); for (let j = 0; j < n; j++) addNode(i, nodes[i].ang + (j - (n - 1) / 2) * 0.085 + (R() - 0.5) * 0.03, 1220 + R() * 400, 800, 4, 44.6 + R() * 4, 2.2); }
+// 工具节点：从第三层里均匀挑 7 个
+const KINDS = ["table", "browser", "chart", "doc", "sql", "file", "browser"];
+const tools = KINDS.map((kind, k) => { const i = L3[Math.floor((k + 0.35) * L3.length / 7)]; nodes[i].tool = k; return { i, kind, wake: k === 0 ? 41.2 : 37.2 + k * 1.05 }; });
+const FOLLOW = (() => { const c = tools[0].i, b = nodes[c].par, a = nodes[b].par; return [edgeOf[a], edgeOf[b], edgeOf[c]]; })();
+nodes.forEach((n) => { n.check = 56.3 + (4 - n.lv) * 0.8 + n.r; });
+const CS = [0, 62.5, 61, 59.8, 58.8], CE = [0, 65.5, 64.5, 63.5, 62.5];   // 各层向中心汇聚的起止时间
+
+const P = nodes.map(() => [0, 0, 0]);                 // 当前帧的节点位置
+function place(t) {
+  nodes.forEach((n, i) => {
+    let x = n.p[0], y = n.p[1], z = n.p[2];
+    if (n.start) {
+      const e1 = eo((t - 11.6) / 2.6), e2 = sm(15.5, 19.8, t), wb = 1 - e2;
+      x = lerp(n.start[0] * e1, x, e2) + Math.sin(t * 0.5 + i) * 14 * wb;
+      y = lerp(n.start[1] * e1, y, e2) + Math.cos(t * 0.43 + i * 2) * 10 * wb;
+      z = lerp(n.start[2] * e1, z, e2);
+    }
+    const c = n.lv ? 1 - sm(CS[n.lv], CE[n.lv], t) : 1;
+    P[i][0] = x * c; P[i][1] = y * c; P[i][2] = z * c;
+  });
+}
+function bez(e, u, out) {
+  const A = P[e.a], B = P[e.b], v = 1 - u;
+  const cx = (A[0] + B[0]) / 2 - (B[1] - A[1]) * e.k, cy = (A[1] + B[1]) / 2 + (B[0] - A[0]) * e.k, cz = (A[2] + B[2]) / 2;
+  out[0] = v * v * A[0] + 2 * v * u * cx + u * u * B[0]; out[1] = v * v * A[1] + 2 * v * u * cy + u * u * B[1]; out[2] = v * v * A[2] + 2 * v * u * cz + u * u * B[2];
+  return out;
+}
+function followPos(t, out) {                          // 镜头跟随的那束光
+  const u = sm(37.2, 43, t) * 2.999, k = Math.floor(u);
+  return bez(edges[FOLLOW[k]], u - k, out);
+}
+
+// ───────── 镜头 ─────────
+const ZOOM = [[0, 1], [10.5, 1], [13.5, 1.45], [20, 1.75], [24, 1.6], [35, 0.6], [36.5, 0.62], [39.2, 1.9], [43, 2.2], [44.6, 2.1], [51, 0.42], [56, 0.39], [59, 0.4], [64, 0.8], [67.5, 1], [T, 1]];
+const cam = {}, tmp = [0, 0, 0], tmp2 = [0, 0, 0];
+function setCam(t) {
+  const fw = sm(36.2, 38.8, t) * (1 - sm(44.4, 48.5, t)), f = followPos(t, tmp);
+  cam.tx = f[0] * fw; cam.ty = f[1] * fw; cam.tz = f[2] * fw;
+  cam.zoom = keys(ZOOM, t, true);
+  const sp = win(t, 13, 66, 4);
+  const yaw = (0.2 * Math.sin((t - 13) * 0.11) + 0.22 * win(t, 44, 57, 5) * Math.sin((t - 44) / 13 * Math.PI)) * sp;
+  const pit = 0.07 * Math.sin((t - 13) * 0.07) * sp;
+  cam.cy = Math.cos(yaw); cam.sy = Math.sin(yaw); cam.cp = Math.cos(pit); cam.sp = Math.sin(pit);
+  const k = sm(10.5, 15, t) * (1 - sm(63, 67.5, t));
+  cam.ax = lerp(AX0, W / 2, k); cam.ay = lerp(AY0, H / 2, k);
+}
+function proj(p, o) {
+  const x = p[0] - cam.tx, y = p[1] - cam.ty, z = p[2] - cam.tz;
+  const x1 = x * cam.cy - z * cam.sy, z1 = x * cam.sy + z * cam.cy;
+  const y1 = y * cam.cp - z1 * cam.sp, z2 = y * cam.sp + z1 * cam.cp;
+  const s = cam.zoom * FOC / Math.max(320, FOC + z2);
+  o[0] = cam.ax + x1 * s; o[1] = cam.ay + y1 * s; o[2] = s;
+  return o;
+}
+
+// ───────── 画布 ─────────
+const cv = $("cv"), ctx = cv.getContext("2d");
+const glow = document.createElement("canvas"); glow.width = glow.height = 128;
+{ const g = glow.getContext("2d"), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, "rgba(255,240,212,1)"); gr.addColorStop(0.12, "rgba(250,222,170,.62)"); gr.addColorStop(0.4, "rgba(232,196,138,.14)"); gr.addColorStop(1, "rgba(232,196,138,0)");
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128); }
+const bg = document.createElement("canvas"); bg.width = W; bg.height = H;
+{ const g = bg.getContext("2d"); let gr = g.createLinearGradient(0, 0, W * 0.3, H);
+  gr.addColorStop(0, "#0b1018"); gr.addColorStop(0.55, "#080b11"); gr.addColorStop(1, "#05070a"); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  gr = g.createRadialGradient(W * 0.72, H * 0.2, 0, W * 0.72, H * 0.2, 1100); gr.addColorStop(0, "rgba(46,62,88,.30)"); gr.addColorStop(1, "rgba(46,62,88,0)"); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  gr = g.createRadialGradient(W / 2, H / 2, 300, W / 2, H / 2, 1150); gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(0,0,0,.6)"); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
+const DR = rng(21), dust = Array.from({ length: 170 }, () => ({ x: (DR() - 0.5) * 3400, y: (DR() - 0.5) * 2100, d: 0.15 + DR() * 0.4, a: 0.12 + DR() * 0.4, f: 0.2 + DR() * 0.5, p: DR() * 6.28, s: 0.8 + DR() * 1.6 }));
+function G(x, y, r, a) { if (a <= 0.003 || r <= 0) return; ctx.globalAlpha = Math.min(1, a); ctx.drawImage(glow, x - r, y - r, r * 2, r * 2); }
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+const GOLD = "rgb(230,197,143)", WARM = "rgb(255,243,220)";
+
+// 工具节点里的局部画面
+function mini(kind, x, y, s, a, age) {
+  const w = 190 * s, h = 124 * s, pr = clamp(age / 3.6), u = s;
+  ctx.globalAlpha = a * 0.9; rr(x, y, w, h, 9 * u); ctx.fillStyle = "rgb(15,20,28)"; ctx.fill();
+  ctx.globalAlpha = a * 0.5; ctx.strokeStyle = GOLD; ctx.lineWidth = Math.max(0.6, u); ctx.stroke();
+  ctx.fillStyle = GOLD;
+  for (let i = 0; i < 3; i++) { ctx.globalAlpha = a * 0.35; ctx.beginPath(); ctx.arc(x + (12 + i * 9) * u, y + 11 * u, 2.2 * u, 0, 6.3); ctx.fill(); }
+  const B = (bx, by, bw, bh, al, col) => { ctx.globalAlpha = a * al; ctx.fillStyle = col || WARM; ctx.fillRect(x + bx * u, y + by * u, bw * u, bh * u); };
+  B(0, 21, 190, 0.6, 0.25, GOLD);
+  if (kind === "table") {
+    for (let c = 0; c < 3; c++) B(14 + c * 58, 31, 40, 5, 0.7, GOLD);
+    for (let r = 0; r < 5; r++) { const v = clamp(pr * 6 - r); if (v <= 0) break; for (let c = 0; c < 3; c++) B(14 + c * 58, 46 + r * 14, (26 + ((r * 7 + c * 13) % 22)) * v, 4, 0.5); B(12, 54.5 + r * 14, 166, 0.5, 0.12); }
+  } else if (kind === "chart") {
+    [0.5, 0.82, 0.62, 1, 0.7, 0.4].forEach((v, i) => { const hh = 70 * v * clamp(pr * 3 - i * 0.3); B(20 + i * 26, 108 - hh, 15, hh, 0.4 + v * 0.4, GOLD); });
+    B(14, 109, 162, 0.7, 0.4);
+  } else if (kind === "doc") {
+    B(14, 32, 70 * clamp(pr * 7), 6, 0.75, GOLD);
+    [150, 162, 120, 156, 140, 90].forEach((v, i) => B(14, 50 + i * 11, v * clamp(pr * 7 - i - 1), 3.5, 0.42));
+  } else if (kind === "browser") {
+    ctx.globalAlpha = a * 0.3; rr(x + 46 * u, y + 5.5 * u, 120 * u, 11 * u, 5.5 * u); ctx.fillStyle = WARM; ctx.fill();
+    B(14, 32, 62, 46, 0.14 + 0.2 * pr, GOLD);
+    [84, 96, 70].forEach((v, i) => B(88, 34 + i * 12, v * clamp(pr * 4 - i), 4, 0.45));
+    [160, 140, 150].forEach((v, i) => B(14, 90 + i * 10, v * clamp(pr * 5 - i - 1.5), 3.5, 0.32));
+  } else if (kind === "sql") {
+    [[0, 34, 1], [10, 70, 0], [0, 28, 1], [10, 96, 0], [0, 40, 1], [10, 60, 0]].forEach(([ind, len, g], i) => { const v = clamp(pr * 7 - i); B(14 + ind, 32 + i * 13, 26 * v, 4.5, g ? 0.8 : 0, GOLD); B(14 + ind + (g ? 32 : 0), 32 + i * 13, len * v, 4.5, 0.42); });
+  } else {
+    ctx.globalAlpha = a * 0.6 * pr; ctx.strokeStyle = WARM; ctx.lineWidth = Math.max(0.5, 0.8 * u);
+    ctx.strokeRect(x + 70 * u, y + 34 * u, 50 * u, 62 * u);
+    for (let i = 1; i < 5; i++) B(70, 34 + i * 12.4, 50, 0.5, 0.35 * pr);
+    B(86, 34, 0.5, 62, 0.35 * pr); B(103, 34, 0.5, 62, 0.35 * pr);
+    B(70, 104, 50 * pr, 4, 0.7, GOLD);
+  }
+}
+
+const a2 = [0, 0, 0], b2 = [0, 0, 0], q = [0, 0, 0];
+function draw(t) {
+  ctx.setTransform(cv.width / W, 0, 0, cv.height / H, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  place(t); setCam(t);
+  const worldA = sm(9.5, 10.1, t) * (1 - sm(67.5, 70.5, t));
+  const spaceA = Math.max(sm(10.8, 13.2, t) * (1 - sm(67.5, 70.5, t)), 0.975 * sm(79, 81.6, t));
+  ctx.globalCompositeOperation = "source-over";
+  if (spaceA > 0) {
+    ctx.globalAlpha = spaceA; ctx.drawImage(bg, 0, 0);
+    ctx.globalCompositeOperation = "lighter";
+    const zf = Math.pow(cam.zoom, 0.35);
+    for (const d of dust) {
+      const x = W / 2 + (d.x - cam.tx * d.d * 0.5 + t * 3 * d.d) * zf, y = H / 2 + (d.y - cam.ty * d.d * 0.5 - t * 1.5 * d.d) * zf;
+      if (x < -20 || x > W + 20 || y < -20 || y > H + 20) continue;
+      G(x, y, d.s * 5, spaceA * d.a * (0.6 + 0.4 * Math.sin(t * d.f + d.p)));
+    }
+  }
+  if (worldA <= 0) { ctx.globalAlpha = 1; return; }
+  ctx.globalCompositeOperation = "lighter";
+  const o = proj(P[0], q), ox = o[0], oy = o[1], os = o[2];
+
+  // 开场：光点亮起，光晕扩散
+  for (let k = 0; k < 2; k++) {
+    const age = t - 9.9 - k * 1.1;
+    if (age > 0 && age < 5) { ctx.globalAlpha = worldA * 0.5 * (1 - age / 5) * sm(0, 0.5, age); ctx.strokeStyle = GOLD; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(ox, oy, (14 + age * 46) * os, 0, 6.3); ctx.stroke(); }
+  }
+  // 连线
+  const flowA = sm(35.5, 38, t) * (1 - sm(60, 63, t)), rev = t > 56.5, flip = 1 - win(t, 55.8, 57.2, 0.6);
+  const exec = sm(36, 40, t);
+  ctx.lineCap = "round";
+  for (const e of edges) {
+    const g = eo((t - e.t0) / e.dur); if (g <= 0) continue;
+    const nb = nodes[e.b], na = nodes[e.a];
+    const c = nb.lv ? sm(CS[nb.lv], CE[nb.lv], t) : 0; if (c >= 1) continue;
+    const pulse = (t > nb.born ? Math.exp(-(t - nb.born) * 1.1) : 0.5 * (1 - g)) + (t > na.born ? 0.4 * Math.exp(-(t - na.born) * 0.9) : 0);
+    const chk = t > nb.check ? 0.5 * Math.exp(-(t - nb.check) * 0.8) + 0.08 : 0;
+    const far = 0.14 * (1 - sm(0.4, 0.9, cam.zoom));
+    const al = worldA * (0.2 + far + 0.1 * exec + 0.5 * pulse + chk) * (1 - c * c);
+    proj(bez(e, 0, tmp2), a2);
+    const N = 18, n = Math.max(1, Math.round(N * g));
+    ctx.beginPath(); ctx.moveTo(a2[0], a2[1]);
+    for (let i = 1; i <= n; i++) { proj(bez(e, (i / n) * g, tmp2), b2); ctx.lineTo(b2[0], b2[1]); }
+    ctx.globalAlpha = Math.min(0.9, al); ctx.strokeStyle = GOLD; ctx.lineWidth = clamp(1.15 * Math.sqrt(b2[2]), 0.8, 2.4); ctx.stroke();
+    if (g < 1) G(b2[0], b2[1], Math.max(5, 13 * b2[2]), worldA * 0.9);          // 生长中的线头
+    if (flowA > 0 && g >= 1) {                                                  // 沿线流动的光点
+      const cnt = nb.lv <= 2 ? 2 : 1;
+      for (let j = 0; j < cnt; j++) { let u = (t * e.sp + e.ph + j / cnt) % 1; if (rev) u = 1 - u;
+        proj(bez(e, u, tmp2), b2); G(b2[0], b2[1], Math.max(5, 8 * b2[2]), worldA * flowA * flip * 0.85 * Math.sin(u * Math.PI) * (1 - c)); }
+    }
+  }
+  // 「理解」：片段之间的细线
+  const arcA = sm(19.4, 22, t) * (1 - sm(62, 64.5, t)) * worldA;
+  if (arcA > 0) for (let i = 1; i < 5; i++) { proj(P[i], a2); proj(P[i + 1], b2); const mx = (a2[0] + b2[0]) / 2, my = (a2[1] + b2[1]) / 2;
+    ctx.globalAlpha = arcA * 0.22; ctx.strokeStyle = GOLD; ctx.lineWidth = clamp(os, 0.5, 1.6); ctx.beginPath(); ctx.moveTo(a2[0], a2[1]); ctx.quadraticCurveTo(mx + (mx - ox) * 0.35, my + (my - oy) * 0.35, b2[0], b2[1]); ctx.stroke(); }
+  // 节点
+  nodes.forEach((n, i) => {
+    if (!i) return;
+    const born = n.frag != null ? sm(20.5, 23, t) : sm(n.born - 0.15, n.born + 0.5, t); if (born <= 0) return;
+    const c = sm(CS[n.lv], CE[n.lv], t); if (c >= 1) return;
+    const p = proj(P[i], a2), s = p[2];
+    const pulse = t > n.born ? Math.exp(-(t - n.born) * 1.4) : 0, ck = t > n.check ? 1 : 0, cp = ck ? Math.exp(-(t - n.check) * 1.1) : 0;
+    const big = n.lv <= 2 ? 1.25 : n.tool != null ? 1.3 : 1;
+    G(p[0], p[1], Math.max(7.5, (15 + 16 * pulse + 6 * ck + 14 * cp) * big * s), worldA * born * (0.6 + 0.4 * pulse + 0.2 * ck + 0.3 * cp) * (1 - c * c));
+    if (cp > 0.02) { ctx.globalAlpha = worldA * 0.6 * cp * (1 - c); ctx.strokeStyle = WARM; ctx.lineWidth = Math.max(0.6, s); ctx.beginPath(); ctx.arc(p[0], p[1], (8 + (1 - cp) * 22) * s, 0, 6.3); ctx.stroke(); }
+  });
+  // 镜头跟随的那束光（带拖尾）
+  const fl = win(t, 37, 44.2, 0.8) * worldA;
+  if (fl > 0) for (let j = 12; j >= 0; j--) { proj(followPos(t - j * 0.035, tmp2), b2); G(b2[0], b2[1], (26 - j * 1.5) * Math.max(0.5, b2[2] * 0.6), fl * (1 - j / 13) * (j ? 0.45 : 1)); }
+  // 中心光点
+  const conv = sm(60, 65, t) * (1 - sm(65, 68, t));
+  G(ox, oy, (30 + 5 * Math.sin(t * 1.3) + 26 * (1 - sm(10, 13.5, t)) + 70 * conv) * Math.max(os, 0.5), worldA * (0.95 - 0.35 * sm(63, 66, t)));
+  G(ox, oy, 150 * Math.max(os, 0.5) * (1 + conv), worldA * 0.22);
+
+  ctx.globalCompositeOperation = "source-over";
+  // 「理解」：信息片段
+  const fa = sm(11.8, 13.6, t) * (1 - sm(21.5, 24, t)) * worldA;
+  if (fa > 0) for (let i = 1; i <= 5; i++) {
+    const p = proj(P[i], a2), s = p[2] * (1 - 0.35 * sm(21.5, 24, t)), w = 168 * s, h = 76 * s, a = fa * clamp(p[2] / cam.zoom, 0.6, 1.15);
+    ctx.globalAlpha = a * 0.55; rr(p[0] - w / 2, p[1] - h / 2, w, h, 10 * s); ctx.fillStyle = "rgb(22,28,38)"; ctx.fill();
+    ctx.globalAlpha = a * 0.5; ctx.strokeStyle = GOLD; ctx.lineWidth = Math.max(0.6, 0.9 * s); ctx.stroke();
+    ctx.globalAlpha = a * 0.9; ctx.fillStyle = WARM; ctx.font = `300 ${19 * s}px "PingFang SC","Microsoft YaHei",sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(FRAG[i - 1], p[0], p[1] - 6 * s);
+    ctx.globalAlpha = a * 0.25; ctx.fillStyle = GOLD; ctx.fillRect(p[0] - 30 * s, p[1] + 16 * s, 60 * s, 1.5 * s);
+  }
+  // 「执行」：工具节点里的局部画面
+  for (const tl of tools) {
+    const age = t - tl.wake; if (age <= 0) continue;
+    const n = nodes[tl.i], c = sm(CS[3] - 2.2, CS[3] + 0.6, t); if (c >= 1) continue;
+    const p = proj(P[tl.i], a2), s = p[2], a = worldA * sm(0, 1.6, age) * (1 - c);
+    const left = n.p[0] < 0, x = p[0] + (left ? -(190 + 22) : 22) * s, y = p[1] - (124 + 18) * s;
+    mini(tl.kind, x, y, s, a, age);
+    ctx.globalAlpha = a * 0.4; ctx.strokeStyle = GOLD; ctx.lineWidth = Math.max(0.5, 0.8 * s); ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(x + (left ? 190 : 0) * s, y + 124 * s); ctx.stroke();
+    if (age < 3) { ctx.globalAlpha = a * (1 - age / 3) * 0.7; ctx.beginPath(); ctx.arc(p[0], p[1], (8 + age * 16) * s, 0, 6.3); ctx.stroke(); }
+  }
+  // 「完成」：结果卡片（终点与浏览器里的结果区域完全重合）
+  const ca = sm(62.8, 65.6, t) * worldA;
+  if (ca > 0) {
+    const k = lerp(0.3, 1, eo((t - 62.8) / 4.2)) * os, w = 1100 * k, h = 600 * k, x = ox - w / 2, y = oy - h / 2;
+    ctx.globalAlpha = ca * 0.96; rr(x, y, w, h, 18 * k); ctx.fillStyle = "#141a24"; ctx.fill();
+    ctx.globalAlpha = ca * 0.75; ctx.strokeStyle = GOLD; ctx.lineWidth = Math.max(0.8, 1.2 * k); ctx.stroke();
+    const sk = sm(64.5, 67, t) * ca * (1 - sm(68.8, 70.2, t));
+    const S = (bx, by, bw, bh, al, col) => { ctx.globalAlpha = sk * al; ctx.fillStyle = col || WARM; ctx.fillRect(x + bx * k, y + by * k, bw * k, bh * k); };
+    S(40, 40, 330, 9, 0.5, GOLD); S(40, 88, 560, 10, 0.3); S(40, 128, 300, 10, 0.3);
+    for (let r = 0; r < 5; r++) { S(40, 262 + r * 46, 540, 1, 0.14); S(44, 244 + r * 46, 90, 7, 0.24); S(330, 244 + r * 46, 50, 7, 0.2); S(500, 244 + r * 46, 70, 7, 0.2); }
+    [27, 20, 14, 39].forEach((v, i) => S(650, 316 + i * 46, 410 * v / 39, 8, 0.4, GOLD));
+    S(40, 508, 330, 58, 0.07);
+    ctx.globalCompositeOperation = "lighter"; G(ox, oy, 520 * k, ca * 0.16 * (1 - sm(66, 69, t)));
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+}
+
+// ───────── 浏览器界面（按时间驱动，可任意跳转） ─────────
+const el = { br: $("browser"), inp: $("inp"), send: $("send"), bubble: $("bubble"), hero: $("hero"), task: $("task"), result: $("result"), label: $("label"), bn: $("bn"), bt: $("bt"), black: $("black"), cur: $("curTask") };
+const rv = [...document.querySelectorAll(".rv")], bars = [...document.querySelectorAll(".bar u")];
+const LABELS = [[15.5, 21.5, "理解"], [27, 33, "规划"], [40.5, 47, "执行"], [58.5, 64.5, "校验 · 完成"]];
+let lastTyped = -2, lastLabel = "";
+function dom(t) {
+  const sent = t >= 9, late = t >= 40;
+  const n = sent ? -1 : Math.floor(TASK.length * clamp((t - 2.4) / 5.0));
+  if (n !== lastTyped) { lastTyped = n;
+    el.inp.innerHTML = n < 0 ? '<span class="ph">继续说点什么…</span>' : n === 0 ? '<span class="ph">说出你想做的事…</span>' : TASK.slice(0, n) + '<span class="caret"></span>';
+    el.send.className = "send" + (n > 0 ? " on" : ""); el.bubble.textContent = TASK; }
+  const caret = el.inp.querySelector(".caret"); if (caret) caret.style.opacity = (t * 1.6) % 1 < 0.55 ? 1 : 0;
+  el.send.style.transform = `scale(${1 - 0.12 * win(t, 8.55, 9.1, 0.25)})`;
+  el.hero.style.opacity = 1 - sm(8.9, 9.5, t);
+  const b = sm(9, 9.6, t); el.bubble.style.opacity = b; el.bubble.style.transform = `translateY(${(1 - b) * 30}px)`; el.cur.style.opacity = b;
+  el.task.style.display = late ? "none" : "flex"; el.task.style.opacity = sm(9.3, 10, t);
+  el.result.style.display = late ? "block" : "none";
+  if (late) { rv.forEach((e, i) => { const k = sm(69.6 + i * 0.42, 70.5 + i * 0.42, t); e.style.opacity = k; e.style.transform = `translateY(${(1 - k) * 10}px)`; });
+    bars.forEach((u, i) => { u.style.width = (u.dataset.w / 39 * 100 * eo((t - 73.2 - i * 0.3) / 1.6)) + "%"; }); }
+  const z = late ? 1 : 1 + 7 * Math.pow(clamp((t - 10.3) / 3.2), 2.2);
+  el.br.style.opacity = late ? sm(67.5, 70.5, t) : 1 - sm(11, 13.2, t);
+  el.br.style.transform = z === 1 ? "none" : `scale(${z})`;
+  let txt = "", a = 0; for (const [s, e, x] of LABELS) if (t > s && t < e) { txt = x; a = win(t, s, e, 1.2); }
+  if (txt && txt !== lastLabel) { lastLabel = txt; el.label.textContent = txt; }
+  el.label.style.opacity = a * 0.9;
+  const k1 = sm(80.2, 82.4, t) * (1 - sm(87, 88.6, t)), k2 = sm(81.6, 83.8, t) * (1 - sm(87, 88.6, t));
+  el.bn.style.opacity = k1; el.bn.style.transform = `translateY(${(1 - sm(80.2, 83, t)) * 14}px)`; el.bt.style.opacity = k2;
+  el.black.style.opacity = sm(87.2, 88.8, t);
+}
+
+// ───────── 播放控制 ─────────
+const audio = $("music"), stage = $("stage");
+let playing = false, base = 0, perf0 = 0, started = false;
+const now = () => playing ? base + (performance.now() - perf0) / 1000 : base;
+function fit() { const k = Math.min(innerWidth / W, innerHeight / H); stage.style.transform = `translate(-50%,-50%) scale(${k})`;
+  const r = Math.min(2, Math.max(1, k * (devicePixelRatio || 1))); cv.width = Math.round(W * r); cv.height = Math.round(H * r); render(); }
+function render() { const t = clamp(now(), 0, T); dom(t); draw(t); }
+function seek(t) { base = clamp(t, 0, T); perf0 = performance.now(); try { audio.currentTime = base; } catch (e) {} render(); }
+function play() { if (base >= T) base = 0; playing = true; perf0 = performance.now(); document.body.classList.add("playing"); try { audio.currentTime = base; } catch (e) {} audio.play().catch(() => {}); }
+function pause() { base = now(); playing = false; audio.pause(); document.body.classList.remove("playing"); }
+function loop() {
+  if (playing) {
+    if (!audio.paused && audio.readyState > 2) { const d = audio.currentTime - now(); if (Math.abs(d) > 0.15) base += d; }
+    if (now() >= T) { base = T; playing = false; audio.pause(); document.body.classList.remove("playing"); }
+    render();
+  }
+  requestAnimationFrame(loop);
+}
+function begin() { started = true; $("start").style.display = "none"; seek(0); play(); }
+$("start").addEventListener("click", begin);
+addEventListener("resize", fit);
+addEventListener("keydown", (e) => {
+  if (e.key === "f" || e.key === "F") { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); return; }
+  if (!started) { if (e.key === " " || e.key === "Enter") begin(); return; }
+  const t = now();
+  if (e.key === " ") { e.preventDefault(); playing ? pause() : play(); }
+  else if (e.key === "r" || e.key === "R") { seek(0); if (!playing) play(); }
+  else if (e.key === "ArrowRight") seek(SECTIONS.find((s) => s > t + 0.1) ?? T);
+  else if (e.key === "ArrowLeft") seek([...SECTIONS].reverse().find((s) => s < t - 1.5) ?? 0);
+});
+window.__seek = seek;
+const at = new URLSearchParams(location.search).get("at");   // ?at=秒数：直接看某一刻的静止画面
+if (at != null) { started = true; $("start").style.display = "none"; base = parseFloat(at) || 0; }
+fit(); requestAnimationFrame(loop);
+</script>
+</body>
+</html>

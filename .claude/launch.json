@@ -29,6 +29,15 @@
         "8092"
       ],
       "port": 8092
+    },
+    {
+      "name": "brand-film",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "功能计划书/项目进度/11.10进度/灵犀品牌短片/serve.mjs",
+        "8093"
+      ],
+      "port": 8093
     }
   ]
 }
