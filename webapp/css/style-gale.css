@@ -2421,6 +2421,14 @@ body.schedOn .dataTools .dtSched { display: inline-block !important; }
 .rtKey { width: 1.25rem; height: 1.25rem; border-radius: 6px; border: 1px solid var(--line-strong); display: inline-flex; align-items: center; justify-content: center;
         font-size: .74rem; color: var(--text-2); background: var(--bg); flex: none; }
 .rtOpt:hover .rtKey { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+/* 20261110（11.10 #08）：回答后的选项按钮（点一下 = 当作回复发出去） */
+.answerChoices { display: flex; flex-wrap: wrap; gap: .5rem; margin: .55rem 0 .2rem; animation: rtIn .28s ease-out; }
+.answerChoice { font: inherit; font-size: .86rem; padding: .38rem .95rem; border-radius: 999px; border: 1px solid var(--line-strong);
+        background: var(--surface); color: var(--text); cursor: pointer; transition: background .12s, border-color .12s, color .12s; }
+.answerChoice:hover, .answerChoice:focus-visible { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); outline: none; }
+.answerChoice.primary { border-color: var(--accent); color: var(--accent); }
+.answerChoiceDone { font-size: .8rem; color: var(--sub); }
+@media (prefers-reduced-motion: reduce) { .answerChoices { animation: none; } }
 /* 计划：固定在过程最下面（紧挨状态行） */
 .rtPlan { margin: .55rem 0 .15rem; padding: .5rem .7rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .rtPlanHead { display: flex; align-items: center; gap: .5rem; margin-bottom: .2rem; }

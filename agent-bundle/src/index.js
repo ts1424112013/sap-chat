@@ -21,8 +21,9 @@ import { ReadonlyMemBackend, skillFiles } from "./readonly-backend.js";
 import { summarizeStep, mainArg } from "./step-summary.js";
 import { createAdtClient, ADT_TOOL_SPECS, ADT_PROMPT, ADT_SQL_PROMPT, normalizeUri, parseDataPreview } from "./adt-client.js";
 import { buildXlsx, buildDocx, officeToText, parseCsv, csvValue } from "./office.js";
+import { lintAbap, lintText } from "./abap-lint.js";
 
-export const VERSION = "0.16.0";
+export const VERSION = "0.17.0";
 export const MEMORY_FILE = "/灵犀记忆.md";
 /** 记忆上限（字符）：超过时只载入前这么多，回答后让模型整理一次 */
 export const MEMORY_MAX_CHARS = 6000;
@@ -73,6 +74,8 @@ const BASE_PROMPT = `你是「灵犀」，公司内部的 SAP 业务助手，运
 - 多步任务先用 write_todos 列出计划，做完一项勾一项；简单问题直接回答，不必列计划。
 - SAP 数据只能通过 SAP 工具获取，不要编造数字；工具返回"部分数据 / 已截断"时，回答里要说明。
 - 回答用中文，先给结论，再给依据。
+- 查数工具（run_sql、query_result、数据分析等）查出的数据，界面会在回答下方自动显示完整表格（可排序、导出、画图）。回答里只写结论、关键数字和说明，不要把查到的数据再整张抄成 Markdown 表格；确实要对比时最多列 5 行的小表。
+- 工具报「没有权限」「表 / 对象不存在」这类错误时，重试也一样失败：不要用同样的参数再调用，也不要把同一个计划原样再走一遍；换别的办法，换不了就停下来告诉用户缺什么（如缺哪张表的权限）。
 过程说明（用户在界面上实时看你的每一步）：
 - 开始干活时，在第一次调用工具的同时用一句话说打算怎么做（先查什么、再看什么）。
 - 拿到重要发现、要换方向时，用一句话说看到了什么、接下来查什么。
@@ -175,6 +178,11 @@ const ASK_PROMPT = `不清楚就先问，不要猜：
 - 一次只问一个问题，给 2~4 个具体候选（如列名、报表名），候选写短；问题里说清为什么要问。
 - 能从对话、结果、技能、系统说明里确定的不要问；同一件事不要反复问；用户说「你定」时按最常见的做法做并在回答里说明。`;
 
+/** 11.10 #08：回答后的二选一 / 三选一 → 界面画成按钮（和 ask_user 一起，只在新界面上给） */
+const CHOICE_PROMPT = `回答写完后，如果要问用户下一步做什么，而且只有 2~3 种选择（如「要导出成 Excel 吗？」「要按工厂拆分吗？」），在回答最后单独一行写：
+[[选项: 导出 Excel | 不用了]]
+界面会把这一行画成按钮，用户点哪个就等于回复哪句话。选项写成用户会说的短句（不超过 10 个字），第一个放你建议的。开放式问题、选项多于 3 个时不要写这一行，正常用文字问；不需要问时也不要写。`;
+
 const EXPORT_PROMPT = `用户要把报表结果存到文件夹（导出、另存、存成 CSV / Excel）时，用 save_result_to_folder：数据由 SAP 直接写进文件，不经过你，不要自己拼表格内容再 write_file / create_excel_file。要 Excel 就把 file_path 写成 .xlsx，否则用 .csv。`;
 
 /** 会话标题：任务第一轮回答后让模型起一个短标题（多一次很短的模型调用；失败就不改标题） */
@@ -208,6 +216,54 @@ async function makeTitle(model, question, answer, signal) {
   }
 }
 
+/**
+ * 11.10 #04 原样重试：权限 / 不存在这类错误重试也不会成功。
+ * 工具结果里先提醒模型；同一工具 + 同样参数再失败就由引擎直接停下（见 run() 里的 failGuard）。
+ */
+export const NO_RETRY_RE = /权限|未授权|没有授权|无权|not authori[sz]ed|no authori[sz]ation|forbidden|\b403\b|不存在|does not exist|not found|未找到|找不到|未登记|不在白名单|不允许/i;
+const NO_RETRY_HINT = "\n（这类错误重试也不会成功：不要用同样的参数再调用；换别的办法，换不了就告诉用户缺什么。）";
+/** 同一工具 + 同样参数失败到这么多次就停：确定性错误 2 次，其他（超时等）3 次；整轮连续失败到 6 次也停 */
+export const FAIL_LIMIT = { same: 3, sameNoRetry: 2, inARow: 6 };
+
+function stableArgs(a) {
+  if (a == null || typeof a !== "object") return JSON.stringify(a == null ? "" : a);
+  if (Array.isArray(a)) return "[" + a.map(stableArgs).join(",") + "]";
+  return "{" + Object.keys(a).sort().map(k => JSON.stringify(k) + ":" + stableArgs(a[k])).join(",") + "}";
+}
+
+/**
+ * 失败计数：返回 null = 继续；返回 {reason, tool, noRetry} = 该停了。
+ * 成功的一步会清零「连续失败」，但同一调用的失败次数保留（隔几步再原样调一次照样算）。
+ */
+export function createFailGuard(limit = FAIL_LIMIT) {
+  const byKey = new Map();
+  let inARow = 0;
+  return {
+    note(toolName, args, ok, text) {
+      if (ok) { inARow = 0; return null; }
+      inARow++;
+      const key = toolName + "|" + stableArgs(args);
+      const n = (byKey.get(key) || 0) + 1;
+      byKey.set(key, n);
+      const noRetry = NO_RETRY_RE.test(String(text || ""));
+      if (n >= (noRetry ? limit.sameNoRetry : limit.same)) return { reason: "same", tool: toolName, count: n, noRetry, text: String(text || "") };
+      if (inARow >= limit.inARow) return { reason: "inARow", tool: toolName, count: inARow, noRetry, text: String(text || "") };
+      return null;
+    }
+  };
+}
+
+export function loopStopAnswer(stop, label) {
+  const why = String(stop.text || "").replace(/^(Error:\s*|工具执行失败[:：]\s*)/, "").split("\n")[0].slice(0, 200);
+  const head = stop.reason === "same"
+    ? `同一步（${label}）用同样的条件已经失败 ${stop.count} 次，再试结果也一样，我先停下来。`
+    : `连续 ${stop.count} 步都失败了，我先停下来，免得空转。`;
+  const tip = stop.noRetry
+    ? "看起来是权限不够或对象不存在：如果确实需要，可以在灵犀里申请对应权限，或者换个说法 / 指定别的报表再问我。"
+    : "可以稍后再试，或者换个说法再问我。";
+  return `${head}\n\n最后一次的错误：${why || "未知原因"}\n\n${tip}`;
+}
+
 function clip(s, n = MAX_TOOL_CHARS) {
   s = typeof s === "string" ? s : JSON.stringify(s);
   return s.length > n ? s.slice(0, n) + `\n…[已截断，原长 ${s.length} 字符]` : s;
@@ -221,23 +277,52 @@ function rid() {
  * 把 SAP 返回的工具清单包装成 LangChain 工具；执行时再交给 SAP 校验。
  * 工具结果带 card（报表参数卡）时交给 onCard：引擎随即结束本次运行，由界面显示参数卡。
  */
-function buildSapTools(client, run, emit, signal, onCard, onDatasets) {
+/** SAP 的 ABAP 语法检查（11.10 #13，ZCL_AI_ABAP_CHECK）：引擎替它读文件夹里的源码，并附上常见错误写法扫描 */
+export const ABAP_CHECK_TOOL = "abap_check";
+
+async function prepAbapCheck(args, folderBackend) {
+  const a = { ...(args || {}) };
+  const fp = String(a.file_path || "").trim();
+  delete a.file_path;
+  if (fp && !a.source) {
+    if (!folderBackend) return { error: "工具执行失败：没有授权文件夹，请把完整源码放在 source 里" };
+    const rd = await folderBackend.read(fp, 0, 1000000);
+    if (rd.error) return { error: `工具执行失败：${String(rd.error).replace(/^Error:\s*/, "")}` };
+    if (typeof rd.content !== "string") return { error: "工具执行失败：这个文件不是文本文件" };
+    a.source = rd.content;
+    if (!a.name) a.name = fp.split("/").pop();
+  }
+  return { args: a, lint: lintText(lintAbap(a.source || "")) };
+}
+
+function buildSapTools(client, run, emit, signal, onCard, onDatasets, folderBackend) {
   // adt_run_sql 由 SAP 下发说明，但在浏览器里经 ADT 执行（见 buildAdtSqlTool），不走 /tools/exec
   return (run.tools || []).filter(t => t && t.name !== ADT_SQL_TOOL).map(t => tool(
     async (args, config) => {
       const requestId = rid();
+      let lint = "";
+      if (t.name === ABAP_CHECK_TOOL) {
+        const p = await prepAbapCheck(args, folderBackend);
+        if (p.error) return p.error;
+        args = p.args;
+        lint = p.lint;
+      }
       const r = await client.execTool({ runId: run.runId, tool: t.name, args: args || {}, requestId }, { signal });
       if (r && r.display) emit({ type: "display", tool: t.name, display: r.display });
       // 数据集（查数 / 结果查询 / 数据分析 / 函数）直接交给界面画表格和图表，不经过模型；带上调用编号，界面挂到对应那一步
       if (r && Array.isArray(r.datasets) && r.datasets.length && onDatasets) {
         onDatasets(t.name, r.datasets, config && config.toolCall && config.toolCall.id);
       }
-      if (r && r.ok === false) return `工具执行失败：${r.message || "未知原因"}`;
+      if (r && r.ok === false) {
+        const msg = r.message || "未知原因";
+        return `工具执行失败：${msg}` + (NO_RETRY_RE.test(msg) ? NO_RETRY_HINT : "");
+      }
       if (r && r.card && typeof r.card === "object") {
         onCard(r.card);
         return CARD_TOOL_TEXT;
       }
-      return clip(r && r.content != null ? r.content : r);
+      const out = clip(r && r.content != null ? r.content : r);
+      return lint ? out + "\n\n" + lint : out;
     },
     {
       name: t.name,
@@ -342,7 +427,7 @@ function buildOfficeTools(folderBackend) {
     {
       name: "create_excel_file",
       description: "在用户文件夹里新建一个 Excel（.xlsx）文件（写前会让用户确认；同名文件会被整份覆盖，原文件先备份）。" +
-        "有表头时第一行加粗并冻结。数字用数值类型传（能求和）；料号、工单号等编号用字符串传（保留前导 0）。" +
+        "有表头时第一行加粗并冻结。可以用 styles 给单元格填底色、改字体颜色、加粗。数字用数值类型传（能求和）；料号、工单号等编号用字符串传（保留前导 0）。" +
         "报表结果要存成 Excel 时不要用这个，用 save_result_to_folder。",
       schema: {
         type: "object",
@@ -356,7 +441,21 @@ function buildOfficeTools(folderBackend) {
               properties: {
                 name: { type: "string", description: "工作表名（≤ 31 字）" },
                 columns: { type: "array", items: { type: "string" }, description: "表头（列名）" },
-                rows: { type: "array", items: { type: "array", items: {} }, description: "数据行，每行是一个数组，顺序和表头一致" }
+                rows: { type: "array", items: { type: "array", items: {} }, description: "数据行，每行是一个数组，顺序和表头一致" },
+                styles: {
+                  type: "array",
+                  description: "可选：单元格格式（底色、字体颜色、加粗），如状态列标红、预警行填黄、用底色拼图案。行号按 Excel 里的实际位置（有表头时表头是第 1 行、数据从第 2 行开始）；只设格式不填值的单元格也会显示底色",
+                  items: {
+                    type: "object",
+                    properties: {
+                      range: { type: "string", description: "单元格或区域，如 B3、A2:D2、C2:C20" },
+                      fill: { type: "string", description: "底色：#RRGGBB 或 红 / 浅红 / 黄 / 浅黄 / 绿 / 浅绿 / 蓝 / 浅蓝 / 橙 / 紫 / 灰 / 浅灰 / 黑 / 白" },
+                      font_color: { type: "string", description: "字体颜色，写法同 fill" },
+                      bold: { type: "boolean", description: "加粗" }
+                    },
+                    required: ["range"]
+                  }
+                }
               },
               required: ["rows"]
             }
@@ -788,7 +887,7 @@ export async function run(o) {
         rows: ((d && d.rows) || []).slice(0, 3).map(r => (Array.isArray(r) ? r : []).slice(0, 6))
       })) });
   };
-  const tools = buildSapTools(client, runInfo, emit, inner.signal, onCard, onDatasets);
+  const tools = buildSapTools(client, runInfo, emit, inner.signal, onCard, onDatasets, folderBackend);
   if (folderBackend && !(folderBackend.opts && folderBackend.opts.readOnly)) tools.push(buildDeleteTool(folderBackend), ...buildOfficeTools(folderBackend));
   const canExport = !!(folderBackend && runInfo.export);
   if (canExport) tools.push(buildExportTool(client, runInfo, folderBackend, inner.signal));
@@ -830,6 +929,7 @@ export async function run(o) {
       skillSources.length && runInfo.skillsOpen !== true ? SKILL_SECRET_PROMPT : "",
       canExport ? EXPORT_PROMPT : "",
       canAsk ? ASK_PROMPT : "",
+      canAsk ? CHOICE_PROMPT : "",
       canAdt ? ADT_PROMPT : "",
       sqlTool ? ADT_SQL_PROMPT : "",
       runInfo.systemPrompt || "",
@@ -869,6 +969,8 @@ export async function run(o) {
   };
 
   const callArgs = {};
+  const failGuard = createFailGuard();
+  let loopStop = null;
   let lastModelAt = Date.now();
   let answer = "";
   let status = "OK";
@@ -912,13 +1014,22 @@ export async function run(o) {
               const ok = !/^(Error|工具执行失败)/.test(t) && m.status !== "error";
               track({ type: "tool_end", id: m.tool_call_id, tool: m.name, ok,
                 summary: summarizeStep(m.name, callArgs[m.tool_call_id], t, ok), preview: t.slice(0, 1000) });
+              // 11.10 #04：同一步原样失败多次 → 引擎直接停，不再让模型空转
+              const stop = !loopStop && !card && !askOther ? failGuard.note(m.name, callArgs[m.tool_call_id], ok, t) : null;
+              if (stop) {
+                loopStop = stop;
+                const label = (mainArg(m.name, callArgs[m.tool_call_id]) ? `${m.name} ${mainArg(m.name, callArgs[m.tool_call_id])}` : m.name).slice(0, 80);
+                loopStop.label = label;
+                track({ type: "loop_stop", tool: m.name, reason: stop.reason, count: stop.count });
+                inner.abort(new Error("lingxi-loop"));
+              }
             }
           }
         }
       }
     }
   } catch (e) {
-    if ((card || askOther) && !(o.signal && o.signal.aborted)) {
+    if ((card || askOther || loopStop) && !(o.signal && o.signal.aborted)) {
       // 参数卡 / 用户要自己说明：正常收尾，不是错误
     } else {
       status = o.signal && o.signal.aborted ? "CANCELLED" : "ERROR";
@@ -928,6 +1039,7 @@ export async function run(o) {
   }
   if (card && status === "OK") answer = String(card.answer || answer || "请在下面的参数卡里核对参数后提交。");
   else if (askOther && status === "OK") answer = askOther + "\n\n请在输入框里直接说明。";
+  else if (loopStop && status === "OK") answer = loopStopAnswer(loopStop, loopStop.label || loopStop.tool);
 
   // 会话标题：只在任务第一轮、正常结束时起；用一个不开流式、输出很短的模型实例
   let title = "";
@@ -970,6 +1082,7 @@ export async function run(o) {
   };
 }
 
+export { lintAbap, prepAbapCheck };
 export {
   createSapClient, SapAgentError,
   FolderBackend, folderSupported, pickFolder, restoreFolder, requestFolderPermission, forgetFolder,

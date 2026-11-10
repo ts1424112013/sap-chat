@@ -1482,5 +1482,32 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     /substring\( val = lv_path off = 14 \)/.test(ht));
 }
 
+// ---------- 11.10 #13：ABAP 语法检查工具 abap_check（ZCL_AI_ABAP_CHECK V1.0 + AGENT_SERVICE V15.31） ----------
+{
+  console.log('\n[11.10 #13] abap_check：只查不存的语法检查');
+  const ckRaw = read('ZCL_AI_ABAP_CHECK.abap'), ck = codeOnly(ckRaw);
+  const agRaw = read('ZCL_AI_AGENT_SERVICE.abap'), ag = codeOnly(agRaw);
+  const m = methodOf(ck, 'check');
+  check('ABAP_CHECK：用 SYNTAX-CHECK FOR lt_src … DIRECTORY ENTRY（占位程序名、可执行程序、Unicode 检查）',
+    /SYNTAX-CHECK FOR lt_src MESSAGE lv_msg LINE lv_line WORD lv_word DIRECTORY ENTRY ls_dir/.test(m) &&
+    /ls_dir-subc\s+= '1'/.test(m) && /ls_dir-uccheck = abap_true/.test(m));
+  check('ABAP_CHECK：只查不存 —— 没有 INSERT REPORT / GENERATE / 写库语句',
+    !/INSERT REPORT|GENERATE\s+(REPORT|SUBROUTINE)|\b(INSERT|UPDATE|MODIFY|DELETE)\s+(FROM\s+)?z\w+/i.test(ck));
+  check('ABAP_CHECK：片段补 REPORT 行后报错行号减回去；全局类 / 函数模块直接说明查不了',
+    /INSERT `REPORT zlingxi_syntax_check\.` INTO lt_src INDEX 1/.test(m) && /lv_line - lv_shift/.test(m) &&
+    /CLASS \*DEFINITION\*PUBLIC\*/.test(m) && /FUNCTION \*/.test(m));
+  check('ABAP_CHECK：头注释有版本与核对标记；只用 7.50 语法（无 FINAL( ) 内联声明）；行长 ≤ 255',
+    /^\* V1\.0\s+20261110/m.test(ckRaw) && /★ 重贴后核对标记/.test(ckRaw) && !/\bFINAL\(/.test(ck) &&
+    ckRaw.split(/\r?\n/).every(l => l.length <= 255));
+  const bs = methodOf(ag, 'browser_start'), bt = methodOf(ag, 'browser_tool');
+  check('AGENT_SERVICE V15.31：开放代码分析才下发 abap_check（BROWSER_ABAP_CHECK = N 关），系统说明有【写 ABAP 代码】规则',
+    /^\* V15\.31 20261110/m.test(agRaw) && /brun_cfg\( 'BROWSER_ABAP_CHECK' \) <> 'N'/.test(bs) &&
+    /gc_dom_code \] \)\s+AND brun_cfg\( 'BROWSER_ABAP_CHECK' \)/.test(bs) && /【写 ABAP 代码】/.test(bs) &&
+    /iv_name\s+= zcl_ai_abap_check=>gc_tool/.test(bs));
+  check('AGENT_SERVICE V15.31：browser_tool 先过清单 + 计次，再交给 ZCL_AI_ABAP_CHECK=>check',
+    bt.indexOf('tool_calls < @lv_max') > 0 && bt.indexOf('tool_calls < @lv_max') < bt.indexOf('zcl_ai_abap_check=>check(') &&
+    bt.indexOf('NS |,{ lv_tool },|') < bt.indexOf('zcl_ai_abap_check=>check('));
+}
+
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);

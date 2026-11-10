@@ -125,6 +125,14 @@ export function summarizeStep(tool, args, text, ok) {
       return cut(t, 100);
     case "task":
       return "子任务完成：" + cut(t, 60);
+    case "abap_check": {   // 11.10 #13：SAP 语法检查（只查不存）
+      const ok = /"passed"\s*:\s*true/.test(t);
+      if (ok) { const m = /"lines"\s*:\s*(\d+)/.exec(t); return `语法检查通过${m ? `（${n(m[1])} 行）` : ""}`; }
+      const m = /"line"\s*:\s*(\d+)[\s\S]*?"message"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(t);
+      if (m) return cut(`第 ${m[1]} 行：${m[2].replace(/\\"/g, '"')}`, 80);
+      const e = /"error"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(t);
+      return cut(e ? e[1] : t, 80);
+    }
     case "read_program_source": {
       const m = /"total_lines"\s*:\s*(\d+)|共\s*(\d+)\s*行/.exec(t);
       return m ? `读了源码（共 ${n(m[1] || m[2])} 行）` : `读了源码（${n(t.length)} 字）`;

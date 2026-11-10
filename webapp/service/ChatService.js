@@ -380,8 +380,10 @@ sap.ui.define([
                                 ProgramName: oPayload.programName || ""
                           };
                           // 20261029：输入框「深度思考」按钮（SEGW 给 AnalyzeCode 加了 Think 参数才发送）
-                          if (oPayload.think && that._fiHasParam("AnalyzeCode", "Think")) {
-                                mParams.Think = oPayload.think;
+                          // 20261110：SEGW 参数没设可空 = 必填，没开思考的模型不传就 404
+                          // "Invalid Function Import Parameter 'Think'" → 有这个参数就一直传，没开思考传空（后端空 = 不改）
+                          if (that._fiHasParam("AnalyzeCode", "Think")) {
+                                mParams.Think = oPayload.think || "";
                           }
                           return new Promise(function (fnResolve, fnReject) {
                                 oModel.callFunction("/AnalyzeCode", {
@@ -538,8 +540,9 @@ sap.ui.define([
                                 mParams.Scene = oPayload.scene;
                         }
                         // 20261029：输入框「深度思考」按钮（SEGW 给 AnalyzeTask 加了 Think 参数才发送）
-                        if (oPayload.think && this._fiHasParam("AnalyzeTask", "Think")) {
-                                mParams.Think = oPayload.think;
+                        // 20261110：有这个参数就一直传（必填参数缺了网关 404），没开思考传空
+                        if (this._fiHasParam("AnalyzeTask", "Think")) {
+                                mParams.Think = oPayload.think || "";
                         }
                         if (this._fiHasParam("AnalyzeTask", "SkillId")) {
                                 mParams.SkillId = oPayload.skillId || "";

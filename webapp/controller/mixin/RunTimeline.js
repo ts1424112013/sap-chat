@@ -149,6 +149,11 @@ sap.ui.define([
 				s.items.forEach(function (x) { if (x.k === "tool" && x.st === "RUNNING") { x.st = "OK"; x.ms = Date.now() - x.t; } });
 				s.items.push({ k: "note", st: "OK", text: "参数卡已生成，请在下面核对参数后提交" });
 				break;
+			case "loop_stop":   // 20261110（11.10 #04）：同一步原样失败多次，引擎已停
+				s.items.push({ k: "note", st: "ERROR", text: e.reason === "same"
+					? "同一步用同样的条件失败了 " + e.count + " 次，已停止，不再原样重试"
+					: "连续 " + e.count + " 步失败，已停止" });
+				break;
 			case "error":
 				if (/用户停止|abort/i.test(e.message || "")) {
 					return;   // 用户自己停的：工具行已标「已停止」，不再重复

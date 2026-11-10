@@ -52,6 +52,19 @@ module.exports = function ({ options }) {
 
 		var headers = Object.assign({}, req.headers, extraHeaders);
 		headers.host = base.host; // 上游期望收到它自己的主机名
+		// 20261110：浏览器发的 Origin / Referer 是 localhost，SAP 端来源校验（如新引擎
+		// /sap/bc/zai_agent 的 origin_ok）会拒绝 → 改写成 SAP 自己的地址，与改写后的 Host 一致
+		if (headers.origin) {
+			headers.origin = base.origin;
+		}
+		if (headers.referer) {
+			try {
+				var ref = new URL(headers.referer);
+				headers.referer = base.origin + ref.pathname + ref.search;
+			} catch (e) {
+				headers.referer = base.origin + "/";
+			}
+		}
 
 		var reqOptions = {
 			protocol: base.protocol,

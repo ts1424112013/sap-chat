@@ -352,26 +352,153 @@ async function sheetExtras(zip, sheetPath, xml) {
   return lines;
 }
 
+// ----------------------------------------------------------------------
+// 颜色（11.10 #06）：字体色 / 底色 / 单元格里部分文字的颜色 → 「颜色标记」一节
+// ----------------------------------------------------------------------
+
+/** 旧式索引色（0–7 与 8–15 相同） */
+const INDEXED_RGB = ["000000", "FFFFFF", "FF0000", "00FF00", "0000FF", "FFFF00", "FF00FF", "00FFFF",
+  "000000", "FFFFFF", "FF0000", "00FF00", "0000FF", "FFFF00", "FF00FF", "00FFFF",
+  "800000", "008000", "000080", "808000", "800080", "008080", "C0C0C0", "808080"];
+/** 默认 Office 主题（lt1 dk1 lt2 dk2 accent1–6），文件里有 theme1.xml 时用文件里的 */
+const DEFAULT_THEME = ["FFFFFF", "000000", "E7E6E6", "44546A", "4472C4", "ED7D31", "A5A5A5", "FFC000", "5B9BD5", "70AD47"];
+const COLOR_NAMES = [
+  ["红", 0xE0, 0x20, 0x20], ["深红", 0x90, 0x10, 0x10], ["浅红", 0xFF, 0xB0, 0xB0], ["橙", 0xF0, 0x90, 0x20],
+  ["黄", 0xFF, 0xE0, 0x20], ["浅黄", 0xFF, 0xF5, 0xB0], ["绿", 0x30, 0xA0, 0x40], ["深绿", 0x10, 0x60, 0x20],
+  ["浅绿", 0xC0, 0xEE, 0xC0], ["青", 0x20, 0xC0, 0xC0], ["蓝", 0x30, 0x60, 0xD0], ["深蓝", 0x10, 0x20, 0x70],
+  ["浅蓝", 0xBD, 0xD7, 0xEE], ["紫", 0x80, 0x40, 0xB0], ["粉", 0xF4, 0xA0, 0xC8], ["棕", 0x80, 0x50, 0x20],
+  ["黑", 0x00, 0x00, 0x00], ["深灰", 0x60, 0x60, 0x60], ["灰", 0xA0, 0xA0, 0xA0], ["浅灰", 0xEE, 0xEE, 0xEE], ["白", 0xFF, 0xFF, 0xFF]
+];
+
+/** RRGGBB → 「红(#FF0000)」：取最接近的常用颜色名，方便模型按「红字」「黄底」找 */
+export function colorLabel(hex) {
+  const h = String(hex || "").replace(/^#/, "").slice(-6).toUpperCase();
+  if (!/^[0-9A-F]{6}$/.test(h)) return "";
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  let best = "", d = Infinity;
+  for (const [n, R, G, B] of COLOR_NAMES) {
+    const x = (r - R) ** 2 * 2 + (g - G) ** 2 * 4 + (b - B) ** 2 * 3;
+    if (x < d) { d = x; best = n; }
+  }
+  return `${best}(#${h})`;
+}
+
+function applyTint(hex, tint) {
+  if (!tint) return hex;
+  return [0, 2, 4].map(i => {
+    let c = parseInt(hex.slice(i, i + 2), 16);
+    c = tint < 0 ? c * (1 + tint) : c + (255 - c) * tint;
+    return Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, "0");
+  }).join("").toUpperCase();
+}
+
+/** <color …/> / <fgColor …/> → RRGGBB；auto / 读不出 → "" */
+function colorOf(tag, theme) {
+  if (!tag || /\sauto="(1|true)"/.test(tag)) return "";
+  const rgb = attr(tag, "rgb");
+  const tint = Number(attr(tag, "tint") || 0);
+  if (rgb && /^[0-9A-Fa-f]{6,8}$/.test(rgb)) return applyTint(rgb.slice(-6).toUpperCase(), tint);
+  const th = attr(tag, "theme");
+  if (th != null && theme[Number(th)]) return applyTint(theme[Number(th)], tint);
+  const ix = attr(tag, "indexed");
+  if (ix != null && INDEXED_RGB[Number(ix)]) return INDEXED_RGB[Number(ix)];
+  return "";
+}
+
+function themeColors(xml) {
+  if (!xml) return DEFAULT_THEME.slice();
+  const pick = n => {
+    const m = new RegExp(`<a:${n}>([\\s\\S]*?)</a:${n}>`).exec(xml);
+    if (!m) return "";
+    const v = /<a:srgbClr\b[^>]*\sval="([0-9A-Fa-f]{6})"/.exec(m[1]) || /<a:sysClr\b[^>]*\slastClr="([0-9A-Fa-f]{6})"/.exec(m[1]);
+    return v ? v[1].toUpperCase() : "";
+  };
+  return ["lt1", "dk1", "lt2", "dk2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6"]
+    .map((n, i) => pick(n) || DEFAULT_THEME[i]);
+}
+
+/** 默认字色（黑 / 自动）不算标记 */
+const plainFont = hex => !hex || hex === "000000";
+
+/** 共享字符串里分段设了颜色的文字（如一句话里只有几个字是红的）→ [{ text, hex }] */
+function coloredRuns(siXml, theme) {
+  const out = [];
+  for (const r of siXml.matchAll(/<r>([\s\S]*?)<\/r>/g)) {
+    const pr = /<rPr>([\s\S]*?)<\/rPr>/.exec(r[1]);
+    const c = pr ? /<color\b[^>]*\/?>/.exec(pr[1]) : null;
+    const hex = c ? colorOf(c[0], theme) : "";
+    if (plainFont(hex)) continue;
+    const t = [...r[1].matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)].map(m => decodeXml(m[1])).join("");
+    if (t.trim()) out.push({ text: t, hex });
+  }
+  return out;
+}
+
+const COLOR_MAX = 200;
+
+/**
+ * 一个工作表的颜色标记：同一行相邻、标记相同的单元格合成区域（如 A1:H1 浅灰底、B3:F3 黄底）；
+ * 单个单元格带上内容（方便直接找「红字是哪句」），区域的内容看上面的表格
+ */
+function colorLines(marks) {
+  if (!marks.length) return [];
+  const items = [];
+  for (let i = 0; i < marks.length; i++) {
+    const m = marks[i];
+    let j = i;
+    while (j + 1 < marks.length && marks[j + 1].row === m.row &&
+      marks[j + 1].col === marks[j].col + 1 && marks[j + 1].desc === m.desc) j++;
+    const ref = colName(m.col) + m.row + (j > i ? ":" + colName(marks[j].col) + m.row : "");
+    items.push(`${ref} ${m.desc}` + (j === i && m.val ? `「${m.val.length > 40 ? m.val.slice(0, 40) + "…" : m.val}」` : ""));
+    i = j;
+  }
+  return [`颜色标记（${items.length}）：` + items.slice(0, COLOR_MAX).join("；") +
+    (items.length > COLOR_MAX ? `；……另有 ${items.length - COLOR_MAX} 处` : "")];
+}
+
 async function xlsxToText(zip) {
   const wb = await zip.text("xl/workbook.xml");
   if (!wb) throw new Error("不是 Excel 文件（缺少 xl/workbook.xml）");
   const rels = parseRels(await zip.text("xl/_rels/workbook.xml.rels"), "xl/");
   const date1904 = /<workbookPr\b[^>]*\sdate1904="(1|true)"/.test(wb);
 
-  const shared = [];
+  const theme = themeColors(await zip.text("xl/theme/theme1.xml"));
+  const shared = [], sharedRuns = [];
   const ss = await zip.text("xl/sharedStrings.xml");
-  if (ss) for (const m of ss.matchAll(/<si>([\s\S]*?)<\/si>|<si\/>/g)) shared.push(m[1] ? richText(m[1]) : "");
+  if (ss) for (const m of ss.matchAll(/<si>([\s\S]*?)<\/si>|<si\/>/g)) {
+    shared.push(m[1] ? richText(m[1]) : "");
+    sharedRuns.push(m[1] && m[1].includes("<r>") ? coloredRuns(m[1], theme) : null);
+  }
 
-  // 样式：哪些单元格格式是日期
-  const dateXf = [];
+  // 样式：哪些单元格格式是日期；字体色 / 底色（11.10 #06）
+  const dateXf = [], xfColor = [];
   const st = await zip.text("xl/styles.xml");
   if (st) {
     const codes = {};
     for (const m of st.matchAll(/<numFmt\b[^>]*>/g)) codes[Number(attr(m[0], "numFmtId"))] = attr(m[0], "formatCode");
+    const fontsX = /<fonts\b[^>]*>([\s\S]*?)<\/fonts>/.exec(st);
+    const fonts = fontsX ? topLevel(fontsX[1], ["font"]).map(f => {
+      const c = /<color\b[^>]*\/?>/.exec(f.inner);
+      return c ? colorOf(c[0], theme) : "";
+    }) : [];
+    const fillsX = /<fills\b[^>]*>([\s\S]*?)<\/fills>/.exec(st);
+    const fills = fillsX ? topLevel(fillsX[1], ["fill"]).map(f => {
+      const pt = /<patternFill\b[^>]*>/.exec(f.inner);
+      const type = pt ? attr(pt[0], "patternType") : null;
+      if (!pt || !type || type === "none" || type === "gray125") return "";
+      const fg = /<fgColor\b[^>]*\/?>/.exec(f.inner);
+      return fg ? colorOf(fg[0], theme) : "";
+    }) : [];
     const xfs = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(st);
     if (xfs) for (const m of xfs[1].matchAll(/<xf\b[^>]*>/g)) {
       const id = Number(attr(m[0], "numFmtId") || 0);
       dateXf.push(isDateFormat(id, codes[id]));
+      const font = fonts[Number(attr(m[0], "fontId") || 0)] || "";
+      const fill = fills[Number(attr(m[0], "fillId") || 0)] || "";
+      const parts = [];
+      if (!plainFont(font)) parts.push(colorLabel(font) + "字");
+      if (fill) parts.push(colorLabel(fill) + "底");
+      xfColor.push(parts.join("、"));
     }
   }
 
@@ -380,13 +507,13 @@ async function xlsxToText(zip) {
     hidden: /\sstate="(hidden|veryHidden)"/.test(m[0]),
     path: rels[attr(m[0], "id", true)] || ""
   }));
-  const out = ["（Excel 文件转成的文本：每个工作表一节；每行开头是 Excel 行号，后面是 A、B、C… 各列的值，用 Tab 分隔；空单元格留空，空行省略；日期格式的单元格已转成 yyyy-mm-dd。）"];
+  const out = ["（Excel 文件转成的文本：每个工作表一节；每行开头是 Excel 行号，后面是 A、B、C… 各列的值，用 Tab 分隔；空单元格留空，空行省略；日期格式的单元格已转成 yyyy-mm-dd；字体颜色、底色（不是黑字白底的）写在每个工作表末尾的「颜色标记」里。）"];
   let budget = XLSX_MAX_ROWS, cut = false;
   for (let si = 0; si < sheets.length; si++) {
     const sh = sheets[si];
     const xml = sh.path ? await zip.text(sh.path) : null;
     if (xml == null) { out.push("", `## 工作表 ${si + 1}「${sh.name}」：不是普通工作表（图表页等），跳过`); continue; }
-    const rows = [];
+    const rows = [], marks = [];
     let maxCol = -1, total = 0;
     let autoRow = 0;
     for (const rm of xml.matchAll(/<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g)) {
@@ -414,6 +541,13 @@ async function xlsxToText(zip) {
           const s = Number((/\ss="(\d+)"/.exec(a) || [])[1] || 0);
           val = dateXf[s] && isFinite(Number(v)) ? excelDate(Number(v), date1904) : tidyNumber(v);
         }
+        // 颜色标记：单元格样式的字色 / 底色 + 文字里分段的颜色（空单元格只有底色也记，如用底色拼的图案）
+        const sIdx = Number((/\ss="(\d+)"/.exec(a) || [])[1] || 0);
+        const descs = [];
+        if (xfColor[sIdx]) descs.push(xfColor[sIdx]);
+        const runs = t === "s" ? sharedRuns[Number(v)] : null;
+        if (runs && runs.length) descs.push("其中" + runs.slice(0, 3).map(x => `「${oneLine(x.text).slice(0, 30)}」是${colorLabel(x.hex)}字`).join("、"));
+        if (descs.length) marks.push({ row: rowNo, col: ci, desc: descs.join("，"), val: val === "" ? "" : oneLine(String(val)) });
         if (val === "") continue;
         cells[ci] = clipCell(oneLine(val));
         if (ci > maxCol) maxCol = ci;
@@ -429,6 +563,7 @@ async function xlsxToText(zip) {
       out.push("行\t" + Array.from({ length: maxCol + 1 }, (_, i) => colName(i)).join("\t"));
       out.push(...rows);
     }
+    out.push(...colorLines(marks));
     out.push(...await sheetExtras(zip, sh.path, xml));
   }
   if (cut) out.push("", `（整个文件超过 ${XLSX_MAX_ROWS} 行，后面的行没有转出来。需要全部数据时请用户另存为 CSV 再读。）`);
@@ -565,6 +700,43 @@ function sheetNames(list) {
 }
 
 export const XLSX_MAX_CELLS = 500000;
+/** 每个工作表最多给多少个单元格设格式（styles 展开后） */
+export const XLSX_MAX_STYLED = 20000;
+
+const NAME_HEX = {
+  红: "FF0000", 红色: "FF0000", 深红: "C00000", 浅红: "FFC7CE", 粉: "FFC0CB", 粉红: "FFC0CB",
+  橙: "FFC000", 橙色: "FFC000", 浅橙: "FCE4D6", 黄: "FFFF00", 黄色: "FFFF00", 浅黄: "FFF2CC",
+  绿: "00B050", 绿色: "00B050", 深绿: "006100", 浅绿: "C6EFCE", 青: "00B0F0", 蓝: "0070C0", 蓝色: "0070C0",
+  深蓝: "002060", 浅蓝: "DDEBF7", 紫: "7030A0", 紫色: "7030A0", 浅紫: "E4DFEC", 棕: "843C0C",
+  黑: "000000", 黑色: "000000", 白: "FFFFFF", 白色: "FFFFFF", 灰: "A6A6A6", 灰色: "A6A6A6", 深灰: "595959", 浅灰: "F2F2F2",
+  red: "FF0000", orange: "FFC000", yellow: "FFFF00", green: "00B050", blue: "0070C0", purple: "7030A0",
+  black: "000000", white: "FFFFFF", gray: "A6A6A6", grey: "A6A6A6", pink: "FFC0CB"
+};
+
+/** 颜色写法：#FF0000 / FF0000 / FFFF0000 / 红 / 浅绿 / red → "FFRRGGBB"；认不出 → null */
+export function parseColor(c) {
+  if (c == null || c === "") return null;
+  const t = String(c).trim();
+  const named = NAME_HEX[t] || NAME_HEX[t.replace(/色$/, "")] || NAME_HEX[t.toLowerCase()];
+  if (named) return "FF" + named;
+  const h = t.replace(/^#/, "");
+  if (/^[0-9A-Fa-f]{6}$/.test(h)) return ("FF" + h).toUpperCase();
+  if (/^[0-9A-Fa-f]{8}$/.test(h)) return h.toUpperCase();
+  if (/^[0-9A-Fa-f]{3}$/.test(h)) return ("FF" + h.split("").map(x => x + x).join("")).toUpperCase();
+  return null;
+}
+
+/** "A1" / "A1:C3" / "B2:B10" → [r0, c0, r1, c1]（0 起）；不合法 → null */
+export function parseRange(ref) {
+  const m = /^\s*\$?([A-Za-z]{1,3})\$?(\d{1,7})(?:\s*:\s*\$?([A-Za-z]{1,3})\$?(\d{1,7}))?\s*$/.exec(String(ref || ""));
+  if (!m) return null;
+  let c0 = colIndex(m[1].toUpperCase()), r0 = Number(m[2]) - 1;
+  let c1 = m[3] ? colIndex(m[3].toUpperCase()) : c0, r1 = m[4] ? Number(m[4]) - 1 : r0;
+  if (r0 < 0 || r1 < 0) return null;
+  if (c1 < c0) [c0, c1] = [c1, c0];
+  if (r1 < r0) [r0, r1] = [r1, r0];
+  return [r0, c0, r1, c1];
+}
 
 /**
  * 新建 xlsx。sheets = [{ name, columns?: string[], rows: any[][] }]
@@ -585,17 +757,61 @@ export async function buildXlsx(sheets) {
     return i;
   };
   const files = [];
-  const sheetXml = sheets.map(sh => {
+  // 格式（11.10 #05）：字体 0 = 普通、1 = 表头加粗；底色 0/1 = Excel 保留、2 = 表头浅灰；格式 0 = 普通、1 = 表头。
+  // 其余按用到的「加粗 + 字色 + 底色」组合往后加
+  const fontList = ["", "b|"], fillList = ["none", "gray125", "FFF2F2F2"], xfList = ["0|0", "1|2"];
+  const idxOf = (list, key) => { let i = list.indexOf(key); if (i < 0) { i = list.length; list.push(key); } return i; };
+  const xfFor = (bold, color, fill) => {
+    const f = idxOf(fontList, (bold ? "b" : "") + "|" + (color || ""));
+    const l = fill ? idxOf(fillList, fill) : 0;
+    return idxOf(xfList, f + "|" + l);
+  };
+  const sheetXml = sheets.map((sh, shi) => {
     const head = Array.isArray(sh.columns) && sh.columns.length ? sh.columns.map(c => (c == null ? "" : String(c))) : null;
     const body = (Array.isArray(sh.rows) ? sh.rows : []).map(r => (Array.isArray(r) ? r : [r]));
     const all = head ? [head, ...body] : body;
+    // 单元格格式：后写的覆盖先写的同一项；行列号按工作表里的实际位置（有表头时数据从第 2 行开始）
+    const fmt = new Map();
+    let styled = 0;
+    for (const st of Array.isArray(sh.styles) ? sh.styles : []) {
+      if (!st || typeof st !== "object") continue;
+      const rg = parseRange(st.range || st.cell || st.ref);
+      if (!rg) throw new Error(`工作表 ${shi + 1} 的 styles.range「${st.range || ""}」不对，要写成 A1 或 A1:C3`);
+      const fill = st.fill != null && st.fill !== "" ? parseColor(st.fill) : null;
+      const color = st.font_color != null && st.font_color !== "" ? parseColor(st.font_color) : null;
+      if (st.fill && !fill) throw new Error(`颜色「${st.fill}」认不出，用 #RRGGBB 或 红 / 黄 / 浅绿 这类颜色名`);
+      if (st.font_color && !color) throw new Error(`颜色「${st.font_color}」认不出，用 #RRGGBB 或 红 / 黄 / 浅绿 这类颜色名`);
+      const [r0, c0, r1, c1] = rg;
+      styled += (r1 - r0 + 1) * (c1 - c0 + 1);
+      if (styled > XLSX_MAX_STYLED) throw new Error(`设格式的单元格太多（上限每个工作表 ${XLSX_MAX_STYLED} 个）`);
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+        const k = r + "," + c;
+        const o = fmt.get(k) || {};
+        if (fill) o.fill = fill;
+        if (color) o.color = color;
+        if (st.bold != null) o.bold = !!st.bold;
+        fmt.set(k, o);
+      }
+    }
+    // 要输出的行：有数据的 + 只设了格式的（如只填底色的空单元格）
+    const rowSet = new Set(all.map((_, i) => i));
+    for (const k of fmt.keys()) rowSet.add(Number(k.split(",")[0]));
     const widths = [];
-    const rowsXml = all.map((r, ri) => {
-      const cs = r.map((v, ci) => {
-        if (v == null || v === "") return "";
-        const ref = colName(ci) + (ri + 1);
+    const rowsXml = [...rowSet].sort((x, y) => x - y).map(ri => {
+      const r = all[ri] || [];
+      const cols = new Set(r.map((_, i) => i));
+      for (const k of fmt.keys()) { const [kr, kc] = k.split(",").map(Number); if (kr === ri) cols.add(kc); }
+      const cs = [...cols].sort((x, y) => x - y).map(ci => {
+        const v = r[ci];
         const isHead = head && ri === 0;
-        const style = isHead ? ' s="1"' : "";
+        const f = fmt.get(ri + "," + ci);
+        const empty = v == null || v === "";
+        if (empty && !f) return "";
+        const ref = colName(ci) + (ri + 1);
+        let sid = isHead ? 1 : 0;
+        if (f) sid = xfFor(f.bold != null ? f.bold : !!isHead, f.color, f.fill || (isHead ? "FFF2F2F2" : null));
+        const style = sid ? ` s="${sid}"` : "";
+        if (empty) return `<c r="${ref}"${style}/>`;
         widths[ci] = Math.max(widths[ci] || 0, dispWidth(typeof v === "number" ? String(v) : v));
         if (typeof v === "number" && isFinite(v) && !isHead) return `<c r="${ref}"${style}><v>${v}</v></c>`;
         return `<c r="${ref}"${style} t="s"><v>${si(typeof v === "object" ? JSON.stringify(v) : String(v))}</v></c>`;
@@ -630,15 +846,22 @@ export async function buildXlsx(sheets) {
     `<Relationship Id="rId${n + 2}" Type="${ODR}/sharedStrings" Target="sharedStrings.xml"/></Relationships>` });
   files.push({ name: "xl/styles.xml", data: XML_HEAD +
     '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-    '<fonts count="2"><font><sz val="11"/><name val="等线"/><family val="2"/><charset val="134"/></font>' +
-    '<font><b/><sz val="11"/><name val="等线"/><family val="2"/><charset val="134"/></font></fonts>' +
-    '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>' +
-    '<fill><patternFill patternType="solid"><fgColor rgb="FFF2F2F2"/><bgColor indexed="64"/></patternFill></fill></fills>' +
+    `<fonts count="${fontList.length}">` + fontList.map(k => {
+      const [b, c] = k.split("|");
+      return `<font>${b ? "<b/>" : ""}<sz val="11"/>${c ? `<color rgb="${c}"/>` : ""}<name val="等线"/><family val="2"/><charset val="134"/></font>`;
+    }).join("") + "</fonts>" +
+    `<fills count="${fillList.length}">` + fillList.map(k => (k === "none" || k === "gray125")
+      ? `<fill><patternFill patternType="${k}"/></fill>`
+      : `<fill><patternFill patternType="solid"><fgColor rgb="${k}"/><bgColor indexed="64"/></patternFill></fill>`).join("") + "</fills>" +
     '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>' +
     '<border><left/><right/><top/><bottom style="thin"><color rgb="FFBFBFBF"/></bottom><diagonal/></border></borders>' +
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-    '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
-    '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/></cellXfs>' +
+    `<cellXfs count="${xfList.length}"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
+    '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>' +
+    xfList.slice(2).map(k => {
+      const [f, l] = k.split("|");
+      return `<xf numFmtId="0" fontId="${f}" fillId="${l}" borderId="0" xfId="0" applyFont="1"${l !== "0" ? ' applyFill="1"' : ""}/>`;
+    }).join("") + "</cellXfs>" +
     '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>' });
   sheetXml.forEach((x, i) => files.push({ name: `xl/worksheets/sheet${i + 1}.xml`, data: x }));
   files.push({ name: "xl/sharedStrings.xml", data: XML_HEAD +

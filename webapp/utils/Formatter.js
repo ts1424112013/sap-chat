@@ -41,6 +41,12 @@ sap.ui.define([], function () {
                                 return "";
                         }
 
+                        // 20261110（11.10 #08）：回答末尾的选项行「[[选项: A | B]]」由界面画成按钮，正文不显示
+                        sMarkdown = String(sMarkdown).replace(/\n?[ \t]*\[\[\s*选项\s*[:：][^\]\n]*\]\][ \t]*\s*$/, "");
+                        if (!sMarkdown) {
+                                return "";
+                        }
+
                         // 1. 整体转义（关键安全步骤）
                         var sEscaped = this.escapeHtml(sMarkdown);
 

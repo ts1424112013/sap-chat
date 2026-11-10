@@ -257,10 +257,10 @@ test("文件夹：read_file 读 xlsx 转文本并分页；旧格式报错；writ
   const r1 = await fb.read("/库存.xlsx", 0, 5);
   assert.equal(r1.mimeType, "text/plain");
   assert.equal(r1.content.split("\n").length, 5);
-  assert.equal(r1.totalLines, 35);
+  assert.equal(r1.totalLines, 36);   // 0.17.0：表头浅灰底多一行「颜色标记」
   // 第 0 行说明、1 空行、2 工作表标题、3 列名行、4 起是 Excel 第 1 行 …… 第 34 行是 Excel 第 31 行
   const r2 = await fb.read("/库存.xlsx", 34, 5);
-  assert.equal(r2.content, "31\tM29\t29");
+  assert.equal(r2.content, "31\tM29\t29\n颜色标记（1）：A1:B1 浅灰(#F2F2F2)底");
   root.files.set("旧.xls", { bytes: new Uint8Array(5), mtime: 1 });
   assert.match((await fb.read("/旧.xls")).error, /旧格式/);
   root.files.set("坏.docx", { bytes: new TextEncoder().encode("oops"), mtime: 1 });
@@ -301,4 +301,46 @@ test("文件夹：writeOffice 先确认（给文本预览）、覆盖前备份�
 
   assert.match((await fb.writeOffice("/a.pdf", new Uint8Array(1), "", "")).error, /只能新建/);
   assert.match((await fb.writeOffice("/.lingxi/a.xlsx", v1, "", "")).error, /read-only/);
+});
+
+
+// ---------- 0.17.0（11.10 #05 / #06）：单元格颜色读写 ----------
+test("xlsx 颜色：styles 填底色 / 字色 / 加粗，读回来有「颜色标记」，只填底色的空单元格也在", async () => {
+  const b = await buildXlsx([{ name: "状态", columns: ["料号", "状态"], rows: [["001", "正常"], ["002", "缺料"]],
+    styles: [{ range: "B3", fill: "浅红", font_color: "红", bold: true }, { range: "D5:F5", fill: "#FFFF00" }] }]);
+  const t = await officeToText("/a.xlsx", b);
+  assert.match(t, /颜色标记（\d+）：/);
+  assert.match(t, /A1:B1 浅灰\(#F2F2F2\)底/);
+  assert.match(t, /B3 红\(#FF0000\)字、浅红\(#FFC7CE\)底「缺料」/);
+  assert.match(t, /D5:F5 黄\(#FFFF00\)底/);
+  const z = openZip(b);
+  const sh = await z.text("xl/worksheets/sheet1.xml");
+  assert.match(sh, /<c r="E5" s="\d+"\/>/);
+  const st = await z.text("xl/styles.xml");
+  assert.match(st, /<font><b\/><sz val="11"\/><color rgb="FFFF0000"\/>/);
+});
+
+test("xlsx 颜色：区域写错 / 颜色认不出直接报错", async () => {
+  await assert.rejects(buildXlsx([{ rows: [[1]], styles: [{ range: "第3行", fill: "红" }] }]), /A1:C3/);
+  await assert.rejects(buildXlsx([{ rows: [[1]], styles: [{ range: "A1", fill: "彩虹" }] }]), /认不出/);
+});
+
+test("xlsx 颜色：读别人做的文件 —— 样式字色 + 一句话里部分文字标红（富文本）", async () => {
+  const ct = '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>';
+  const files = [
+    { name: "[Content_Types].xml", data: ct },
+    { name: "xl/workbook.xml", data: '<workbook><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>' },
+    { name: "xl/_rels/workbook.xml.rels", data: '<Relationships><Relationship Id="rId1" Type="x/worksheet" Target="worksheets/sheet1.xml"/></Relationships>' },
+    { name: "xl/styles.xml", data: '<styleSheet><fonts count="2"><font><sz val="11"/><color theme="1"/></font><font><color rgb="FFFF0000"/></font></fonts>' +
+      '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+      '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0"/><xf numFmtId="0" fontId="1" fillId="0"/></cellXfs></styleSheet>' },
+    { name: "xl/sharedStrings.xml", data: '<sst><si><t>普通</t></si><si><t>What a wonderful day</t></si>' +
+      '<si><r><t>前面是黑字，</t></r><r><rPr><color rgb="FFFF0000"/></rPr><t>这几个字是红的</t></r></si></sst>' },
+    { name: "xl/worksheets/sheet1.xml", data: '<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row>' +
+      '<row r="3"><c r="A3" s="1" t="s"><v>1</v></c><c r="B3" t="s"><v>2</v></c></row></sheetData></worksheet>' }
+  ];
+  const t = await officeToText("/b.xlsx", await makeZip(files));
+  assert.match(t, /A3 红\(#FF0000\)字「What a wonderful day」/);
+  assert.match(t, /B3 其中「这几个字是红的」是红\(#FF0000\)字/);
+  assert.doesNotMatch(t, /A1 /);
 });

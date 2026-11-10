@@ -353,6 +353,13 @@
 *   skills_open = X 表示管理员(IT 账号): 浏览器不对他启用「技能内容保密」规则
 *   依赖: 表 ZAI_BSKILL、ZCL_AI_BSKILL_SERVICE V1.0(〇-AV)先激活
 *   ★ 重贴后核对标记: ty_brun_start 有 builtin_json / builtin_ver / skills_open; browser_start 有 zcl_ai_bskill_service=>for_user(
+* V15.31 20261110(11.10 记录 #13 生成的 ABAP 粘贴必炸): 只改 browser_start / browser_tool ——
+*   ① browser_start: 用户开放了代码分析且 BROWSER_ABAP_CHECK <> N(默认开)时下发新工具 abap_check(ZCL_AI_ABAP_CHECK,
+*     SYNTAX-CHECK 只查不存, 新程序也能查), 系统说明加【写 ABAP 代码】规则: 用到的表先 describe_table / adt 查字段,
+*     写完必须 abap_check 到通过再交给用户, 查不了的要写明; 按 7.55 语法写
+*   ② browser_tool: abap_check 计入工具次数, 交给 ZCL_AI_ABAP_CHECK=>check
+*   依赖: 先激活 ZCL_AI_ABAP_CHECK V1.0
+*   ★ 重贴后核对标记: browser_start 有 brun_cfg( 'BROWSER_ABAP_CHECK' ) 与【写 ABAP 代码】; browser_tool 有 zcl_ai_abap_check=>check(
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -4381,6 +4388,23 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                                cv_csv    = lv_tools_csv ).
     ENDIF.
 
+    " ---- 8c2. V15.31(11.10 #13) ABAP 语法检查: 开放了代码分析就给(只查不存, 新程序也能查) ----
+    IF line_exists( lt_doms[ table_line = zcl_ai_domain_cards=>gc_dom_code ] )
+       AND brun_cfg( 'BROWSER_ABAP_CHECK' ) <> 'N'
+       AND strlen( lv_tools_csv ) + strlen( zcl_ai_abap_check=>gc_tool ) + 1 <= 1000.
+      brun_add_tool( EXPORTING iv_name   = zcl_ai_abap_check=>gc_tool
+                               iv_desc   = zcl_ai_abap_check=>tool_desc( )
+                               iv_params = zcl_ai_abap_check=>tool_params( )
+                     CHANGING  cv_json   = lv_tools_json
+                               cv_csv    = lv_tools_csv ).
+      lv_sys = |{ lv_sys }\n\n【写 ABAP 代码】(用户要你写 / 改程序时遵守; 本系统是 ABAP 7.55)\n| &&
+               |1. 写之前: 代码里要用的每张表(尤其 Z 表)先用 describe_table{ COND string( WHEN lv_adt = abap_true THEN ` 或 adt_structure` ) }| &&
+               | 确认表存在和真实字段名, 不要凭记忆或按别的程序猜字段; 同一张表在不同程序里字段名要一致。\n| &&
+               |2. 写完之后: 用 abap_check 做语法检查(源码在文件夹里就传 file_path), 按报错行号改了再查, 直到 passed = true 才交给用户;| &&
+               | 回答里写明「已通过语法检查」。abap_check 查不了的(全局类、函数模块、片段)要写明「未做语法检查」。\n| &&
+               |3. 只用确定存在的语法, 拿不准的写法换成最常见的老写法; SELECT-OPTIONS ... FOR 引用的表要在 TABLES 里声明或用已定义的变量。|.
+    ENDIF.
+
     " ---- 8d. V15.29 MCP 工具(管理员在「设置 → MCP 连接」开放的只读工具, 由 SAP 调外部服务; 〇-AU) ----
     DATA(lt_mcp) = zcl_ai_mcp_service=>run_tools( ).
     DATA lv_mcp_n TYPE i.
@@ -4640,6 +4664,24 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       RETURN.
     ENDIF.
     COMMIT WORK.
+
+    " ---- V15.31(11.10 #13): ABAP 语法检查(只查不存) ----
+    IF lv_tool = zcl_ai_abap_check=>gc_tool.
+      TYPES: BEGIN OF lty_cargs,
+               source TYPE string,
+               name   TYPE string,
+             END OF lty_cargs.
+      DATA ls_ca TYPE lty_cargs.
+      TRY.
+          /ui2/cl_json=>deserialize( EXPORTING json = COND #( WHEN iv_args IS INITIAL THEN `{}` ELSE iv_args )
+                                     CHANGING  data = ls_ca ).
+        CATCH cx_root.
+          CLEAR ls_ca.
+      ENDTRY.
+      ev_content = zcl_ai_abap_check=>check( iv_source = ls_ca-source iv_name = ls_ca-name ).
+      ev_ok      = abap_true.
+      RETURN.
+    ENDIF.
 
     " ---- V15.29: MCP 工具(〇-AU): 交给 ZCL_AI_MCP_SERVICE(重新校验、每服务上限、参数检查、调用、记 ZAI_BSTEP) ----
     IF strlen( lv_tool ) > 4 AND substring( val = lv_tool len = 4 ) = zcl_ai_mcp_service=>gc_prefix.

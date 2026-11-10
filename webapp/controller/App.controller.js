@@ -1313,6 +1313,7 @@ sap.ui.define([
                                 this._startLive(oPending, sCid, sSessionId);
                         }
 
+                        var oAnalysisLater = null, oChoice = null;
                         return pReq.then(function (oRes) {
                                 // V5：响应到达前用户已停止 → 丢弃本次回复（后端已存库）
                                 if (!fnIsCurrent()) {
@@ -1336,12 +1337,19 @@ sap.ui.define([
                                                 : (oRes.elapsedMs ? oRB.getText("chatElapsed", [(oRes.elapsedMs / 1000).toFixed(1)]) : "");
                                         if (bAgent) {
                                                 // HTTP 已结束：立即收口，空/坏 Trace 也不能继续显示正在执行。
-                                                that._attachAgentProcess(iAssistantIdx, oRes);
+                                                // 20261110（11.10 #10）：数据表等正文打完再放出来，不能回答还在打字、大表已经先出来
+                                                oAnalysisLater = oRes.analysis || null;
+                                                that._attachAgentProcess(iAssistantIdx, Object.assign({}, oRes, { analysis: null }));
                                                 that._updateAgentSessionStatus(sSessionId, oRes.status);
                                                 // V15/V16：任务徽标回写；待填参数挂到本条回复的内联卡片
                                                 that._updateTaskState(oRes, sSessionId, iAssistantIdx);
                                         }
                                         var sAnswer = oRes.answer || oRes.message || oRB.getText("emptyAnswer");
+                                        // 20261110（11.10 #08）：回答末尾的「[[选项: A | B]]」→ 正文去掉这一行，打完后出按钮
+                                        oChoice = that._splitChoiceLine ? that._splitChoiceLine(sAnswer) : null;
+                                        if (oChoice) {
+                                                sAnswer = oChoice.text;
+                                        }
                                         // 20261029：先放思考过程（对话：在思考区里打出来，打完收起；Agent：边跑边看已逐轮
                                         // 显示过，直接收起放在回答上方），再打正文。思考只在 reasoning 里，sAnswer 不含
                                         return that._showThink(iAssistantIdx, oRes.reasoning || "", sSendToken, !bAgent)
@@ -1349,6 +1357,12 @@ sap.ui.define([
                                                         return that._streamAnswer(iAssistantIdx, sAnswer, sDoneMeta, sSendToken);
                                                 })
                                                 .then(function () {
+                                                        if (oAnalysisLater) {
+                                                                that._attachAnalysisLater(oPending, iAssistantIdx, oAnalysisLater);
+                                                        }
+                                                        if (oChoice) {
+                                                                that._attachChoices(oPending, iAssistantIdx, oChoice.options);
+                                                        }
                                                         fnFinish();
                                                         // V16：参数卡 / 意图澄清卡（流式完成后出现，与回答联动）
                                                         if (fnIsCurrent()) {
@@ -1905,10 +1919,65 @@ sap.ui.define([
                         }
                         var sAn = oEntry.analysis ? this._buildAnalysisHtml(oEntry.analysis, oEntry) : "";
                         var sCharts = this._chartDeckHtml(oEntry, "");   // 无锚点的图表（兜底）
-                        if (!sAn && !sCharts) {
+                        var sChoice = this._choiceHtml(oEntry);
+                        if (!sAn && !sCharts && !sChoice) {
                                 return "";
                         }
-                        return '<div class="msgExtra" data-uid="' + oEntry.uid + '">' + sAn + sCharts + "</div>";
+                        return '<div class="msgExtra" data-uid="' + oEntry.uid + '">' + sAn + sCharts + sChoice + "</div>";
+                },
+
+                /* ---------------------------------------------------------
+                 * 20261110（11.10 #08）：回答后的二选一 / 三选一按钮。
+                 * 引擎提示词约定：回答最后一行写「[[选项: 导出 Excel | 不用了]]」→ 正文去掉这一行，
+                 * 打完字后在回答下面出按钮；点一下 = 把这句话当作用户回复发出去。约定格式，不靠猜问句。
+                 * --------------------------------------------------------- */
+
+                /** @returns {{text:string, options:string[]}|null} 最后一行是选项行时拆开 */
+                _splitChoiceLine: function (sAnswer) {
+                        var m = /\n?[ \t]*\[\[\s*选项\s*[:：]([^\]\n]*)\]\][ \t]*\s*$/.exec(String(sAnswer || ""));
+                        if (!m) {
+                                return null;
+                        }
+                        var aOpt = m[1].split(/[|｜]/).map(function (x) {
+                                return x.trim().slice(0, 40);
+                        }).filter(Boolean).slice(0, 4);
+                        var sText = String(sAnswer).slice(0, m.index).replace(/\s+$/, "");
+                        return aOpt.length >= 2 ? { text: sText, options: aOpt } : { text: sText, options: [] };
+                },
+
+                _choiceHtml: function (oEntry) {
+                        var aOpt = (oEntry && oEntry.choices) || [];
+                        if (!aOpt.length) {
+                                return "";
+                        }
+                        var esc = Formatter.escapeHtml;
+                        if (oEntry.choiceDone) {
+                                return '<div class="answerChoices done"><span class="answerChoiceDone">已选：' + esc(oEntry.choiceDone) + "</span></div>";
+                        }
+                        return '<div class="answerChoices">' + aOpt.map(function (t, k) {
+                                return '<button type="button" class="answerChoice' + (k === 0 ? " primary" : "") +
+                                        '" data-act="choice-pick" data-v="' + k + '">' + esc(t) + "</button>";
+                        }).join("") + "</div>";
+                },
+
+                _attachChoices: function (oEntry, iIndex, aOpt) {
+                        if (!oEntry || !aOpt || !aOpt.length) {
+                                return;
+                        }
+                        oEntry.choices = aOpt.slice();
+                        oEntry.choiceDone = "";
+                        oEntry.extraHtml = this._extraHtml(oEntry);
+                        this._refreshExtra(oEntry, "");
+                },
+
+                /** 20261110（11.10 #10）：数据表在回答打完字后再放出来（切走了也挂到条目上，切回来能看到） */
+                _attachAnalysisLater: function (oEntry, iIndex, oAnalysis) {
+                        if (!oEntry || !oAnalysis) {
+                                return;
+                        }
+                        oEntry.analysis = oAnalysis;
+                        oEntry.extraHtml = this._extraHtml(oEntry);
+                        this._refreshExtra(oEntry, "");
                 },
 
                 /**
@@ -5205,6 +5274,23 @@ sap.ui.define([
                         });
                 },
 
+                /** 20261110（11.10 #08）：点回答下的选项按钮 = 把这一项当作用户回复发出去 */
+                _onChoicePick: function (oEntry, k) {
+                        var oChatModel = this.getView().getModel("chat");
+                        var sText = ((oEntry && oEntry.choices) || [])[k];
+                        if (!sText || oEntry.choiceDone) {
+                                return;
+                        }
+                        if (oChatModel.getProperty("/busy")) {
+                                MessageToast.show("灵犀还在回答，等这一轮结束再选");
+                                return;
+                        }
+                        oEntry.choiceDone = sText;
+                        this._refreshExtra(oEntry, "");
+                        oChatModel.setProperty("/input", sText);
+                        this.onSend();
+                },
+
                 /** 20261019（FE-10）：打字动画进行中，点消息区的非交互位置 = 跳过动画，直接显示全文 */
                 _maybeSkipStream: function (oTarget) {
                         if (!this._sStreamToken || !oTarget || !oTarget.closest) {
@@ -5226,6 +5312,10 @@ sap.ui.define([
                                 return;
                         }
                         var oEntry = oHit.entry;
+                        if (sAct === "choice-pick") {
+                                this._onChoicePick(oEntry, parseInt(oBtn.getAttribute("data-v"), 10));
+                                return;
+                        }
                         if (sAct === "fiori-analyze") {
                                 this._fioriAnalyze(oEntry);   // 20261020：Fiori 结果的分析闸门（FioriPanel）
                                 return;

@@ -162,6 +162,10 @@ const countOf = (s, sub) => s.split(sub).length - 1;
     LingXiState.activity(false, false, true) === 'idle');
 
   console.log('\n━━ Formatter');
+  // 11.10 #08：回答末尾的选项行由界面画成按钮，正文（含历史重开）不显示
+  const mdChoice = Formatter.markdownToHtml('共 12 行。\n\n需要导出成 Excel 吗？\n[[选项: 导出 Excel | 不用了]]\n');
+  check('回答末尾「[[选项: …]]」不进正文', !/选项|导出 Excel \|/.test(mdChoice) && /需要导出成 Excel 吗/.test(mdChoice), mdChoice);
+  check('正文中间的 [[选项: …]] 不动（只认最后一行）', /\[\[选项/.test(Formatter.markdownToHtml('a [[选项: x | y]] b\n\n结尾')));
   check('escapeHtml 转义五个字符', Formatter.escapeHtml(`<a href="x">'&`) === '&lt;a href=&quot;x&quot;&gt;&#39;&amp;');
   check('escapeHtml 空值返回空串', Formatter.escapeHtml(null) === '' && Formatter.escapeHtml(undefined) === '');
   const dirty = '<img src="x.png" onerror="alert(1)"><script>alert(1)</script><a href="javascript:alert(1)">x</a><a href="https://ok">y</a>';
@@ -700,7 +704,10 @@ const countOf = (s, sub) => s.split(sub).length - 1;
     JSON.stringify(tm.calls.map((c) => [c.fi, c.params.Think])));
   check('后端回答开头的思考块拆到 reasoning（真实接口路径）', rB.answer === '回答' && rB.reasoning === '先想一下');
   await ChatService.send({ sessionId: 'S1', question: '问', modelId: 'M1' });
-  check('没传 think：不带 Think 参数（按模型配置）', !('Think' in tm.calls[2].params));
+  // 11.10 #02：SEGW 的 Think 没设可空 = 必填，不传就 404 "Invalid Function Import Parameter 'Think'" → 传空串（后端空 = 按模型配置）
+  check('没传 think：Think 传空串（必填参数不能缺，后端空 = 按模型配置）', tm.calls[2].params.Think === '');
+  await ChatService.sendTask({ sessionId: 'S1', question: '问', modelId: 'M1' });
+  check('没传 think（任务）：同样传空串', tm.calls[3].fi === '/AnalyzeTask' && tm.calls[3].params.Think === '');
   tm = thinkModel(false);
   ChatService._taskApiAvailable = null;
   check('SEGW 还没加 Think 参数：不显示按钮', !ChatService.supportsThinkToggle('CHAT') && !ChatService.supportsThinkToggle('AGENT'));

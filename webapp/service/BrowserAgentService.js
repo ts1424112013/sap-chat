@@ -34,7 +34,7 @@ sap.ui.define([
 		create_excel_file: "新建 Excel", create_word_file: "新建 Word",
 		// 20261108 ADT 代码工具（只读，浏览器直连 /sap/bc/adt）
 		adt_search: "找对象", adt_read_source: "读源码", adt_structure: "对象结构", adt_where_used: "被谁使用",
-		adt_package: "包内容", adt_syntax_check: "语法检查",
+		adt_package: "包内容", adt_syntax_check: "语法检查", abap_check: "语法检查",
 		// 20261109 记忆超过 6000 字时回答后整理（引擎自己做的一步，不是模型工具）
 		compact_memory: "整理记忆"
 	};
