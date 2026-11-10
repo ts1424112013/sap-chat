@@ -8,6 +8,23 @@
 
 ## 目前的技能
 
+### 灵犀工具用法（2026-11-10 加，项目自编）
+
+讲「一类事怎么用灵犀的几个工具配合做完」、常见坑和回答格式（单个工具的参数说明在工具自己的描述里，这里不重复）。排在最前；报表 / Fiori 用户也能拿到的几个不写具体表名。
+
+| 目录 | 名称 | 适用场景 |
+|---|---|---|
+| lynx-tool-guide | 灵犀工具总览 | 全部 |
+| lynx-report-query | 报表查询 | 报表、Fiori |
+| lynx-result-analysis | 报表结果分析 | 报表、Fiori、数据分析 |
+| lynx-data-query | 查表与 SQL 取数 | 数据分析 |
+| lynx-code-workflow | 代码分析工作流 | 代码分析 |
+| lynx-files-office | 文件夹与 Office 文件 | 全部 |
+
+工具改名或新增时要同步改这几个技能；`npm run test:skills` 会检查技能里提到的工具名都真实存在。
+
+### SAP 知识（sap-trench）
+
 来源：[sap-trench](https://github.com/shrek-abaper/sap-functional-skill/tree/main/skills/sap-trench-skill)（MIT，见 `LICENSE-sap-trench`，取自 517c562 / 2026-05-30）。
 按模块拆开，每个技能开头加了「怎么用」：回答结构、S/4HANA 的表和口径差异、灵犀里只讲知识不执行操作。车辆管理（IS-AUTO VMS）一节没有收。
 

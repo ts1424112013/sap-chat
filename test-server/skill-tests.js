@@ -243,12 +243,12 @@ test('技能胶囊选不了时仍可点：管理员直达技能管理，普通�
 });
 
 // ---------------------------------------------------------------- 20261110 内置技能随前端包发布（《04》〇-AV）
-test('内置技能包：部署产物/builtin-skills.json 与 builtin-skills/ 一致；17 个，目录名合规、有中文名和说明、场景、来源和许可证齐全', () => {
+test('内置技能包：部署产物/builtin-skills.json 与 builtin-skills/ 一致；23 个，目录名合规、有中文名和说明、场景、来源和许可证齐全', () => {
   const {execFileSync} = require('child_process');
   execFileSync(process.execPath, [path.join(__dirname, '../scripts/build-builtin-skills.js'), '--check']);
   const j = require('../部署产物/builtin-skills.json');
-  assert.equal(j.skills.length, 17);
-  assert.equal(new Set(j.skills.map(s => s.dir)).size, 17);
+  assert.equal(j.skills.length, 23);
+  assert.equal(new Set(j.skills.map(s => s.dir)).size, 23);
   for (const s of j.skills) {
     assert.match(s.dir, /^[a-z0-9]+(-[a-z0-9]+)*$/);
     assert.match(s.content, new RegExp('^---\\nname: ' + s.dir + '\\n'));
@@ -257,7 +257,7 @@ test('内置技能包：部署产物/builtin-skills.json 与 builtin-skills/ 一
     assert.match(s.version, /^[0-9a-f]{12}$/, s.dir);
     assert.ok(Number.isInteger(s.sortNo), s.dir);
     assert.ok(/[\u4e00-\u9fa5]/.test(s.title) && s.description.startsWith(s.title + '：') && s.description.length <= 1024, s.dir);
-    assert.match(s.source, /MIT/, s.dir);
+    assert.match(s.source, /MIT|灵犀项目自编/, s.dir);
     assert.ok(Array.isArray(s.files), s.dir);
     for (const f of s.files) assert.match(f.path, /^references\/[A-Za-z0-9_.-]+\.md$/, s.dir + ' ' + f.path);
   }
@@ -266,9 +266,9 @@ test('内置技能包：部署产物/builtin-skills.json 与 builtin-skills/ 一
     assert.match(s.content, /## 怎么用[\s\S]*S\/4[\s\S]*这是知识，不是工具[\s\S]*## 内容/, s.dir);
   }
   assert.equal(j.skills.filter(x => /sap-trench/.test(x.source)).length, 13);
-  assert.equal(j.skills[0].dir, 'sap-troubleshooting');
-  assert.equal(j.skills[1].dir, 'sap-tcode-tables');
-  assert.ok(/CASE-015/.test(j.skills[0].content));
+  const at = d => j.skills.findIndex(x => x.dir === d);
+  assert.ok(at('sap-troubleshooting') + 1 === at('sap-tcode-tables'));
+  assert.ok(/CASE-015/.test(j.skills[at('sap-troubleshooting')].content));
   for (const l of ['LICENSE-sap-trench', 'LICENSE-sap-engineering-skill', 'LICENSE-likweitan-abap-skills', 'LICENSE-superclaude-for-sap']) {
     assert.ok(fs.existsSync(path.join(__dirname, '../builtin-skills', l)), l);
   }
@@ -277,7 +277,7 @@ test('ABAP 代码类内置技能：7.55、不按 ABAP Cloud、用灵犀的 ADT �
   const j = require('../部署产物/builtin-skills.json');
   const by = d => j.skills.find(s => s.dir === d);
   const order = j.skills.map(s => s.dir);
-  assert.deepEqual(order.slice(13), ['abap-code-review', 'clean-abap', 'abap-unit-testing', 'abap-syntax-755']);
+  assert.deepEqual(order.slice(-4), ['abap-code-review', 'clean-abap', 'abap-unit-testing', 'abap-syntax-755']);
   for (const d of ['abap-code-review', 'clean-abap', 'abap-unit-testing', 'abap-syntax-755']) {
     const s = by(d);
     assert.match(s.content, /7\.55/, d);
@@ -303,6 +303,37 @@ test('ABAP 代码类内置技能：7.55、不按 ABAP Cloud、用灵犀的 ADT �
   assert.match(sx.content, /FINAL\( \)[\s\S]*7\.57/);
   assert.match(sx.content, /ABAP Cloud 的限制不适用/);
   assert.match(sx.content, /7\.40 SP08 \| `FOR` 表达式、`REDUCE`、`FILTER`；`LOOP AT … GROUP BY`/);
+});
+test('灵犀工具技能（lynx-*）：6 个排在最前、场景对得上工具开放范围、提到的工具名都真实存在', () => {
+  const j = require('../部署产物/builtin-skills.json');
+  const lynx = j.skills.filter(s => s.dir.startsWith('lynx-'));
+  assert.deepEqual(lynx.map(s => s.dir), ['lynx-tool-guide', 'lynx-report-query', 'lynx-result-analysis', 'lynx-data-query', 'lynx-code-workflow', 'lynx-files-office']);
+  assert.deepEqual(j.skills.slice(0, 6).map(s => s.dir), lynx.map(s => s.dir));
+  const sc = Object.fromEntries(lynx.map(s => [s.dir, s.scenes]));
+  assert.equal(sc['lynx-tool-guide'], 'REPORT,FIORI,DATA,CODE');
+  assert.equal(sc['lynx-report-query'], 'REPORT,FIORI');
+  assert.equal(sc['lynx-data-query'], 'DATA');
+  assert.equal(sc['lynx-code-workflow'], 'CODE');
+  // 已知工具：界面的工具中文名表 + 引擎自带工具 + SAP 下发的工具
+  const svc = fs.readFileSync(path.join(__dirname, '../webapp/service/BrowserAgentService.js'), 'utf8');
+  const known = new Set((svc.match(/TOOL_LABEL = \{([\s\S]*?)\n\t\};/)[1].match(/["']?([a-z_]+)["']?\s*:/g) || []).map(x => x.replace(/["':\s]/g, '')));
+  ['write_todos', 'ls', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'task', 'ask_user', 'delete_file',
+   'adt_run_sql', 'open_fiori_report', 'get_report_parameters', 'prefill_report', 'call_function'].forEach(t => known.add(t));
+  const notTools = new Set(['purpose', 'group_by', 'metrics', 'sort', 'limit', 'offset', 'filters', 'columns', 'next_offset', 'total', 'more',
+    'table', 'key_field', 'source_column', 'fields', 'keys_miss', 'tcode', 'target_param', 'param_id', 'params', 'file', 'source', 'keyword',
+    'source_hidden', 'offset', 'sy_datum', 'mcp_', 'adt_']);
+  for (const s of lynx) {
+    const words = (s.content.match(/`([a-z][a-z0-9_]+)`/g) || []).map(w => w.slice(1, -1)).filter(w => w.includes('_') || known.has(w));
+    for (const w of words) {
+      if (notTools.has(w)) continue;
+      assert.ok(known.has(w), s.dir + ' 提到的工具 ' + w + ' 不存在');
+    }
+  }
+  // 普通用户能拿到的工具技能里不讲具体表名
+  for (const d of ['lynx-tool-guide', 'lynx-report-query', 'lynx-files-office']) {
+    const c = j.skills.find(s => s.dir === d).content;
+    assert.ok(!/\b(MARA|MARD|MATDOC|MSEG|ACDOCA|BSEG|VBAK|EKKO|AFKO|AUFK)\b/.test(c), d + ' 不应出现表名');
+  }
 });
 test('旧的前端内置技能已移除：目录不再导出 builtin，管理页没有「导入内置技能」、有「全部停用」和「内置」（从 SAP 读、导入包、启用开关）', () => {
   assert.equal(Skills.builtin, undefined);
@@ -348,11 +379,11 @@ test('内置技能管理服务：演示模式导入 / 列表 / 取全文 / 启�
   assert.throws(() => svc.checkPkg({skills: []}), /不是内置技能包/);
   assert.throws(() => svc.checkPkg({skills: [{dir: 'Bad Dir', title: 'x', content: 'x', scenes: 'CODE'}]}), /格式不对/);
   let r = await svc.call('import', svc.checkPkg(JSON.parse(JSON.stringify(pkg))));
-  assert.equal(r.added, 17);
+  assert.equal(r.added, 23);
   await svc.call('active', {dir: 'sap-mm', active: false});
   const two = {version: 'v2', skills: pkg.skills.filter(s => s.dir === 'sap-mm' || s.dir === 'abap-code-review')};
   r = await svc.call('import', two);
-  assert.deepEqual([r.added, r.updated, r.removed], [0, 2, 15]);
+  assert.deepEqual([r.added, r.updated, r.removed], [0, 2, 21]);
   const list = (await svc.call('list')).skills;
   assert.deepEqual(list.map(s => s.dir + ':' + s.active), ['sap-mm:false', 'abap-code-review:true']);
   assert.ok(!('content' in list[0]), '列表不含正文');
