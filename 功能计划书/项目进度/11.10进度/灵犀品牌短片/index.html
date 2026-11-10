@@ -10,11 +10,10 @@
 html,body{height:100%;background:#000;overflow:hidden;font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;color:var(--ink)}
 body.playing{cursor:none}
 #stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;overflow:hidden;background:#06080c}
-#browser{position:absolute;inset:0;background:var(--bg);transform-origin:1110px 550px;will-change:transform,opacity}
+#browser{position:absolute;inset:0;background:var(--bg);transform-origin:0 0;will-change:transform,opacity}
 #cv{position:absolute;inset:0;width:1920px;height:1080px;pointer-events:none}
 .serif{font-family:"Songti SC","STSong","Noto Serif SC","SimSun",serif}
-
-/* 浏览器外框 */
+.mono{font-family:"SF Mono",Menlo,Consolas,monospace}
 .chrome{height:56px;background:#07090d;border-bottom:1px solid rgba(255,255,255,.05);display:flex;align-items:center;padding:0 22px;gap:9px}
 .chrome i{width:12px;height:12px;border-radius:50%;background:#262b34}
 .chrome .url{margin-left:26px;width:620px;height:30px;border-radius:15px;background:#10141b;color:#6f6d68;font-size:14px;display:flex;align-items:center;padding:0 16px;letter-spacing:.5px}
@@ -35,33 +34,25 @@ body.playing{cursor:none}
 .send{margin-left:auto;width:48px;height:48px;border-radius:50%;background:#232a36;display:grid;place-items:center;flex:none}
 .send svg{width:22px;height:22px;stroke:#6f6d68;fill:none;stroke-width:2}
 .send.on{background:var(--gold)}.send.on svg{stroke:#1a1408}
-.bubble{position:absolute;right:260px;top:128px;max-width:900px;background:#1b222e;border:1px solid rgba(255,255,255,.05);color:var(--ink);font-size:23px;line-height:1.5;padding:15px 24px;border-radius:20px 20px 6px 20px}
-#task{position:absolute;left:560px;top:470px;width:1100px;height:160px;border-radius:18px;background:var(--card);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-direction:column}
-#task span{margin-top:74px;font-size:15px;color:var(--sub);letter-spacing:4px}
-#result{position:absolute;left:560px;top:250px;width:1100px;height:600px;border-radius:18px;background:var(--card);border:1px solid rgba(230,197,143,.3);padding:34px 40px;display:none}
-#result h3{font-size:19px;font-weight:500;color:var(--gold);letter-spacing:1px;display:flex;align-items:center;gap:10px}
+.bubble{position:absolute;right:260px;top:124px;white-space:nowrap;background:#1b222e;border:1px solid rgba(255,255,255,.05);color:var(--ink);font-size:23px;line-height:1.5;padding:15px 24px;border-radius:20px 20px 6px 20px}
+#result{position:absolute;left:560px;top:230px;width:1100px;height:620px;border-radius:18px;background:var(--card);border:1px solid rgba(230,197,143,.3);padding:30px 40px;display:none}
+#result h3{font-size:18px;font-weight:500;color:var(--gold);letter-spacing:1px;display:flex;align-items:center;gap:10px}
 #result h3 b{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--gold);display:grid;place-items:center;font-size:12px}
-.concl{margin-top:22px;font-size:25px;line-height:1.7;color:var(--ink)}
-.concl em{font-style:normal;color:var(--warm);font-weight:600;font-size:30px}
-.tbl{position:absolute;left:40px;top:238px;width:540px;font-size:18px}
-.tbl div{display:grid;grid-template-columns:1.5fr 1fr 1.1fr;padding:12px 4px;border-bottom:1px solid rgba(255,255,255,.06)}
-.tbl div span:not(:first-child){text-align:right}
-.tbl .th{color:var(--sub);font-size:15px;border-bottom-color:var(--line)}
-.bars{position:absolute;left:650px;top:244px;width:410px}
-.bars .t{font-size:15px;color:var(--sub);margin-bottom:8px}
-.bar{margin-top:16px;font-size:16px;color:#b9b3a6}
-.bar u{display:block;margin-top:7px;height:8px;border-radius:4px;background:linear-gradient(90deg,rgba(230,197,143,.35),var(--gold));width:0}
-.file{position:absolute;left:40px;bottom:34px;height:58px;border-radius:14px;border:1px solid var(--line);background:#10151d;display:flex;align-items:center;gap:14px;padding:0 20px;font-size:18px}
+.concl{margin-top:16px;font-size:27px;color:var(--ink);display:flex;align-items:baseline;gap:10px}
+.concl em{font-style:normal;color:var(--warm);font-weight:600}
+.concl .n{font-size:66px;line-height:1;background:linear-gradient(180deg,#fff6e4,#e2c08a);-webkit-background-clip:text;background-clip:text;color:transparent;padding:0 4px}
+.tbl{margin-top:16px;font-size:17px}
+.tbl div{display:grid;grid-template-columns:1.2fr 1fr 1fr .8fr 1.1fr 1fr;padding:9px 12px;border-bottom:1px solid rgba(255,255,255,.06);border-radius:6px}
+.tbl div span:last-child{text-align:right}
+.tbl .th{color:var(--sub);font-size:14px;border-bottom-color:var(--line)}
+.tbl .trk{outline:1.5px solid rgba(230,197,143,.85);background:rgba(230,197,143,.06);border-bottom-color:transparent}
+.more{margin-top:10px;font-size:14px;color:var(--sub);padding-left:12px}
+.file{position:absolute;left:40px;bottom:28px;height:60px;border-radius:14px;border:1px solid var(--line);background:#10151d;display:flex;align-items:center;gap:14px;padding:0 20px;font-size:18px}
 .file i{width:30px;height:36px;border-radius:5px;background:#2c6a4a;color:#dff3e6;font-style:normal;font-size:14px;font-weight:700;display:grid;place-items:center}
-.file span{color:var(--sub);font-size:15px;margin-left:8px}
-
-/* 节点名称、品牌 */
-#label{position:absolute;left:0;right:0;top:936px;text-align:center;font-size:30px;letter-spacing:18px;text-indent:18px;color:var(--gold);opacity:0}
-#label:before,#label:after{content:"";display:inline-block;width:70px;height:1px;background:linear-gradient(90deg,transparent,rgba(230,197,143,.6));vertical-align:middle;margin:0 34px 0 0}
-#label:after{transform:scaleX(-1);margin:0 0 0 16px}
-#brand{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
-#bn{font-size:132px;letter-spacing:44px;text-indent:44px;font-weight:400;background:linear-gradient(180deg,#fff6e4,#e2c08a);-webkit-background-clip:text;background-clip:text;color:transparent;opacity:0}
-#bt{margin-top:40px;font-size:34px;letter-spacing:10px;text-indent:10px;color:#cfc4ad;font-weight:300;opacity:0}
+.file span{color:var(--sub);font-size:14px;margin-left:8px}
+#label{position:absolute;left:0;right:0;top:986px;text-align:center;font-size:26px;letter-spacing:16px;text-indent:16px;color:var(--gold);opacity:0;text-shadow:0 0 18px #06080c,0 0 8px #06080c}
+#tag{position:absolute;left:0;right:0;top:992px;text-align:center;font-size:30px;letter-spacing:12px;text-indent:12px;color:#e9d6b0;opacity:0}
+#tag b{font-weight:400;font-size:38px;background:linear-gradient(180deg,#fff6e4,#e2c08a);-webkit-background-clip:text;background-clip:text;color:transparent;margin-right:26px}
 #black{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none}
 #start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(4,6,9,.9);z-index:9;gap:26px;cursor:pointer}
 #start .p{width:104px;height:104px;border-radius:50%;border:1px solid var(--gold);display:grid;place-items:center;color:var(--gold);font-size:34px;padding-left:6px}
@@ -77,36 +68,23 @@ body.playing{cursor:none}
       <div class="logo"><b></b>灵犀 <span>Lynx</span></div>
       <div class="new">＋ 新任务</div>
       <h6>最近</h6>
-      <p class="cur" id="curTask" style="opacity:0">采购未清汇总 · 工厂 1001</p>
-      <p>库存周转分析</p><p>上周出货明细</p><p>工单完工情况</p>
+      <p class="cur" id="curTask" style="opacity:0">ABG1 今日工单 · Excel</p>
+      <p>库存周转分析</p><p>上周出货明细</p><p>采购未清汇总</p>
     </div>
     <div class="hero" id="hero"><h1 class="serif">今天想做点什么？</h1><div>说出你的想法，剩下的交给灵犀</div></div>
-    <div class="bubble" id="bubble" style="opacity:0"></div>
-    <div id="task" style="opacity:0"><span>灵犀已收到</span></div>
+    <div class="bubble" id="bubble" style="opacity:0">我想问一下 <s-k>ABG1 工厂</s-k><s-k>今天</s-k>开了<s-k>多少工单</s-k>，并把结果汇总成 <s-k>Excel</s-k>。</div>
     <div id="result">
-      <h3 class="rv"><b>✓</b>已完成 · 采购未清汇总（工厂 1001 · 10 月）</h3>
-      <div class="concl rv">上月采购未清共 <em>326</em> 笔，金额 <em>¥ 482.6 万</em>；<br>前三家供应商占 <em>61%</em>。</div>
-      <div class="tbl">
-        <div class="th rv"><span>供应商</span><span>未清笔数</span><span>未清金额（万）</span></div>
-        <div class="rv"><span>华东精工</span><span>86</span><span>128.4</span></div>
-        <div class="rv"><span>恒锐电子</span><span>64</span><span>96.2</span></div>
-        <div class="rv"><span>明达包装</span><span>51</span><span>69.8</span></div>
-        <div class="rv"><span>其他</span><span>125</span><span>188.2</span></div>
-      </div>
-      <div class="bars">
-        <div class="t rv">未清金额占比</div>
-        <div class="bar rv">华东精工 · 27%<u data-w="27"></u></div>
-        <div class="bar rv">恒锐电子 · 20%<u data-w="20"></u></div>
-        <div class="bar rv">明达包装 · 14%<u data-w="14"></u></div>
-        <div class="bar rv">其他 · 39%<u data-w="39"></u></div>
-      </div>
-      <div class="file rv"><i>X</i>采购未清汇总_10月.xlsx<span>已生成</span></div>
+      <h3 class="rv"><b>✓</b><span id="rTitle"></span></h3>
+      <div class="concl rv"><span id="rLead"></span><em class="n serif" id="rN"></em><span>张工单</span></div>
+      <div class="tbl" id="rTbl"></div>
+      <div class="more rv" id="rMore"></div>
+      <div class="file rv"><i>X</i><b id="rFile" style="font-weight:400"></b><span>查询汇总 · 工单明细</span></div>
     </div>
     <div class="composer"><div id="inp"></div><div class="send" id="send"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></div></div>
   </div>
   <canvas id="cv"></canvas>
   <div id="label" class="serif"></div>
-  <div id="brand"><div id="bn" class="serif">灵犀</div><div id="bt" class="serif">让每个念头，慢慢成为现实。</div></div>
+  <div id="tag" class="serif"><b>灵犀</b>让想法成为结果。</div>
   <div id="black"></div>
 </div>
 <div id="start"><div class="p">▶</div><p>点击开始播放（请打开声音）<br><kbd>空格</kbd> 暂停 / 继续　<kbd>←</kbd> <kbd>→</kbd> 上一段 / 下一段　<kbd>R</kbd> 从头　<kbd>F</kbd> 全屏</p></div>
@@ -114,104 +92,94 @@ body.playing{cursor:none}
 
 <script>
 "use strict";
+// ───────── 演示数据：全片所有画面都从这里取，保证前后一致 ─────────
+const PLANT = "ABG1", DATE = "2026-11-10", DATED = "2026.11.10", DATEK = "20261110";   // 「今天」= 演示设定的业务日期
+const REPORT = "COOIS", REPORT_NAME = "生产订单信息系统";
+const TASK = "我想问一下 ABG1 工厂今天开了多少工单，并把结果汇总成 Excel。";
+const ORD = [   // 报表返回的工单：订单、物料、订单类型、目标数量（均为虚构示例）
+  ["100482311", "M-30512", "ZP01", 1200], ["100482312", "M-30512", "ZP01", 800], ["100482313", "M-41077", "ZP01", 500],
+  ["100482314", "M-22960", "ZP02", 60], ["100482315", "M-41077", "ZP01", 1500], ["100482316", "M-18834", "ZP01", 2400],
+  ["100482317", "M-30518", "ZP01", 300], ["100482318", "M-22960", "ZP02", 120], ["100482319", "M-55201", "ZP01", 1000],
+  ["100482320", "M-18834", "ZP01", 600], ["100482321", "M-60733", "ZP02", 40], ["100482322", "M-55201", "ZP01", 2000],
+];
+const NR = ORD.length, TRK = 5;                              // TRK：全程跟随的那一条工单
+const COUNT = new Set(ORD.map((o) => o[0])).size;            // 工单数量 = 按工单编号去重后的个数
+const FILE = `${PLANT}_工单_${DATEK}.xlsx`;
+const HEAD = ["订单", "物料", "订单类型", "工厂", "创建日期", "目标数量"];
+const cells = (o, fmt) => [o[0], o[1], o[2], PLANT, DATED, fmt ? o[3].toLocaleString("en-US") : String(o[3])];
+
 // ───────── 基础 ─────────
-const W = 1920, H = 1080, T = 92, FOC = 1500;
-const AX0 = 1110, AY0 = 550;                         // 任务卡片中心（光点位置）
-const SECTIONS = [0, 12, 24, 36, 56, 68];            // 六段起点（秒），与配乐小节对齐
-const TASK = "帮我看看上个月工厂 1001 的采购未清，按供应商汇总，做成 Excel";
+const W = 1920, H = 1080, T = 132;
+const SECTIONS = [0, 16, 30, 46, 60, 76, 94, 110];
 const $ = (id) => document.getElementById(id);
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const sm = (a, b, x) => { x = clamp((x - a) / (b - a)); return x * x * (3 - 2 * x); };
 const eo = (x) => 1 - Math.pow(1 - clamp(x), 3);
 const lerp = (a, b, k) => a + (b - a) * k;
 const win = (t, a, b, f = 1) => sm(a, a + f, t) * (1 - sm(b - f, b, t));
+const pulse = (t, t0, d = 1.2) => (t > t0 ? Math.exp(-(t - t0) / d * 3) : 0);
 function rng(a) { return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
-function keys(K, t, log) {                           // 关键帧平滑插值
-  if (t <= K[0][0]) return K[0][1];
-  for (let i = 1; i < K.length; i++) if (t <= K[i][0]) { const k = sm(K[i - 1][0], K[i][0], t); return log ? Math.exp(lerp(Math.log(K[i - 1][1]), Math.log(K[i][1]), k)) : lerp(K[i - 1][1], K[i][1], k); }
-  return K[K.length - 1][1];
-}
+const SANS = '"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif', MONO = '"SF Mono",Menlo,Consolas,monospace', SERIF = '"Songti SC","STSong","Noto Serif SC",serif';
+const GOLD = "rgb(230,197,143)", WARM = "rgb(255,243,220)", SUB = "rgb(150,146,138)", CARD = "#141a24";
 
-// ───────── 世界：节点与连线 ─────────
-const R = rng(7);
-const nodes = [{ p: [0, 0, 0], lv: 0, par: -1, born: 9.6, r: R() }];
-const edges = [], edgeOf = {};
-const FRAG = ["上个月", "工厂 1001", "采购未清", "按供应商汇总", "做成 Excel"];
-const ANG = [-2.55, -1.2, -0.12, 1.02, 2.28];
-function addNode(par, ang, rad, zs, lv, t0, dur) {
-  const p = [Math.cos(ang) * rad, Math.sin(ang) * rad * 0.62, (R() - 0.5) * zs];
-  const i = nodes.push({ p, lv, par, ang, born: t0 + dur, r: R(), kids: 0 }) - 1;
-  edgeOf[i] = edges.push({ a: par, b: i, t0, dur, k: (R() - 0.5) * 0.42, sp: 0.2 + R() * 0.18, ph: R() }) - 1;
-  return i;
-}
-ANG.forEach((a, i) => {
-  const n = addNode(0, a, 215 + R() * 40, 160, 1, 16.8 + i * 0.5, 2.4);
-  nodes[n].p[1] = Math.sin(a) * 170;
-  nodes[n].start = [Math.cos(a + 0.55) * 390, Math.sin(a + 0.55) * 235, (R() - 0.5) * 300];
-  nodes[n].frag = i;
-});
-let c2 = 0;
-for (let i = 1; i <= 5; i++) { const n = 2 + (i % 2); for (let j = 0; j < n; j++) addNode(i, nodes[i].ang + (j - (n - 1) / 2) * 0.42 + (R() - 0.5) * 0.1, 470 + R() * 90, 300, 2, 24.6 + (c2++) * 0.28, 2.0); }
-const L2 = nodes.map((n, i) => i).filter((i) => nodes[i].lv === 2);
-for (const i of L2) { const n = 2 + (R() < 0.5 ? 1 : 0); for (let j = 0; j < n; j++) addNode(i, nodes[i].ang + (j - (n - 1) / 2) * 0.2 + (R() - 0.5) * 0.05, 790 + R() * 170, 500, 3, nodes[i].born + 0.2 + R() * 0.8, 2.2); }
-const L3 = nodes.map((n, i) => i).filter((i) => nodes[i].lv === 3);
-for (const i of L3) { const n = 1 + Math.floor(R() * 2.6); for (let j = 0; j < n; j++) addNode(i, nodes[i].ang + (j - (n - 1) / 2) * 0.085 + (R() - 0.5) * 0.03, 1220 + R() * 400, 800, 4, 44.6 + R() * 4, 2.2); }
-// 工具节点：从第三层里均匀挑 7 个
-const KINDS = ["table", "browser", "chart", "doc", "sql", "file", "browser"];
-const tools = KINDS.map((kind, k) => { const i = L3[Math.floor((k + 0.35) * L3.length / 7)]; nodes[i].tool = k; return { i, kind, wake: k === 0 ? 41.2 : 37.2 + k * 1.05 }; });
-const FOLLOW = (() => { const c = tools[0].i, b = nodes[c].par, a = nodes[b].par; return [edgeOf[a], edgeOf[b], edgeOf[c]]; })();
-nodes.forEach((n) => { n.check = 56.3 + (4 - n.lv) * 0.8 + n.r; });
-const CS = [0, 62.5, 61, 59.8, 58.8], CE = [0, 65.5, 64.5, 63.5, 62.5];   // 各层向中心汇聚的起止时间
+// ───────── 世界：六个位置与数据路径 ─────────
+const O = [0, 0], A = [1700, -200], B = [3300, 150], C = [5300, -150], D = [7300, 200], E = [9200, -100];
+const STN = [[O, "任务"], [A, "报表匹配"], [B, "参数卡"], [C, "SAP 执行"], [D, "整理统计"], [E, "Excel"]];
+const EDG = [[O, A, 0.18], [A, B, -0.16], [B, C, 0.15], [C, D, -0.15], [D, E, 0.15]];
+const EDT = [[16.5, 19.5], [26.8, 29.5], [48, 57], [69.2, 76], [95.5, 97.5]];      // 每段路径被走过的时间
+function bz(e, u) { const [p, q, k] = e, v = 1 - u, cx = (p[0] + q[0]) / 2 - (q[1] - p[1]) * k, cy = (p[1] + q[1]) / 2 + (q[0] - p[0]) * k;
+  return [v * v * p[0] + 2 * v * u * cx + u * u * q[0], v * v * p[1] + 2 * v * u * cy + u * u * q[1]]; }
+function q2(p, c, q, u) { const v = 1 - u; return [v * v * p[0] + 2 * v * u * c[0] + u * u * q[0], v * v * p[1] + 2 * v * u * c[1] + u * u * q[1]]; }
+const RET1 = [E, [4600, -2300], [150, 0]], RET2 = [[D[0] + 520, D[1] + 200], [3650, -1500], [150, 0]];   // 交付返回的两条路径
+const mix = (p, q, k) => [lerp(p[0], q[0], k), lerp(p[1], q[1], k)];
 
-const P = nodes.map(() => [0, 0, 0]);                 // 当前帧的节点位置
-function place(t) {
-  nodes.forEach((n, i) => {
-    let x = n.p[0], y = n.p[1], z = n.p[2];
-    if (n.start) {
-      const e1 = eo((t - 11.6) / 2.6), e2 = sm(15.5, 19.8, t), wb = 1 - e2;
-      x = lerp(n.start[0] * e1, x, e2) + Math.sin(t * 0.5 + i) * 14 * wb;
-      y = lerp(n.start[1] * e1, y, e2) + Math.cos(t * 0.43 + i * 2) * 10 * wb;
-      z = lerp(n.start[2] * e1, z, e2);
-    }
-    const c = n.lv ? 1 - sm(CS[n.lv], CE[n.lv], t) : 1;
-    P[i][0] = x * c; P[i][1] = y * c; P[i][2] = z * c;
-  });
-}
-function bez(e, u, out) {
-  const A = P[e.a], B = P[e.b], v = 1 - u;
-  const cx = (A[0] + B[0]) / 2 - (B[1] - A[1]) * e.k, cy = (A[1] + B[1]) / 2 + (B[0] - A[0]) * e.k, cz = (A[2] + B[2]) / 2;
-  out[0] = v * v * A[0] + 2 * v * u * cx + u * u * B[0]; out[1] = v * v * A[1] + 2 * v * u * cy + u * u * B[1]; out[2] = v * v * A[2] + 2 * v * u * cz + u * u * B[2];
-  return out;
-}
-function followPos(t, out) {                          // 镜头跟随的那束光
-  const u = sm(37.2, 43, t) * 2.999, k = Math.floor(u);
-  return bez(edges[FOLLOW[k]], u - k, out);
-}
+// 各面板的位置
+const PA = { x: A[0] - 360, y: A[1] - 270, w: 760, h: 540 };
+const PB = { x: B[0] - 330, y: B[1] - 290, w: 820, h: 580 };
+const PC = { x: C[0] - 760, y: C[1] - 360, w: 1520, h: 720 };
+const DOCK_A = [A[0] - 470, A[1]], DOCK_B = [B[0] - 560, B[1] - 20];
+const F1 = { x: PB.x + 250, y: PB.y + 150, w: 240, h: 58 }, F2 = { x: PB.x + 250, y: PB.y + 250, w: 220, h: 58 }, F3 = { x: PB.x + 530, y: PB.y + 250, w: 220, h: 58 };
+const BTN = { x: PB.x + PB.w - 250, y: PB.y + PB.h - 100, w: 200, h: 60 }, BTNC = [BTN.x + 100, BTN.y + 30];
+const slotC = (i) => ({ x: C[0] - 240, y: C[1] - 200 + i * 42, w: 960, h: 38 });
+const slotD = (i) => ({ x: D[0] - 760, y: D[1] - 260 + i * 44, w: 900, h: 40 });
+const XL = { x: E[0] - 520, y: E[1] - 320, w: 1040, h: 640 }, XW0 = [166, 166, 166, 166, 166, 166], XW1 = [200, 170, 150, 120, 180, 176];
+const SUM = { x: E[0] - 920, y: E[1] - 250, w: 360, h: 250 };
+const CNT = { x: D[0] + 280, y: D[1] - 250, w: 480, h: 340 }, CON = { x: D[0] + 280, y: D[1] + 130, w: 480, h: 130 };
+const RES = { x: -400, y: -310, w: 1100, h: 620 };            // 结果卡片：与浏览器里的结果区域重合
+
+// 时间点
+const taRow = (i) => 60.4 + i * 0.5;                         // 结果行在 SAP 节点里出现
+const tdRow = (i) => 69.2 + Math.floor(i / 4) * 1.7 + (i % 4) * 0.12;   // 分三批返回
+const tcRow = (i) => 85 + i * 0.5;                           // 进入计数
+const tlRow = (i) => 96.6 + i * 0.5;                         // 飞向 Excel
+const SR = rng(5), scat = ORD.map(() => [(SR() - 0.5) * 260, (SR() - 0.5) * 60, (SR() - 0.5) * 0.2]);
+// SAP 里的全部工单（示意）：48 条里恰好 NR 条符合「ABG1 + 当天」
+const TR = rng(11), TAGS = Array.from({ length: 48 }, () => { const r = TR(); return r < 0.34 ? ["ABG1", "11.09"] : r < 0.6 ? ["ABG2", "11.10"] : r < 0.82 ? ["ABK1", "11.10"] : ["ABG1", "11.08"]; });
+const MATCH = []; { const idx = [...TAGS.keys()]; for (let i = idx.length - 1; i > 0; i--) { const j = Math.floor(TR() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; } idx.slice(0, NR).sort((a, b) => a - b).forEach((k) => { TAGS[k] = ["ABG1", "11.10"]; MATCH.push(k); }); }
+const tagPos = (k) => [C[0] - 720 + (k % 4) * 104, C[1] - 200 + Math.floor(k / 4) * 44];
+// 背景网络（降低亮度，只作纵深）
+const BR = rng(3), NET = Array.from({ length: 70 }, () => { const x = -1800 + BR() * 12800, y = -2400 + BR() * 4200, a = BR() * 6.28, l = 500 + BR() * 1100;
+  return { p: [x, y], q: [x + Math.cos(a) * l, y + Math.sin(a) * l * 0.6], k: (BR() - 0.5) * 0.5, a: 0.05 + BR() * 0.07 }; });
 
 // ───────── 镜头 ─────────
-const ZOOM = [[0, 1], [10.5, 1], [13.5, 1.45], [20, 1.75], [24, 1.6], [35, 0.6], [36.5, 0.62], [39.2, 1.9], [43, 2.2], [44.6, 2.1], [51, 0.42], [56, 0.39], [59, 0.4], [64, 0.8], [67.5, 1], [T, 1]];
-const cam = {}, tmp = [0, 0, 0], tmp2 = [0, 0, 0];
+const P2a = bz(EDG[2], 0.5), P2b = bz(EDG[2], 0.58);
+const CAM = [[0, 0, 0, 1], [12, 0, 0, 1], [14.5, 0, 0, 1.08], [16.5, 0, 0, 1], [19.5, A[0] - 250, A[1], 0.62], [21, A[0] - 40, A[1], 1], [26.5, A[0] - 20, A[1], 1.08],
+  [29.5, B[0] - 200, B[1], 0.7], [31, B[0] - 60, B[1], 0.95], [33.6, B[0] - 60, B[1] - 100, 1.3], [35.2, B[0] - 150, B[1] - 40, 1.15], [39.6, B[0] + 60, B[1] - 20, 1.3], [41.2, B[0] + 80, B[1], 0.98], [43, B[0] + 80, B[1], 0.98],
+  [45.4, B[0] + 300, B[1] + 190, 1.35], [48, B[0] + 300, B[1] + 190, 1.3], [50.5, P2a[0], P2a[1], 2.4], [54.8, P2b[0], P2b[1], 2.4], [57, C[0] - 500, C[1], 0.75],
+  [60, C[0] - 400, C[1] + 20, 1.05], [61.6, C[0] + 200, C[1] + 20, 1], [66.5, C[0] + 240, C[1] + 30, 1.05], [68.4, C[0] + 240, C[1] + 29, 1.45], [70, C[0] + 500, C[1], 0.8],
+  [74, (C[0] + D[0]) / 2, 20, 0.5], [77, D[0] - 300, D[1] - 40, 0.85], [80, D[0] - 310, D[1] - 40, 1], [81.4, D[0] - 190, D[1] - 50, 1.25], [84.3, D[0] - 190, D[1] - 40, 1.25],
+  [85.6, D[0], D[1] - 40, 0.98], [93.5, D[0] + 60, D[1], 1], [96.8, E[0] - 200, E[1], 0.92], [105.8, E[0] - 200, E[1], 0.92], [107, E[0], E[1] + 1, 1.5], [108.2, E[0], E[1] + 1, 1.5],
+  [110, E[0] - 100, E[1], 1], [112.8, 4600, -380, 0.185], [114, 4300, -380, 0.185], [117.2, 0, 0, 1], [T, 0, 0, 1]];
+const cam = { x: 0, y: 0, z: 1 };
 function setCam(t) {
-  const fw = sm(36.2, 38.8, t) * (1 - sm(44.4, 48.5, t)), f = followPos(t, tmp);
-  cam.tx = f[0] * fw; cam.ty = f[1] * fw; cam.tz = f[2] * fw;
-  cam.zoom = keys(ZOOM, t, true);
-  const sp = win(t, 13, 66, 4);
-  const yaw = (0.2 * Math.sin((t - 13) * 0.11) + 0.22 * win(t, 44, 57, 5) * Math.sin((t - 44) / 13 * Math.PI)) * sp;
-  const pit = 0.07 * Math.sin((t - 13) * 0.07) * sp;
-  cam.cy = Math.cos(yaw); cam.sy = Math.sin(yaw); cam.cp = Math.cos(pit); cam.sp = Math.sin(pit);
-  const k = sm(10.5, 15, t) * (1 - sm(63, 67.5, t));
-  cam.ax = lerp(AX0, W / 2, k); cam.ay = lerp(AY0, H / 2, k);
-}
-function proj(p, o) {
-  const x = p[0] - cam.tx, y = p[1] - cam.ty, z = p[2] - cam.tz;
-  const x1 = x * cam.cy - z * cam.sy, z1 = x * cam.sy + z * cam.cy;
-  const y1 = y * cam.cp - z1 * cam.sp, z2 = y * cam.sp + z1 * cam.cp;
-  const s = cam.zoom * FOC / Math.max(320, FOC + z2);
-  o[0] = cam.ax + x1 * s; o[1] = cam.ay + y1 * s; o[2] = s;
-  return o;
+  let i = 1; while (i < CAM.length - 1 && t > CAM[i][0]) i++;
+  const a = CAM[i - 1], b = CAM[i], k = sm(a[0], b[0], t);
+  cam.x = lerp(a[1], b[1], k); cam.y = lerp(a[2], b[2], k); cam.z = Math.exp(lerp(Math.log(a[3]), Math.log(b[3]), k));
+  const br = sm(12, 16, t) * (1 - sm(114, 116.5, t));          // 极轻的呼吸感；首尾与浏览器对齐时关闭
+  cam.x += Math.sin(t * 0.23) * 6 / cam.z * br; cam.y += Math.cos(t * 0.19) * 4 / cam.z * br;
 }
 
-// ───────── 画布 ─────────
+// ───────── 画布工具 ─────────
 const cv = $("cv"), ctx = cv.getContext("2d");
 const glow = document.createElement("canvas"); glow.width = glow.height = 128;
 { const g = glow.getContext("2d"), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
@@ -222,185 +190,317 @@ const bg = document.createElement("canvas"); bg.width = W; bg.height = H;
   gr.addColorStop(0, "#0b1018"); gr.addColorStop(0.55, "#080b11"); gr.addColorStop(1, "#05070a"); g.fillStyle = gr; g.fillRect(0, 0, W, H);
   gr = g.createRadialGradient(W * 0.72, H * 0.2, 0, W * 0.72, H * 0.2, 1100); gr.addColorStop(0, "rgba(46,62,88,.30)"); gr.addColorStop(1, "rgba(46,62,88,0)"); g.fillStyle = gr; g.fillRect(0, 0, W, H);
   gr = g.createRadialGradient(W / 2, H / 2, 300, W / 2, H / 2, 1150); gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(0,0,0,.6)"); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
-const DR = rng(21), dust = Array.from({ length: 170 }, () => ({ x: (DR() - 0.5) * 3400, y: (DR() - 0.5) * 2100, d: 0.15 + DR() * 0.4, a: 0.12 + DR() * 0.4, f: 0.2 + DR() * 0.5, p: DR() * 6.28, s: 0.8 + DR() * 1.6 }));
-function G(x, y, r, a) { if (a <= 0.003 || r <= 0) return; ctx.globalAlpha = Math.min(1, a); ctx.drawImage(glow, x - r, y - r, r * 2, r * 2); }
-function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
-const GOLD = "rgb(230,197,143)", WARM = "rgb(255,243,220)";
+const DR = rng(21), dust = Array.from({ length: 150 }, () => ({ x: (DR() - 0.5) * 3000, y: (DR() - 0.5) * 1900, d: 0.03 + DR() * 0.1, a: 0.1 + DR() * 0.35, f: 0.2 + DR() * 0.5, p: DR() * 6.28, s: 0.8 + DR() * 1.6 }));
+let WA = 1;                                                  // 世界层整体透明度
+const L = (n) => Math.max(n, 0.9 / cam.z);                   // 远景时保证细线不消失
+function G(x, y, r, a) { a *= WA; if (a <= 0.004 || r <= 0) return; ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = Math.min(1, a); ctx.drawImage(glow, x - r, y - r, r * 2, r * 2); ctx.globalCompositeOperation = "source-over"; }
+function rr(x, y, w, h, r) { r = Math.min(r, w / 2, h / 2); ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function box(x, y, w, h, r, fa, sa, fill = CARD, stroke = GOLD, lw = 1.2) { rr(x, y, w, h, r);
+  if (fa > 0.004) { ctx.globalAlpha = clamp(fa * WA); ctx.fillStyle = fill; ctx.fill(); }
+  if (sa > 0.004) { ctx.globalAlpha = clamp(sa * WA); ctx.strokeStyle = stroke; ctx.lineWidth = L(lw); ctx.stroke(); } }
+function txt(s, x, y, size, a, col = WARM, align = "left", font = SANS, weight = 400) { a *= WA; if (a <= 0.004) return;
+  ctx.globalAlpha = clamp(a); ctx.fillStyle = col; ctx.font = `${weight} ${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = "middle"; ctx.fillText(s, x, y); }
+function line(p, q, a, lw = 1, col = GOLD) { if (a <= 0.004) return; ctx.globalAlpha = clamp(a * WA); ctx.strokeStyle = col; ctx.lineWidth = L(lw); ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); }
+function curve(fn, u1, a, lw = 1.2) { if (a <= 0.004 || u1 <= 0) return; ctx.globalAlpha = clamp(a * WA); ctx.strokeStyle = GOLD; ctx.lineWidth = L(lw); ctx.lineCap = "round"; ctx.beginPath();
+  const n = 40; for (let i = 0; i <= n; i++) { const p = fn(u1 * i / n); i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); } ctx.stroke(); }
+function tw(s, size, font = SANS, weight = 400) { ctx.font = `${weight} ${size}px ${font}`; return ctx.measureText(s).width; }
+function chip(cx, cy, s, size, a, lit = 0, w0) { const w = w0 || tw(s, size) + size * 1.5, h = size * 2.1;
+  if (lit > 0) G(cx, cy, w * 0.8, a * 0.3 * lit);
+  box(cx - w / 2, cy - h / 2, w, h, h * 0.28, a * 0.9, a * (0.55 + 0.4 * Math.min(1, lit)), "#161c27"); txt(s, cx, cy + 1, size, a, WARM, "center"); return w; }
+function panel(p, a, title, tool, k = 1) { if (a <= 0.004) return;
+  const w = p.w * k, h = p.h * k, x = p.x + (p.w - w) / 2, y = p.y + (p.h - h) / 2;
+  box(x, y, w, h, 18, a * 0.94, a * 0.5, "#10151d");
+  if (k > 0.97) { if (title) txt(title, p.x + 34, p.y + 44, 22, a * 0.9, GOLD); if (tool) txt(tool, p.x + p.w - 34, p.y + 44, 15, a * 0.5, SUB, "right", MONO); line([p.x + 24, p.y + 78], [p.x + p.w - 24, p.y + 78], a * 0.2, 1); } }
+const COLF = [0.03, 0.24, 0.42, 0.58, 0.7, 0.97];
+function drawRow(s, o, a, tracked, fill = 0.85) { if (a <= 0.004) return;
+  if (tracked > 0) G(s.x + 4, s.y + s.h / 2, s.h * 1.1, a * 0.5 * tracked);
+  box(s.x, s.y, s.w, s.h, 6, a * fill, a * (0.2 + 0.75 * tracked), "#171d28", GOLD, 1 + 0.7 * tracked);
+  cells(o).forEach((v, c) => txt(v, s.x + s.w * COLF[c], s.y + s.h / 2 + 1, s.h * 0.46, a * 0.95, c ? "rgb(222,214,198)" : WARM, c === 5 ? "right" : "left", c < 2 ? MONO : SANS)); }
+function headRow(s, a) { HEAD.forEach((v, c) => txt(v, s.x + s.w * COLF[c], s.y + s.h / 2, s.h * 0.4, a * 0.8, SUB, c === 5 ? "right" : "left")); line([s.x, s.y + s.h + 2], [s.x + s.w, s.y + s.h + 2], a * 0.3, 1); }
+function packet(p, a, k = 1, core = 1) { if (a <= 0.004) return; const w = 110 * k, h = 70 * k;
+  G(p[0], p[1], 90 * k, a * 0.55 * core); box(p[0] - w / 2, p[1] - h / 2, w, h, 12 * k, a * 0.92, a * 0.85, "#171d28", GOLD, 1.4);
+  for (let i = 0; i < 3; i++) { ctx.globalAlpha = clamp(a * WA * (0.25 + 0.6 * core)); ctx.fillStyle = GOLD; ctx.fillRect(p[0] - w * 0.3, p[1] - h * 0.24 + i * h * 0.2, w * [0.6, 0.42, 0.5][i], h * 0.07); } }
+function tick(x, y, s, a) { if (a <= 0.004) return; ctx.globalAlpha = clamp(a * WA); ctx.strokeStyle = GOLD; ctx.lineWidth = L(s * 0.16); ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(x - s * 0.4, y); ctx.lineTo(x - s * 0.1, y + s * 0.3); ctx.lineTo(x + s * 0.45, y - s * 0.35); ctx.stroke(); }
+function field(f, a, lit) { lit = Math.min(1, lit); box(f.x, f.y, f.w, f.h, 10, a * 0.9, a * (0.3 + 0.65 * lit), "#0c1017", GOLD, 1.2 + lit); if (lit > 0.02) G(f.x + f.w / 2, f.y + f.h / 2, f.w * 0.75, a * 0.3 * lit); }
 
-// 工具节点里的局部画面
-function mini(kind, x, y, s, a, age) {
-  const w = 190 * s, h = 124 * s, pr = clamp(age / 3.6), u = s;
-  ctx.globalAlpha = a * 0.9; rr(x, y, w, h, 9 * u); ctx.fillStyle = "rgb(15,20,28)"; ctx.fill();
-  ctx.globalAlpha = a * 0.5; ctx.strokeStyle = GOLD; ctx.lineWidth = Math.max(0.6, u); ctx.stroke();
-  ctx.fillStyle = GOLD;
-  for (let i = 0; i < 3; i++) { ctx.globalAlpha = a * 0.35; ctx.beginPath(); ctx.arc(x + (12 + i * 9) * u, y + 11 * u, 2.2 * u, 0, 6.3); ctx.fill(); }
-  const B = (bx, by, bw, bh, al, col) => { ctx.globalAlpha = a * al; ctx.fillStyle = col || WARM; ctx.fillRect(x + bx * u, y + by * u, bw * u, bh * u); };
-  B(0, 21, 190, 0.6, 0.25, GOLD);
-  if (kind === "table") {
-    for (let c = 0; c < 3; c++) B(14 + c * 58, 31, 40, 5, 0.7, GOLD);
-    for (let r = 0; r < 5; r++) { const v = clamp(pr * 6 - r); if (v <= 0) break; for (let c = 0; c < 3; c++) B(14 + c * 58, 46 + r * 14, (26 + ((r * 7 + c * 13) % 22)) * v, 4, 0.5); B(12, 54.5 + r * 14, 166, 0.5, 0.12); }
-  } else if (kind === "chart") {
-    [0.5, 0.82, 0.62, 1, 0.7, 0.4].forEach((v, i) => { const hh = 70 * v * clamp(pr * 3 - i * 0.3); B(20 + i * 26, 108 - hh, 15, hh, 0.4 + v * 0.4, GOLD); });
-    B(14, 109, 162, 0.7, 0.4);
-  } else if (kind === "doc") {
-    B(14, 32, 70 * clamp(pr * 7), 6, 0.75, GOLD);
-    [150, 162, 120, 156, 140, 90].forEach((v, i) => B(14, 50 + i * 11, v * clamp(pr * 7 - i - 1), 3.5, 0.42));
-  } else if (kind === "browser") {
-    ctx.globalAlpha = a * 0.3; rr(x + 46 * u, y + 5.5 * u, 120 * u, 11 * u, 5.5 * u); ctx.fillStyle = WARM; ctx.fill();
-    B(14, 32, 62, 46, 0.14 + 0.2 * pr, GOLD);
-    [84, 96, 70].forEach((v, i) => B(88, 34 + i * 12, v * clamp(pr * 4 - i), 4, 0.45));
-    [160, 140, 150].forEach((v, i) => B(14, 90 + i * 10, v * clamp(pr * 5 - i - 1.5), 3.5, 0.32));
-  } else if (kind === "sql") {
-    [[0, 34, 1], [10, 70, 0], [0, 28, 1], [10, 96, 0], [0, 40, 1], [10, 60, 0]].forEach(([ind, len, g], i) => { const v = clamp(pr * 7 - i); B(14 + ind, 32 + i * 13, 26 * v, 4.5, g ? 0.8 : 0, GOLD); B(14 + ind + (g ? 32 : 0), 32 + i * 13, len * v, 4.5, 0.42); });
-  } else {
-    ctx.globalAlpha = a * 0.6 * pr; ctx.strokeStyle = WARM; ctx.lineWidth = Math.max(0.5, 0.8 * u);
-    ctx.strokeRect(x + 70 * u, y + 34 * u, 50 * u, 62 * u);
-    for (let i = 1; i < 5; i++) B(70, 34 + i * 12.4, 50, 0.5, 0.35 * pr);
-    B(86, 34, 0.5, 62, 0.35 * pr); B(103, 34, 0.5, 62, 0.35 * pr);
-    B(70, 104, 50 * pr, 4, 0.7, GOLD);
-  }
+// ───────── 第一段的条件卡片：位置取自浏览器里消息气泡的关键词 ─────────
+const BZ = 1.7, BT = [960, 400];                             // 气泡被推近后的放大倍数与落点
+let bubC = [0, 0], KW = [];
+const ROWS = [["工厂", PLANT], ["日期", "今天"], ["查询对象", "当天开立的工单"], ["统计目标", "工单数量"], ["输出形式", "Excel"]];
+const ROWY = (r) => -160 + r * 80;
+function measure() { const b = $("bubble"); bubC = [b.offsetLeft + b.offsetWidth / 2, b.offsetTop + b.offsetHeight / 2];
+  const tr = [BT[0] - bubC[0] * BZ, BT[1] - bubC[1] * BZ];
+  KW = [...b.querySelectorAll("s-k")].map((s) => ({ el: s, text: s.textContent, x: (b.offsetLeft + s.offsetLeft + s.offsetWidth / 2) * BZ + tr[0] - W / 2, y: (b.offsetTop + s.offsetTop + s.offsetHeight / 2) * BZ + tr[1] - H / 2 })); }
+const CHIPS = [[0, 0], [1, 1], [2, 2], [2, 3], [3, 4]];      // [关键词, 落到哪一行]；「多少工单」分成查询对象与统计目标
+
+// ───────── 数据包的位置 ─────────
+function pkPos(t) {
+  if (t < 16.5) return O;
+  if (t < 19.5) return bz(EDG[0], sm(16.5, 19.5, t));
+  if (t < 20.6) return mix(A, DOCK_A, sm(19.5, 20.6, t));
+  if (t < 26.8) return DOCK_A;
+  if (t < 29.5) return mix(DOCK_A, bz(EDG[1], sm(26.8, 29.5, t)), sm(26.8, 27.8, t));
+  if (t < 30.6) return mix(B, DOCK_B, sm(29.5, 30.6, t));
+  if (t < 46.2) return DOCK_B;
+  if (t < 48) return mix(DOCK_B, BTNC, sm(46.2, 47.4, t));
+  if (t < 49) return mix(BTNC, bz(EDG[2], 0.08), sm(48, 49, t));
+  if (t < 50.5) return bz(EDG[2], lerp(0.08, 0.5, sm(49, 50.5, t)));
+  if (t < 54.8) return bz(EDG[2], lerp(0.5, 0.58, (t - 50.5) / 4.3));
+  return bz(EDG[2], lerp(0.58, 0.985, sm(54.8, 57.2, t)));
 }
 
-const a2 = [0, 0, 0], b2 = [0, 0, 0], q = [0, 0, 0];
-function draw(t) {
-  ctx.setTransform(cv.width / W, 0, 0, cv.height / H, 0, 0);
-  ctx.clearRect(0, 0, W, H);
-  place(t); setCam(t);
-  const worldA = sm(9.5, 10.1, t) * (1 - sm(67.5, 70.5, t));
-  const spaceA = Math.max(sm(10.8, 13.2, t) * (1 - sm(67.5, 70.5, t)), 0.975 * sm(79, 81.6, t));
-  ctx.globalCompositeOperation = "source-over";
-  if (spaceA > 0) {
-    ctx.globalAlpha = spaceA; ctx.drawImage(bg, 0, 0);
-    ctx.globalCompositeOperation = "lighter";
-    const zf = Math.pow(cam.zoom, 0.35);
-    for (const d of dust) {
-      const x = W / 2 + (d.x - cam.tx * d.d * 0.5 + t * 3 * d.d) * zf, y = H / 2 + (d.y - cam.ty * d.d * 0.5 - t * 1.5 * d.d) * zf;
-      if (x < -20 || x > W + 20 || y < -20 || y > H + 20) continue;
-      G(x, y, d.s * 5, spaceA * d.a * (0.6 + 0.4 * Math.sin(t * d.f + d.p)));
-    }
-  }
-  if (worldA <= 0) { ctx.globalAlpha = 1; return; }
-  ctx.globalCompositeOperation = "lighter";
-  const o = proj(P[0], q), ox = o[0], oy = o[1], os = o[2];
-
-  // 开场：光点亮起，光晕扩散
-  for (let k = 0; k < 2; k++) {
-    const age = t - 9.9 - k * 1.1;
-    if (age > 0 && age < 5) { ctx.globalAlpha = worldA * 0.5 * (1 - age / 5) * sm(0, 0.5, age); ctx.strokeStyle = GOLD; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(ox, oy, (14 + age * 46) * os, 0, 6.3); ctx.stroke(); }
-  }
-  // 连线
-  const flowA = sm(35.5, 38, t) * (1 - sm(60, 63, t)), rev = t > 56.5, flip = 1 - win(t, 55.8, 57.2, 0.6);
-  const exec = sm(36, 40, t);
-  ctx.lineCap = "round";
-  for (const e of edges) {
-    const g = eo((t - e.t0) / e.dur); if (g <= 0) continue;
-    const nb = nodes[e.b], na = nodes[e.a];
-    const c = nb.lv ? sm(CS[nb.lv], CE[nb.lv], t) : 0; if (c >= 1) continue;
-    const pulse = (t > nb.born ? Math.exp(-(t - nb.born) * 1.1) : 0.5 * (1 - g)) + (t > na.born ? 0.4 * Math.exp(-(t - na.born) * 0.9) : 0);
-    const chk = t > nb.check ? 0.5 * Math.exp(-(t - nb.check) * 0.8) + 0.08 : 0;
-    const far = 0.14 * (1 - sm(0.4, 0.9, cam.zoom));
-    const al = worldA * (0.2 + far + 0.1 * exec + 0.5 * pulse + chk) * (1 - c * c);
-    proj(bez(e, 0, tmp2), a2);
-    const N = 18, n = Math.max(1, Math.round(N * g));
-    ctx.beginPath(); ctx.moveTo(a2[0], a2[1]);
-    for (let i = 1; i <= n; i++) { proj(bez(e, (i / n) * g, tmp2), b2); ctx.lineTo(b2[0], b2[1]); }
-    ctx.globalAlpha = Math.min(0.9, al); ctx.strokeStyle = GOLD; ctx.lineWidth = clamp(1.15 * Math.sqrt(b2[2]), 0.8, 2.4); ctx.stroke();
-    if (g < 1) G(b2[0], b2[1], Math.max(5, 13 * b2[2]), worldA * 0.9);          // 生长中的线头
-    if (flowA > 0 && g >= 1) {                                                  // 沿线流动的光点
-      const cnt = nb.lv <= 2 ? 2 : 1;
-      for (let j = 0; j < cnt; j++) { let u = (t * e.sp + e.ph + j / cnt) % 1; if (rev) u = 1 - u;
-        proj(bez(e, u, tmp2), b2); G(b2[0], b2[1], Math.max(5, 8 * b2[2]), worldA * flowA * flip * 0.85 * Math.sin(u * Math.PI) * (1 - c)); }
-    }
-  }
-  // 「理解」：片段之间的细线
-  const arcA = sm(19.4, 22, t) * (1 - sm(62, 64.5, t)) * worldA;
-  if (arcA > 0) for (let i = 1; i < 5; i++) { proj(P[i], a2); proj(P[i + 1], b2); const mx = (a2[0] + b2[0]) / 2, my = (a2[1] + b2[1]) / 2;
-    ctx.globalAlpha = arcA * 0.22; ctx.strokeStyle = GOLD; ctx.lineWidth = clamp(os, 0.5, 1.6); ctx.beginPath(); ctx.moveTo(a2[0], a2[1]); ctx.quadraticCurveTo(mx + (mx - ox) * 0.35, my + (my - oy) * 0.35, b2[0], b2[1]); ctx.stroke(); }
-  // 节点
-  nodes.forEach((n, i) => {
-    if (!i) return;
-    const born = n.frag != null ? sm(20.5, 23, t) : sm(n.born - 0.15, n.born + 0.5, t); if (born <= 0) return;
-    const c = sm(CS[n.lv], CE[n.lv], t); if (c >= 1) return;
-    const p = proj(P[i], a2), s = p[2];
-    const pulse = t > n.born ? Math.exp(-(t - n.born) * 1.4) : 0, ck = t > n.check ? 1 : 0, cp = ck ? Math.exp(-(t - n.check) * 1.1) : 0;
-    const big = n.lv <= 2 ? 1.25 : n.tool != null ? 1.3 : 1;
-    G(p[0], p[1], Math.max(7.5, (15 + 16 * pulse + 6 * ck + 14 * cp) * big * s), worldA * born * (0.6 + 0.4 * pulse + 0.2 * ck + 0.3 * cp) * (1 - c * c));
-    if (cp > 0.02) { ctx.globalAlpha = worldA * 0.6 * cp * (1 - c); ctx.strokeStyle = WARM; ctx.lineWidth = Math.max(0.6, s); ctx.beginPath(); ctx.arc(p[0], p[1], (8 + (1 - cp) * 22) * s, 0, 6.3); ctx.stroke(); }
+// ───────── 各段画面 ─────────
+function sceneTask(t) {                                      // 一：任务成为数据
+  if (t < 9.8 || t > 16.6) return;
+  const cl = sm(14.6, 15.8, t), col = 1 - cl, sc = 1 - 0.6 * cl, la = sm(12.6, 13.6, t) * col;
+  CHIPS.forEach(([k, r], i) => {
+    const s = KW[k], born = sm(10 + k * 0.15, 10.5 + k * 0.15, t), m = sm(10.9 + i * 0.22, 13.1 + i * 0.22, t), useVal = m >= 0.55;
+    let label = useVal ? ROWS[r][1] : s.text, a = born * col * (useVal ? sm(0.55, 0.7, m) : 1 - sm(0.4, 0.55, m));
+    if (r === 1 && useVal) { const d = sm(13.5, 14.3, t); if (d > 0.5) { label = `${DATE}（今天）`; a *= sm(0.5, 1, d); } else a *= 1 - sm(0, 0.5, d); }
+    const size = lerp(23 * BZ, 26, m) * sc, tcx = -20 + (tw(label, 26) + 39) / 2;
+    const x = lerp(s.x, useVal ? tcx : -20 + (tw(ROWS[r][1], 26) + 39) / 2, sm(0.35, 1, m)) * col, y = lerp(s.y, ROWY(r), sm(0, 0.7, m)) * (1 - cl * 0.95);
+    const wSrc = tw(s.text, size) + size * 1.5, wDst = tw(label, size) + size * 1.5;
+    chip(x, y, "", size, born * col, pulse(t, 10 + k * 0.15, 2) + (r === 1 ? pulse(t, 13.9, 1.5) : 0), useVal ? wDst : lerp(wSrc, tw(ROWS[r][1], size) + size * 1.5, sm(0.3, 0.55, m)));
+    txt(label, x, y + 1, size, a, WARM, "center");
+    txt(ROWS[r][0], -250 * sc * col, y, 22 * sc, la * 0.75, SUB);
+    if (la > 0) line([-150 * sc * col, y], [-36 * sc * col, y], la * 0.22, 1);
   });
-  // 镜头跟随的那束光（带拖尾）
-  const fl = win(t, 37, 44.2, 0.8) * worldA;
-  if (fl > 0) for (let j = 12; j >= 0; j--) { proj(followPos(t - j * 0.035, tmp2), b2); G(b2[0], b2[1], (26 - j * 1.5) * Math.max(0.5, b2[2] * 0.6), fl * (1 - j / 13) * (j ? 0.45 : 1)); }
-  // 中心光点
-  const conv = sm(60, 65, t) * (1 - sm(65, 68, t));
-  G(ox, oy, (30 + 5 * Math.sin(t * 1.3) + 26 * (1 - sm(10, 13.5, t)) + 70 * conv) * Math.max(os, 0.5), worldA * (0.95 - 0.35 * sm(63, 66, t)));
-  G(ox, oy, 150 * Math.max(os, 0.5) * (1 + conv), worldA * 0.22);
+  G(0, 0, 260, sm(14.6, 15.6, t) * (1 - sm(15.6, 16.6, t)) * 0.4);
+}
+function scenePath(t) {                                      // 数据路径与六个位置
+  const far = 1 - sm(0.2, 0.32, cam.z), on = sm(15.5, 17, t);
+  EDG.forEach((e, i) => { const pr = sm(EDT[i][0], EDT[i][1], t); curve((u) => bz(e, u), 1, 0.16 * on, 1); curve((u) => bz(e, u), pr, 0.5 + 0.2 * far, 1.5); });
+  STN.forEach(([p, name], i) => { const done = i === 0 ? sm(15, 16, t) : sm(EDT[i - 1][1], EDT[i - 1][1] + 1.5, t);
+    G(p[0], p[1], 60 + 200 * far * done, on * (0.25 + 0.45 * done));
+    ctx.globalAlpha = clamp(WA * on * (0.3 + 0.4 * done)); ctx.strokeStyle = GOLD; ctx.lineWidth = L(1.2); ctx.beginPath(); ctx.arc(p[0], p[1], 14, 0, 6.3); ctx.stroke();
+    txt(name, p[0], p[1] + 480, 120, far * done * 0.85, GOLD, "center", SERIF); });
+}
+function sceneMatch(t) {                                     // 二：数据找到报表入口
+  if (t < 19.4) return;
+  const a = sm(19.6, 21, t) * (1 - 0.7 * sm(27.2, 29.5, t)), k = lerp(0.86, 1, eo((t - 19.6) / 1.4));
+  panel(PA, a, "可用的报表", "", k); if (k < 0.97) return;
+  const sb = { x: PA.x + 30, y: PA.y + 100, w: PA.w - 60, h: 56 }, got = sm(21.9, 22.3, t);
+  field(sb, a, pulse(t, 22.1, 1.4));
+  ctx.globalAlpha = clamp(a * WA * 0.6); ctx.strokeStyle = SUB; ctx.lineWidth = L(1.6); ctx.beginPath(); ctx.arc(sb.x + 30, sb.y + 26, 9, 0, 6.3); ctx.moveTo(sb.x + 37, sb.y + 33); ctx.lineTo(sb.x + 43, sb.y + 39); ctx.stroke();
+  txt("工单", sb.x + 62, sb.y + 29, 24, a * got);
+  const fly = win(t, 20.8, 22.2, 0.3); if (fly > 0) chip(lerp(DOCK_A[0], sb.x + 86, sm(21, 22, t)), lerp(DOCK_A[1] - 80, sb.y + 28, sm(21, 22, t)), "工单", 22, fly * (1 - got), 0.6);
+  const LIST = [[REPORT, REPORT_NAME, "按工厂、创建日期查询工单清单"], ["CO24", "缺料信息系统", "查看工单缺料"], ["COHV", "生产订单批量处理", "批量下达、打印工单"], ["CO03", "显示生产订单", "查看单张工单"]];
+  const sel = sm(25, 26, t);
+  LIST.forEach((r, i) => { const ra = a * sm(22.4 + i * 0.45, 23 + i * 0.45, t) * (i ? 1 - 0.75 * sel : 1), y = PA.y + 180 + i * 86;
+    if (!i) { box(PA.x + 24, y, PA.w - 48, 76, 12, ra * 0.5 * sel, ra * 0.9 * sel, "#1a2029", GOLD, 1.6); G(PA.x + PA.w / 2, y + 38, 420, a * 0.16 * sel); }
+    txt(r[0], PA.x + 48, y + 38, 25, ra, GOLD, "left", MONO); txt(r[1], PA.x + 190, y + 26, 23, ra); txt(r[2], PA.x + 190, y + 56, 16, ra * 0.7, SUB); });
+  const go = win(t, 26.6, 29.6, 0.5); if (go > 0) { const p = pkPos(t); chip(p[0], p[1] - 80, `${REPORT} ${REPORT_NAME}`, 20, go, 0.7); }
+}
+function sceneForm(t) {                                      // 三：条件进入真实字段
+  if (t < 28.7) return;
+  const a = sm(28.8, 30.4, t) * (1 - 0.65 * sm(48.5, 50.5, t)), k = lerp(0.3, 1, eo((t - 28.8) / 1.6));
+  panel(PB, a, "", "open_report · 参数卡", k); if (k < 0.97) return;
+  txt(REPORT, PB.x + 34, PB.y + 44, 26, a, GOLD, "left", MONO); txt(REPORT_NAME, PB.x + 140, PB.y + 44, 23, a * 0.95);
+  const t1 = 34.4, t2 = 39.4, t3 = 40.1, gone = sm(46.2, 47.4, t);
+  ["生产工厂", "创建日期", "订单类型"].forEach((s, i) => txt(s, PB.x + 50, PB.y + 179 + i * 100, 22, a * 0.75, SUB));
+  field(F1, a, pulse(t, t1, 1.6) + 0.25 * sm(t1, t1 + 2, t)); field(F2, a, pulse(t, t2, 1.6) + 0.25 * sm(t2, t2 + 2, t)); field(F3, a, pulse(t, t3, 1.6) + 0.25 * sm(t3, t3 + 2, t));
+  txt("至", F2.x + F2.w + 30, F2.y + 30, 20, a * 0.6, SUB, "center");
+  box(PB.x + 250, PB.y + 350, 240, 58, 10, a * 0.6, a * 0.15, "#0c1017"); txt("全部", PB.x + 270, PB.y + 380, 22, a * 0.35, SUB);
+  // 已填入的值；提交时收拢成数据包
+  const val = (s, f, tIn) => { if (t < tIn) return; const p = mix([f.x + 20 + tw(s, 24, MONO) / 2, f.y + 30], BTNC, gone); txt(s, p[0], p[1], 24 * (1 - 0.5 * gone), a * (1 - sm(0.6, 1, gone)), WARM, "center", MONO); };
+  val(PLANT, F1, t1); val(DATED, F2, t2); val(DATED, F3, t3);
+  // 「提交执行」按钮
+  const hot = sm(43.4, 45.6, t), press = win(t, 45.7, 46.3, 0.25), bs = 1 - 0.05 * press;
+  G(BTNC[0], BTNC[1], 150, a * 0.35 * hot * (1 - gone)); box(BTNC[0] - 100 * bs, BTNC[1] - 30 * bs, 200 * bs, 60 * bs, 12, a * (0.5 + 0.5 * hot), a * (0.4 + 0.5 * hot), hot > 0.5 ? "#e6c58f" : "#1b212c");
+  txt("提交执行", BTNC[0], BTNC[1] + 1, 23, a, hot > 0.5 ? "#1a1408" : SUB, "center", SANS, 500);
+  // 数据包旁的两个条件：ABG1 与 今天
+  const src1 = [DOCK_B[0], DOCK_B[1] - 110], src2 = [DOCK_B[0], DOCK_B[1] + 110], show = sm(30.5, 31.5, t) * a;
+  const d1 = [F1.x + 20 + tw(PLANT, 24, MONO) / 2, F1.y + 30], d2 = [F2.x + 20 + tw(DATED, 24, MONO) / 2, F2.y + 30], d3 = [F3.x + 20 + tw(DATED, 24, MONO) / 2, F3.y + 30];
+  const c1 = [(src1[0] + d1[0]) / 2, src1[1] - 120], c2 = [(src2[0] + d2[0]) / 2, src2[1] + 100], c3 = [(src2[0] + d3[0]) / 2, src2[1] + 160];
+  ctx.setLineDash([6, 8]);
+  curve((u) => q2(src1, c1, d1, u), sm(31.6, 32.6, t), show * 0.6 * (1 - sm(34, 34.6, t)), 1.2);
+  curve((u) => q2(src2, c2, d2, u), sm(36.8, 37.6, t), show * 0.6 * (1 - sm(39.2, 39.8, t)), 1.2);
+  ctx.setLineDash([]);
+  if (t < t1) { const m = sm(32.8, t1, t), p = q2(src1, c1, d1, m); chip(p[0], p[1], PLANT, 24, show, 0.4 + 0.6 * m); }
+  if (t < t3) { const ex = sm(35, 36.6, t), s = ex > 0.5 ? DATED : "今天", sa = ex > 0.5 ? sm(0.5, 0.9, ex) : 1 - sm(0.1, 0.5, ex), wv = lerp(tw("今天", 24), tw(DATED, 24), ex) + 36;
+    if (t < t2) { const m = sm(37.8, t2, t), p = q2(src2, c2, d2, m); chip(p[0], p[1], "", 24, show, 0.4 + 0.6 * m + pulse(t, 35.8, 1.5), wv); txt(s, p[0], p[1] + 1, 24, show * sa, WARM, "center"); }
+    const m3 = sm(38.5, t3, t); if (m3 > 0) { const p = q2(src2, c3, d3, m3); chip(p[0], p[1], DATED, 24, show * Math.pow(m3, 0.3), 0.6, wv); } }
+}
+function sceneRequest(t) {                                   // 四：查询请求穿过链路（数据包内部）
+  if (t < 50 || t > 55.6) return;
+  const p = pkPos(t), u = win(t, 50.4, 55.2, 0.9), w = 340, h = 176, x = p[0] - w / 2, y = p[1] - h / 2;
+  G(p[0], p[1], 260, u * 0.25); box(x, y, w, h, 14, u * 0.95, u * 0.8, "#131924", GOLD, 0.8);
+  txt("查询请求", x + 22, y + 26, 11, u * 0.6, SUB); line([x + 18, y + 44], [x + w - 18, y + 44], u * 0.25, 0.5);
+  [["报表", REPORT], ["工厂", PLANT], ["创建日期", `${DATED} – ${DATED}`]].forEach(([k2, v], i) => { const ra = u * sm(51 + i * 0.5, 51.6 + i * 0.5, t), yy = y + 76 + i * 34;
+    txt(k2, x + 24, yy, 13.5, ra * 0.75, SUB); txt(v, x + 110, yy, 15, ra, WARM, "left", MONO); });
+}
+function sceneExec(t) {                                      // 四 / 五：到达 SAP，按条件读取并筛选
+  if (t < 56) return;
+  const a = sm(56.2, 57.4, t) * (1 - 0.6 * sm(76, 78, t));
+  panel(PC, a, `SAP · 执行报表 ${REPORT}`, "", lerp(0.9, 1, eo((t - 56.2) / 1.2)));
+  if (t < 57.2) return;
+  const got = pulse(t, 57.5, 2); G(PC.x, C[1], 160, a * (0.3 + 0.7 * got) * (1 - sm(60, 62, t)));
+  box(PC.x - 8, C[1] - 40, 16, 80, 8, a * 0.9, a * (0.5 + 0.5 * got), "#1a2029");
+  const st = t < 57.9 ? "等待请求" : t < taRow(NR - 1) + 0.6 ? "按条件读取并筛选…" : `返回 ${NR} 条记录`, hot = t >= 57.9;
+  const sw = tw(st, 17) + 40; box(PC.x + PC.w - 34 - sw, PC.y + 26, sw, 36, 18, a * 0.6, a * (hot ? 0.7 : 0.25), "#0c1017"); txt(st, PC.x + PC.w - 34 - sw / 2, PC.y + 45, 17, a * (hot ? 1 : 0.6), hot ? GOLD : SUB, "center");
+  txt("生产订单", PC.x + 40, PC.y + 118, 17, a * 0.6, SUB);
+  txt(`工厂 = ${PLANT}　创建日期 = ${DATED}`, PC.x + 130, PC.y + 118, 15, a * sm(57.6, 58.4, t) * 0.9, GOLD);
+  const scanY = lerp(C[1] - 210, C[1] + 330, clamp((t - 58.4) / 2));
+  TAGS.forEach((g, k) => { const [x, y] = tagPos(k), ta = a * sm(57.5 + k * 0.02, 58 + k * 0.02, t), seen = t > 58.4 && scanY > y + 18, hit = MATCH.includes(k);
+    const lv = !seen ? 0.4 : hit ? 1 : 0.14; box(x, y, 96, 36, 8, ta * 0.5, ta * (hit && seen ? 0.9 : 0.15), "#161c27");
+    if (hit && seen) G(x + 48, y + 18, 50, ta * 0.25 * (pulse(t, 58.4 + (y - C[1] + 210) / 270, 1.5) + 0.3));
+    txt(g[0], x + 10, y + 19, 14, ta * lv, hit && seen ? WARM : SUB, "left", MONO); txt(g[1], x + 88, y + 19, 13, ta * lv, hit && seen ? GOLD : SUB, "right", MONO); });
+  if (t > 58.4 && t < 60.4) { line([C[0] - 730, scanY], [C[0] - 296, scanY], a * 0.8, 1.4); G(C[0] - 513, scanY, 240, a * 0.2); }
+  headRow({ x: C[0] - 240, y: C[1] - 250, w: 960, h: 38 }, a * sm(60, 60.8, t));
+}
+const rowPose = (i, t) => {                                  // 一条记录从 SAP 节点到整理区的位置
+  const td = tdRow(i), c = slotC(i), d = slotD(i), e = sm(td, td + 3.2, t), al = sm(77 + i * 0.12, 79.2 + i * 0.12, t);
+  return { x: lerp(c.x, d.x + scat[i][0] * (1 - al), e), y: lerp(c.y, d.y + scat[i][1] * (1 - al), e) - Math.sin(e * Math.PI) * 170, w: lerp(c.w, d.w, e), h: lerp(c.h, d.h, e), rot: scat[i][2] * e * (1 - al), e };
+};
+function sceneRows(t) {                                      // 五 / 六：记录返回、对齐、核对、计数
+  if (t < 60) return;
+  const trk = sm(67, 68, t), aC = 1 - 0.6 * sm(76, 78, t), aD = 1 - 0.55 * sm(108, 110, t);
+  for (let i = 0; i < NR; i++) {
+    const ta = taRow(i), a = sm(ta, ta + 0.5, t); if (a <= 0) continue;
+    if (t < ta + 0.5) { const [gx, gy] = tagPos(MATCH[i]), c = slotC(i), m = sm(ta - 0.1, ta + 0.4, t); G(lerp(gx + 48, c.x + 20, m), lerp(gy + 18, c.y + 19, m), 26, Math.sin(m * Math.PI)); }
+    const p = rowPose(i, t), tr = i === TRK ? trk : 0;
+    if (p.e > 0) drawRow(slotC(i), ORD[i], 0.16 * aC, 0, 0.5);              // SAP 节点里留下的淡影
+    if (Math.abs(p.rot) > 0.001) { ctx.save(); ctx.translate(p.x + p.w / 2, p.y + p.h / 2); ctx.rotate(p.rot); drawRow({ x: -p.w / 2, y: -p.h / 2, w: p.w, h: p.h }, ORD[i], a, tr); ctx.restore(); }
+    else drawRow(p, ORD[i], a * (p.e >= 1 ? aD : p.e > 0 ? 1 : aC), tr);
+    if (p.e > 0 && p.e < 1) G(p.x + p.w / 2, p.y + p.h / 2, 190, 0.16);
+    if (p.e >= 1) {
+      const d = slotD(i), k1 = t < 84.6 ? pulse(t, 80.8 + i * 0.1, 1.3) : 0, k2 = t < 86 ? pulse(t, 82.5 + i * 0.1, 1.3) : 0;
+      if (k1 > 0.02) { box(d.x + d.w * 0.565, d.y + 4, 92, d.h - 8, 6, 0, k1, CARD, GOLD, 1.4); G(d.x + d.w * 0.61, d.y + 20, 60, k1 * 0.4); }
+      if (k2 > 0.02) { box(d.x + d.w * 0.685, d.y + 4, 150, d.h - 8, 6, 0, k2, CARD, GOLD, 1.4); G(d.x + d.w * 0.76, d.y + 20, 90, k2 * 0.4); }
+      tick(d.x + d.w + 26, d.y + d.h / 2, 16, sm(tcRow(i) + 0.55, tcRow(i) + 0.9, t) * aD);
+      const tc = tcRow(i); if (t > tc && t < tc + 0.6) { const m = sm(tc, tc + 0.6, t), q = q2([d.x + d.w, d.y + 20], [CNT.x - 40, d.y - 80], [CNT.x + CNT.w / 2, CNT.y + 200], m); G(q[0], q[1], 34, 1); G(q[0], q[1], 90, 0.3); }
+    }
+  }
+  if (t < 76.5) return;
+  const d0 = slotD(0); headRow({ x: d0.x, y: d0.y - 50, w: d0.w, h: 40 }, sm(79.3, 80.3, t) * aD);
+  const c1 = win(t, 80.4, 84.6, 0.5), c2 = win(t, 82.2, 86, 0.5);
+  if (c1 > 0) chip(d0.x + d0.w * 0.61, d0.y - 104, `＝ ${PLANT}`, 19, c1, 0.5);
+  if (c2 > 0) chip(d0.x + d0.w * 0.765, d0.y - 104, `＝ ${DATED}`, 19, c2, 0.5);
+  tick(d0.x + d0.w * 0.58 + 52, d0.y - 30, 13, sm(82, 82.5, t) * aD); tick(d0.x + d0.w * 0.7 + 86, d0.y - 30, 13, sm(83.8, 84.3, t) * aD);
+  // 计数：每条记录到达时加一
+  const ca = sm(84.4, 85.4, t) * aD; if (ca <= 0) return;
+  let n = 0, last = 0; for (let i = 0; i < NR; i++) if (t >= tcRow(i) + 0.6) { n++; last = tcRow(i) + 0.6; }
+  panel(CNT, ca, "工单数量", "query_result");
+  txt("按工单编号计数", CNT.x + 34, CNT.y + 108, 16, ca * 0.6, SUB);
+  const pop = 1 + 0.08 * pulse(t, last, 0.5); G(CNT.x + CNT.w / 2, CNT.y + 215, 200, ca * (0.12 + 0.3 * pulse(t, last, 0.8)));
+  txt(String(n), CNT.x + CNT.w / 2, CNT.y + 222, 150 * pop, ca, n === COUNT ? WARM : GOLD, "center", SERIF);
+  const fa = sm(91.6, 93, t) * aD; if (fa > 0) { G(CON.x + CON.w / 2, CON.y + 65, 330, fa * 0.22); box(CON.x, CON.y, CON.w, CON.h, 16, fa * 0.94, fa * 0.85, "#171d28", GOLD, 1.5);
+    txt(`${PLANT} 工厂 · ${DATE}`, CON.x + CON.w / 2, CON.y + 40, 19, fa * 0.75, SUB, "center"); txt(`共开立 ${COUNT} 张工单`, CON.x + CON.w / 2, CON.y + 86, 34, fa, WARM, "center"); }
+}
+function fileCard(x, y, k, a) { const w = 460 * k, h = 110 * k; G(x, y, 300 * k, a * 0.3); box(x - w / 2, y - h / 2, w, h, 16 * k, a * 0.96, a * 0.85, "#171d28", GOLD, 1.5);
+  box(x - w / 2 + 24 * k, y - 25 * k, 42 * k, 50 * k, 7 * k, a, 0, "#2c6a4a"); txt("X", x - w / 2 + 45 * k, y + 1, 20 * k, a, "#dff3e6", "center", SANS, 700);
+  txt(FILE, x - w / 2 + 84 * k, y - 14 * k, 23 * k, a); txt(`查询汇总 · 工单明细（${COUNT} 行）`, x - w / 2 + 84 * k, y + 22 * k, 15 * k, a * 0.7, SUB); }
+function sceneExcel(t) {                                     // 七：数据组成 Excel
+  if (t < 95) return;
+  const shr = sm(108.2, 109.8, t), a = sm(95.4, 96.8, t) * (1 - sm(108.6, 109.8, t)), wk = sm(104, 105.2, t);
+  const cw = XW0.map((v, j) => lerp(v, XW1[j], wk)), cx = [XL.x + 44]; cw.forEach((v, j) => cx.push(cx[j] + v));
+  const ry = (r) => XL.y + 74 + r * 38;
+  ctx.save(); ctx.translate(E[0] - 100, E[1]); ctx.scale(1 - 0.72 * shr, 1 - 0.72 * shr); ctx.translate(-(E[0] - 100), -E[1]);
+  if (a > 0) {
+    box(XL.x, XL.y, XL.w, XL.h, 14, a * 0.96, a * 0.5, "#0f141c");
+    box(XL.x + 16, XL.y + 11, 22, 22, 5, a, 0, "#2c6a4a"); txt("X", XL.x + 27, XL.y + 23, 13, a, "#dff3e6", "center", SANS, 700); txt(FILE, XL.x + 50, XL.y + 23, 17, a * 0.85);
+    line([XL.x, XL.y + 44], [XL.x + XL.w, XL.y + 44], a * 0.25); line([XL.x, XL.y + 74], [XL.x + XL.w, XL.y + 74], a * 0.25);
+    for (let j = 0; j < 6; j++) { txt("ABCDEF"[j], cx[j] + cw[j] / 2, XL.y + 60, 14, a * 0.5, SUB, "center"); line([cx[j], XL.y + 44], [cx[j], ry(13)], a * 0.1); }
+    for (let r = 0; r <= 13; r++) { if (r < 13) txt(String(r + 1), XL.x + 22, ry(r) + 19, 13, a * 0.45, SUB, "center"); line([XL.x, ry(r)], [XL.x + XL.w, ry(r)], a * 0.08); }
+    const ty = XL.y + XL.h - 36; line([XL.x, ty], [XL.x + XL.w, ty], a * 0.25);
+    txt("查询汇总", XL.x + 80, ty + 18, 15, a * 0.5, SUB, "center"); txt("工单明细", XL.x + 190, ty + 18, 15, a, WARM, "center"); line([XL.x + 150, ty + 1], [XL.x + 230, ty + 1], a * 0.9, 2);
+    // 列标题先落位
+    const d0 = slotD(0); HEAD.forEach((v, j) => { const m = sm(95.8 + j * 0.2, 97.2 + j * 0.2, t), r5 = j === 5;
+      txt(v, lerp(d0.x + d0.w * COLF[j], r5 ? cx[6] - 12 : cx[j] + 12, m), lerp(d0.y - 30, ry(0) + 19, m) - Math.sin(m * Math.PI) * 60, 16, a * 0.95, GOLD, r5 ? "right" : "left", SANS, 500); });
+    // 记录逐行落位
+    const fm = sm(104.6, 105.4, t);
+    for (let i = 0; i < NR; i++) { const tl = tlRow(i), e = sm(tl, tl + 1.6, t); if (e <= 0) continue; const d = slotD(i), y1 = ry(i + 1);
+      if (e < 1) { drawRow({ x: lerp(d.x, XL.x + 44, e), y: lerp(d.y, y1, e) - Math.sin(e * Math.PI) * 120, w: lerp(d.w, 996, e), h: lerp(d.h, 38, e) }, ORD[i], a, i === TRK ? 1 : 0); continue; }
+      const land = pulse(t, tl + 1.6, 0.9); if (land > 0.02) box(XL.x + 44, y1, 996, 38, 0, land * 0.12 * a, 0, "#e6c58f");
+      const v0 = cells(ORD[i]), v1 = cells(ORD[i], 1);
+      for (let j = 0; j < 6; j++) { const r5 = j === 5, x = r5 ? cx[6] - 12 : cx[j] + 12, al = r5 ? "right" : "left", f = j < 2 ? MONO : SANS;
+        if (r5 && v0[5] !== v1[5]) { txt(v0[5], x, y1 + 20, 16, a * (1 - fm), WARM, al, f); txt(v1[5], x, y1 + 20, 16, a * fm, WARM, al, f); } else txt(v0[j], x, y1 + 20, 16, a * 0.95, j ? "rgb(222,214,198)" : WARM, al, f); }
+      if (i === TRK) { G(XL.x + 44, y1 + 19, 44, a * 0.5); box(XL.x + 44, y1 + 1, 996, 36, 4, a * 0.05, a * 0.95, "#e6c58f", GOLD, 1.7); } }
+    // 查询汇总工作表
+    const sa = sm(103.8, 104.8, t) * a; if (sa > 0) { box(SUM.x, SUM.y, SUM.w, SUM.h, 14, sa * 0.96, sa * 0.5, "#0f141c"); txt("查询汇总", SUM.x + 24, SUM.y + 30, 17, sa, GOLD); line([SUM.x, SUM.y + 56], [SUM.x + SUM.w, SUM.y + 56], sa * 0.25);
+      const has = sm(105.2, 105.5, t), m = sm(104.4, 105.2, t);
+      if (m > 0 && m < 1) G(lerp(SUM.x - 500, SUM.x + SUM.w - 40, m), lerp(SUM.y + 420, SUM.y + 208, m), 40, sa);
+      [["工厂", PLANT, 1], ["查询日期", DATE, 1], ["工单总数", String(COUNT), has]].forEach(([k2, v, va], i) => { const yy = SUM.y + 92 + i * 58; txt(k2, SUM.x + 24, yy, 17, sa * 0.75, SUB);
+        txt(v, SUM.x + SUM.w - 24, yy, i === 2 ? 30 : 19, sa * va, i === 2 ? GOLD : WARM, "right", i === 2 ? SERIF : MONO); if (i < 2) line([SUM.x + 16, yy + 29], [SUM.x + SUM.w - 16, yy + 29], sa * 0.1); });
+      if (has > 0) G(SUM.x + SUM.w - 40, SUM.y + 208, 80, sa * 0.5 * pulse(t, 105.2, 1.5)); }
+  }
+  ctx.restore();
+  const fa = sm(108.8, 110, t) * (1 - sm(110.8, 111.8, t)); if (fa > 0) fileCard(E[0] - 100, E[1], 1, fa);
+}
+function sceneReturn(t) {                                    // 八：成果回到浏览器
+  if (t < 110.4) return;
+  const m1 = sm(110.8, 115.2, t), m2 = sm(111.2, 115.2, t), go = 1 - sm(115.2, 116, t);
+  curve((u) => q2(...RET1, u), m1, 0.55 * go, 1.6); curve((u) => q2(...RET2, u), m2, 0.4 * go, 1.3);
+  [[RET1, m1, 1], [RET2, m2, 0.75]].forEach(([r, m, s]) => { if (m > 0 && m < 1) for (let j = 6; j >= 0; j--) { const p = q2(...r, clamp(m - j * 0.012)); G(p[0], p[1], (34 - j * 3) * s / cam.z * 0.55, (1 - j / 7) * (j ? 0.5 : 1)); } });
+  const ca = sm(114.8, 116, t); if (ca <= 0) return;
+  const e = eo((t - 115.2) / 2.1), w = lerp(460, RES.w, e), h = lerp(110, RES.h, e);
+  G(150, 0, 420 + 300 * e, ca * 0.2 * (1 - sm(116.5, 118, t))); box(150 - w / 2, -h / 2, w, h, 18, ca * 0.97, ca * 0.75, CARD, GOLD, 1.3);
+  // 文件卡片落到结果区左下角，结论落到上方，随后与浏览器里的内容交接
+  const ia = ca * (1 - sm(118, 118.9, t)); if (ia > 0.01) { const sv = WA; WA *= ia; fileCard(lerp(150, RES.x + 230, e), lerp(0, RES.y + RES.h - 58, e), lerp(1, 0.8, e), 1);
+    txt(`${PLANT} 工厂 ${DATE} 共开立 ${COUNT} 张工单`, RES.x + 40, RES.y + 108, 27, sm(0.6, 1, e)); WA = sv; }
+}
 
-  ctx.globalCompositeOperation = "source-over";
-  // 「理解」：信息片段
-  const fa = sm(11.8, 13.6, t) * (1 - sm(21.5, 24, t)) * worldA;
-  if (fa > 0) for (let i = 1; i <= 5; i++) {
-    const p = proj(P[i], a2), s = p[2] * (1 - 0.35 * sm(21.5, 24, t)), w = 168 * s, h = 76 * s, a = fa * clamp(p[2] / cam.zoom, 0.6, 1.15);
-    ctx.globalAlpha = a * 0.55; rr(p[0] - w / 2, p[1] - h / 2, w, h, 10 * s); ctx.fillStyle = "rgb(22,28,38)"; ctx.fill();
-    ctx.globalAlpha = a * 0.5; ctx.strokeStyle = GOLD; ctx.lineWidth = Math.max(0.6, 0.9 * s); ctx.stroke();
-    ctx.globalAlpha = a * 0.9; ctx.fillStyle = WARM; ctx.font = `300 ${19 * s}px "PingFang SC","Microsoft YaHei",sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(FRAG[i - 1], p[0], p[1] - 6 * s);
-    ctx.globalAlpha = a * 0.25; ctx.fillStyle = GOLD; ctx.fillRect(p[0] - 30 * s, p[1] + 16 * s, 60 * s, 1.5 * s);
-  }
-  // 「执行」：工具节点里的局部画面
-  for (const tl of tools) {
-    const age = t - tl.wake; if (age <= 0) continue;
-    const n = nodes[tl.i], c = sm(CS[3] - 2.2, CS[3] + 0.6, t); if (c >= 1) continue;
-    const p = proj(P[tl.i], a2), s = p[2], a = worldA * sm(0, 1.6, age) * (1 - c);
-    const left = n.p[0] < 0, x = p[0] + (left ? -(190 + 22) : 22) * s, y = p[1] - (124 + 18) * s;
-    mini(tl.kind, x, y, s, a, age);
-    ctx.globalAlpha = a * 0.4; ctx.strokeStyle = GOLD; ctx.lineWidth = Math.max(0.5, 0.8 * s); ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(x + (left ? 190 : 0) * s, y + 124 * s); ctx.stroke();
-    if (age < 3) { ctx.globalAlpha = a * (1 - age / 3) * 0.7; ctx.beginPath(); ctx.arc(p[0], p[1], (8 + age * 16) * s, 0, 6.3); ctx.stroke(); }
-  }
-  // 「完成」：结果卡片（终点与浏览器里的结果区域完全重合）
-  const ca = sm(62.8, 65.6, t) * worldA;
-  if (ca > 0) {
-    const k = lerp(0.3, 1, eo((t - 62.8) / 4.2)) * os, w = 1100 * k, h = 600 * k, x = ox - w / 2, y = oy - h / 2;
-    ctx.globalAlpha = ca * 0.96; rr(x, y, w, h, 18 * k); ctx.fillStyle = "#141a24"; ctx.fill();
-    ctx.globalAlpha = ca * 0.75; ctx.strokeStyle = GOLD; ctx.lineWidth = Math.max(0.8, 1.2 * k); ctx.stroke();
-    const sk = sm(64.5, 67, t) * ca * (1 - sm(68.8, 70.2, t));
-    const S = (bx, by, bw, bh, al, col) => { ctx.globalAlpha = sk * al; ctx.fillStyle = col || WARM; ctx.fillRect(x + bx * k, y + by * k, bw * k, bh * k); };
-    S(40, 40, 330, 9, 0.5, GOLD); S(40, 88, 560, 10, 0.3); S(40, 128, 300, 10, 0.3);
-    for (let r = 0; r < 5; r++) { S(40, 262 + r * 46, 540, 1, 0.14); S(44, 244 + r * 46, 90, 7, 0.24); S(330, 244 + r * 46, 50, 7, 0.2); S(500, 244 + r * 46, 70, 7, 0.2); }
-    [27, 20, 14, 39].forEach((v, i) => S(650, 316 + i * 46, 410 * v / 39, 8, 0.4, GOLD));
-    S(40, 508, 330, 58, 0.07);
-    ctx.globalCompositeOperation = "lighter"; G(ox, oy, 520 * k, ca * 0.16 * (1 - sm(66, 69, t)));
-  }
-  ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+function draw(t) {
+  const r = cv.width / W;
+  ctx.setTransform(r, 0, 0, r, 0, 0); ctx.clearRect(0, 0, W, H); ctx.globalCompositeOperation = "source-over";
+  setCam(t);
+  const spaceA = sm(10.2, 12, t) * (1 - sm(117.4, 119.6, t));
+  WA = 1;
+  if (spaceA > 0) { ctx.globalAlpha = spaceA; ctx.drawImage(bg, 0, 0);
+    const zf = Math.pow(cam.z, 0.3);
+    for (const d of dust) { const x = W / 2 + (d.x - cam.x * d.d + t * 4 * d.d) * zf, y = H / 2 + (d.y - cam.y * d.d) * zf; if (x < -20 || x > W + 20 || y < -20 || y > H + 20) continue; G(x, y, d.s * 5, spaceA * d.a * (0.6 + 0.4 * Math.sin(t * d.f + d.p))); } }
+  WA = sm(9.9, 10.4, t) * (1 - sm(117.4, 119.6, t));
+  if (WA <= 0) { ctx.globalAlpha = 1; return; }
+  const base = WA;
+  // 背景网络：视差较小、亮度很低
+  const pz = Math.pow(cam.z, 0.8);
+  ctx.setTransform(r * pz, 0, 0, r * pz, r * (W / 2 - cam.x * 0.8 * pz), r * (H / 2 - cam.y * 0.8 * pz));
+  const na = sm(15.5, 18, t) * (1 - sm(115.5, 117, t));
+  if (na > 0) for (const e of NET) { ctx.globalAlpha = base * na * e.a; ctx.strokeStyle = GOLD; ctx.lineWidth = 1 / pz; ctx.beginPath(); ctx.moveTo(e.p[0], e.p[1]);
+    ctx.quadraticCurveTo((e.p[0] + e.q[0]) / 2 - (e.q[1] - e.p[1]) * e.k, (e.p[1] + e.q[1]) / 2 + (e.q[0] - e.p[0]) * e.k, e.q[0], e.q[1]); ctx.stroke(); G(e.q[0], e.q[1], 10 / pz, na * e.a * 3); }
+  // 世界
+  ctx.setTransform(r * cam.z, 0, 0, r * cam.z, r * (W / 2 - cam.x * cam.z), r * (H / 2 - cam.y * cam.z));
+  WA = base * (1 - sm(115.6, 117, t));                       // 回到浏览器前，链路整体淡出
+  scenePath(t); sceneMatch(t); sceneForm(t); sceneExec(t); sceneRows(t); sceneExcel(t);
+  WA = base; sceneReturn(t); sceneTask(t);
+  // 数据包
+  const pa = sm(15.2, 16.2, t) * (1 - sm(57, 57.8, t)); if (pa > 0) { const p = pkPos(t), open = win(t, 50.4, 55.2, 0.9), empty = sm(31.5, 33, t) * (1 - sm(46.6, 47.6, t));
+    for (let j = 1; j <= 5; j++) { const q = pkPos(t - j * 0.05); if (q[0] !== p[0] || q[1] !== p[1]) G(q[0], q[1], 60 - j * 8, pa * 0.25 * (1 - j / 6)); }
+    packet(p, pa * (1 - open), 1 + 0.25 * pulse(t, 47.6, 1), 1 - 0.75 * empty); sceneRequest(t); }
+  ctx.globalAlpha = 1; ctx.setTransform(r, 0, 0, r, 0, 0);
 }
 
 // ───────── 浏览器界面（按时间驱动，可任意跳转） ─────────
-const el = { br: $("browser"), inp: $("inp"), send: $("send"), bubble: $("bubble"), hero: $("hero"), task: $("task"), result: $("result"), label: $("label"), bn: $("bn"), bt: $("bt"), black: $("black"), cur: $("curTask") };
-const rv = [...document.querySelectorAll(".rv")], bars = [...document.querySelectorAll(".bar u")];
-const LABELS = [[15.5, 21.5, "理解"], [27, 33, "规划"], [40.5, 47, "执行"], [58.5, 64.5, "校验 · 完成"]];
+const el = { br: $("browser"), inp: $("inp"), send: $("send"), bubble: $("bubble"), hero: $("hero"), result: $("result"), label: $("label"), tag: $("tag"), black: $("black"), cur: $("curTask") };
+$("rTitle").textContent = `已完成 · ${PLANT} 工厂工单查询（${REPORT} · ${DATE}）`;
+$("rLead").innerHTML = `<em>${PLANT}</em> 工厂 <em>${DATE}</em> 共开立`; $("rN").textContent = COUNT; $("rFile").textContent = FILE;
+$("rTbl").innerHTML = `<div class="th rv">${HEAD.map((h) => `<span>${h}</span>`).join("")}</div>` + ORD.slice(0, TRK + 1).map((o, i) => `<div class="rv${i === TRK ? " trk" : ""}">${cells(o, 1).map((v, j) => `<span${j < 2 ? ' class="mono"' : ""}>${v}</span>`).join("")}</div>`).join("");
+$("rMore").textContent = `… 共 ${NR} 行，完整明细见 Excel`;
+const rv = [...document.querySelectorAll(".rv")];
+const LABELS = [[11.6, 15.4, "任务条件"], [20.2, 25, "报表匹配"], [30.8, 35.5, "填写参数"], [48.6, 53.4, "发出请求"], [61, 66, "返回记录"], [77.6, 82.6, "整理 · 统计"], [97, 102, "生成 Excel"], [110.8, 115, "交付"]];
 let lastTyped = -2, lastLabel = "";
 function dom(t) {
-  const sent = t >= 9, late = t >= 40;
-  const n = sent ? -1 : Math.floor(TASK.length * clamp((t - 2.4) / 5.0));
+  const sent = t >= 6, late = t >= 60;
+  const n = sent ? -1 : Math.floor(TASK.length * clamp((t - 0.9) / 4.3));
   if (n !== lastTyped) { lastTyped = n;
     el.inp.innerHTML = n < 0 ? '<span class="ph">继续说点什么…</span>' : n === 0 ? '<span class="ph">说出你想做的事…</span>' : TASK.slice(0, n) + '<span class="caret"></span>';
-    el.send.className = "send" + (n > 0 ? " on" : ""); el.bubble.textContent = TASK; }
+    el.send.className = "send" + (n > 0 ? " on" : ""); }
   const caret = el.inp.querySelector(".caret"); if (caret) caret.style.opacity = (t * 1.6) % 1 < 0.55 ? 1 : 0;
-  el.send.style.transform = `scale(${1 - 0.12 * win(t, 8.55, 9.1, 0.25)})`;
-  el.hero.style.opacity = 1 - sm(8.9, 9.5, t);
-  const b = sm(9, 9.6, t); el.bubble.style.opacity = b; el.bubble.style.transform = `translateY(${(1 - b) * 30}px)`; el.cur.style.opacity = b;
-  el.task.style.display = late ? "none" : "flex"; el.task.style.opacity = sm(9.3, 10, t);
+  el.send.style.transform = `scale(${1 - 0.12 * win(t, 5.55, 6.1, 0.25)})`;
+  el.hero.style.opacity = 1 - sm(5.9, 6.5, t);
+  const b = sm(6, 6.6, t); el.bubble.style.opacity = b; el.bubble.style.transform = `translateY(${(1 - b) * 30}px)`; el.cur.style.opacity = b;
+  KW.forEach((k, i) => { const v = late ? 0 : sm(7.2 + i * 0.55, 7.8 + i * 0.55, t); k.el.style.color = `rgb(${lerp(233, 255, v)},226,${lerp(211, 170, v)})`; k.el.style.textShadow = v > 0 ? `0 0 ${14 * v}px rgba(230,197,143,${0.8 * v})` : "none"; });
   el.result.style.display = late ? "block" : "none";
-  if (late) { rv.forEach((e, i) => { const k = sm(69.6 + i * 0.42, 70.5 + i * 0.42, t); e.style.opacity = k; e.style.transform = `translateY(${(1 - k) * 10}px)`; });
-    bars.forEach((u, i) => { u.style.width = (u.dataset.w / 39 * 100 * eo((t - 73.2 - i * 0.3) / 1.6)) + "%"; }); }
-  const z = late ? 1 : 1 + 7 * Math.pow(clamp((t - 10.3) / 3.2), 2.2);
-  el.br.style.opacity = late ? sm(67.5, 70.5, t) : 1 - sm(11, 13.2, t);
-  el.br.style.transform = z === 1 ? "none" : `scale(${z})`;
-  let txt = "", a = 0; for (const [s, e, x] of LABELS) if (t > s && t < e) { txt = x; a = win(t, s, e, 1.2); }
-  if (txt && txt !== lastLabel) { lastLabel = txt; el.label.textContent = txt; }
+  if (late) { rv.forEach((e, i) => { const k = sm(118 + i * 0.3, 118.8 + i * 0.3, t); e.style.opacity = k; e.style.transform = `translateY(${(1 - k) * 10}px)`; });
+    el.br.style.opacity = sm(117.4, 119.6, t); el.br.style.transform = "none"; }
+  else { const e = sm(6.6, 9.4, t), z = 1 + (BZ - 1) * e;       // 镜头靠近消息卡片
+    el.br.style.opacity = 1 - sm(10.2, 12, t);
+    el.br.style.transform = e ? `translate(${lerp(bubC[0], BT[0], e) - bubC[0] * z}px,${lerp(bubC[1], BT[1], e) - bubC[1] * z}px) scale(${z})` : "none"; }
+  let s = "", a = 0; for (const [p, q, x] of LABELS) if (t > p && t < q) { s = x; a = win(t, p, q, 1.1); }
+  if (s && s !== lastLabel) { lastLabel = s; el.label.textContent = s; }
   el.label.style.opacity = a * 0.9;
-  const k1 = sm(80.2, 82.4, t) * (1 - sm(87, 88.6, t)), k2 = sm(81.6, 83.8, t) * (1 - sm(87, 88.6, t));
-  el.bn.style.opacity = k1; el.bn.style.transform = `translateY(${(1 - sm(80.2, 83, t)) * 14}px)`; el.bt.style.opacity = k2;
-  el.black.style.opacity = sm(87.2, 88.8, t);
+  el.tag.style.opacity = sm(123, 125.4, t) * (1 - sm(129.6, 130.8, t));
+  el.black.style.opacity = sm(130, 131.5, t);
 }
 
 // ───────── 播放控制 ─────────
@@ -436,7 +536,8 @@ addEventListener("keydown", (e) => {
 window.__seek = seek;
 const at = new URLSearchParams(location.search).get("at");   // ?at=秒数：直接看某一刻的静止画面
 if (at != null) { started = true; $("start").style.display = "none"; base = parseFloat(at) || 0; }
-fit(); requestAnimationFrame(loop);
+measure(); fit(); requestAnimationFrame(loop);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measure(); render(); });
 </script>
 </body>
 </html>
