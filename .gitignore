@@ -5,6 +5,8 @@ node_modules/
 
 # Build and local output
 .codex-pptx-build/
+.codex-build-lingxi/
+~$*.pptx
 *.zip
 deps/
 .DS_Store
