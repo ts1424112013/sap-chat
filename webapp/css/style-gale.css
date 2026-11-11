@@ -2413,6 +2413,8 @@ body.schedOn .dataTools .dtSched { display: inline-block !important; }
 .rtAsk { margin: .35rem 0 .45rem 1.55rem; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); overflow: hidden; animation: rtIn .28s ease-out; }
 .rtAskHead { padding: .55rem .8rem .3rem; display: flex; flex-direction: column; }
 .rtAskDiff { padding: 0 .8rem .5rem; }
+.rtAskQueued { opacity: .6; border-style: dashed; }
+.rtAskQueued .rtAskHead { padding-bottom: .55rem; }
 .rtAskDiff .baDiff { max-height: 14rem; margin: .25rem 0 0; }
 .rtAskDiff .baDiffNote { font-size: .76rem; color: var(--sub); }
 .rtOpt { display: flex; align-items: center; gap: .6rem; padding: .45rem .8rem; border-top: 1px solid var(--line); cursor: pointer; transition: background .12s; }

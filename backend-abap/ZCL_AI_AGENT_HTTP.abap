@@ -39,10 +39,12 @@
 *         V1.8 20261110 内置技能改由 SAP 下发(《03》〇-AV): /run/start 收 builtinVersion、回 builtinVersion /
 *              builtinSkills(版本号相同时不回)、skillsOpen(管理员不受技能内容保密限制); 新路径 /admin/bskill/<动作>(list / get / import / active, 只限管理员)
 *              交给 ZCL_AI_BSKILL_SERVICE=>admin(依赖 ZCL_AI_AGENT_SERVICE V15.30、ZCL_AI_BSKILL_SERVICE V1.0)
+*         V1.9 20261111(11.11 记录 #03): /tools/exec 里工具抛出的未捕获异常(如 CX_SY_OPEN_SQL_DATA_ERROR)
+*              不再变成 500「服务内部错误」让整轮中止, 而是回滚后回 ok:false + 原因, 模型可以换参数重试或换办法
 *         ★ 重贴后核对标记: INTERFACES if_http_extension; handle_request 里有
 *           WHEN '/run/start' / '/chat/completions' / '/tools/exec' / '/tools/audit' / '/results/export' / '/run/finish' / '/run/steps';
 *           WHEN OTHERS 里有 '/admin/mcp/' 与 zcl_ai_mcp_service=>admin( 、'/admin/bskill/' 与 zcl_ai_bskill_service=>admin(;
-*           /run/start 回 builtinVersion
+*           /run/start 回 builtinVersion; /tools/exec 的 browser_tool 调用包在 TRY … CATCH cx_root INTO DATA(lx_tool)
 *=======================================================================
 CLASS zcl_ai_agent_http DEFINITION
   PUBLIC
@@ -226,16 +228,26 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                   lv_msg     TYPE string,
                   lv_card    TYPE string,
                   lv_ds      TYPE string.
-            zcl_ai_agent_service=>browser_tool(
-              EXPORTING iv_run_id  = ls_tool-run_id
-                        iv_tool    = ls_tool-tool
-                        iv_args    = zcl_ai_agent_guard=>extract_args_object( lv_body )
-              IMPORTING ev_ok      = lv_ok
-                        ev_content = lv_content
-                        ev_message = lv_msg
-                        ev_http    = lv_http
-                        ev_card    = lv_card
-                        ev_datasets = lv_ds ).
+            " V1.9: 工具内部的异常只算这一步失败(回给模型), 不中止整轮
+            TRY.
+                zcl_ai_agent_service=>browser_tool(
+                  EXPORTING iv_run_id  = ls_tool-run_id
+                            iv_tool    = ls_tool-tool
+                            iv_args    = zcl_ai_agent_guard=>extract_args_object( lv_body )
+                  IMPORTING ev_ok      = lv_ok
+                            ev_content = lv_content
+                            ev_message = lv_msg
+                            ev_http    = lv_http
+                            ev_card    = lv_card
+                            ev_datasets = lv_ds ).
+              CATCH cx_root INTO DATA(lx_tool).
+                ROLLBACK WORK.
+                CLEAR: lv_content, lv_card, lv_ds.
+                lv_ok   = abap_false.
+                lv_http = 200.
+                lv_msg  = |工具 { ls_tool-tool } 执行出错({ substring_after( val = cl_abap_classdescr=>get_class_name( lx_tool ) sub = '=' ) }): | &&
+                          |{ lx_tool->get_text( ) }。请检查参数(如对象名、表名是否写对)后换参数重试, 或换别的办法|.
+            ENDTRY.
             COMMIT WORK.
             IF lv_http <> 200.
               fail( io_server = server iv_code = lv_http iv_msg = lv_msg ).

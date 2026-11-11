@@ -1509,5 +1509,32 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     bt.indexOf('NS |,{ lv_tool },|') < bt.indexOf('zcl_ai_abap_check=>check('));
 }
 
+// ---------- 11.11 #03 / #05：读源码超长名字不再抛 SQL 异常、文件名退回对象名、工具异常不中止整轮、调用上限 100 ----------
+{
+  console.log('\n[11.11 #03/#05] 读源码健壮性 + 调用上限');
+  const cpRaw = read('ZCL_AI_CODE_PROVIDER.abap'), cp = codeOnly(cpRaw);
+  const agRaw = read('ZCL_AI_AGENT_SERVICE.abap'), ag = codeOnly(agRaw);
+  const htRaw = read('ZCL_AI_AGENT_HTTP.abap'), ht = codeOnly(htRaw);
+  const rt = methodOf(cp, 'resolve_tcode'), dt = methodOf(cp, 'detect_objtype'), oe = methodOf(cp, 'object_exists');
+  check('CODE_PROVIDER V1.2：resolve_tcode 超 20 位直接返回，在 SELECT … FROM tstc 之前',
+    /^\* V1\.2\s+20261111/m.test(cpRaw) && /strlen\( iv_tcode \) > 20/.test(rt) &&
+    rt.indexOf('strlen( iv_tcode ) > 20') < rt.indexOf('FROM tstc'));
+  check('CODE_PROVIDER V1.2：detect_objtype / object_exists 超 30 位不查 TFDIR',
+    dt.indexOf('strlen( iv_name ) > 30') > 0 && dt.indexOf('strlen( iv_name ) > 30') < dt.indexOf('FROM tfdir') &&
+    /strlen\( iv_name \) <= 30/.test(oe));
+  const rs = methodOf(ag, 'exec_read_source');
+  check('AGENT_SERVICE V15.32：对象不存在时逐段去掉末尾 _xxx 再找，找到写进 note',
+    /^\* V15\.32 20261111/m.test(agRaw) && /object_exists\( lv_prog \) = abap_false/.test(rs) &&
+    /find\( val = lv_try sub = '_' occ = -1 \)/.test(rs) && /已按 \{ lv_try \} 读取/.test(rs));
+  check('AGENT_SERVICE V15.32：BRUN_MAX_MODEL 默认 100（下发与计次两处一致），没有残留默认 40',
+    (ag.match(/'BRUN_MAX_MODEL' iv_default = 100/g) || []).length === 2 && !/'BRUN_MAX_MODEL' iv_default = 40/.test(ag));
+  const hr = methodOf(ht, 'if_http_extension~handle_request');
+  const iTry = hr.indexOf('CATCH cx_root INTO DATA(lx_tool)'), iBt = hr.indexOf('zcl_ai_agent_service=>browser_tool(');
+  check('AGENT_HTTP V1.9：/tools/exec 的 browser_tool 包在 TRY 里，异常回滚后回 ok:false（lv_http = 200）',
+    /^\*\s+V1\.9 20261111/m.test(htRaw) && iBt > 0 && iTry > iBt && /ROLLBACK WORK\.\s+CLEAR: lv_content, lv_card, lv_ds\.\s+lv_ok\s+= abap_false\.\s+lv_http = 200\./.test(hr.slice(iTry)));
+  check('三个类行长 ≤ 255、无 7.55 以上专有写法（FINAL( )）',
+    [cpRaw, agRaw, htRaw].every(r => r.split(/\r?\n/).every(l => l.length <= 255)) && ![cp, ag, ht].some(c => /\bFINAL\(/.test(c)));
+}
+
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);

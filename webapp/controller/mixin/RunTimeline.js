@@ -184,7 +184,7 @@ sap.ui.define([
 				var oIt = { k: "ask", req: req, done: null };
 				s.items.push(oIt);
 				// 删除只有「删除 / 不要」两项（「本次都不再询问」对删除不生效）
-				s.ask = { item: oIt, resolve: resolve, n: req.action === "删除" ? 2 : 3 };
+				that._rtOpenAsk(s, { item: oIt, resolve: resolve, n: req.action === "删除" ? 2 : 3 });
 				that._rtRender(sUid);
 				that._rtInfo(s);
 				// 确认面板滚进视野（用户往上翻时不打扰：只在本来就在底部附近时跟随）
@@ -207,7 +207,7 @@ sap.ui.define([
 			return new Promise(function (resolve) {
 				var oIt = { k: "q", question: req.question || "", options: (req.options || []).slice(0, 4), done: null };
 				s.items.push(oIt);
-				s.ask = { item: oIt, resolve: resolve, n: oIt.options.length + 1 };
+				that._rtOpenAsk(s, { item: oIt, resolve: resolve, n: oIt.options.length + 1 });
 				that._rtRender(sUid);
 				that._rtInfo(s);
 				if (that._isNearBottom && that._isNearBottom()) {
@@ -216,10 +216,39 @@ sap.ui.define([
 			});
 		},
 
-		/** 收掉还开着的确认 / 问题（停止、运行结束时） */
+		/**
+		 * 11.11 #02：模型一次改两个文件时两张确认卡会同时来。只让一张可点，其余排队（卡上写「等上一项确认」），
+		 * 点完一张再亮下一张；以前第二张会顶掉第一张，点第一张实际答的是第二张，第一张永远挂着。
+		 */
+		_rtOpenAsk: function (s, oAsk) {
+			if (s.ask) {
+				oAsk.item.queued = true;
+				(s.askQ = s.askQ || []).push(oAsk);
+			} else {
+				s.ask = oAsk;
+			}
+		},
+
+		/** 当前这张答完后亮下一张；选过「都不再询问」时排队中的写和改直接通过（删除照样问） */
+		_rtNextAsk: function (s) {
+			var q = s.askQ || [];
+			while (!s.ask && q.length) {
+				var a = q.shift();
+				a.item.queued = false;
+				if (a.item.k === "ask" && a.item.req && a.item.req.action !== "删除" && this._rtHasWriteGrant(s.sid)) {
+					a.item.done = "auto";
+					a.resolve({ approved: true, always: true });
+				} else {
+					s.ask = a;
+				}
+			}
+		},
+
+		/** 收掉还开着和排队中的确认 / 问题（停止、运行结束时） */
 		_rtCancelAsk: function (sUid) {
 			var s = this._mRt && this._mRt[sUid];
-			if (s && s.ask) {
+			var nGuard = 50;
+			while (s && s.ask && nGuard-- > 0) {
 				this._rtPick(sUid, s.ask.item.k === "q" ? -1 : 2);
 			}
 		},
@@ -241,6 +270,7 @@ sap.ui.define([
 				}
 				s.ask = null;
 				a.item.done = iOpt < 0 ? { cancel: true } : (iOpt === aOpt.length ? { other: true } : { answer: aOpt[iOpt] });
+				this._rtNextAsk(s);
 				this._rtRender(sUid);
 				this._rtInfo(s);
 				a.resolve(a.item.done);
@@ -254,6 +284,7 @@ sap.ui.define([
 				this._rtSetWriteGrant(s.sid);
 			}
 			a.item.done = iOpt === 2 ? "no" : (iOpt === 1 ? "all" : "yes");
+			this._rtNextAsk(s);
 			this._rtRender(sUid);
 			this._rtInfo(s);
 			a.resolve(iOpt === 2 ? { approved: false, message: "用户选择了不要改" } : { approved: true, always: iOpt === 1 });
@@ -476,8 +507,12 @@ sap.ui.define([
 			if (x.done) {
 				return x.done === "no"
 					? '<div class="rtNote rtErr">' + IC.err + "<span>你拒绝了" + esc(req.action) + " " + esc(req.path) + "，没有改动文件</span></div>"
-					: '<div class="rtNote rtOk">' + IC.ok + "<span>已同意" + esc(req.action) + " " + esc(req.path) +
+					: '<div class="rtNote rtOk">' + IC.ok + "<span>" + (x.done === "auto" ? "已按你的允许自动" : "已同意") + esc(req.action) + " " + esc(req.path) +
 						(x.done === "all" ? "（这个任务后面的写入不再询问）" : "") + "</span></div>";
+			}
+			if (x.queued) {   // 11.11 #02：排队中，等上一张确认完再亮
+				return '<div class="rtAsk rtAskQueued"><div class="rtAskHead"><b>' + esc("要" + (req.action || "修改") + "这个文件吗？") +
+					'</b><span class="rtSub">' + esc(req.path) + " · 等上一项确认后再处理</span></div></div>";
 			}
 			var bMem = req.action === "整理记忆";   // 记忆超过上限，回答后合并重复规则（原文件会备份，可撤回）
 			var sQ = bMem ? "记忆超过上限，用整理后的版本替换吗？" : req.action === "删除" ? "要删除这个文件吗？" : req.action === "新建" ? "要新建这个文件吗？" : "要" + (req.action || "修改") + "这个文件吗？";
@@ -493,6 +528,10 @@ sap.ui.define([
 		},
 
 		_rtQHtml: function (x) {
+			if (x.queued && !x.done) {
+				return '<div class="rtAsk rtQ rtAskQueued"><div class="rtAskHead"><b>' + esc(x.question) + "</b>" +
+					'<span class="rtSub">等上一项确认后再回答</span></div></div>';
+			}
 			if (x.done) {
 				if (x.done.cancel) {
 					return '<div class="rtNote">' + IC.err + "<span>没有回答：" + esc(x.question) + "</span></div>";
@@ -668,7 +707,9 @@ sap.ui.define([
 				aRuns.forEach(function (r) {
 					var iSeq = Number(r.msgSeq) || 0;
 					var oE = iSeq ? aAi.filter(function (e) { return e.msgSeq === iSeq && !mUsed[e.uid]; })[0] : null;
-					if (!oE && r.answerHead) {
+					// 20261111（11.11 #04 串台）：有消息序号却没对上时不再按回答开头猜 —— 两轮回答开头一样
+					//（同样的问候语、都以「（浏览器 Agent 未完成」开头）会把这轮的过程画到别的回复上
+					if (!oE && !iSeq && r.answerHead) {
 						oE = aAi.filter(function (e) { return !mUsed[e.uid] && String(e.raw || "").indexOf(r.answerHead) === 0; })[0];
 					}
 					if (!oE || !(r.steps || []).length) {

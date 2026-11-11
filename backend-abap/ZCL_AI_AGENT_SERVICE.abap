@@ -360,6 +360,12 @@
 *   ② browser_tool: abap_check 计入工具次数, 交给 ZCL_AI_ABAP_CHECK=>check
 *   依赖: 先激活 ZCL_AI_ABAP_CHECK V1.0
 *   ★ 重贴后核对标记: browser_start 有 brun_cfg( 'BROWSER_ABAP_CHECK' ) 与【写 ABAP 代码】; browser_tool 有 zcl_ai_abap_check=>check(
+* V15.32 20261111(11.11 记录 #03 / #05): 只改 exec_read_source / browser_start / browser_model ——
+*   ① exec_read_source: 对象不存在且名字带下划线时, 从后往前逐段去掉「_xxx」再找(用户常把文件名「ZIDPMM501_SUB模组…」
+*     里的 ZIDPMM501_SUB 当对象名), 找到就按真名读并在 note 里写明; 都找不到才报不存在
+*   ② BRUN_MAX_MODEL 默认 40 → 100(一次读 3 个程序 + 改 3 个文件 + 语法检查就会用满 40 次); 上限仍可配 5~200
+*   依赖: ZCL_AI_CODE_PROVIDER V1.2(超长名字不查 TSTC / TFDIR)先激活
+*   ★ 重贴后核对标记: exec_read_source 有「按 { lv_prog } 读取」; browser_start / browser_model 的 BRUN_MAX_MODEL 默认 100
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -2869,6 +2875,28 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     ENDIF.
 
     DATA(ls_src) = zcl_ai_code_provider=>get_source( iv_name = lv_prog ).
+
+    " V15.32(11.11 #03): 名字是「对象名_描述」的文件名写法时, 逐段去掉末尾的 _xxx 再找真对象
+    IF ls_src-error IS NOT INITIAL AND zcl_ai_code_provider=>object_exists( lv_prog ) = abap_false.
+      DATA(lv_try) = lv_prog.
+      WHILE lv_try CA '_'.
+        DATA(lv_cut) = find( val = lv_try sub = '_' occ = -1 ).
+        IF lv_cut < 2.
+          EXIT.
+        ENDIF.
+        lv_try = substring( val = lv_try len = lv_cut ).
+        IF zcl_ai_code_provider=>object_exists( lv_try ) = abap_true.
+          DATA(ls_src2) = zcl_ai_code_provider=>get_source( iv_name = lv_try ).
+          IF ls_src2-error IS INITIAL.
+            lv_note = |{ lv_prog } 不存在, 已按 { lv_try } 读取(名字里的 _ 后面像是文件名的描述部分)|.
+            lv_prog = lv_try.
+            ls_src  = ls_src2.
+          ENDIF.
+          EXIT.
+        ENDIF.
+      ENDWHILE.
+    ENDIF.
+
     IF ls_src-error IS NOT INITIAL.
       DATA(lv_err_txt) = |{ lv_prog } 不存在或无法读取: { ls_src-error }|.
       ev_json = |\{"ok":false,"error":"{ json_text( lv_err_txt ) }"\}|.
@@ -4456,7 +4484,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     es_start-model      = ls_cfg-model_id.
     es_start-tools_json = |[{ lv_tools_json }]|.
     es_start-system     = lv_sys.
-    es_start-max_model  = read_cfg_int( iv_key = 'BRUN_MAX_MODEL' iv_default = 40 iv_min = 5 iv_max = 200 ).
+    es_start-max_model  = read_cfg_int( iv_key = 'BRUN_MAX_MODEL' iv_default = 100 iv_min = 5 iv_max = 200 ).
     es_start-max_tool   = read_cfg_int( iv_key = 'BRUN_MAX_TOOL' iv_default = 60 iv_min = 5 iv_max = 300 ).
     es_start-export     = lv_res_on.
     es_start-adt        = lv_adt.
@@ -4590,7 +4618,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     ENDIF.
 
     " 调用次数原子 +1(超上限即拒绝); 立即提交, 转发期间不占行锁
-    DATA(lv_max) = read_cfg_int( iv_key = 'BRUN_MAX_MODEL' iv_default = 40 iv_min = 5 iv_max = 200 ).
+    DATA(lv_max) = read_cfg_int( iv_key = 'BRUN_MAX_MODEL' iv_default = 100 iv_min = 5 iv_max = 200 ).
     UPDATE zai_brun SET model_calls = model_calls + 1
       WHERE run_id = @ls_run-run_id AND userid = @sy-uname
         AND status = 'RUNNING' AND model_calls < @lv_max.

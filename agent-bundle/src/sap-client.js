@@ -56,7 +56,7 @@ export function createSapClient({ base = "/sap/bc/zai_agent", origin, timeoutMs 
     return h;
   }
 
-  async function post(path, body, { runId, signal, okFalseThrows = true } = {}) {
+  async function post(path, body, { runId, signal, okFalseThrows = true, keepalive = false } = {}) {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(new Error("timeout")), timeoutMs);
     if (signal) signal.addEventListener("abort", () => ctl.abort(signal.reason), { once: true });
@@ -67,7 +67,8 @@ export function createSapClient({ base = "/sap/bc/zai_agent", origin, timeoutMs 
         credentials: "same-origin",
         headers: headers(runId, { "Content-Type": "application/json" }),
         body: JSON.stringify(body || {}),
-        signal: ctl.signal
+        signal: ctl.signal,
+        keepalive   // 11.11 #04：页面关闭 / 刷新时也要把收尾发出去（请求体须小于 64KB）
       });
     } finally { clearTimeout(t); }
     const text = await res.text();

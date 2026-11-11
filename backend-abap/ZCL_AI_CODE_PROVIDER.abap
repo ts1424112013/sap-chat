@@ -7,8 +7,13 @@
 *           参数说明读 FUNCT, 动态列名读, 读不到只是没有说明) + 函数本体 include 源码;
 *         ③ 新公开方法 function_include(TFDIR-PNAME + INCLUDE → L<组>U<nn>, 支持 /命名空间/),
 *           ZCL_AI_RFC_EXEC 写入类检查共用; object_exists 也认函数模块
+* V1.2    20261111(11.11 记录 #03 读源码整单中止): 名字超过数据库字段长度时不再查库 ——
+*         TSTC-TCODE 是 CHAR 20、TFDIR-FUNCNAME 是 CHAR 30, 严格模式 Open SQL 拿更长的字符串比较会抛
+*         CX_SY_OPEN_SQL_DATA_ERROR(如 ZRPP_SUB_MODULE_MONITOR_SUB 27 位): resolve_tcode 超 20 位直接返回空;
+*         detect_objtype / object_exists 超 30 位不查 TFDIR
 * ★ 重贴后核对标记: 有 METHOD read_function 与 METHOD function_include;
-*   get_source 的 CASE 有 WHEN 'FUNC'; detect_objtype 里有 FROM tfdir
+*   get_source 的 CASE 有 WHEN 'FUNC'; detect_objtype 里有 FROM tfdir;
+*   resolve_tcode 开头有 strlen( iv_tcode ) > 20
 *=======================================================================
 CLASS zcl_ai_code_provider DEFINITION
   PUBLIC
@@ -270,7 +275,7 @@ CLASS zcl_ai_code_provider IMPLEMENTATION.
       INTO @DATA(lv_obj).
 
     rv_exists = xsdbool( sy-subrc = 0 ).
-    IF rv_exists = abap_false.
+    IF rv_exists = abap_false AND strlen( iv_name ) <= 30.   " V1.2: TFDIR-FUNCNAME 只有 30 位
       SELECT SINGLE funcname FROM tfdir
         WHERE funcname = @iv_name
         INTO @DATA(lv_fn).
@@ -282,6 +287,10 @@ CLASS zcl_ai_code_provider IMPLEMENTATION.
   METHOD resolve_tcode.
 
     CLEAR ev_prog.
+    " V1.2: TSTC-TCODE 只有 20 位, 更长的不可能是事务码(且严格模式下比较会抛 CX_SY_OPEN_SQL_DATA_ERROR)
+    IF iv_tcode IS INITIAL OR strlen( iv_tcode ) > 20.
+      RETURN.
+    ENDIF.
 
     SELECT SINGLE pgmna FROM tstc
       WHERE tcode = @iv_tcode
@@ -361,7 +370,11 @@ CLASS zcl_ai_code_provider IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    " V1.1: 函数模块不在 TADIR 的 R3TR 层(属于函数组), 查 TFDIR
+    " V1.1: 函数模块不在 TADIR 的 R3TR 层(属于函数组), 查 TFDIR(V1.2: 超过 30 位不查)
+    IF strlen( iv_name ) > 30.
+      ev_objtype = 'UNKNOWN'.
+      RETURN.
+    ENDIF.
     SELECT SINGLE funcname FROM tfdir
       WHERE funcname = @iv_name
       INTO @DATA(lv_fname).

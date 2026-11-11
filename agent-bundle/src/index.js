@@ -18,7 +18,7 @@ import {
   FolderBackend, folderSupported, pickFolder, restoreFolder, requestFolderPermission, forgetFolder, isTextPath
 } from "./folder-backend.js";
 import { ReadonlyMemBackend, skillFiles } from "./readonly-backend.js";
-import { summarizeStep, mainArg } from "./step-summary.js";
+import { summarizeStep, mainArg, toolOk } from "./step-summary.js";
 import { createAdtClient, ADT_TOOL_SPECS, ADT_PROMPT, ADT_SQL_PROMPT, normalizeUri, parseDataPreview } from "./adt-client.js";
 import { buildXlsx, buildDocx, officeToText, parseCsv, csvValue } from "./office.js";
 import { lintAbap, lintText } from "./abap-lint.js";
@@ -80,7 +80,9 @@ const BASE_PROMPT = `你是「灵犀」，公司内部的 SAP 业务助手，运
 - 开始干活时，在第一次调用工具的同时用一句话说打算怎么做（先查什么、再看什么）。
 - 拿到重要发现、要换方向时，用一句话说看到了什么、接下来查什么。
 - 要用户确认的操作（写文件等）之前，用一句话说为什么要这么做。
-- 其余步骤（连续查表、读文件）直接调用工具，不必说话。每句不超过 40 个字，不重复工具名，不写客套话。`;
+- 其余步骤（连续查表、读文件）直接调用工具，不必说话。每句不超过 40 个字，不重复工具名，不写客套话。
+接着上一轮做（「继续」）：
+- 上一轮回答以「（未完成」开头时，里面列了已完成的步骤、改过的文件和还没做的事。用户说「继续」就是从那里接着做：已完成的步骤不要重做（目录不用再列，读过且不用改的文件不用再读）；那一轮改过的文件先读一下当前内容再接着改。`;
 
 const FOLDER_PROMPT = `用户已授权一个本地文件夹，文件工具里的 "/" 就是这个文件夹的根目录。
 - 改文件前先读；尽量用 edit_file 做小范围修改，不要整份重写。
@@ -696,6 +698,55 @@ export function compactSteps(trace) {
   return out;
 }
 
+/** 11.11 #05：模型调用次数用到最后一次时，不再给工具、提示模型收尾 —— 以前用满就 429，整轮「未完成」 */
+export const LAST_CALL_NOTE = "（系统提示：这次运行的模型调用次数已经用完，这是最后一次。不要再调用工具，直接基于已有结果回答：" +
+  "说清已经完成了哪些、还差哪些没做；用户发「继续」可以接着做。）";
+
+export function lastCallInit(init) {
+  if (!init || typeof init.body !== "string") return init;
+  try {
+    const b = JSON.parse(init.body);
+    if (!Array.isArray(b.tools) || !b.tools.length) return init;
+    b.tool_choice = "none";
+    b.messages = [...(Array.isArray(b.messages) ? b.messages : []), { role: "user", content: LAST_CALL_NOTE }];
+    return { ...init, body: JSON.stringify(b) };
+  } catch (e) { return init; }
+}
+
+/** 主模型的 fetch：数调用次数（与 SAP 的 BRUN_MAX_MODEL 同口径），第 max 次改成收尾请求；max = 0 不限 */
+export function budgetFetch(baseFetch, max) {
+  let n = 0;
+  return (input, init) => {
+    n++;
+    return baseFetch(input, max > 0 && n >= max ? lastCallInit(init) : init);
+  };
+}
+
+/**
+ * 11.11 #04 / #05：运行没正常结束（出错、停止、页面关闭、调用次数用完）时存进会话的「进度说明」——
+ * 已完成的步骤、失败的步骤、改过的文件、计划里还没做的。下一轮「继续」时模型从会话历史里看到它，从断点接着做。
+ */
+export function interruptedAnswer(trace, reason, changes) {
+  const steps = compactSteps(trace).filter(x => x.k === "tool");
+  const done = steps.filter(x => x.st === "OK");
+  const bad = steps.filter(x => x.st === "ERROR");
+  const line = x => `- ${x.tool}${x.arg ? " " + x.arg : ""}${x.sum ? " → " + x.sum : ""}`;
+  const out = [`（未完成：${String(reason || "运行中断").slice(0, 200)}）`, ""];
+  out.push(done.length ? `已完成 ${done.length} 步${done.length > 25 ? "（只列最后 25 步）" : ""}：` : "还没有完成任何步骤。");
+  done.slice(-25).forEach(x => out.push(line(x)));
+  if (bad.length) { out.push("", "失败的步骤："); bad.slice(-5).forEach(x => out.push(line(x))); }
+  if (changes && changes.length) {
+    out.push("", "已经改动的文件：");
+    changes.slice(-20).forEach(c => out.push(`- ${c.action} ${c.path}`));
+  }
+  let todos = null;
+  for (const e of trace || []) if (e.type === "todos") todos = e.todos;
+  const left = (todos || []).filter(t => t && t.status !== "completed");
+  if (left.length) { out.push("", "计划里还没做的："); left.slice(0, 10).forEach(t => out.push(`- ${String(t.content || "").slice(0, 80)}`)); }
+  out.push("", "发「继续」可以从这里接着做，已完成的步骤不用重做。");
+  return out.join("\n").slice(0, 3500);
+}
+
 function msgType(m) {
   if (!m) return "";
   if (typeof m._getType === "function") return m._getType();
@@ -761,9 +812,27 @@ export async function run(o) {
       changes: [], elapsedMs: Date.now() - started, folder: o.folderBackend || null };
   }
 
+  // 11.11 #04：页面关闭 / 刷新时运行还没收尾 → 用 keepalive 把问题、进度说明和过程记录写回 SAP 会话，
+  // 刷新后能看到停在哪一步，「继续」也有上下文（以前这一轮什么都不留，会话里只剩上一次的结果）
+  let finished = false;
+  let folderRef = null;
+  const onHide = () => {
+    if (finished) return;
+    finished = true;
+    const body = { runId: runInfo.runId, status: "ERROR", message: "页面刷新或关闭，运行中断", skillsUsed: [],
+      answer: interruptedAnswer(trace, "页面刷新或关闭，运行中断", folderRef ? folderRef.changes : []),
+      steps: compactSteps(trace) };
+    if (JSON.stringify(body).length > 56000) body.steps = body.steps.slice(-40);
+    if (JSON.stringify(body).length > 56000) body.steps = [];
+    client.finishRun(body, { keepalive: true }).catch(() => {});
+  };
+  const hasWin = typeof window !== "undefined" && typeof window.addEventListener === "function";
+  if (hasWin) window.addEventListener("pagehide", onHide);
+
   let allowAllWrites = false;
   // 文件夹后端：调用方可传入同一个实例跨多轮复用（撤回要用到之前的修改记录）
   let folderBackend = o.folderBackend || (o.folder ? new FolderBackend(o.folder) : null);
+  folderRef = folderBackend;
   if (folderBackend) {
     folderBackend.opts = {
       ...folderBackend.opts,
@@ -798,7 +867,7 @@ export async function run(o) {
     streaming: false,
     configuration: {
       baseURL: client.root,
-      fetch: client.modelFetch(runInfo.runId),
+      fetch: budgetFetch(client.modelFetch(runInfo.runId), (runInfo.limits && runInfo.limits.maxModelCalls) || 0),
       dangerouslyAllowBrowser: true
     }
   });
@@ -1011,7 +1080,7 @@ export async function run(o) {
             } else if (ty === "tool") {
               if (m.name === "write_todos") continue;
               const t = textOf(m);
-              const ok = !/^(Error|工具执行失败)/.test(t) && m.status !== "error";
+              const ok = toolOk(t, m.status);
               track({ type: "tool_end", id: m.tool_call_id, tool: m.name, ok,
                 summary: summarizeStep(m.name, callArgs[m.tool_call_id], t, ok), preview: t.slice(0, 1000) });
               // 11.10 #04：同一步原样失败多次 → 引擎直接停，不再让模型空转
@@ -1053,9 +1122,21 @@ export async function run(o) {
     if (title) emit({ type: "title", title });
   }
 
+  // 11.11 #04 / #05：没正常结束 → 回答换成进度说明（存进会话，「继续」据此接着做）
+  let partial = "";
+  if (status !== "OK" && !answer) {
+    partial = interruptedAnswer(trace, status === "CANCELLED" ? "你停止了这次运行" : errorMsg,
+      folderBackend ? folderBackend.changes : []);
+  }
+  if (hasWin) window.removeEventListener("pagehide", onHide);
+  if (finished) {   // 页面已在关闭，收尾已经用 keepalive 发过
+    emit({ type: "phase", phase: "done", status });
+    if (status !== "OK") throw Object.assign(new Error(errorMsg || status), { status, trace, runId: runInfo.runId, partial });
+  }
+  finished = true;
   try {
     await client.finishRun({
-      runId: runInfo.runId, status, answer, message: errorMsg,
+      runId: runInfo.runId, status, answer: answer || partial, message: errorMsg,
       skillsUsed: [...skillsUsed.keys()].filter(k => !k.startsWith("folder:") && !k.startsWith("builtin:")),
       steps: compactSteps(trace),
       title
@@ -1074,7 +1155,7 @@ export async function run(o) {
   }
 
   emit({ type: "phase", phase: "done", status });
-  if (status !== "OK") throw Object.assign(new Error(errorMsg || status), { status, trace, runId: runInfo.runId });
+  if (status !== "OK") throw Object.assign(new Error(errorMsg || status), { status, trace, runId: runInfo.runId, partial });
   return {
     answer, runId: runInfo.runId, trace, card, datasets, title,
     skills: [...skillsUsed.values()],

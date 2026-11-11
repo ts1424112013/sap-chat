@@ -307,7 +307,9 @@ sap.ui.define([
 					if (bStop) {
 						return res;
 					}
-					var err = new Error(that._errText(e));
+					// 20261111（11.11 #04）：运行中途出错 → 气泡里放引擎给的进度说明（完成到哪一步、改了哪些文件），
+					// 下一轮「继续」的对话历史就带着它；还没开始就失败（没部署 / 没权限）照旧给报错说明
+					var err = new Error(e && e.partial ? e.partial : that._errText(e));
 					err.result = res;
 					throw err;
 				});

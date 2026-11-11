@@ -45,6 +45,16 @@ function topGroups(o) {
   return ds.rows.slice(0, 3).map(r => `${cut(r[0], 16)} ${n(r[iNum])}`).join("、");
 }
 
+/**
+ * 一步工具算不算成功（11.11 #03）：除了「工具执行失败」/ Error 开头，SAP 工具回 {"ok":false,…} 也算失败
+ * （以前读源码「对象不存在」照样打绿勾）
+ */
+export function toolOk(text, status) {
+  const t = String(text || "").trim();
+  if (status === "error" || /^(Error|工具执行失败)/.test(t)) return false;
+  return !/^\{\s*"ok"\s*:\s*false\b/.test(t);
+}
+
 export function summarizeStep(tool, args, text, ok) {
   const a = args || {};
   const t = String(text || "");

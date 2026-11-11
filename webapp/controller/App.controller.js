@@ -1232,7 +1232,23 @@ sap.ui.define([
                         // 本轮拥有当前消息和动画时才允许收尾，迟到响应不能影响下一轮。
                         var fnIsCurrent = function () {
                                 var oNow = oChatModel.getProperty("/currentSession") || {};
-                                return that._sStreamToken === sSendToken && oNow.id === sSessionId;
+                                if (!(that._sStreamToken === sSendToken && oNow.id === sSessionId)) {
+                                        return false;
+                                }
+                                // 20261111（11.11 #04 串台）：运行期间消息列表被重读过时，按 uid 重新找本轮的回复气泡，
+                                // 不能按发送时记下的下标把回答 / 报错写进别的气泡
+                                var aNow = oChatModel.getProperty("/messages") || [];
+                                if (!aNow[iAssistantIdx] || aNow[iAssistantIdx].uid !== oPending.uid) {
+                                        var iFound = -1;
+                                        for (var k = 0; k < aNow.length; k++) {
+                                                if (aNow[k] && aNow[k].uid === oPending.uid) { iFound = k; break; }
+                                        }
+                                        if (iFound < 0) {
+                                                return false;
+                                        }
+                                        iAssistantIdx = iFound;
+                                }
+                                return true;
                         };
 
                         /** 出错：移除占位气泡，替换为错误消息 */
