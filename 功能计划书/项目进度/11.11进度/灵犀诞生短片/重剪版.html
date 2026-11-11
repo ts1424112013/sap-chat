@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>灵犀 · 诞生</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#000;overflow:hidden;font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif}
+body.playing{cursor:none}
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;overflow:hidden;background:#06080c}
+#cv{position:absolute;inset:0;width:1920px;height:1080px}
+#start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(4,6,9,.9);z-index:9;gap:26px;cursor:pointer}
+#start .p{width:104px;height:104px;border-radius:50%;border:1px solid #e6c58f;display:grid;place-items:center;color:#e6c58f;font-size:34px;padding-left:6px}
+#start p{font-size:16px;color:#8d8a83;line-height:2;text-align:center;letter-spacing:1px}
+#start kbd{border:1px solid #33312d;border-radius:5px;padding:1px 8px;font-family:inherit;color:#b9b3a6}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="cv"></canvas></div>
+<div id="start"><div class="p">▶</div><p>点击开始播放（请打开声音）<br><kbd>空格</kbd> 暂停 / 继续　<kbd>←</kbd> <kbd>→</kbd> 上一段 / 下一段　<kbd>R</kbd> 从头　<kbd>F</kbd> 全屏　<kbd>D</kbd> 检查面板</p></div>
+<audio id="music" src="music-cut.m4a" preload="auto"></audio>
+
+<script src="cut-beats.js"></script>
+<script>
+"use strict";
+const p2 = (n) => String(n).padStart(2, "0");
+// ───────── 基础 ─────────
+const W = 1920, H = 1080, T = CUT_MARKS.length, SECTIONS = [0, CUT_BEATS[0].t, CUT_BEATS[10].t, CUT_BEATS[18].t, CUT_BEATS[25].t, CUT_BEATS[32].t, CUT_BEATS[36].t, 60.6, 70, 79];
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const sm = (a, b, x) => { x = clamp((x - a) / (b - a)); return x * x * (3 - 2 * x); };
+const eo = (x) => 1 - Math.pow(1 - clamp(x), 3);
+const lerp = (a, b, k) => a + (b - a) * k;
+const win = (t, a, b, f = 1) => sm(a, a + f, t) * (1 - sm(b - f, b, t));
+const pulse = (t, t0, d = 1.2) => (t > t0 ? Math.exp(-(t - t0) / d * 3) : 0);
+function rng(a) { return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const SANS = '"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif', MONO = '"SF Mono",Menlo,Consolas,monospace', SERIF = '"Songti SC","STSong","Noto Serif SC",serif';
+const GOLD = "rgb(230,197,143)", WARM = "rgb(255,243,220)", SUB = "rgb(150,146,138)", CARD = "#141a24";
+
+const cv = $("cv"), ctx = cv.getContext("2d");
+const glow = document.createElement("canvas"); glow.width = glow.height = 128;
+{ const g = glow.getContext("2d"), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, "rgba(255,240,212,1)"); gr.addColorStop(0.12, "rgba(250,222,170,.62)"); gr.addColorStop(0.4, "rgba(232,196,138,.14)"); gr.addColorStop(1, "rgba(232,196,138,0)");
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128); }
+const bg = document.createElement("canvas"); bg.width = W; bg.height = H;
+{ const g = bg.getContext("2d"); let gr = g.createLinearGradient(0, 0, W * 0.3, H);
+  gr.addColorStop(0, "#0b1018"); gr.addColorStop(0.55, "#080b11"); gr.addColorStop(1, "#05070a"); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  gr = g.createRadialGradient(W * 0.72, H * 0.2, 0, W * 0.72, H * 0.2, 1100); gr.addColorStop(0, "rgba(46,62,88,.30)"); gr.addColorStop(1, "rgba(46,62,88,0)"); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  gr = g.createRadialGradient(W / 2, H / 2, 300, W / 2, H / 2, 1150); gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(0,0,0,.6)"); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
+const DR = rng(21), dust = Array.from({ length: 130 }, () => ({ x: DR() * W, y: DR() * H, d: 0.2 + DR() * 0.8, a: 0.1 + DR() * 0.3, f: 0.2 + DR() * 0.5, p: DR() * 6.28, s: 0.8 + DR() * 1.6 }));
+let GA = 1;                                                  // 当前场景的整体透明度
+function G(x, y, r, a) { a *= GA; if (a <= 0.004 || r <= 0) return; ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = Math.min(1, a); ctx.drawImage(glow, x - r, y - r, r * 2, r * 2); ctx.globalCompositeOperation = "source-over"; }
+function rr(x, y, w, h, r) { r = Math.min(r, w / 2, h / 2); ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function box(x, y, w, h, r, fa, sa, fill = CARD, stroke = GOLD, lw = 1.2) { if (w <= 0 || h <= 0) return; rr(x, y, w, h, r);
+  if (fa > 0.004) { ctx.globalAlpha = clamp(fa * GA); ctx.fillStyle = fill; ctx.fill(); }
+  if (sa > 0.004) { ctx.globalAlpha = clamp(sa * GA); ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); } }
+function txt(s, x, y, size, a, col = WARM, align = "left", font = SANS, weight = 400, ls = 0) { a *= GA; if (a <= 0.004) return;
+  ctx.globalAlpha = clamp(a); ctx.fillStyle = col; ctx.font = `${weight} ${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = "middle";
+  if ("letterSpacing" in ctx) ctx.letterSpacing = ls + "px"; ctx.fillText(s, x + (align === "center" ? ls / 2 : 0), y); if ("letterSpacing" in ctx) ctx.letterSpacing = "0px"; }
+function tw(s, size, font = SANS, weight = 400) { ctx.font = `${weight} ${size}px ${font}`; return ctx.measureText(s).width; }
+function line(p, q, a, lw = 1, col = GOLD) { if (a <= 0.004) return; ctx.globalAlpha = clamp(a * GA); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); }
+function tick(x, y, s, a) { if (a <= 0.004) return; ctx.globalAlpha = clamp(a * GA); ctx.strokeStyle = GOLD; ctx.lineWidth = s * 0.16; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(x - s * 0.4, y); ctx.lineTo(x - s * 0.1, y + s * 0.3); ctx.lineTo(x + s * 0.45, y - s * 0.35); ctx.stroke(); }
+function pill(cx, cy, s, size, a, lit = 0, font = SANS, col = WARM) { const w = tw(s, size, font) + size * 2, h = size * 2.3;
+  if (lit > 0) G(cx, cy, w * 0.8, a * 0.3 * lit);
+  box(cx - w / 2, cy - h / 2, w, h, h / 2, a * 0.94, a * (0.5 + 0.4 * Math.min(1, lit)), "#161c27"); txt(s, cx, cy + 1, size, a, col, "center", font); return w; }
+// 金色指针：屏幕另一头的那个人
+function pointer(x, y, s, a) { if (a <= 0.004) return; G(x + 6 * s, y + 10 * s, 46 * s, a * 0.5);
+  ctx.globalAlpha = clamp(a * GA); ctx.fillStyle = "#e9c98f"; ctx.strokeStyle = "#0a0d13"; ctx.lineWidth = 1.2 * s; ctx.lineJoin = "round"; ctx.beginPath();
+  [[0, 0], [0, 20], [5, 15.5], [8.5, 23], [11.5, 21.5], [8, 14.5], [14, 14.5]].forEach(([px, py], i) => i ? ctx.lineTo(x + px * s, y + py * s) : ctx.moveTo(x + px * s, y + py * s)); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+function bubble(cx, cy, s, size, a, gold) { if (a <= 0.004) return; const w = tw(s, size) + size * 1.8, h = size * 2.4;
+  box(cx - w / 2, cy - h / 2, w, h, h * 0.42, a * 0.96, a * 0.8, gold ? "#221c12" : "#1b222e", gold ? GOLD : "#d97757", 1.4); txt(s, cx, cy + 1, size, a, WARM, "center"); }
+
+// ───────── 灵犀诞生（重剪版）：静下来 → 一步步长起来 → 再静下来 ─────────
+// 中段的规矩：每一记重音完成一个动作，动作从落拍那一刻才开始。东西是「蹦」出来的（落拍那一帧最大最亮，约 0.2 秒收住）；
+// 小人是落拍起跳的一段连贯快动作。开头和收尾没有鼓，画面慢慢走。重音的时刻在 cut-beats.js，和音轨共用。
+const AC = CUT_BEATS, TA = (j) => AC[j].t, on = (j, t) => t >= AC[j].t, hitp = (j, t, r = 14) => t < AC[j].t ? 0 : Math.exp(-(t - AC[j].t) * r);
+const stepAt = (t) => { let n = -1; for (let i = 0; i < AC.length; i++) if (t >= AC[i].t) n = i; return n; };
+const mv = (a, D) => a <= 0 ? 0 : 1 - Math.pow(1 - Math.min(1, a / D), 3);      // 落拍后才动：起步最快，D 秒内到位
+const TDOOR = TA(38), BPT = 0.53141, ORANGE = "#d97757", EYE = "#17110e", BAD = "rgb(214,120,108)", GYT = 800;
+const ASK = "ABG1 工厂今天开了多少工单？", SAY = "能不能，直接问？", LAST = "那么，你想问什么？";
+// 每一记重音的动作（给检查面板和说明用）
+const STEPS = ["接住那句话", "低头看", "拆成三样", "摆出三个位置", "工厂落位", "日期落位", "想问的落位", "今天 → 11.10", "听懂了", "转向前方", "向前一跃", "到岸边",
+  "踏上第一条", "迈到下一条", "踩错了", "再陷一截", "托住脚", "再上一级", "到对岸", "排成表", "折成文件", "接到手里", "递出去", "留下星", "挥手",
+  "走向名字", "Gale-SAP", "往前", "Momo", "往前", "灵犀", "看向前方", "门出现", "到门前", "敲门", "推不开", "回头看来路（无声）", "转回门前（无声）", "门开了，走进 SAP"];
+// 世界里的位置（横向的一条路，镜头跟着小人）
+const SLOT = [[-1150, 470], [-900, 470], [-650, 470]], BUR = [[-1130, 590], [-900, 560], [-680, 600]], CHIPS = ["ABG1 工厂", "今天", "多少工单"], SLOTLAB = ["工厂", "日期", "想问的"];
+const SEA0 = 430, SEA1 = 1250, R1 = { x: 590, y: 730, r: ["ABG1", "11.10", "100482311"] }, RW = { x: 800, y: 670, r: ["ABG2", "11.09", "100471906"] }, RC = { x: 800, y: 600, r: ["ABG1", "11.10", "100482316"] }, R3 = { x: 1010, y: 540, r: ["ABG1", "11.10", "100482317"] };
+const CAND = [[560, 540, ["ABK1", "11.10", "100455120"], 0], [1050, 430, ["ABG1", "11.08", "100479833"], 1], [800, 430, ["ABG2", "11.10", "100480012"], 0]];
+const TBL = { x: 560, y: 236, w: 520, rh: 36 }, FILEP = [820, 326], PTR = [1800, 650], HAND = [1670, 590], TROWS = [R1.r, RC.r, R3.r, ["ABG1", "11.10", "100482318"], ["ABG1", "11.10", "100482319"], ["ABG1", "11.10", "100482320"]];
+const PLATES = [[1900, "Gale-SAP", MONO, 30], [2240, "Momo", SANS, 36], [2580, "灵犀", SERIF, 48]], DX = 3640;
+// 镜头：[从第几记重音起, 镜头左边缘的世界坐标]，落拍后 0.3 秒内移到位
+const CAMK = [[-1, -1860], [10, -1070], [11, 0], [25, 1080], [27, 1420], [29, 1760], [32, 2300], [33, 2480]];
+function camX(t) { let c = CAMK[0][1]; for (let i = 1; i < CAMK.length; i++) { const [j, x] = CAMK[i]; if (on(j, t)) c = lerp(CAMK[i - 1][1], x, mv(t - TA(j), 0.32)); } return c; }
+const wideOn = (t) => on(36, t) && !on(37, t), ZW = 1 / 3;     // 进门前回头的那一小节：切到全景，看见整条来路
+// ───────── 小人 ─────────
+const RWEND = RW.y + 78, rwY = (t) => RW.y + 44 * mv(t - TA(14), 0.18) + 34 * mv(t - TA(15), 0.18);
+function rcY(t) { const a = t - TA(16); if (a < 0.06) return lerp(980, RWEND, Math.max(0, a) / 0.06); const k = Math.min(1, (a - 0.06) / 0.24); return lerp(RWEND, RC.y, 1 - Math.pow(1 - k, 3)) - 16 * Math.sin(k * Math.PI) * (1 - k); }
+const r3Y = (t) => lerp(900, R3.y, mv(t - TA(17), 0.1));
+const HOPS = { 10: [[-900, GYT], [-250, GYT]], 11: [[-250, GYT], [390, GYT]], 12: [[390, GYT], [R1.x, R1.y]], 13: [[R1.x, R1.y], [RW.x, RW.y]], 17: [[RC.x, RC.y], [R3.x, R3.y]], 18: [[R3.x, R3.y], [1350, GYT]],
+  25: [[1350, GYT], [1900, GYT]], 27: [[1900, GYT], [2240, GYT]], 29: [[2240, GYT], [2580, GYT]], 30: [[2580, GYT], [2580, GYT]], 32: [[2580, GYT], [3000, GYT]], 33: [[3000, GYT], [3300, GYT]], 38: [[3300, GYT], [DX, GYT]] };
+const hopD = (p, q) => clamp(0.17 + Math.hypot(q[0] - p[0], q[1] - p[1]) / 2600, 0.18, 0.32);
+function restAt(n, t) { if (n < 10) return [-900, GYT]; if (n === 10) return [-250, GYT]; if (n === 11) return [390, GYT]; if (n === 12) return [R1.x, R1.y]; if (n === 13) return [RW.x, RW.y]; if (n <= 15) return [RW.x, rwY(t)];
+  if (n === 16) return [RC.x, t - TA(16) < 0.06 ? RWEND : rcY(t)]; if (n === 17) return [R3.x, R3.y]; if (n <= 24) return [1350, GYT]; if (n <= 26) return [1900, GYT]; if (n <= 28) return [2240, GYT]; if (n <= 31) return [2580, GYT]; if (n === 32) return [3000, GYT]; if (n <= 37) return [3300, GYT]; return [DX, GYT]; }
+function heroPos(t) { const n = stepAt(t), a = n >= 0 ? t - TA(n) : 9, rest = restAt(n, t); let x = rest[0], y = rest[1], yo = 0, air = 0, land = 9; const h = HOPS[n];
+  if (h) { const D = n === 30 ? 0.36 : hopD(h[0], h[1]), lin = Math.min(1, a / D), k = mv(a, D); x = lerp(h[0][0], h[1][0], k); y = lerp(h[0][1], h[1][1], k);
+    yo = -(n === 30 ? 150 : 40 + Math.abs(h[1][1] - h[0][1]) * 0.25 + Math.abs(h[1][0] - h[0][0]) * 0.06) * Math.sin(Math.PI * lin); air = lin < 1 ? Math.max(lin, 0.001) : 0; land = a - D; }
+  return { x, y, yo, air, land, n, a }; }
+const LEAD = { 2: [0, -1], 4: [-1, -1], 5: [0, -1], 6: [1, -1], 10: [1, 0], 11: [1, 0], 12: [1, 0], 13: [1, -1], 14: [0, 1], 16: [0, 1], 17: [1, -1], 18: [1, 1], 19: [-1, -1], 20: [-1, -1], 21: [-1, -1], 22: [1, 0], 23: [0, -1], 25: [1, 0], 26: [0, -1], 27: [1, 0], 28: [0, -1], 29: [1, 0], 30: [0, -1], 32: [1, 0], 33: [1, 0], 34: [1, -1], 38: [1, 0] };   // 下一记重音之前，目光先过去
+const A = { a: 0 };
+function actor(t) { if (t >= TDOOR + 2.6) return endActor(t);
+  const P = heroPos(t), n = P.n, a = P.a, next = n + 1 < AC.length ? TA(n + 1) : 999, prev = n >= 0 ? TA(n) : 0;
+  const o = { a: sm(16.25, 16.45, t) * (n === 38 ? 1 - sm(0.22, 0.5, a) : 1), u: 12, x: P.x, y: P.y, yo: P.yo, ex: 0, ey: -1, aL: 0, aR: 0, rL: 0, rR: 0, lean: 0, crouch: 0, tuck: 0, legs: 0, blink: t % 3.3 < 0.12 || (t > 16.3 && t < 16.75), trail: [] };
+  if (P.air > 0) { o.tuck = P.air > 0.12 && P.air < 0.88 ? 1 : 0; o.ex = n === 30 ? 0 : 1; o.ey = n === 30 ? -1 : P.air < 0.5 ? -1 : 1; if (n === 30) { o.aL = -5; o.aR = -5; } }
+  else { const s = n - 12;                                      // s：在「找」和「接下去」那一段里是第几步
+    if (n === 0 || n === 1) { o.aL = -5; o.aR = -5; o.ey = n ? 1 : -1; } else if (n === 2) { o.aL = -2; o.aR = -2; o.rL = 1; o.rR = 1; } else if (n === 4 && a < 0.5) { o.aL = -4; o.rL = 1; o.ex = -1; } else if (n === 5 && a < 0.5) { o.aR = -5; o.aL = -5; }
+    else if (n === 6 && a < 0.5) { o.aR = -4; o.rR = 1; o.ex = 1; } else if (n === 8) { o.ey = a < 0.3 ? 1 : -1; if (a < 0.12) o.crouch = 1; } else if (n >= 9 && n <= 13) { o.ex = 1; o.ey = 0; }
+    else if (s === 2) { o.ex = 0; o.ey = 1; o.lean = a < 0.5 ? (Math.floor(a * 9) % 2 ? 1 : -1) : 0; o.aL = -1; o.aR = -1; o.rL = 1; o.rR = 1; } else if (s === 3) { o.ey = -1; o.ex = a < 0.35 ? -1 : a < 0.7 ? 1 : 0; o.lean = -1; }
+    else if (s === 4) { o.ex = 0; o.ey = 0; if (a < 0.5) { o.aL = -4; o.aR = -4; o.ey = 1; } } else if (s === 5) { o.ex = 1; o.ey = 0; } else if (s === 6) { o.ex = -1; o.ey = 0; } else if (s === 7) { o.ex = -1; if (a < 0.6) { o.aL = -3; o.rL = 1; } } else if (s === 8) { o.ex = -1; }
+    else if (s === 9) { o.aL = -5; o.aR = -5; } else if (s === 10) { o.ex = 1; o.ey = 0; o.aR = -2; o.rR = 1; if (a < 0.4) { o.lean = 1; o.aL = -2; } } else if (s === 12) { o.ey = 0; o.aR = Math.floor(a * 5) % 2 ? -4 : -3; o.rR = 1; o.yo = -40 * Math.exp(-a * 7) * Math.abs(Math.cos(a * 9)); }
+    else if (n === 25 || n === 27 || n === 29 || n === 31 || n === 32 || n === 33) { o.ex = 1; o.ey = 0; } else if (n === 34) { o.ex = 1; if (a < 0.35) { o.aR = -3; o.rR = 1; } } else if (n === 35) { o.ex = 1; o.ey = 0; o.aR = -1; o.rR = 1; o.lean = a < 0.45 ? 1 : 0; }
+    else if (n === 36) { o.ex = -1; o.ey = -1; } else if (n === 37) { o.ex = 1; o.ey = 0; }
+    if (LEAD[n + 1] && n >= 0 && t > prev + (next - prev) * 0.55 && n !== 0 && n !== 1 && s !== 9) { o.ex = LEAD[n + 1][0]; o.ey = LEAD[n + 1][1]; }
+    if (P.land >= 0 && P.land < 0.1) o.crouch = 1;              // 落地缓冲
+    if (HOPS[n + 1] && next - t < 0.11 && n !== 37) o.crouch = 1; }   // 要跳之前原地轻轻一蹲
+  for (const d of [0.09, 0.06, 0.03]) { const Q = heroPos(t - d); if (Math.hypot(Q.x - P.x, Q.y + Q.yo - P.y - P.yo) > 12) o.trail.push([Q.x, Q.y + Q.yo, 0.1 + 0.9 * (0.09 - d) / 0.09]); }
+  const ob = a - BPT, bob = P.air === 0 && n >= 0 && n < 36 && ob >= 0 && ob < 0.25 ? Math.round(4 * Math.exp(-ob * 14)) : 0;      // 没有重音的那一拍：身体轻轻一点
+  o.br = o.crouch ? 0 : Math.round(1 + Math.sin(t * 2.1)) - bob; o.wx = o.x; o.wtop = o.y + o.yo - 120 + (o.crouch ? 12 : 0); Object.assign(A, o); }
+// 收尾里的小人：没有重音了，慢慢走、稳稳接
+const E0 = TDOOR + 3.2, ECATCH = 66.2, EDIS = 69.5;
+function endActor(t) { const k = clamp((t - E0) / 3.2), x = lerp(-130, 960, k * k * (3 - 2 * k)), walking = k > 0 && k < 1;
+  const o = { a: sm(E0, E0 + 0.4, t), u: 12, x, y: GYT, yo: 0, ex: walking ? 1 : 0, ey: walking ? -1 : -1, aL: 0, aR: 0, rL: 0, rR: 0, lean: 0, crouch: 0, tuck: 0, legs: walking ? (Math.floor(x / 40) % 2 ? 1 : 2) : 0, blink: t % 3.3 < 0.12, trail: [] };
+  if (t > ECATCH - 0.7 && t < EDIS + 0.3) { o.aL = -5; o.aR = -5; } if (t >= ECATCH && t < ECATCH + 0.16) o.crouch = 1; if (t > ECATCH + 0.6 && t < ECATCH + 0.84) { o.crouch = 1; o.ey = 1; }      // 稳稳接住，点一下头
+  if (t > 79.2) { o.ey = 0; o.ex = 0; } if (t > 79.5 && t < 79.74) o.crouch = 1;
+  o.br = o.crouch || walking ? 0 : Math.round(1 + Math.sin(t * 2.1)); o.wx = x; o.wtop = GYT - 120 + (o.crouch ? 12 : 0); Object.assign(A, o); }
+function drawActor(sx, sy, u, yo) { if (A.a <= 0.004) return;
+  const x0 = Math.round(sx) - 8 * u, gy = Math.round(sy + yo), bx = x0 + A.lean * u, br = u < 8 ? 0 : A.br, bb = gy - (A.crouch ? u : 2 * u) - br, btp = bb - 8 * u;
+  GA = 1; G(sx, gy - 5 * u, 14 * u, 0.12 * A.a); ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = A.a; ctx.fillStyle = ORANGE;
+  ctx.fillRect(bx - A.rL * u, btp + (4 + A.aL) * u, (2 + A.rL) * u, 2 * u); ctx.fillRect(bx + 14 * u, btp + (4 + A.aR) * u, (2 + A.rR) * u, 2 * u); ctx.fillRect(bx + 2 * u, btp, 12 * u, 8 * u);
+  [3, 5, 10, 12].forEach((c, j) => { const lift = A.tuck || (A.legs && j % 2 === A.legs - 1) ? u : 0; if (gy - bb - lift > 0) ctx.fillRect(x0 + c * u, bb, u, gy - bb - lift); });
+  ctx.fillStyle = EYE; const eh = A.blink ? u : 2 * u, ey = btp + (2 + A.ey) * u + (A.blink ? u : 0); ctx.fillRect(bx + (4 + A.ex) * u, ey, u, eh); ctx.fillRect(bx + (11 + A.ex) * u, ey, u, eh); ctx.globalAlpha = 1; }
+// ───────── 小部件 ─────────
+function askCard(x, y, a, s = ASK, lit = 0, k = 1) { if (a <= 0.004) return; const sv = GA; GA = sv * a; const w = tw(s, 26) + 70; ctx.save(); ctx.translate(x, y); ctx.scale(k, k); G(0, 0, 260, 0.3 + 0.5 * lit); box(-w / 2, -40, w, 80, 22, 0.97, 0.85, lit > 0.5 ? "#2a2114" : "#1b222e", GOLD, 1.5); txt(s, 0, 1, 26, 1, WARM, "center"); ctx.restore(); GA = sv; }
+function pillK(x, y, s, size, a, lit, k) { ctx.save(); ctx.translate(x, y); ctx.scale(k, k); pill(0, 0, s, size, a, lit); ctx.restore(); }
+function rowBox(cx, y, r, a, gold, bad = -1, w = 220, k = 1) { if (a <= 0.004) return; const sv = GA; GA = sv * a; ctx.save(); ctx.translate(cx, y + 15); ctx.scale(k, k); if (gold > 0) G(0, 0, 170, 0.3 * gold);
+  box(-w / 2, -15, w, 30, 7, 0.96, 0.3 + 0.6 * Math.max(gold, bad >= 0 ? 0.6 : 0), gold > 0.5 ? "#241d12" : bad >= 0 ? "#1c1416" : "#141a24", bad >= 0 ? "rgb(170,96,88)" : GOLD, 1.3);
+  const xs = [-w / 2 + 12, -w / 2 + 62, -w / 2 + 128]; r.forEach((v, i) => txt(v, xs[i], 1, 14, 0.95, i === bad ? BAD : gold > 0.5 ? WARM : SUB, "left", MONO)); ctx.restore(); GA = sv; }
+function candle(x, top, a) { if (a <= 0.004) return; const g = ctx.createLinearGradient(0, top, 0, 940); g.addColorStop(0, "rgba(230,197,143,.75)"); g.addColorStop(1, "rgba(230,197,143,0)"); ctx.globalAlpha = clamp(a * GA); ctx.fillStyle = g; ctx.fillRect(x - 46, top + 30, 92, 940 - top - 30); }
+function ring(x, y, j, t, R = 220) { if (!on(j, t)) return; const a = t - TA(j); if (a > 0.4) return; ctx.globalAlpha = (1 - a / 0.4) * 0.9 * GA; ctx.strokeStyle = GOLD; ctx.lineWidth = 3 * (1 - a / 0.4) + 0.5; ctx.beginPath(); ctx.ellipse(x, y, 30 + R * eo(a / 0.4), (30 + R * eo(a / 0.4)) * 0.28, 0, 0, 6.3); ctx.stroke(); }
+function hills(off, base, amp, col, a) { ctx.globalAlpha = clamp(a); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, H); for (let x = 0; x <= W; x += 40) { const wx = x + off; ctx.lineTo(x, base + Math.sin(wx * 0.0021) * amp + Math.sin(wx * 0.0057 + 1.3) * amp * 0.45); } ctx.lineTo(W, H); ctx.closePath(); ctx.fill(); }
+// ───────── 开头：没有鼓。像素慢慢亮起；那句话在事务码墙前找不到入口；金色指针停一下，打出「能不能，直接问？」；留一口空白 ─────────
+const TC = ["SE16N", "COOIS", "MB52", "ME2N", "VA05", "MMBE", "CO03", "MD04", "ME23N", "VL06O", "MB51", "FBL3N", "FBL1N", "FBL5N", "CS03", "CA03", "MM03", "XK03", "VF05", "ME5A", "CO24", "COHV", "MB5B", "IW38", "QA33", "KSB1", "ZPP001", "ZMM017", "ZSD023", "SQ01", "SM37", "ME2L", "VA03", "MD4C", "CO41", "MF60", "LT23", "LX03", "VT11", "CS15", "MB25", "ME80FN", "VL10", "COOISPI", "MD05", "CKM3N"];
+const TR = rng(7), TILES = []; for (let r = 0; r < 7; r++) for (let c = 0; c < 13; c++) TILES.push({ x: 60 + c * 140, y: 150 + r * 90, s: TC[Math.floor(TR() * TC.length)], f: 0.4 + TR(), p: TR() * 6.28, d: TR() });
+const path = (K, t) => { let i = 1; while (i < K.length - 1 && t > K[i][0]) i++; const a = K[i - 1], b = K[i], k = sm(a[0], b[0], t); return [lerp(a[1], b[1], k), lerp(a[2], b[2], k)]; };
+const CP0 = [[4.6, -300, 430], [6.6, 420, 335], [8.4, 900, 600], [10.2, 1330, 300], [12.4, 1200, 340], [14.6, 960, 300], [999, 960, 300]];
+const CELLS = []; for (let r = 0; r < 8; r++) for (let c = 2; c < 14; c++) CELLS.push([c, r]); [0, 1, 14, 15].forEach((c) => [4, 5].forEach((r) => CELLS.push([c, r]))); [3, 5, 10, 12].forEach((c) => [8, 9].forEach((r) => CELLS.push([c, r])));
+const CR = rng(13), CDEL = CELLS.map(([c, r]) => Math.hypot(c - 7.5, r - 4) / 9 * 0.7 + CR() * 0.2);
+function tilesDraw(t, alpha, spread = 0, near = null) { GA = 1; for (const k of TILES) { const rk = spread ? sm(k.d * 0.5, k.d * 0.5 + 0.5, spread) : 0; if (rk >= 1) continue; const dx = k.x + 60 - 960, dy = k.y + 28 - 450, nr = near ? clamp(1 - Math.hypot(k.x + 60 - near[0], k.y + 28 - near[1]) / 250) : 0;
+    const a = (0.24 + 0.1 * Math.sin(t * k.f + k.p) + 0.6 * nr) * alpha * (1 - rk), x = 960 + dx * (1 + 0.5 * rk) - 60, y = 450 + dy * (1 + 0.5 * rk) - 28;
+    box(x, y, 120, 56, 10, a * 0.7, a * (0.25 + 0.6 * nr), "#10151d"); txt(k.s, x + 60, y + 29, 19, a, nr > 0.3 ? WARM : SUB, "center", MONO); } }
+function scOpening(t) { if (on(10, t)) return; GA = 1;
+  const lit = sm(0.6, 3.6, t), born = t >= 14.8 ? 1 : 0;        // 一颗橙色像素慢慢亮起，没有心跳
+  if (t < 16.3) { G(960, 734, 30 + 150 * lit + 160 * sm(14.6, 16.2, t), 0.5 * lit); if (!born) { ctx.globalAlpha = lit; ctx.fillStyle = ORANGE; ctx.fillRect(954, 728, 12, 12); }
+    else { ctx.fillStyle = ORANGE; CELLS.forEach(([c, r], i) => { const k = eo((t - 14.8 - CDEL[i]) / 0.7); ctx.globalAlpha = 1; ctx.fillRect(Math.round(lerp(954, 960 - 96 + c * 12, k)), Math.round(lerp(728, 680 + r * 12, k)), 12, 12); }); } }   // 留出的那一口空白里，像素长成小人
+  const cp = path(CP0, t); cp[1] += Math.sin(t * 1.5) * 8;
+  tilesDraw(t, sm(3, 7.5, t) * (on(0, t) ? 0.2 + 0.5 * hitp(0, t, 5) : 1) * (1 - sm(TA(8), TA(10), t)), 0, t < 14.6 ? cp : null);
+  if (!on(0, t)) askCard(cp[0], cp[1], sm(4.6, 5.4, t));
+  GA = sm(10.4, 11, t) * (1 - sm(14.2, 15, t)); if (GA > 0) { const n = Math.floor(SAY.length * clamp((t - 11.7) / 1.8)), full = tw(SAY, 64, SERIF) + 8 * (SAY.length - 1), x = W / 2 - full / 2;
+    txt(SAY.slice(0, n), x, 560, 64, 1, WARM, "left", SERIF, 400, 8); pointer(x + (n ? tw(SAY.slice(0, n), 64, SERIF) + 8 * n : 0) + 26, 568 + Math.sin(t * 2.4) * 3, 2, 1); } GA = 1; }
+// ───────── 中段（画在世界坐标里） ─────────
+function scListen(t) { if (!on(0, t)) return;                   // 它能听懂吗：接住 → 拆开 → 各自落位
+  if (!on(2, t)) { const m = mv(t - TA(0), 0.2), p = [lerp(-900, A.wx, m), lerp(300, A.wtop - 50, m) + 26 * mv(t - TA(1), 0.16)]; askCard(p[0], p[1], 1, ASK, hitp(0, t, 6), 1 + 0.16 * hitp(0, t) + 0.1 * hitp(1, t)); ring(p[0], p[1] + 70, 0, t, 300); }
+  else G(-900, 610, 300, 0.7 * hitp(2, t, 8));
+  if (on(3, t)) SLOT.forEach(([x, y], i) => { const k = 1 + 0.2 * hitp(3, t), f = on(4 + i, t) ? 1 : 0; ctx.save(); ctx.translate(x, y); ctx.scale(k, k); box(-112, -34, 224, 68, 14, 0.5, 0.3 + 0.5 * f + 0.4 * hitp(8, t, 5), "#10151d", GOLD, 1.3); txt(SLOTLAB[i], 0, -54, 17, 0.75, f ? GOLD : SUB, "center"); ctx.restore(); });
+  if (on(8, t)) { box(-1290, 384, 780, 144, 20, 0, 0.35 + 0.65 * hitp(8, t, 5), CARD, GOLD, 1.5 + 2 * hitp(8, t)); G(-900, 470, 520, 0.4 * hitp(8, t, 5)); }
+  if (on(2, t)) CHIPS.forEach((s, i) => { const b = mv(t - TA(2), 0.16), m = mv(t - TA(4 + i), 0.2), x = lerp(lerp(-900, BUR[i][0], b), SLOT[i][0], m), y = lerp(lerp(650, BUR[i][1], b), SLOT[i][1], m) + (on(4 + i, t) ? 0 : Math.sin(t * 2 + i) * 4), fl = hitp(2, t) + hitp(4 + i, t) + (i === 1 ? hitp(7, t) : 0);
+    pillK(x, y, i === 1 && on(7, t) ? "今天 = 11.10" : s, 24, 1, 0.5 + 1.5 * fl, 1 + 0.3 * fl); }); }
+function scFind(t) { if (!on(10, t)) return; const J = 12, o2 = (i) => on(J + i, t), h2 = (i, r) => hitp(J + i, t, r), T2 = (i) => TA(J + i), sa = mv(t - TA(10), 0.3), sv = GA;      // 能自己找到吗 / 能把事情接下去吗
+  for (let l = 0; l < 8; l++) for (let j = 0; j < 4; j++) { const wx = SEA0 + ((((j * 235 + l * 77 - t * (10 + l * 2)) % 940) + 940) % 940) - 80, ma = sm(SEA0, SEA0 + 90, wx) * (1 - sm(SEA1 - 130, SEA1 - 10, wx + 200)) * sa; if (ma <= 0) continue;
+    const y = 660 + l * 36; box(wx, y, 200, 26, 6, 0.32 * ma, 0.12 * ma, "#121822"); txt(`AB${"GKG"[(j + l) % 3]}${1 + (j * 3 + l) % 3}  11.${p2(4 + (j * 5 + l * 3) % 8)}  1004${70000 + (j * 9173 + l * 3119) % 12000}`, wx + 12, y + 14, 13, 0.3 * ma, SUB, "left", MONO); }
+  GA = sv * sa; rowBox(R1.x, R1.y, R1.r, 1, o2(0) ? 0.55 + 0.45 * h2(0, 6) : 0.1, -1, 220, 1 + 0.25 * h2(0));
+  if (o2(4)) { candle(RC.x, rcY(t), 0.3 + 0.6 * h2(4, 5)); rowBox(RC.x, rcY(t), RC.r, 1, 0.7 + 0.3 * h2(4, 5), -1, 220, 1 + 0.3 * h2(4)); }
+  if (o2(5)) { candle(R3.x, r3Y(t), 0.3 + 0.6 * h2(5, 5)); rowBox(R3.x, r3Y(t), R3.r, 1, 0.7 + 0.3 * h2(5, 5), -1, 220, 1 + 0.3 * h2(5)); }
+  if (o2(6)) { ctx.globalAlpha = (0.5 + 0.5 * h2(6, 6)) * sv; ctx.strokeStyle = GOLD; ctx.lineWidth = 2 + 3 * h2(6); ctx.lineJoin = "round"; ctx.beginPath(); ctx.moveTo(390, GYT); [[R1.x, R1.y], [RC.x, RC.y], [R3.x, R3.y], [1350, GYT]].forEach(([x, y]) => ctx.lineTo(x, y + 15)); ctx.stroke(); }   // 铺出来的路
+  { const y = Math.min(rwY(t), RWEND); if (!o2(4)) rowBox(RW.x, y, RW.r, 1, o2(1) && !o2(2) ? 0.35 + 0.65 * h2(1, 6) : 0.1, o2(2) ? 0 : -1, 220, 1 + 0.2 * h2(1) + 0.15 * h2(2));
+    else { const a = t - T2(4); [-1, 1].forEach((sd) => { ctx.save(); ctx.translate(RW.x + sd * (55 + 300 * a), y + 15 + 700 * a * a); ctx.rotate(sd * 3 * a); rowBox(0, -15, ["", "", ""], Math.max(0, 1 - a * 3), 0, 0, 110); ctx.restore(); }); } }
+  CAND.forEach(([x, y, r, bad]) => rowBox(x, y, r, o2(4) ? Math.max(0, 0.7 - (t - T2(4)) * 4) : 0.7, 0, o2(3) ? bad : -1, 220, 1 + 0.18 * h2(3)));
+  GA = sv; ring(RW.x, RW.y + 60, J + 2, t, 160); ring(RC.x, RC.y + 30, J + 4, t, 420); ring(1350, GYT, J + 6, t, 260);
+  if (o2(7) && !o2(8)) { const k = 1 + 0.12 * h2(7); ctx.save(); ctx.translate(TBL.x + TBL.w / 2, TBL.y + 90); ctx.scale(k, k); ctx.translate(-(TBL.x + TBL.w / 2), -(TBL.y + 90)); G(TBL.x + TBL.w / 2, TBL.y + 90, 520, 0.5 * h2(7, 6));
+    box(TBL.x - 16, TBL.y - 46, TBL.w + 32, 46 + 6 * TBL.rh + 14, 14, 0.92, 0.6, "#10151d"); ["工厂", "日期", "订单"].forEach((h, i) => txt(h, TBL.x + [16, 130, 270][i], TBL.y - 22, 16, 0.9, GOLD)); TROWS.forEach((r2, i) => rowBox(TBL.x + TBL.w / 2, TBL.y + i * TBL.rh, r2, 1, 0.3 + 0.7 * h2(7, 6), -1, TBL.w)); ctx.restore(); }
+  if (o2(8)) { const hands = [A.wx, A.wtop - 44], arc = (i, hgt) => hgt * Math.sin(Math.PI * Math.min(1, (t - T2(i)) / 0.22)); let p = FILEP, i = 8;
+    if (o2(9)) { const k = mv(t - T2(9), 0.22); p = [lerp(FILEP[0], hands[0], k), lerp(FILEP[1], hands[1], k) - arc(9, 50)]; i = 9; }
+    if (o2(10)) { const k = mv(t - T2(10), 0.22), h0 = [1350, GYT - 164]; p = [lerp(h0[0], HAND[0], k), lerp(h0[1], HAND[1], k) - arc(10, 40)]; i = 10; }
+    const k = 1 + 0.18 * h2(i), fl = h2(i, 6); ctx.save(); ctx.translate(p[0], p[1]); ctx.scale(k, k); G(0, 0, 240 + 260 * fl, 0.3 + 0.6 * fl); box(-150, -34, 300, 68, 14, 0.97, 0.9, "#171d28", GOLD, 1.5); box(-134, -19, 30, 38, 6, 1, 0, "#2c6a4a"); txt("X", -119, 1, 16, 1, "#dff3e6", "center", SANS, 700);
+    txt("ABG1_工单_1110.xlsx", -92, -8, 18, 1, WARM); txt("12 行 · 工厂、日期已核对", -92, 15, 13, 0.75, SUB); if (o2(10)) tick(124, 0, 20, sm(T2(10) + 0.18, T2(10) + 0.3, t)); ctx.restore(); if (i === 10) ring(HAND[0], HAND[1] + 60, J + 10, t, 300); }
+  if (o2(6)) { pointer(PTR[0], PTR[1], 2.3 * (1 + 0.3 * h2(6)), 1); if (o2(10)) G(PTR[0] + 14, PTR[1] + 24, 160, 0.6 * h2(10, 5)); } }
+function scNames(t) { PLATES.forEach(([x, name, font, size], i) => { const j = 26 + 2 * i; if (!on(j, t)) return; const a = t - TA(j), newest = i === 2 || !on(j + 2, t), light = (newest ? 0.74 : 0.3) + 0.26 * Math.exp(-a * 6), y = lerp(-90, 430, mv(a, 0.2));      // 三块名字牌，一记重音落下一块
+    ctx.save(); ctx.translate(x, y); ctx.rotate((i % 2 ? 1 : -1) * 0.085 * Math.sin(a * 20) * Math.exp(-a * 3.6)); line([0, -y - 30], [0, -42], 0.43, 1.2); G(0, 0, 190 + 200 * Math.exp(-a * 6), 0.5 * light);
+    box(-115, -42, 230, 84, 16, 0.98, 0.34 + 0.66 * light, newest ? "#262118" : "#151b25", GOLD, 1.3 + light); txt(name, 0, 1, size, newest ? 1 : 0.68, WARM, "center", font, 400, i === 2 ? 10 : 0); ctx.restore(); }); }
+function scDoor(t) { if (!on(32, t)) return; const up = mv(t - TA(32), 0.22), open = on(38, t) ? mv(t - TDOOR, 0.25) : 0, shake = on(35, t) && !on(36, t) ? Math.sin((t - TA(35)) * 60) * 8 * Math.exp(-(t - TA(35)) * 7) : 0, lit = on(34, t) ? 0.4 + 0.6 * hitp(34, t, 5) : 0, x = DX + shake, top = 800 - 410 * up;
+  if (open > 0) { const g = ctx.createLinearGradient(DX, 0, DX - 900, 0); g.addColorStop(0, "rgba(250,225,175,.55)"); g.addColorStop(1, "rgba(250,225,175,0)"); ctx.globalAlpha = open * GA; ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(DX - 130, 800); ctx.lineTo(DX - 1000, 860); ctx.lineTo(DX - 1000, 800); ctx.closePath(); ctx.fill(); ctx.fillRect(DX - 1000, 800, 870, 14 * open); }   // 门里的光铺到路上
+  ctx.beginPath(); ctx.moveTo(x - 130, 800); ctx.lineTo(x - 130, top + 130); ctx.arc(x, top + 130, 130, Math.PI, 0); ctx.lineTo(x + 130, 800); ctx.closePath();
+  const g = ctx.createLinearGradient(0, top, 0, 800); g.addColorStop(0, `rgba(250,222,170,${0.06 + 0.1 * lit + 0.85 * open})`); g.addColorStop(1, `rgba(230,197,143,${0.02 + 0.06 * lit + 0.7 * open})`);
+  ctx.globalAlpha = GA; ctx.fillStyle = "#0a0d13"; ctx.fill(); ctx.fillStyle = g; ctx.fill(); ctx.globalAlpha = (0.55 + 0.45 * Math.max(lit, open)) * GA; ctx.strokeStyle = GOLD; ctx.lineWidth = 2 + 2 * hitp(32, t) + 2 * hitp(34, t); ctx.stroke();
+  if (open < 1) for (let i = 0; i < 5; i++) line([x - 86 + i * 43, top + 150], [x - 86 + i * 43, 792], 0.3 * (1 - open) * up, 1.5);                                            // 关着的门
+  G(x, 600, 260 + 200 * lit + 1100 * open, 0.12 + 0.3 * lit + 0.6 * open); txt("SAP", x, top - 40, 38, (0.4 + 0.6 * Math.max(lit, open)) * up, GOLD, "center", MONO, 600, 10); ring(x, 800, 32, t, 260); ring(x, 800, 38, t, 700); }
+// 星：每完成一个动作留下一颗，沿着走过的路排在天上；走进门的那一记，它们连成一条来路
+const SRS = rng(31), STARS = AC.filter((b) => !b.mute).map((b) => { const p = restAt(b.j, b.t + 0.4); return { j: b.j, x: p[0] + (SRS() - 0.5) * 300, y: 90 + SRS() * 210, b: 0.6 + SRS() * 0.4, f: 0.6 + SRS() * 1.6, p: SRS() * 6.28 }; });
+function scStars(t, wide) { GA = 1; const link = on(38, t) ? Math.floor(STARS.length * mv(t - TDOOR, 0.9)) : 0;
+  if (link > 1) { ctx.globalAlpha = 0.55; ctx.strokeStyle = GOLD; ctx.lineWidth = wide ? 3 : 1.6; ctx.beginPath(); for (let i = STARS.length - 1; i >= STARS.length - link; i--) { const s = STARS[i]; i === STARS.length - 1 ? ctx.moveTo(s.x, s.y) : ctx.lineTo(s.x, s.y); } ctx.stroke(); }
+  for (const s of STARS) { if (!on(s.j, t)) continue; const k = (wide ? 3 : 1) * (1 + 1.6 * hitp(s.j, t, 10)), a = s.b * (0.65 + 0.35 * Math.sin(t * s.f + s.p)) + hitp(s.j, t, 6); G(s.x, s.y, (9 + 6 * s.b) * k, a); ctx.globalAlpha = 1; ctx.fillStyle = "#fff3dc"; ctx.fillRect(s.x - 1.5, s.y - 1.5, 3, 3); } }
+function world(t, wide) { GA = 1; ctx.globalAlpha = 0.96; ctx.fillStyle = "#06080c"; const sea = on(10, t); ctx.fillRect(-4200, GYT, sea ? 4200 + SEA0 : 9400, 400); if (sea) ctx.fillRect(SEA1, GYT, 5200, 400);
+  line([-4200, GYT], [sea ? SEA0 : 5200, GYT], 0.5, wide ? 3 : 1.3); if (sea) line([SEA1, GYT], [5200, GYT], 0.5, wide ? 3 : 1.3);
+  scStars(t, wide); GA = 1; scListen(t); GA = 1; scFind(t); GA = 1; scNames(t); GA = 1; scDoor(t); GA = 1; }
+// ───────── 收尾：鼓撤掉了。回到那句迷路的话，这次稳稳接住；墙慢慢退开；星光安静地聚成「灵犀」 ─────────
+const WMY = 390, CP2 = [[TDOOR + 2.6, 1560, 300], [TDOOR + 5, 1180, 520], [TDOOR + 7, 1010, 360], [ECATCH, 960, 630], [999, 960, 630]];
+const GR = rng(5), PTS = [];                                    // 聚成字的光点：墙上退开的事务码、一路攒下的星、那句话化开的光
+TILES.forEach((k) => PTS.push({ x: k.x + 60, y: k.y + 28, t0: 66.8 + k.d * 3.2, kind: 0 }));
+STARS.forEach((s, i) => PTS.push({ x: s.x - 2480, y: s.y, t0: 70.4 + i * 0.05, kind: 1, s }));
+for (let i = 0; i < 110; i++) PTS.push({ x: 960 + (GR() - 0.5) * 300, y: 630 + (GR() - 0.5) * 60, t0: EDIS + GR() * 1.2, kind: 2 });
+PTS.forEach((p) => { p.b = 0.5 + GR() * 0.5; p.f = 0.6 + GR() * 1.6; p.p = GR() * 6.28; p.d = 3 + GR() * 1.6; p.tx = 960; p.ty = WMY; });
+function glyphs() { const c = document.createElement("canvas"); c.width = 1100; c.height = 320; const g = c.getContext("2d"); g.fillStyle = "#fff"; g.font = `400 240px ${SERIF}`; g.textAlign = "center"; g.textBaseline = "middle"; if ("letterSpacing" in g) g.letterSpacing = "60px"; g.fillText("灵犀", 580, 160);
+  const d = g.getImageData(0, 0, 1100, 320).data, pts = []; for (let y = 2; y < 320; y += 5) for (let x = 2; x < 1100; x += 5) if (d[(y * 1100 + x) * 4 + 3] > 150) pts.push([x - 550 + 960, y - 160 + WMY]); if (pts.length < 50) return;
+  const R = rng(5); for (let i = pts.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [pts[i], pts[j]] = [pts[j], pts[i]]; } PTS.forEach((p, k) => { [p.tx, p.ty] = pts[Math.floor(k * pts.length / PTS.length)]; }); }
+function scEnding(t) { if (t < TDOOR + 2) return; const ea = sm(TDOOR + 2.4, TDOOR + 4.4, t); GA = 1;
+  tilesDraw(t, ea, clamp((t - 66.8) / 4.6));
+  line([0, GYT], [W, GYT], 0.4 * ea * (1 - 0.6 * sm(78, 82, t)), 1.3);
+  if (t < EDIS + 1) { const p = path(CP2, t); if (t < ECATCH) p[1] += Math.sin(t * 1.5) * 8 * (1 - sm(ECATCH - 1.5, ECATCH, t)); else p[1] = A.wtop - 62; askCard(t < ECATCH ? p[0] : A.x, p[1], ea * (1 - sm(EDIS, EDIS + 1, t)), ASK, sm(ECATCH, ECATCH + 0.5, t) * 0.8); }
+  for (const p of PTS) { if (t < p.t0) continue; const c = sm(p.t0, p.t0 + p.d, t), sw = Math.sin(c * Math.PI) * 70, x = lerp(p.x, p.tx, c) + Math.cos(p.p) * sw, y = lerp(p.y, p.ty, c) + Math.sin(p.p) * sw - (p.kind === 0 ? 30 * Math.sin(c * Math.PI) : 0);
+    const a = p.b * (0.6 + 0.4 * Math.sin(t * p.f + p.p)) * sm(p.t0, p.t0 + 0.5, t) * (1 - 0.45 * sm(79, 83, t)); G(x, y, (7 + 6 * p.b) * (1 - 0.35 * c), a); ctx.globalAlpha = clamp(a + 0.2); ctx.fillStyle = "#fff3dc"; ctx.fillRect(x - 1, y - 1, 2, 2); }
+  const k1 = sm(75.6, 78.4, t); G(960, WMY, 560, 0.2 * k1); const gr = ctx.createLinearGradient(0, WMY - 110, 0, WMY + 110); gr.addColorStop(0, "#fff6e4"); gr.addColorStop(1, "#e2c08a"); txt("灵犀", 960, WMY, 240, k1, gr, "center", SERIF, 400, 60);
+  GA = sm(80.4, 80.8, t); if (GA > 0) { const n = Math.floor(LAST.length * clamp((t - 80.6) / 1.8)), full = tw(LAST, 36, SERIF) + 5 * (LAST.length - 1), x = W / 2 - full / 2;
+    txt(LAST.slice(0, n), x, 920, 36, 0.95, WARM, "left", SERIF, 400, 5); if ((t * 1.6) % 1 < 0.55) { ctx.globalAlpha = GA; ctx.fillStyle = GOLD; ctx.fillRect(x + (n ? tw(LAST.slice(0, n), 36, SERIF) + 5 * n : 0) + 6, 899, 3, 42); } } GA = 1; }
+// ───────── 一帧 ─────────
+function narr(t, t0, t1, s) { if (t <= t0 || t >= t1) return; ctx.save(); ctx.font = `400 46px ${SERIF}`; ctx.shadowColor = "rgba(4,6,9,.95)"; ctx.shadowBlur = 24; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.globalAlpha = win(t, t0, t1, 0.4); ctx.fillStyle = WARM; if ("letterSpacing" in ctx) ctx.letterSpacing = "4px"; ctx.fillText(s, 120, 150); ctx.restore(); }
+let CHECK = new URLSearchParams(location.search).has("check"), SYNC = 0; try { SYNC = parseInt(localStorage.getItem("lingxiSync") || "0", 10) || 0; } catch (e) {}
+const LATE = AC.map(() => 0);
+function draw(t) { const r = cv.width / W, wide = wideOn(t), cx = camX(t), Z = 1 + 0.02 * (hitp(0, t, 9) + hitp(16, t, 9) + hitp(22, t, 9) + hitp(38, t, 6)) + 0.006 * [2, 8, 12, 14, 18, 20, 26, 28, 30, 32, 34].reduce((s, j) => s + hitp(j, t, 9), 0);
+  ctx.setTransform(r, 0, 0, r, 0, 0); ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1; ctx.drawImage(bg, 0, 0);
+  GA = 1; for (const d of dust) G(d.x, d.y, d.s * 5, d.a * 0.5 * (0.6 + 0.4 * Math.sin(t * d.f + d.p)));
+  actor(t); const mid = t < TDOOR + 2.8, wa = 1 - sm(TDOOR + 1.2, TDOOR + 2.8, t);
+  scOpening(t);
+  if (mid && on(0, t)) { ctx.save(); ctx.globalAlpha = wa;
+    if (!wide) { GA = 1; hills(cx * 0.12 + 2600, 690, 46, "#0c121b", 0.9 * wa * sm(TA(0), TA(2), t)); hills(cx * 0.3 + 1900, 752, 30, "#0a0f17", 0.95 * wa * sm(TA(0), TA(2), t)); }
+    if (wide) ctx.setTransform(r * ZW, 0, 0, r * ZW, r * (40 + 1500 * ZW), r * (640 - GYT * ZW)); else ctx.setTransform(r * Z, 0, 0, r * Z, r * (960 * (1 - Z) - cx * Z), r * 620 * (1 - Z));
+    if (wa < 1) { ctx.globalAlpha = wa; } world(t, wide); ctx.restore(); ctx.setTransform(r, 0, 0, r, 0, 0);
+    if (wa < 1) { ctx.globalAlpha = 1 - wa; ctx.drawImage(bg, 0, 0); } }
+  scEnding(t);
+  if (mid) { const X = (x) => wide ? (x + 1500) * ZW + 40 : 960 + (x - cx - 960) * Z, Y = (y) => wide ? 640 + (y - GYT) * ZW : 620 + (y - 620) * Z, u = wide ? 4 : 12; ctx.fillStyle = ORANGE;
+    for (const [tx, ty, ta] of A.trail) { ctx.globalAlpha = A.a * 0.3 * ta; ctx.fillRect(Math.round(X(tx)) - 6 * u, Math.round(Y(ty)) - 10 * u, 12 * u, 8 * u); } A.a *= wa < 1 ? wa : 1; drawActor(X(A.x), Y(A.y), u, A.yo * (wide ? ZW : 1)); }
+  else drawActor(A.x, A.y, 12, 0);
+  if (!wide && mid && on(8, t) && !on(36, t)) { GA = on(19, t) ? Math.exp(-(t - TA(19)) * 10) : 1; const k = 1 + 0.3 * hitp(8, t); pillK(180, 250, "ABG1 工厂", 22, 1, 0.3 + hitp(8, t), k); pillK(360, 250, "今天 11.10", 22, 1, 0.3 + hitp(8, t), k); GA = 1; }   // 听懂之后带在身上的两样东西
+  if (!wide) { narr(t, TA(0) + 0.5, TA(8) + 0.6, "它能听懂吗？"); narr(t, TA(11) + 0.2, TA(16) - 0.1, "能自己找到吗？"); narr(t, TA(18) + 0.3, TA(23), "能把事情接下去吗？"); }
+  const bloom = on(38, t) ? Math.exp(-(t - TDOOR) * 1.7) * sm(TDOOR, TDOOR + 0.12, t) : 0; if (bloom > 0.01) { ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 0.42 * bloom; ctx.fillStyle = "#f3dcae"; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = "source-over"; }   // 全片唯一一次：门里的光漫出来
+  if (CHECK) checkPanel(t);
+  const blk = Math.max(1 - sm(0, 0.8, t), sm(T - 3.4, T - 0.4, t)); if (blk > 0) { ctx.globalAlpha = blk; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); } ctx.globalAlpha = 1; }
+// 检查面板（按 D）：当前这一记重音、对应的动作、连播时画面比声音晚多少
+function checkPanel(t) { GA = 1; const n = stepAt(t); box(40, 940, 1840, 110, 14, 0.92, 0.4, "#0b0e14"); const X = (v) => 70 + v / T * 1780; line([70, 1010], [1850, 1010], 0.3, 1);
+  AC.forEach((b, i) => { if (!b.mute) line([X(b.t), b.heavy ? 996 : 1002], [X(b.t), b.heavy ? 1024 : 1018], 0.95, b.heavy ? 3 : 1.5); }); ctx.globalAlpha = 1; ctx.fillStyle = "#fff"; ctx.fillRect(X(t) - 1, 992, 2, 36);
+  const done = LATE.filter((v) => v > 0), mx = done.length ? Math.max(...done) * 1000 : 0;
+  txt(n >= 0 && t < TDOOR + 3 ? `第 ${n + 1} 记 ${AC[n].mute ? "（无声）" : AC[n].heavy ? "● 底鼓" : "○ 轻敲"}　${AC[n].t.toFixed(3)} 秒　${STEPS[n]}${LATE[n] ? `　画面晚 ${(LATE[n] * 1000).toFixed(0)} 毫秒` : ""}` : t < TA(0) ? "开头：没有重音" : "收尾：没有重音", 70, 968, 20, 1, GOLD);
+  txt(`已测 ${done.length} 记，最大晚 ${mx.toFixed(0)} 毫秒　　校准 ${SYNC >= 0 ? "+" : ""}${SYNC} 毫秒（[ ] 调整）`, 1850, 968, 15, 0.8, SUB, "right"); }
+
+// ───────── 播放：画面时间锁在音频时钟上（每帧微调，偏差超过 50 毫秒直接对齐） ─────────
+const audio = $("music"), stage = $("stage");
+let playing = false, base = 0, perf0 = 0, started = false;
+const now = () => playing ? base + (performance.now() - perf0) / 1000 : base;
+function fit() { const k = Math.min(innerWidth / W, innerHeight / H); stage.style.transform = `translate(-50%,-50%) scale(${k})`;
+  const r = Math.min(2, Math.max(1, k * (devicePixelRatio || 1))); cv.width = Math.round(W * r); cv.height = Math.round(H * r); render(); }
+function render() { const t = clamp(now() + SYNC / 1000, 0, T); draw(t);
+  if (playing && !audio.paused) AC.forEach((b, i) => { if (!b.mute && !LATE[i] && t >= b.t && t < b.t + 0.2) LATE[i] = Math.max(0.0001, audio.currentTime + SYNC / 1000 - b.t); }); }      // 记录：第一帧画出落点时，音频已经走过起音多久
+function seek(t) { base = clamp(t, 0, T); perf0 = performance.now(); try { audio.currentTime = base; } catch (e) {} AC.forEach((b, i) => { if (b.t > base) LATE[i] = 0; }); render(); }
+function play() { if (base >= T - 0.05) seek(0); playing = true; perf0 = performance.now(); document.body.classList.add("playing"); try { audio.currentTime = base; } catch (e) {} audio.play().catch(() => {}); }
+function pause() { base = now(); playing = false; audio.pause(); document.body.classList.remove("playing"); }
+function loop() {
+  if (playing) {
+    if (!audio.paused && audio.readyState > 2) { const d = audio.currentTime - now(); if (Math.abs(d) > 0.05) base += d; else base += d * 0.12; }
+    if (now() >= T) { base = T; playing = false; audio.pause(); document.body.classList.remove("playing"); }
+    render();
+  }
+  requestAnimationFrame(loop);
+}
+function begin() { started = true; $("start").style.display = "none"; seek(0); play(); }
+$("start").addEventListener("click", begin);
+addEventListener("resize", fit);
+addEventListener("keydown", (e) => {
+  if (e.key === "f" || e.key === "F") { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); return; }
+  if (e.key === "d" || e.key === "D") { CHECK = !CHECK; render(); return; }
+  if (e.key === "[" || e.key === "]") { SYNC += e.key === "]" ? 10 : -10; try { localStorage.setItem("lingxiSync", SYNC); } catch (x) {} render(); return; }
+  if (!started) { if (e.key === " " || e.key === "Enter") begin(); return; }
+  const t = now();
+  if (e.key === " ") { e.preventDefault(); playing ? pause() : play(); }
+  else if (e.key === "r" || e.key === "R") { seek(0); if (!playing) play(); }
+  else if (e.key === "ArrowRight") seek((SECTIONS.find((v) => v > t + 0.1) ?? T) - 0.02);
+  else if (e.key === "ArrowLeft") seek([...SECTIONS].reverse().find((v) => v < t - 1) ?? 0);
+});
+window.__seek = seek; window.__late = LATE;
+const at = new URLSearchParams(location.search).get("at");
+if (at != null) { started = true; $("start").style.display = "none"; base = parseFloat(at) || 0; }
+glyphs(); fit(); requestAnimationFrame(loop);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { glyphs(); render(); });
+</script>
+</body>
+</html>
