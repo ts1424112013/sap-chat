@@ -25,34 +25,39 @@ body.playing{cursor:none}
 .side h6{margin-top:34px;font-size:13px;color:#5d5b57;font-weight:400;letter-spacing:2px}
 .side p{margin-top:16px;font-size:15px;color:#77746e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .side p.cur{color:var(--ink)}
-.hero{position:absolute;left:560px;top:380px;width:1100px;text-align:center}
+.hero{position:absolute;left:560px;top:330px;width:1100px;text-align:center}
 .hero h1{font-size:44px;font-weight:300;letter-spacing:6px;color:var(--warm)}
 .hero div{margin-top:18px;font-size:18px;color:var(--sub);letter-spacing:2px}
-.composer{position:absolute;left:560px;top:880px;width:1100px;height:84px;border-radius:22px;background:var(--card);border:1px solid var(--line);display:flex;align-items:center;padding:0 22px 0 30px;font-size:24px}
+.composer{position:absolute;left:560px;top:790px;width:1100px;height:72px;border-radius:22px;background:var(--card);border:1px solid var(--line);display:flex;align-items:center;padding:0 22px 0 30px;font-size:24px}
 .composer .ph{color:#5d5b57}
 .caret{display:inline-block;width:2px;height:28px;background:var(--gold);margin-left:3px;vertical-align:-5px}
 .send{margin-left:auto;width:48px;height:48px;border-radius:50%;background:#232a36;display:grid;place-items:center;flex:none}
 .send svg{width:22px;height:22px;stroke:#6f6d68;fill:none;stroke-width:2}
 .send.on{background:var(--gold)}.send.on svg{stroke:#1a1408}
-.bubble{position:absolute;right:260px;top:124px;white-space:nowrap;background:#1b222e;border:1px solid rgba(255,255,255,.05);color:var(--ink);font-size:23px;line-height:1.5;padding:15px 24px;border-radius:20px 20px 6px 20px}
-#result{position:absolute;left:560px;top:230px;width:1100px;height:620px;border-radius:18px;background:var(--card);border:1px solid rgba(230,197,143,.3);padding:30px 40px;display:none}
+.bubble{position:absolute;right:260px;top:84px;white-space:nowrap;background:#1b222e;border:1px solid rgba(255,255,255,.05);color:var(--ink);font-size:23px;line-height:1.5;padding:15px 24px;border-radius:20px 20px 6px 20px}
+#result{position:absolute;left:560px;top:170px;width:1100px;height:600px;border-radius:18px;background:var(--card);border:1px solid rgba(230,197,143,.3);padding:26px 40px;display:none}
 #result h3{font-size:18px;font-weight:500;color:var(--gold);letter-spacing:1px;display:flex;align-items:center;gap:10px}
 #result h3 b{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--gold);display:grid;place-items:center;font-size:12px}
 .concl{margin-top:16px;font-size:27px;color:var(--ink);display:flex;align-items:baseline;gap:10px}
 .concl em{font-style:normal;color:var(--warm);font-weight:600}
 .concl .n{font-size:66px;line-height:1;background:linear-gradient(180deg,#fff6e4,#e2c08a);-webkit-background-clip:text;background-clip:text;color:transparent;padding:0 4px}
 .tbl{margin-top:16px;font-size:17px}
-.tbl div{display:grid;grid-template-columns:1.2fr 1fr 1fr .8fr 1.1fr 1fr;padding:9px 12px;border-bottom:1px solid rgba(255,255,255,.06);border-radius:6px}
+.tbl div{display:grid;grid-template-columns:1.2fr 1fr 1fr .8fr 1.1fr 1fr;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.06);border-radius:6px}
 .tbl div span:last-child{text-align:right}
 .tbl .th{color:var(--sub);font-size:14px;border-bottom-color:var(--line)}
 .tbl .trk{outline:1.5px solid rgba(230,197,143,.85);background:rgba(230,197,143,.06);border-bottom-color:transparent}
 .more{margin-top:10px;font-size:14px;color:var(--sub);padding-left:12px}
-.file{position:absolute;left:40px;bottom:28px;height:60px;border-radius:14px;border:1px solid var(--line);background:#10151d;display:flex;align-items:center;gap:14px;padding:0 20px;font-size:18px}
+.file{position:absolute;left:40px;bottom:24px;height:60px;border-radius:14px;border:1px solid var(--line);background:#10151d;display:flex;align-items:center;gap:14px;padding:0 20px;font-size:18px}
 .file i{width:30px;height:36px;border-radius:5px;background:#2c6a4a;color:#dff3e6;font-style:normal;font-size:14px;font-weight:700;display:grid;place-items:center}
 .file span{color:var(--sub);font-size:14px;margin-left:8px}
-#label{position:absolute;left:0;right:0;top:986px;text-align:center;font-size:26px;letter-spacing:16px;text-indent:16px;color:var(--gold);opacity:0;text-shadow:0 0 18px #06080c,0 0 8px #06080c}
-#tag{position:absolute;left:0;right:0;top:992px;text-align:center;font-size:30px;letter-spacing:12px;text-indent:12px;color:#e9d6b0;opacity:0}
-#tag b{font-weight:400;font-size:38px;background:linear-gradient(180deg,#fff6e4,#e2c08a);-webkit-background-clip:text;background-clip:text;color:transparent;margin-right:26px}
+#scrim{position:absolute;left:0;right:0;bottom:0;height:340px;background:linear-gradient(180deg,rgba(5,7,10,0),rgba(5,7,10,.8) 52%,rgba(5,7,10,.94));opacity:0;pointer-events:none}
+#cap{position:absolute;left:0;right:0;bottom:80px;text-align:center;pointer-events:none}
+#capT{height:56px;line-height:56px;font-size:40px;letter-spacing:10px;text-indent:10px;color:var(--gold);opacity:0}
+#capS{margin-top:14px;height:44px;line-height:44px;font-size:31px;letter-spacing:2px;color:#fff3dc;opacity:0;text-shadow:0 0 14px rgba(5,7,10,.9)}
+#brand{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+#bMark{width:146px;height:150px;opacity:0;filter:drop-shadow(0 0 22px rgba(230,197,143,.35))}
+#bn{margin-top:30px;height:150px;line-height:150px;font-size:128px;letter-spacing:40px;text-indent:40px;background:linear-gradient(180deg,#fff6e4,#e2c08a);-webkit-background-clip:text;background-clip:text;color:transparent;opacity:0;filter:drop-shadow(0 0 18px rgba(230,197,143,.28))}
+#bt{margin-top:36px;height:50px;line-height:50px;font-size:36px;letter-spacing:12px;text-indent:12px;color:#d9cdb4;font-weight:300;opacity:0}
 #black{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none}
 #start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(4,6,9,.9);z-index:9;gap:26px;cursor:pointer}
 #start .p{width:104px;height:104px;border-radius:50%;border:1px solid var(--gold);display:grid;place-items:center;color:var(--gold);font-size:34px;padding-left:6px}
@@ -83,8 +88,15 @@ body.playing{cursor:none}
     <div class="composer"><div id="inp"></div><div class="send" id="send"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></div></div>
   </div>
   <canvas id="cv"></canvas>
-  <div id="label" class="serif"></div>
-  <div id="tag" class="serif"><b>灵犀</b>让想法成为结果。</div>
+  <div id="scrim"></div>
+  <div id="cap"><div id="capT" class="serif"></div><div id="capS"></div></div>
+  <div id="brand">
+    <svg id="bMark" viewBox="0 0 260 268" aria-label="灵犀"><defs><linearGradient id="bmG" x1="15" y1="20" x2="240" y2="250" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff6e4"/><stop offset="0.55" stop-color="#e6c58f"/><stop offset="1" stop-color="#c79f63"/></linearGradient></defs>
+      <path fill="url(#bmG)" d="M87 14C101 38 94 58 82 79C74 94 76 127 76 156L76 169C74 190 86 201 108 214L159 234H75C40 234 15 213 15 180V103C15 67 82 65 87 14Z"/>
+      <path fill="url(#bmG)" opacity=".86" d="M98 158L151 105C178 78 201 72 239 72C215 97 181 124 144 145L102 169C95 173 91 169 98 158Z"/>
+      <path fill="url(#bmG)" opacity=".72" d="M120 174C139 164 153 155 169 161C193 170 218 204 240 238C245 246 237 250 225 249C194 246 173 223 148 200L120 174Z"/></svg>
+    <div id="bn" class="serif">灵犀</div><div id="bt" class="serif">让想法成为结果。</div>
+  </div>
   <div id="black"></div>
 </div>
 <div id="start"><div class="p">▶</div><p>点击开始播放（请打开声音）<br><kbd>空格</kbd> 暂停 / 继续　<kbd>←</kbd> <kbd>→</kbd> 上一段 / 下一段　<kbd>R</kbd> 从头　<kbd>F</kbd> 全屏</p></div>
@@ -109,8 +121,8 @@ const HEAD = ["订单", "物料", "订单类型", "工厂", "创建日期", "目
 const cells = (o, fmt) => [o[0], o[1], o[2], PLANT, DATED, fmt ? o[3].toLocaleString("en-US") : String(o[3])];
 
 // ───────── 基础 ─────────
-const W = 1920, H = 1080, T = 132;
-const SECTIONS = [0, 16, 30, 46, 60, 76, 94, 110];
+const W = 1920, H = 1080, T = 144;
+const SECTIONS = [0, 16, 30, 46, 60, 76, 94, 110, 124];
 const $ = (id) => document.getElementById(id);
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const sm = (a, b, x) => { x = clamp((x - a) / (b - a)); return x * x * (3 - 2 * x); };
@@ -130,7 +142,7 @@ const EDT = [[16.5, 19.5], [26.8, 29.5], [48, 57], [69.2, 76], [95.5, 97.5]];   
 function bz(e, u) { const [p, q, k] = e, v = 1 - u, cx = (p[0] + q[0]) / 2 - (q[1] - p[1]) * k, cy = (p[1] + q[1]) / 2 + (q[0] - p[0]) * k;
   return [v * v * p[0] + 2 * v * u * cx + u * u * q[0], v * v * p[1] + 2 * v * u * cy + u * u * q[1]]; }
 function q2(p, c, q, u) { const v = 1 - u; return [v * v * p[0] + 2 * v * u * c[0] + u * u * q[0], v * v * p[1] + 2 * v * u * c[1] + u * u * q[1]]; }
-const RET1 = [E, [4600, -2300], [150, 0]], RET2 = [[D[0] + 520, D[1] + 200], [3650, -1500], [150, 0]];   // 交付返回的两条路径
+const RET1 = [E, [4600, -2300], [150, -70]], RET2 = [[D[0] + 520, D[1] + 200], [3650, -1500], [150, -70]];   // 交付返回的两条路径
 const mix = (p, q, k) => [lerp(p[0], q[0], k), lerp(p[1], q[1], k)];
 
 // 各面板的位置
@@ -145,7 +157,7 @@ const slotD = (i) => ({ x: D[0] - 760, y: D[1] - 260 + i * 44, w: 900, h: 40 });
 const XL = { x: E[0] - 520, y: E[1] - 320, w: 1040, h: 640 }, XW0 = [166, 166, 166, 166, 166, 166], XW1 = [200, 170, 150, 120, 180, 176];
 const SUM = { x: E[0] - 920, y: E[1] - 250, w: 360, h: 250 };
 const CNT = { x: D[0] + 280, y: D[1] - 250, w: 480, h: 340 }, CON = { x: D[0] + 280, y: D[1] + 130, w: 480, h: 130 };
-const RES = { x: -400, y: -310, w: 1100, h: 620 };            // 结果卡片：与浏览器里的结果区域重合
+const RES = { x: -400, y: -370, w: 1100, h: 600 };            // 结果卡片：与浏览器里的结果区域重合
 
 // 时间点
 const taRow = (i) => 60.4 + i * 0.5;                         // 结果行在 SAP 节点里出现
@@ -164,11 +176,11 @@ const BR = rng(3), NET = Array.from({ length: 70 }, () => { const x = -1800 + BR
 // ───────── 镜头 ─────────
 const P2a = bz(EDG[2], 0.5), P2b = bz(EDG[2], 0.58);
 const CAM = [[0, 0, 0, 1], [12, 0, 0, 1], [14.5, 0, 0, 1.08], [16.5, 0, 0, 1], [19.5, A[0] - 250, A[1], 0.62], [21, A[0] - 40, A[1], 1], [26.5, A[0] - 20, A[1], 1.08],
-  [29.5, B[0] - 200, B[1], 0.7], [31, B[0] - 60, B[1], 0.95], [33.6, B[0] - 60, B[1] - 100, 1.3], [35.2, B[0] - 150, B[1] - 40, 1.15], [39.6, B[0] + 60, B[1] - 20, 1.3], [41.2, B[0] + 80, B[1], 0.98], [43, B[0] + 80, B[1], 0.98],
+  [29.5, B[0] - 200, B[1], 0.7], [31, B[0] - 60, B[1], 0.95], [33.6, B[0] - 60, B[1] - 90, 1.2], [35.2, B[0] - 150, B[1] - 40, 1.15], [39.6, B[0] + 60, B[1] - 20, 1.2], [41.2, B[0] + 80, B[1], 0.98], [43, B[0] + 80, B[1], 0.98],
   [45.4, B[0] + 300, B[1] + 190, 1.35], [48, B[0] + 300, B[1] + 190, 1.3], [50.5, P2a[0], P2a[1], 2.4], [54.8, P2b[0], P2b[1], 2.4], [57, C[0] - 500, C[1], 0.75],
-  [60, C[0] - 400, C[1] + 20, 1.05], [61.6, C[0] + 200, C[1] + 20, 1], [66.5, C[0] + 240, C[1] + 30, 1.05], [68.4, C[0] + 240, C[1] + 29, 1.45], [70, C[0] + 500, C[1], 0.8],
+  [60, C[0] - 400, C[1] + 20, 1.05], [61.6, C[0] + 200, C[1] + 20, 1], [66.5, C[0] + 240, C[1] + 30, 1.05], [68.4, C[0] + 240, C[1] + 29, 1.3], [70, C[0] + 500, C[1], 0.8],
   [74, (C[0] + D[0]) / 2, 20, 0.5], [77, D[0] - 300, D[1] - 40, 0.85], [80, D[0] - 310, D[1] - 40, 1], [81.4, D[0] - 190, D[1] - 50, 1.25], [84.3, D[0] - 190, D[1] - 40, 1.25],
-  [85.6, D[0], D[1] - 40, 0.98], [93.5, D[0] + 60, D[1], 1], [96.8, E[0] - 200, E[1], 0.92], [105.8, E[0] - 200, E[1], 0.92], [107, E[0], E[1] + 1, 1.5], [108.2, E[0], E[1] + 1, 1.5],
+  [85.6, D[0], D[1] - 40, 0.98], [93.5, D[0] + 60, D[1], 1], [96.8, E[0] - 200, E[1], 0.92], [105.8, E[0] - 200, E[1], 0.92], [107, E[0], E[1] + 1, 1.22], [108.2, E[0], E[1] + 1, 1.22],
   [110, E[0] - 100, E[1], 1], [112.8, 4600, -380, 0.185], [114, 4300, -380, 0.185], [117.2, 0, 0, 1], [T, 0, 0, 1]];
 const cam = { x: 0, y: 0, z: 1 };
 function setCam(t) {
@@ -177,6 +189,7 @@ function setCam(t) {
   cam.x = lerp(a[1], b[1], k); cam.y = lerp(a[2], b[2], k); cam.z = Math.exp(lerp(Math.log(a[3]), Math.log(b[3]), k));
   const br = sm(12, 16, t) * (1 - sm(114, 116.5, t));          // 极轻的呼吸感；首尾与浏览器对齐时关闭
   cam.x += Math.sin(t * 0.23) * 6 / cam.z * br; cam.y += Math.cos(t * 0.19) * 4 / cam.z * br;
+  cam.y += 64 / cam.z * br;                                    // 画面整体上移，给底部说明区留出空间
 }
 
 // ───────── 画布工具 ─────────
@@ -434,23 +447,37 @@ function sceneReturn(t) {                                    // 八：成果回�
   [[RET1, m1, 1], [RET2, m2, 0.75]].forEach(([r, m, s]) => { if (m > 0 && m < 1) for (let j = 6; j >= 0; j--) { const p = q2(...r, clamp(m - j * 0.012)); G(p[0], p[1], (34 - j * 3) * s / cam.z * 0.55, (1 - j / 7) * (j ? 0.5 : 1)); } });
   const ca = sm(114.8, 116, t); if (ca <= 0) return;
   const e = eo((t - 115.2) / 2.1), w = lerp(460, RES.w, e), h = lerp(110, RES.h, e);
-  G(150, 0, 420 + 300 * e, ca * 0.2 * (1 - sm(116.5, 118, t))); box(150 - w / 2, -h / 2, w, h, 18, ca * 0.97, ca * 0.75, CARD, GOLD, 1.3);
+  G(150, -70, 420 + 300 * e, ca * 0.2 * (1 - sm(116.5, 118, t))); box(150 - w / 2, -70 - h / 2, w, h, 18, ca * 0.97, ca * 0.75, CARD, GOLD, 1.3);
   // 文件卡片落到结果区左下角，结论落到上方，随后与浏览器里的内容交接
-  const ia = ca * (1 - sm(118, 118.9, t)); if (ia > 0.01) { const sv = WA; WA *= ia; fileCard(lerp(150, RES.x + 230, e), lerp(0, RES.y + RES.h - 58, e), lerp(1, 0.8, e), 1);
-    txt(`${PLANT} 工厂 ${DATE} 共开立 ${COUNT} 张工单`, RES.x + 40, RES.y + 108, 27, sm(0.6, 1, e)); WA = sv; }
+  const ia = ca * (1 - sm(118, 118.9, t)); if (ia > 0.01) { const sv = WA; WA *= ia; fileCard(lerp(150, RES.x + 230, e), lerp(-70, RES.y + RES.h - 54, e), lerp(1, 0.8, e), 1);
+    txt(`${PLANT} 工厂 ${DATE} 共开立 ${COUNT} 张工单`, RES.x + 40, RES.y + 104, 27, sm(0.6, 1, e)); WA = sv; }
+}
+
+// 谢幕：一缕微光从结果卡片边缘出发，沿返回路径的方向来到画面中心，带出品牌
+const CUR = [[1660, 470], [1560, 120], [960, 405]], CALM = Array.from({ length: 6 }, (_, i) => [[-100, 250 + i * 130], [700 + i * 90, 80 + i * 150 + (i % 2 ? 240 : -160)], [2020, 330 + i * 110]]);
+function curtain(t) {
+  if (t < 128.4) return;
+  CALM.forEach((c, i) => curve((u) => q2(...c, u), 1, 0.13 * sm(128.6 + i * 0.2, 130 + i * 0.2, t) * (1 - sm(130.8 + i * 0.5, 133 + i * 0.5, t)), 1));
+  const m = sm(128.8, 132.4, t);
+  curve((u) => q2(...CUR, u), m, 0.4 * (1 - sm(132.4, 134, t)), 1.4);
+  if (m > 0 && m < 1) for (let j = 8; j >= 0; j--) { const p = q2(...CUR, clamp(m - j * 0.012)); G(p[0], p[1], 46 - j * 4, (1 - j / 9) * (j ? 0.5 : 1)); }
+  const out = 1 - sm(142.2, 143.6, t), bloom = win(t, 132, 136.5, 1.6);
+  G(960, 405, 70 + 330 * bloom, sm(132, 132.8, t) * (0.25 + 0.75 * bloom) * out);
+  G(960, 480, 620, 0.16 * sm(133, 136, t) * out);
 }
 
 function draw(t) {
   const r = cv.width / W;
   ctx.setTransform(r, 0, 0, r, 0, 0); ctx.clearRect(0, 0, W, H); ctx.globalCompositeOperation = "source-over";
   setCam(t);
-  const spaceA = sm(10.2, 12, t) * (1 - sm(117.4, 119.6, t));
+  const dustK = 1 - sm(141.4, 142.8, t);                      // 结尾：光尘先暗下
+  const spaceA = Math.max(sm(10.2, 12, t) * (1 - sm(117.4, 119.6, t)), sm(128.4, 131.6, t));
   WA = 1;
   if (spaceA > 0) { ctx.globalAlpha = spaceA; ctx.drawImage(bg, 0, 0);
     const zf = Math.pow(cam.z, 0.3);
-    for (const d of dust) { const x = W / 2 + (d.x - cam.x * d.d + t * 4 * d.d) * zf, y = H / 2 + (d.y - cam.y * d.d) * zf; if (x < -20 || x > W + 20 || y < -20 || y > H + 20) continue; G(x, y, d.s * 5, spaceA * d.a * (0.6 + 0.4 * Math.sin(t * d.f + d.p))); } }
+    for (const d of dust) { const x = W / 2 + (d.x - cam.x * d.d + t * 4 * d.d) * zf, y = H / 2 + (d.y - cam.y * d.d) * zf; if (x < -20 || x > W + 20 || y < -20 || y > H + 20) continue; G(x, y, d.s * 5, spaceA * dustK * d.a * (0.6 + 0.4 * Math.sin(t * d.f + d.p))); } }
   WA = sm(9.9, 10.4, t) * (1 - sm(117.4, 119.6, t));
-  if (WA <= 0) { ctx.globalAlpha = 1; return; }
+  if (WA <= 0) { WA = 1; curtain(t); ctx.globalAlpha = 1; return; }
   const base = WA;
   // 背景网络：视差较小、亮度很低
   const pz = Math.pow(cam.z, 0.8);
@@ -471,14 +498,25 @@ function draw(t) {
 }
 
 // ───────── 浏览器界面（按时间驱动，可任意跳转） ─────────
-const el = { br: $("browser"), inp: $("inp"), send: $("send"), bubble: $("bubble"), hero: $("hero"), result: $("result"), label: $("label"), tag: $("tag"), black: $("black"), cur: $("curTask") };
+const el = { br: $("browser"), inp: $("inp"), send: $("send"), bubble: $("bubble"), hero: $("hero"), result: $("result"), black: $("black"), cur: $("curTask") };
 $("rTitle").textContent = `已完成 · ${PLANT} 工厂工单查询（${REPORT} · ${DATE}）`;
 $("rLead").innerHTML = `<em>${PLANT}</em> 工厂 <em>${DATE}</em> 共开立`; $("rN").textContent = COUNT; $("rFile").textContent = FILE;
 $("rTbl").innerHTML = `<div class="th rv">${HEAD.map((h) => `<span>${h}</span>`).join("")}</div>` + ORD.slice(0, TRK + 1).map((o, i) => `<div class="rv${i === TRK ? " trk" : ""}">${cells(o, 1).map((v, j) => `<span${j < 2 ? ' class="mono"' : ""}>${v}</span>`).join("")}</div>`).join("");
 $("rMore").textContent = `… 共 ${NR} 行，完整明细见 Excel`;
 const rv = [...document.querySelectorAll(".rv")];
-const LABELS = [[11.6, 15.4, "任务条件"], [20.2, 25, "报表匹配"], [30.8, 35.5, "填写参数"], [48.6, 53.4, "发出请求"], [61, 66, "返回记录"], [77.6, 82.6, "整理 · 统计"], [97, 102, "生成 Excel"], [110.8, 115, "交付"]];
-let lastTyped = -2, lastLabel = "";
+// 屏幕说明：阶段标题在本阶段内保持，动作说明随画面动作更新（每次只有一句）
+const STAGES = [[0.8, 15.9, "理解任务"], [16.5, 29.9, "匹配报表"], [30.9, 43.1, "填写条件"], [43.5, 60.7, "执行查询"], [61, 76.5, "接收记录"], [77, 95.8, "统计整理"], [96, 109.9, "生成 Excel"], [110.4, 124.1, "交付成果"]];
+const CAPS = [[0.8, 6.5, "一句话，交代你想完成的事。"], [7.2, 15.7, "识别工厂、日期、查询目标和交付形式。"],
+  [16.6, 24.6, "根据查询目标，寻找合适的报表。"], [25, 29.8, "已找到工单报表，准备填写查询条件。"],
+  [31.2, 35.3, "将 ABG1 填入工厂字段。"], [35.6, 42.9, "把“今天”换算为日期，确定查询范围。"],
+  [43.6, 55.8, "将填写好的条件，提交给报表执行。"], [56.6, 60.6, "系统开始读取符合条件的工单。"],
+  [61, 66.8, "符合条件的工单，正在逐条返回。"], [67, 76.3, "每条记录，都保留工单编号与业务字段。"],
+  [77, 84.5, "核对工厂与日期，确认统计范围。"], [tcRow(NR - 1) + 0.8, 95.6, `按工单编号统计，共找到 ${COUNT} 张工单。`],
+  [96, 103.6, "将工单记录，逐行写入 Excel 明细。"], [103.9, 109.7, "整理查询条件与总数，形成完整工作簿。"],
+  [110.5, 116.8, "把统计结论和 Excel，交还到你的工作台。"], [119.6, 123.9, `${COUNT} 张工单，已整理完成。`],
+  [124.3, 128.3, "从一句需求，到一份可用的结果。"]];
+const capT = $("capT"), capS = $("capS"), scrim = $("scrim"), bMark = $("bMark"), bn = $("bn"), bt = $("bt");
+let lastTyped = -2, lastT = "", lastS = "";
 function dom(t) {
   const sent = t >= 6, late = t >= 60;
   const n = sent ? -1 : Math.floor(TASK.length * clamp((t - 0.9) / 4.3));
@@ -491,16 +529,21 @@ function dom(t) {
   const b = sm(6, 6.6, t); el.bubble.style.opacity = b; el.bubble.style.transform = `translateY(${(1 - b) * 30}px)`; el.cur.style.opacity = b;
   KW.forEach((k, i) => { const v = late ? 0 : sm(7.2 + i * 0.55, 7.8 + i * 0.55, t); k.el.style.color = `rgb(${lerp(233, 255, v)},226,${lerp(211, 170, v)})`; k.el.style.textShadow = v > 0 ? `0 0 ${14 * v}px rgba(230,197,143,${0.8 * v})` : "none"; });
   el.result.style.display = late ? "block" : "none";
-  if (late) { rv.forEach((e, i) => { const k = sm(118 + i * 0.3, 118.8 + i * 0.3, t); e.style.opacity = k; e.style.transform = `translateY(${(1 - k) * 10}px)`; });
-    el.br.style.opacity = sm(117.4, 119.6, t); el.br.style.transform = "none"; }
+  if (late) { rv.forEach((e, i) => { const k = sm(118 + i * 0.2, 118.8 + i * 0.2, t); e.style.opacity = k; e.style.transform = `translateY(${(1 - k) * 10}px)`; });
+    const ex = sm(128, 132, t), sc = 1 - 0.1 * ex;              // 谢幕：浏览器缓慢缩小、暗下
+    el.br.style.opacity = sm(117.4, 119.6, t) * (1 - sm(128.4, 131.6, t)); el.br.style.transform = ex ? `translate(${W / 2 * (1 - sc)}px,${H / 2 * (1 - sc)}px) scale(${sc})` : "none"; }
   else { const e = sm(6.6, 9.4, t), z = 1 + (BZ - 1) * e;       // 镜头靠近消息卡片
     el.br.style.opacity = 1 - sm(10.2, 12, t);
     el.br.style.transform = e ? `translate(${lerp(bubC[0], BT[0], e) - bubC[0] * z}px,${lerp(bubC[1], BT[1], e) - bubC[1] * z}px) scale(${z})` : "none"; }
-  let s = "", a = 0; for (const [p, q, x] of LABELS) if (t > p && t < q) { s = x; a = win(t, p, q, 1.1); }
-  if (s && s !== lastLabel) { lastLabel = s; el.label.textContent = s; }
-  el.label.style.opacity = a * 0.9;
-  el.tag.style.opacity = sm(123, 125.4, t) * (1 - sm(129.6, 130.8, t));
-  el.black.style.opacity = sm(130, 131.5, t);
+  let ta = 0, sa = 0;
+  for (const [p, q, x] of STAGES) if (t > p && t < q) { ta = win(t, p, q, 0.7); if (x !== lastT) { lastT = x; capT.textContent = x; } }
+  for (const [p, q, x] of CAPS) if (t > p && t < q) { sa = win(t, p, q, 0.6); if (x !== lastS) { lastS = x; capS.textContent = x; } }
+  capT.style.opacity = ta; capS.style.opacity = sa; capS.style.transform = `translateY(${(1 - sa) * 6}px)`;
+  scrim.style.opacity = Math.max(ta, sa) * sm(10.2, 12, t) * (1 - sm(117.4, 119.6, t));
+  const out = 1 - sm(142.4, 143.7, t), k0 = sm(132.4, 134.6, t), k1 = sm(133, 135.4, t), k2 = sm(136.2, 138.6, t);
+  bMark.style.opacity = k0 * out; bMark.style.transform = `scale(${0.9 + 0.1 * k0})`;
+  bn.style.opacity = k1 * out; bn.style.transform = `translateY(${(1 - k1) * 12}px)`; bt.style.opacity = k2 * out;
+  el.black.style.opacity = sm(142.8, 143.9, t);
 }
 
 // ───────── 播放控制 ─────────
