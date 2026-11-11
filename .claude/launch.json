@@ -47,6 +47,15 @@
         "8094"
       ],
       "port": 8094
+    },
+    {
+      "name": "trial-cut",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "功能计划书/项目进度/11.11进度/灵犀诞生短片/试剪/serve.mjs",
+        "8095"
+      ],
+      "port": 8095
     }
   ]
 }
