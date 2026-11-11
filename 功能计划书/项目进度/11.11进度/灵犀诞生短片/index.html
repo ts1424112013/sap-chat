@@ -80,7 +80,8 @@ const TF = (i) => FIN[i].t, onF = (i, t) => t >= FIN[i].t, hitF = (i, t, r = 14)
 const stepIn = (L, t) => { let n = -1; for (let k = 0; k < L.length; k++) if (t >= L[k].t) n = k; return n; };
 const mv = (a, D) => a <= 0 ? 0 : 1 - Math.pow(1 - Math.min(1, a / D), 3);      // 落拍后才动：起步最快，D 秒内到位
 const TDOOR = TA(56), TFIN = TF(0), BPT = 0.53141, ORANGE = "#d97757", EYE = "#17110e", BAD = "rgb(214,120,108)", GYT = 800;
-const ASK = "ABG1 工厂今天开了多少工单？", OPEN = "每一个工具，都从一个问题开始。", SAY = "能不能，直接问？", LAST = "那么，你想问什么？";
+const ORDER_DATE = "11.13", ORDER_DATE_LABEL = ORDER_DATE.replace(".", " 月 ") + " 日";
+const ASK = `ABG1 工厂 ${ORDER_DATE_LABEL}开了多少工单？`, OPEN = "每一个工具，都从一个问题开始。", SAY = "能不能，直接问？", LAST = "那么，你想问什么？";
 // 真实数据：仓库 2026-10-05 至 11-11 每天的提交次数（git log 统计）
 const DAYS = [9, 5, 2, 2, 1, 0, 9, 4, 3, 4, 5, 0, 0, 0, 6, 10, 11, 11, 4, 10, 12, 1, 10, 8, 1, 4, 6, 3, 6, 0, 11, 6, 2, 11, 25, 17, 11, 5];
 const ND = DAYS.length, TOTAL = DAYS.reduce((a, b) => a + b, 0), dlabel = (i) => i < 27 ? `10.${p2(5 + i)}` : `11.${p2(i - 26)}`;
@@ -90,21 +91,21 @@ const REL = []; { let prev = -1; DAYJ.forEach((d, j) => { for (let k = prev + 1;
 const DAYT = []; REL.forEach(([t, d]) => { if (DAYT[d] === undefined) DAYT[d] = t; });
 const dayAt = (t) => { let d = 0; for (let i = 0; i < ND; i++) if (DAYT[i] <= t) d = i; return d; };
 // 每一记重音的动作（检查面板和说明用）
-const STEPS = ["接住那句话", "低头看", "拆成三样", "摆出三个位置", "工厂落位", "日期落位", "想问的落位", "今天 → 11.10", "听懂了", "转向前方", "向前一跃", "到岸边",
+const STEPS = ["接住那句话", "低头看", "拆成三样", "摆出三个位置", "工厂落位", "日期落位", "想问的落位", `日期 → ${ORDER_DATE}`, "听懂了", "转向前方", "向前一跃", "到岸边",
   "踏上第一条", "迈到下一条", "踩错了", "再陷一截", "托住脚", "再上一级", "到对岸", "排成表", "折成文件", "接到手里", "递出去",
   "走向名字", "Gale-SAP", "往前", "Momo", "往前", "灵犀", "看向前方", "走到空地", "图表", "报表", "定时", "Excel", "代码", "文档", "六样一起亮", "飞上天", "往前",
-  "问题一来了", "改掉", "问题二", "改掉", "问题三", "改掉", "问题四", "改掉", "问题五", "改掉", "门出现", "到门前", "敲门", "推不开", "回头看来路（无声）", "转回门前（无声）", "门开了，走进 SAP"];
+  "问题一来了", "改掉", "问题二", "改掉", "问题三", "改掉", "问题四", "改掉", "问题五", "改掉", "门出现", "到门前", "敲门，推不开", "回头", "来路一段段亮起来（无声）", "点一下头，转回门前（无声）", "门开了，走进 SAP"];
 const FSTEPS = ["回到墙前", "接住那句话", "墙退一截", "墙退一截", "墙退一截", "墙退一截", "墙退一截", "墙退完了", "把答案递过去", "又一个问题", "又一个", "又一个", "又一个", "又一个", "又一个", "又一个", "走到中间，抬头", "星在聚", "星在聚", "星在聚", "星在聚", "星在聚", "灵犀", "让想法成为结果", "站定"];
 const AC = [...MID.map((b) => ({ ...b, name: STEPS[b.j] })), ...FIN.map((b) => ({ ...b, name: FSTEPS[b.i] }))];
 // 世界里的位置（一条向右的路，镜头跟着小人）
-const SLOT = [[-1150, 470], [-900, 470], [-650, 470]], BUR = [[-1130, 590], [-900, 560], [-680, 600]], CHIPS = ["ABG1 工厂", "今天", "多少工单"], SLOTLAB = ["工厂", "日期", "想问的"];
-const SEA0 = 430, SEA1 = 1250, R1 = { x: 590, y: 730, r: ["ABG1", "11.10", "100482311"] }, RW = { x: 800, y: 670, r: ["ABG2", "11.09", "100471906"] }, RC = { x: 800, y: 600, r: ["ABG1", "11.10", "100482316"] }, R3 = { x: 1010, y: 540, r: ["ABG1", "11.10", "100482317"] };
-const CAND = [[560, 540, ["ABK1", "11.10", "100455120"], 0], [1050, 430, ["ABG1", "11.08", "100479833"], 1], [800, 430, ["ABG2", "11.10", "100480012"], 0]];
-const TBL = { x: 560, y: 236, w: 520, rh: 36 }, FILEP = [820, 326], PTR = [1800, 650], HAND = [1670, 590], TROWS = [R1.r, RC.r, R3.r, ["ABG1", "11.10", "100482318"], ["ABG1", "11.10", "100482319"], ["ABG1", "11.10", "100482320"]];
+const SLOT = [[-1150, 470], [-900, 470], [-650, 470]], BUR = [[-1130, 590], [-900, 560], [-680, 600]], CHIPS = ["ABG1 工厂", ORDER_DATE_LABEL, "多少工单"], SLOTLAB = ["工厂", "日期", "想问的"];
+const SEA0 = 430, SEA1 = 1250, R1 = { x: 590, y: 730, r: ["ABG1", ORDER_DATE, "100482311"] }, RW = { x: 800, y: 670, r: ["ABG2", "11.09", "100471906"] }, RC = { x: 800, y: 600, r: ["ABG1", ORDER_DATE, "100482316"] }, R3 = { x: 1010, y: 540, r: ["ABG1", ORDER_DATE, "100482317"] };
+const CAND = [[560, 540, ["ABK1", ORDER_DATE, "100455120"], 0], [1050, 430, ["ABG1", "11.08", "100479833"], 1], [800, 430, ["ABG2", ORDER_DATE, "100480012"], 0]];
+const TBL = { x: 560, y: 236, w: 520, rh: 36 }, FILEP = [820, 326], PTR = [1800, 650], HAND = [1670, 590], TROWS = [R1.r, RC.r, R3.r, ["ABG1", ORDER_DATE, "100482318"], ["ABG1", ORDER_DATE, "100482319"], ["ABG1", ORDER_DATE, "100482320"]];
 const PLATES = [[1900, "Gale-SAP", MONO, 30, "10.05"], [2240, "Momo", SANS, 36, "10.24"], [2580, "灵犀", SERIF, 48, "10.27"]], TOOLX = 3520, TOOLS = ["图表", "报表", "定时", "Excel", "代码", "文档"], TANG = TOOLS.map((_, i) => -2.62 + i * Math.PI / 3), FIXX = 4220, FIXLAB = ["#01–03", "#04–06", "#07–09", "#10–11", "#12–13"], FIXN = [3, 6, 9, 11, 13], DX = 5270;
 const CAMK = [[-1, -1860], [10, -1070], [11, 0], [23, 1080], [25, 1420], [27, 1760], [30, 2700], [39, 3400], [50, 3950], [51, 4110]];      // [从第几记起, 镜头左边缘]
 function camX(t) { let c = CAMK[0][1]; for (let i = 1; i < CAMK.length; i++) { const [j, x] = CAMK[i]; if (on(j, t)) c = lerp(CAMK[i - 1][1], x, mv(t - TA(j), 0.32)); } return c; }
-const wideOn = (t) => on(54, t) && !on(55, t), ZW = 0.25;     // 进门前回头的那一小节：切到全景，看见整条来路
+const wideOn = (t) => on(53, t) && !on(56, t), ZW = 0.25;     // 进门前回头：切到全景，看见整条来路，直到门开的那一记
 // ───────── 小人 ─────────
 const RWEND = RW.y + 78, rwY = (t) => RW.y + 44 * mv(t - TA(14), 0.18) + 34 * mv(t - TA(15), 0.18);
 function rcY(t) { const a = t - TA(16); if (a < 0.06) return lerp(980, RWEND, Math.max(0, a) / 0.06); const k = Math.min(1, (a - 0.06) / 0.24); return lerp(RWEND, RC.y, 1 - Math.pow(1 - k, 3)) - 16 * Math.sin(k * Math.PI) * (1 - k); }
@@ -132,12 +133,12 @@ function actor(t) { if (t >= TFIN - 1.2) return finActor(t); if (t >= TDOOR + 1.
     else if (s === 4) { o.ex = 0; o.ey = 0; if (a < 0.5) { o.aL = -4; o.aR = -4; o.ey = 1; } } else if (s === 5) { o.ex = 1; o.ey = 0; } else if (s === 6) { o.ex = -1; o.ey = 0; } else if (s === 7) { o.ex = -1; if (a < 0.6) { o.aL = -3; o.rL = 1; } } else if (s === 8) { o.ex = -1; }
     else if (s === 9) { o.aL = -5; o.aR = -5; } else if (s === 10) { o.ex = 1; o.ey = 0; o.aR = -2; o.rR = 1; if (a < 0.4) { o.lean = 1; o.aL = -2; } }
     else if (n === 23 || n === 25 || n === 27 || n === 29 || n === 30 || n === 39) { o.ex = 1; o.ey = 0; } else if (n >= 31 && n <= 36) { const an = TANG[n - 31], left = Math.cos(an) < 0, lift = Math.sin(an) < 0 ? -4 : 1; o.ex = Math.round(Math.cos(an)); o.ey = Math.sign(Math.sin(an)); if (a < 0.45) { if (left) { o.aL = lift; o.rL = 1; } else { o.aR = lift; o.rR = 1; } } }
-    else if (n === 37 || n === 38) { o.ex = 0; o.ey = -1; } else if (n >= 40 && n <= 49) { o.ex = 1; o.ey = -1; } else if (n === 50 || n === 51) { o.ex = 1; o.ey = 0; } else if (n === 52) { o.ex = 1; if (a < 0.35) { o.aR = -3; o.rR = 1; } } else if (n === 53) { o.ex = 1; o.ey = 0; o.aR = -1; o.rR = 1; o.lean = a < 0.45 ? 1 : 0; }
-    else if (n === 54) { o.ex = -1; o.ey = -1; } else if (n === 55) { o.ex = 1; o.ey = 0; }
+    else if (n === 37 || n === 38) { o.ex = 0; o.ey = -1; } else if (n >= 40 && n <= 49) { o.ex = 1; o.ey = -1; } else if (n === 50 || n === 51) { o.ex = 1; o.ey = 0; } else if (n === 52) { o.ex = 1; o.ey = 0; if (a < 0.3) { o.aR = -3; o.rR = 1; } else if (a < 0.8) { o.aR = -1; o.rR = 1; o.lean = 1; } }                      // 敲一下，再推，推不开
+    else if (n === 53 || n === 54) { o.ex = -1; o.ey = 0; } else if (n === 55) { o.ex = a < 0.62 ? -1 : 1; o.ey = 0; if (a > 0.2 && a < 0.44) { o.crouch = 1; o.ey = 1; } }   // 回头看着；最后点一下头，才转回门前
     if (LEAD[n + 1] && n >= 0 && t > prev + (next - prev) * 0.55 && n !== 0 && n !== 1 && s !== 9) { o.ex = LEAD[n + 1][0]; o.ey = LEAD[n + 1][1]; }
     if (P.land >= 0 && P.land < 0.1) o.crouch = 1;              // 落地缓冲
     if ((HOPS[n + 1] || INPLACE[n + 1]) && next - t < 0.11 && n !== 55) o.crouch = 1; }   // 要跳之前原地轻轻一蹲
-  const ob = a - BPT, bob = P.air === 0 && n >= 0 && n < 54 && ob >= 0 && ob < 0.25 ? Math.round(4 * Math.exp(-ob * 14)) : 0;      // 没有重音的那一拍：身体轻轻一点
+  const ob = a - BPT, bob = P.air === 0 && n >= 0 && n < 53 && ob >= 0 && ob < 0.25 ? Math.round(4 * Math.exp(-ob * 14)) : 0;      // 没有重音的那一拍：身体轻轻一点
   o.br = o.crouch ? 0 : Math.round(1 + Math.sin(t * 2.1)) - bob; o.wx = o.x; o.wtop = o.y + o.yo - 120 + (o.crouch ? 12 : 0); Object.assign(A, o); }
 // 看星的那一段：大一号，坐在山坡上
 function nightActor(t) { const o = { a: win(t, TDOOR + 2.2, TFIN - 0.5, 0.6), u: 16, x: 700, y: 880, yo: 0, ex: 1, ey: -1, aL: 0, aR: 0, rL: 0, rR: 0, lean: 0, crouch: 0, tuck: 0, legs: 0, blink: t % 3.3 < 0.12, trail: [] };
@@ -193,14 +194,14 @@ function glyphs() { const c = document.createElement("canvas"); c.width = 1100; 
 const TGATHER = TF(16);
 function starPos(s, t) { const k = eo((t - s.t0) / 1.1); let x = lerp(s.lx, s.x, k), y = lerp(s.ly, s.y, k) - Math.sin(k * Math.PI) * 40;
   const c = sm(TGATHER + s.d, TGATHER + 3.3 + s.d, t); if (c > 0) { const sw = Math.sin(c * Math.PI) * 90; x = lerp(x, s.tx, c) + Math.cos(s.p) * sw; y = lerp(y, s.ty, c) + Math.sin(s.p) * sw; } return [x, y, k, c]; }
-function sky(t) { if (t < TA(0)) return; GA = 1; const dim = (1 - 0.5 * win(t, TFIN - 0.4, TGATHER + 0.4, 0.8)) * (wideOn(t) ? 0.6 : 1), lout = (1 - sm(TGATHER - 1.4, TGATHER, t)) * dim, fin = 1 - 0.45 * sm(118, 122, t);
+function sky(t) { if (t < TA(0)) return; GA = 1; const dim = (1 - 0.5 * win(t, TFIN - 0.4, TGATHER + 0.4, 0.8)) * (wideOn(t) ? 0.7 + 0.3 * sm(TA(54), TA(54) + 1.7, t) : 1), lout = (1 - sm(TGATHER - 1.4, TGATHER, t)) * dim, fin = 1 - 0.45 * sm(118, 122, t);
   const nm = stepIn(MID, t), nf = stepIn(FIN, t), pulseA = t < TDOOR + 1 ? (nm >= 0 ? hitp(nm, t, 8) : 0) : t >= TFIN && nf >= 0 ? hitF(nf, t, 8) : 0, sel = t < TFIN ? nm : nf; let prev = null, pp = null, si = -1;
   for (const s of STARS) { si++; if (t < s.t0) { prev = null; continue; } const q = starPos(s, t), th = CALM[2 + s.day % 4];
     if (t >= th && lout > 0 && prev && prev.day === s.day) line(pp, q, (0.16 * sm(th, th + 0.12, t) + 0.5 * pulse(t, th, 0.5)) * lout, 1);                // 安静段里，星座分四下连起来
     const fl = pulseA * ((si + sel) % 3 === 0 ? 1 : 0.15), a = s.b * (0.6 + 0.4 * Math.sin(t * s.f + s.p)) * dim * (q[3] >= 1 ? fin : 1) * (1 + 0.9 * fl) + (1 - q[2]) * 0.6;
     G(q[0], q[1], (7 + 6 * s.b + 12 * (1 - q[2])) * (1 - 0.35 * q[3]) * (1 + 0.5 * fl), a); ctx.globalAlpha = clamp(a + 0.2); ctx.fillStyle = "#fff3dc"; ctx.fillRect(q[0] - 1, q[1] - 1, 2, 2); prev = s; pp = q; } }
 // 左上：日期、第几天、多少颗星。右上：每天的提交，一天一根（向那条 K 线致意）
-function hud(t) { const a = sm(TA(0), TA(0) + 0.3, t) * (1 - sm(TFIN - 1.2, TFIN - 0.4, t)); if (a <= 0) return; GA = a; const d = dayAt(t), pop = pulse(t, DAYT[d], 0.35); let n = 0; for (const s of STARS) if (t >= s.t0) n++;
+function hud(t) { const a = sm(TA(0), TA(0) + 0.3, t) * (1 - sm(TFIN - 1.2, TFIN - 0.4, t)) * (wideOn(t) ? 0 : 1); if (a <= 0) return; GA = a; const d = dayAt(t), pop = pulse(t, DAYT[d], 0.35); let n = 0; for (const s of STARS) if (t >= s.t0) n++;
   txt(`2026.${dlabel(d)}`, 92, 100, 22, 0.7, SUB, "left", MONO); txt(`第 ${d + 1} 天`, 90, 146, 40 * (1 + 0.22 * pop), 0.95, WARM, "left", SERIF); txt(`✦ ${n}`, 92, 196, 26 * (1 + 0.3 * pop), 0.95, GOLD);
   for (let i = 0; i <= d; i++) { const x = 1374 + i * 12, cur = i === d, h = Math.max(2, DAYS[i] * 4) * (cur ? mv(t - DAYT[d], 0.2) * (1 + 0.5 * pop) : 1); ctx.globalAlpha = a * (cur ? 1 : 0.55); ctx.fillStyle = cur ? "#fff3dc" : "#e6c58f"; ctx.fillRect(x, 156 - h, 8, h); if (cur && pop > 0.05) G(x + 4, 156 - h, 40, pop); }
   line([1370, 157], [1830, 157], 0.3, 1); txt("每天的提交", 1830, 180, 14, 0.6, SUB, "right"); GA = 1; }
@@ -237,7 +238,7 @@ function scListen(t) { if (!on(0, t)) return;
   if (on(3, t)) SLOT.forEach(([x, y], i) => { const k = 1 + 0.2 * hitp(3, t), f = on(4 + i, t) ? 1 : 0; ctx.save(); ctx.translate(x, y); ctx.scale(k, k); box(-112, -34, 224, 68, 14, 0.5, 0.3 + 0.5 * f + 0.4 * hitp(8, t, 5), "#10151d", GOLD, 1.3); txt(SLOTLAB[i], 0, -54, 17, 0.75, f ? GOLD : SUB, "center"); ctx.restore(); });
   if (on(8, t)) { box(-1290, 384, 780, 144, 20, 0, 0.35 + 0.65 * hitp(8, t, 5), CARD, GOLD, 1.5 + 2 * hitp(8, t)); G(-900, 470, 520, 0.4 * hitp(8, t, 5)); }
   if (on(2, t)) CHIPS.forEach((s, i) => { const b = mv(t - TA(2), 0.16), m = mv(t - TA(4 + i), 0.2), x = lerp(lerp(-900, BUR[i][0], b), SLOT[i][0], m), y = lerp(lerp(650, BUR[i][1], b), SLOT[i][1], m) + (on(4 + i, t) ? 0 : Math.sin(t * 2 + i) * 4), fl = hitp(2, t) + hitp(4 + i, t) + (i === 1 ? hitp(7, t) : 0);
-    pillK(x, y, i === 1 && on(7, t) ? "今天 = 11.10" : s, 24, 1, 0.5 + 1.5 * fl, 1 + 0.3 * fl); }); }
+    pillK(x, y, i === 1 && on(7, t) ? `日期 = ${ORDER_DATE}` : s, 24, 1, 0.5 + 1.5 * fl, 1 + 0.3 * fl); }); }
 function scFind(t) { if (!on(10, t)) return; const J = 12, o2 = (i) => on(J + i, t), h2 = (i, r) => hitp(J + i, t, r), T2 = (i) => TA(J + i), sa = mv(t - TA(10), 0.3), sv = GA;
   for (let l = 0; l < 8; l++) for (let j = 0; j < 4; j++) { const wx = SEA0 + ((((j * 235 + l * 77 - t * (10 + l * 2)) % 940) + 940) % 940) - 80, ma = sm(SEA0, SEA0 + 90, wx) * (1 - sm(SEA1 - 130, SEA1 - 10, wx + 200)) * sa; if (ma <= 0) continue;
     const y = 660 + l * 36; box(wx, y, 200, 26, 6, 0.32 * ma, 0.12 * ma, "#121822"); txt(`AB${"GKG"[(j + l) % 3]}${1 + (j * 3 + l) % 3}  11.${p2(4 + (j * 5 + l * 3) % 8)}  1004${70000 + (j * 9173 + l * 3119) % 12000}`, wx + 12, y + 14, 13, 0.3 * ma, SUB, "left", MONO); }
@@ -255,7 +256,7 @@ function scFind(t) { if (!on(10, t)) return; const J = 12, o2 = (i) => on(J + i,
     if (o2(9)) { const k = mv(t - T2(9), 0.22); p = [lerp(FILEP[0], hands[0], k), lerp(FILEP[1], hands[1], k) - arc(9, 50)]; i = 9; }
     if (o2(10)) { const k = mv(t - T2(10), 0.22), h0 = [1350, GYT - 164]; p = [lerp(h0[0], HAND[0], k), lerp(h0[1], HAND[1], k) - arc(10, 40)]; i = 10; }
     const k = 1 + 0.18 * h2(i), fl = h2(i, 6); ctx.save(); ctx.translate(p[0], p[1]); ctx.scale(k, k); G(0, 0, 240 + 260 * fl, 0.3 + 0.6 * fl); box(-150, -34, 300, 68, 14, 0.97, 0.9, "#171d28", GOLD, 1.5); box(-134, -19, 30, 38, 6, 1, 0, "#2c6a4a"); txt("X", -119, 1, 16, 1, "#dff3e6", "center", SANS, 700);
-    txt("ABG1_工单_1110.xlsx", -92, -8, 18, 1, WARM); txt("12 行 · 工厂、日期已核对", -92, 15, 13, 0.75, SUB); if (o2(10)) tick(124, 0, 20, sm(T2(10) + 0.18, T2(10) + 0.3, t)); ctx.restore(); if (i === 10) ring(HAND[0], HAND[1] + 60, J + 10, t, 300); }
+    txt(`ABG1_工单_${ORDER_DATE.replace(".", "")}.xlsx`, -92, -8, 18, 1, WARM); txt("12 行 · 工厂、日期已核对", -92, 15, 13, 0.75, SUB); if (o2(10)) tick(124, 0, 20, sm(T2(10) + 0.18, T2(10) + 0.3, t)); ctx.restore(); if (i === 10) ring(HAND[0], HAND[1] + 60, J + 10, t, 300); }
   if (o2(6)) { pointer(PTR[0], PTR[1], 2.3 * (1 + 0.3 * h2(6)), 1); if (o2(10)) G(PTR[0] + 14, PTR[1] + 24, 160, 0.6 * h2(10, 5)); } }
 function scNames(t) { PLATES.forEach(([x, name, font, size, date], i) => { const j = 24 + 2 * i; if (!on(j, t)) return; const a = t - TA(j), newest = i === 2 || !on(j + 2, t), light = (newest ? 0.74 : 0.3) + 0.26 * Math.exp(-a * 6), y = lerp(-90, 430, mv(a, 0.2));      // 三块名字牌，一记落下一块
     ctx.save(); ctx.translate(x, y); ctx.rotate((i % 2 ? 1 : -1) * 0.085 * Math.sin(a * 20) * Math.exp(-a * 3.6)); line([0, -y - 30], [0, -42], 0.43, 1.2); G(0, 0, 190 + 200 * Math.exp(-a * 6), 0.5 * light);
@@ -269,7 +270,7 @@ function scFix(t) { if (!on(40, t)) return; const px = FIXX + 560; pointer(px, 2
     ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc); G(0, 0, 220, 0.5 * (hitp(jc, t, 8) + hitp(jv, t, 6))); box(-170, -24, 340, 48, 10, 0.96, done ? 0.9 : 0.5, done ? "#241d12" : "#1c1416", done ? GOLD : "rgb(170,96,88)", 1.4);
     txt(`现场问题 ${lab}`, -150, 1, 19, 1, done ? WARM : BAD); if (done) tick(140, 0, 18, sm(TA(jv), TA(jv) + 0.12, t)); ctx.restore(); if (done) ringAt(x, y + 30, t - TA(jv), 200); });
   txt(`已改 ${n} / 13`, FIXX + 500, 320 + 5 * 62 + 4, 20, 0.85, n === 13 ? GOLD : SUB, "right", MONO); }
-function scDoor(t) { if (!on(50, t)) return; const up = mv(t - TA(50), 0.22), open = on(56, t) ? mv(t - TDOOR, 0.25) : 0, shake = on(53, t) && !on(54, t) ? Math.sin((t - TA(53)) * 60) * 8 * Math.exp(-(t - TA(53)) * 7) : 0, lit = on(52, t) ? 0.4 + 0.6 * hitp(52, t, 5) : 0, x = DX + shake, top = 800 - 410 * up;
+function scDoor(t) { if (!on(50, t)) return; const up = mv(t - TA(50), 0.22), open = on(56, t) ? mv(t - TDOOR, 0.25) : 0, shake = t > TA(52) + 0.3 && !on(53, t) ? Math.sin((t - TA(52) - 0.3) * 60) * 8 * Math.exp(-(t - TA(52) - 0.3) * 7) : 0, lit = on(52, t) ? 0.4 + 0.6 * hitp(52, t, 5) : 0, x = DX + shake, top = 800 - 410 * up;
   if (open > 0) { const g = ctx.createLinearGradient(DX, 0, DX - 900, 0); g.addColorStop(0, "rgba(250,225,175,.55)"); g.addColorStop(1, "rgba(250,225,175,0)"); ctx.globalAlpha = open; ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(DX - 130, 800); ctx.lineTo(DX - 1000, 860); ctx.lineTo(DX - 1000, 800); ctx.closePath(); ctx.fill(); ctx.fillRect(DX - 1000, 800, 870, 14 * open); }
   ctx.beginPath(); ctx.moveTo(x - 130, 800); ctx.lineTo(x - 130, top + 130); ctx.arc(x, top + 130, 130, Math.PI, 0); ctx.lineTo(x + 130, 800); ctx.closePath();
   const g = ctx.createLinearGradient(0, top, 0, 800); g.addColorStop(0, `rgba(250,222,170,${0.06 + 0.1 * lit + 0.85 * open})`); g.addColorStop(1, `rgba(230,197,143,${0.02 + 0.06 * lit + 0.7 * open})`);
@@ -294,7 +295,7 @@ function scFinale(t) { if (t < TFIN - 1.3) return; GA = 1;
   line([0, GYT], [W, GYT], 0.4 * (onF(0, t) ? 1 : 0) * (1 - 0.6 * sm(118, 121, t)), 1.3);
   if (onF(2, t)) pointer(1500, 640, 2.2 * (1 + 0.3 * hitF(2, t)), 1 - sm(TGATHER - 0.3, TGATHER + 0.6, t));
   if (!onF(9, t) || t < TF(9) + 0.5) { const m = mv(t - TF(1), 0.2), g = mv(t - TF(8), 0.25), done = onF(8, t), p = [lerp(lerp(640, A.wx, m), 1390, g), lerp(lerp(470 + Math.sin(t * 1.7) * 8 * (1 - m), A.wtop - 62, m), 520, g)];      // 那句迷路的话：第 1 记被接住，第 8 记变成答案递过去
-    askCard(p[0], p[1], sm(TFIN - 1.3, TFIN - 0.4, t) * (1 - sm(TF(9), TF(9) + 0.5, t)), done ? "12 张工单 · Excel 已备好" : ASK, done ? 1 : hitF(1, t, 5), 1 + 0.2 * hitF(1, t) + 0.2 * hitF(8, t)); ringAt(p[0], p[1] + 70, t - TF(1), 300); if (done) G(p[0], p[1], 400, 0.5 * hitF(8, t, 4)); }
+    askCard(p[0], p[1], sm(TFIN - 1.3, TFIN - 0.4, t) * (1 - sm(TF(9), TF(9) + 0.5, t)), done ? `${ORDER_DATE} · 12 张工单 · Excel 已备好` : ASK, done ? 1 : hitF(1, t, 5), 1 + 0.2 * hitF(1, t) + 0.2 * hitF(8, t)); ringAt(p[0], p[1] + 70, t - TF(1), 300); if (done) G(p[0], p[1], 400, 0.5 * hitF(8, t, 4)); }
   QS.forEach((s, k) => { const i = 9 + k; if (!onF(i, t)) return; const a = t - TF(i); if (a > 1.4) return; const sd = k % 2 ? 1 : -1, x = 1260 + sd * 250 + sd * 50 * sm(0.3, 1.4, a), y = 560 - 300 * Math.pow(sm(0.35, 1.4, a), 2), w = tw(s, 24) + 96, sc = 1 + 0.35 * Math.exp(-a * 14);      // 每一记，一个问题出现、被接住、打勾
     GA = 1 - sm(0.6, 1.4, a); ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc); G(0, 0, 200, 0.2 + 0.6 * Math.exp(-a * 6)); box(-w / 2, -34, w, 68, 20, 0.97, 0.85, "#2a2114", GOLD, 1.4); txt(s, 14, 1, 24, 1, WARM, "center"); tick(-w / 2 + 32, 0, 20, sm(0.05, 0.15, a)); ctx.restore(); GA = 1; });
   if (onF(22, t)) { const a = t - TGW, k = 1 + 0.3 * Math.exp(-a * 12), al = 1; G(960, WMY, 560 + 400 * Math.exp(-a * 3), 0.2 + 0.5 * Math.exp(-a * 3));      // 第 22 记：「灵犀」亮起
@@ -302,10 +303,18 @@ function scFinale(t) { if (t < TFIN - 1.3) return; GA = 1;
   if (onF(23, t)) { const k = 1 + 0.25 * hitF(23, t); ctx.save(); ctx.translate(960, 604); ctx.scale(k, k); txt("让想法成为结果。", 0, 0, 38, 1, "#d9cdb4", "center", SERIF, 300, 12); ctx.restore(); }
   GA = sm(123.4, 123.8, t); if (GA > 0) { const n = Math.floor(LAST.length * clamp((t - 123.6) / 1.5)), full = tw(LAST, 36, SERIF) + 5 * (LAST.length - 1), x = W / 2 - full / 2;
     txt(LAST.slice(0, n), x, 920, 36, 0.95, WARM, "left", SERIF, 400, 5); if ((t * 1.6) % 1 < 0.55) { ctx.globalAlpha = GA; ctx.fillStyle = GOLD; ctx.fillRect(x + (n ? tw(LAST.slice(0, n), 36, SERIF) + 5 * n : 0) + 6, 899, 3, 42); } } GA = 1; }
+// ───────── 回望来路：一道光从最开始那句话走到它脚下，经过的每一站亮起名字和日期，留下一个当时的自己 ─────────
+const LOOKBACK = [[-900, "一句话", "10.05"], [800, "第一张表", "10.22"], [2240, "三个名字", "10.27"], [TOOLX, "六样工具", "11.04"], [FIXX, "十三个问题", "11.08"]];
+function ghost(sx, sy, u, a) { if (a <= 0.004) return; const x0 = Math.round(sx) - 8 * u, gy = Math.round(sy); ctx.globalAlpha = a; ctx.fillStyle = ORANGE; ctx.fillRect(x0 + 2 * u, gy - 10 * u, 12 * u, 8 * u); ctx.fillRect(x0, gy - 6 * u, 16 * u, 2 * u); [3, 5, 10, 12].forEach((c) => ctx.fillRect(x0 + c * u, gy - 2 * u, u, 2 * u)); ctx.fillStyle = EYE; ctx.fillRect(x0 + 5 * u, gy - 8 * u, u, 2 * u); ctx.fillRect(x0 + 12 * u, gy - 8 * u, u, 2 * u); }
+function scLookBack(t) { if (!wideOn(t)) return; GA = 1; const X = (x) => (x + 1500) * ZW + 50, k = sm(TA(54), TA(54) + 1.7, t), head = lerp(-1150, 4930, k), out = 1 - sm(TDOOR - 0.25, TDOOR, t);
+  if (k > 0) { const g = ctx.createLinearGradient(X(-1150), 0, X(head), 0); g.addColorStop(0, "rgba(230,197,143,.15)"); g.addColorStop(1, "rgba(255,243,220,.95)"); ctx.globalAlpha = out; ctx.strokeStyle = g; ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(X(-1150), 643); ctx.lineTo(X(head), 643); ctx.stroke(); G(X(head), 643, 60, 0.9 * out * (k < 1 ? 1 : 0.4)); }
+  for (const [wx, name, date] of LOOKBACK) { const a = clamp((head - wx) / 260) * out; if (a <= 0) continue; const x = X(wx), pop = 1 + 0.3 * (1 - clamp((head - wx - 260) / 500));
+    ghost(x, 640, 3, 0.42 * a); G(x, 620, 70 * pop, 0.35 * a); txt(name, x, 690 + 8 * (1 - a), 22, a, WARM, "center", SERIF, 400, 3); txt(date, x, 718 + 8 * (1 - a), 15, 0.7 * a, GOLD, "center", MONO); }
+  narr(t, TA(53) + 0.35, TDOOR - 0.02, 960, 290, "那时，只想再试一次。", 40, "center", 6, "rgb(217,205,180)"); narr(t, TA(54) + 0.25, TDOOR - 0.02, 960, 366, "没想到，已经走了*这么远*。", 58, "center", 8); GA = 1; }
 // ───────── 画面里的话：衬线字，一个字一个字浮出来，*…* 之间是金色 ─────────
 const NARR = [[10.4, 12.1, "c", "答案都在 SAP 里，可没有一扇门是给这句话开的。"],
   [TA(0) + 0.5, TA(8) + 0.7, "m", "它能*听懂*吗？"], [TA(11) + 0.2, TA(16) - 0.1, "m", "能自己*找到*吗？"], [TA(18) + 0.3, TA(22) + 0.8, "m", "能把事情*接下去*吗？"], [TA(23) + 0.4, TA(29) + 0.6, "m", "它先后有过三个*名字*。"],
-  [TA(30) + 0.4, TA(38) + 0.6, "m", "然后，它长出了*手*。"], [TA(40) + 0.3, TA(49) + 0.7, "m", "现场每提一个问题，就*改掉*一个。"], [TA(50) + 0.4, TA(53) + 0.9, "m", "*11 月 9 日*，它站到了门前。"],
+  [TA(30) + 0.4, TA(38) + 0.6, "m", "然后，它长出了*手*。"], [TA(40) + 0.3, TA(49) + 0.7, "m", "现场每提一个问题，就*改掉*一个。"], [TA(50) + 0.4, TA(53) - 0.05, "m", "*11 月 9 日*，它站到了门前。"],
   [TDOOR + 3.6, CALM[3] - 0.1, "m", `${ND} 天，${TOTAL} 次提交。`, "每一次，都是*一颗星*。"], [CALM[3] + 0.4, CALM[5] - 0.2, "m", "它不是一次写成的。"], [CALM[5] + 0.3, TFIN - 0.8, "m", "是一个人和一个 AI，", "*一句一句*聊出来的。"],
   [TF(1) + 0.3, TF(8) + 0.8, "c", "现在，那句话*有人接住了*。"], [TF(9) + 0.2, TF(15) + 0.8, "c", "不用记事务码，也不用多说。"], [TGATHER + 0.5, TGW - 0.3, "e", "心有灵犀，一点就通。"]];
 function narr(t, t0, t1, x, y, s, size, align = "left", ls = 4, base = WARM) { if (t <= t0 || t >= t1) return; const out = 1 - sm(t1 - 0.6, t1, t), chars = []; let gold = false, sum = 0;
@@ -329,8 +338,8 @@ function draw(t) { const r = cv.width / W, wide = wideOn(t), cx = camX(t), mid =
     for (const [tx, ty, ta] of A.trail) { ctx.globalAlpha = A.a * 0.3 * ta; ctx.fillRect(Math.round(X(tx)) - 6 * u, Math.round(Y(ty)) - 10 * u, 12 * u, 8 * u); } drawActor(X(A.x), Y(A.y), u, A.yo * (wide ? ZW : 1));
     if (!wide) for (let i = REL.length - 1; i >= 0; i--) { const [rt, , rn, rj] = REL[i]; if (rj < 0 || rt > t) continue; const ag = t - rt; if (ag < 0.9) txt(rn ? `+${rn}` : "+0", X(A.x) + 112, Y(A.y) - 130 - 50 * eo(ag / 0.9), 36, (1 - ag / 0.9) * A.a, rn ? GOLD : SUB, "left", SERIF); break; } }      // 每一记：小人头顶冒出这一天的提交数
   else { ctx.fillStyle = ORANGE; for (const [tx, ty, ta] of A.trail) { ctx.globalAlpha = A.a * 0.3 * ta; ctx.fillRect(Math.round(tx) - 72, Math.round(ty) - 120, 144, 96); } drawActor(A.x, A.y, A.u, A.yo); }
-  hud(t);
-  if (!wide && mid && on(8, t)) { GA = on(19, t) ? Math.exp(-(t - TA(19)) * 10) : 1; const k = 1 + 0.3 * hitp(8, t); pillK(150, 340, "ABG1 工厂", 22, 1, 0.3 + hitp(8, t), k); pillK(330, 340, "今天 11.10", 22, 1, 0.3 + hitp(8, t), k); GA = 1; }      // 听懂之后带在身上的两样东西
+  scLookBack(t); hud(t);
+  if (!wide && mid && on(8, t)) { GA = on(19, t) ? Math.exp(-(t - TA(19)) * 10) : 1; const k = 1 + 0.3 * hitp(8, t); pillK(150, 340, "ABG1 工厂", 22, 1, 0.3 + hitp(8, t), k); pillK(330, 340, `日期 ${ORDER_DATE}`, 22, 1, 0.3 + hitp(8, t), k); GA = 1; }      // 听懂之后带在身上的两样东西
   if (!wide) for (const [p, q, at, s1, s2] of NARR) if (t > p && t < q) { if (at === "c") { line([96, 70], [96, 114], 0.7 * win(t, p, q, 0.5), 2); narr(t, p, q, 120, 92, s1, 44); } else if (at === "m") { narr(t, p, q, 90, 266, s1, 50, "left", 5); if (s2) narr(t, p + 0.7, q, 92, 328, s2, 31, "left", 3, "rgb(217,205,180)"); } else narr(t, p, q, 960, 604, s1, 38, "center", 12, "#d9cdb4"); }
   const bloom = on(56, t) ? Math.exp(-(t - TDOOR) * 1.7) * sm(TDOOR, TDOOR + 0.12, t) : 0; if (bloom > 0.01) { ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 0.42 * bloom; ctx.fillStyle = "#f3dcae"; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = "source-over"; }      // 全片唯一一次：门里的光漫出来
   if (CHECK) checkPanel(t);
