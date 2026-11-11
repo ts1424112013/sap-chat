@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>灵犀 · 试剪</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#000;overflow:hidden;font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif}
+body.playing{cursor:none}
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;overflow:hidden;background:#06080c}
+#cv{position:absolute;inset:0;width:1920px;height:1080px}
+#start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(4,6,9,.9);z-index:9;gap:26px;cursor:pointer}
+#start .p{width:104px;height:104px;border-radius:50%;border:1px solid #e6c58f;display:grid;place-items:center;color:#e6c58f;font-size:34px;padding-left:6px}
+#start p{font-size:16px;color:#8d8a83;line-height:2;text-align:center;letter-spacing:1px}
+#start a{color:#e6c58f;text-underline-offset:4px}
+#start kbd{border:1px solid #33312d;border-radius:5px;padding:1px 8px;font-family:inherit;color:#b9b3a6}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="cv"></canvas></div>
+<div id="start"><div class="p">▶</div><p>点击开始播放（请打开声音）<br><kbd>空格</kbd> 暂停 / 继续　<kbd>←</kbd> <kbd>→</kbd> 上一段 / 下一段　<kbd>R</kbd> 从头　<kbd>F</kbd> 全屏　<kbd>D</kbd> 检查面板</p><a href="图标卡点.html">看六图标卡点试剪</a></div>
+<audio id="music" src="trial.wav" preload="auto"></audio>
+
+<script>
+"use strict";
+const p2 = (n) => String(n).padStart(2, "0");
+// ───────── 基础 ─────────
+const W = 1920, H = 1080, T = 16.8;
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const sm = (a, b, x) => { x = clamp((x - a) / (b - a)); return x * x * (3 - 2 * x); };
+const eo = (x) => 1 - Math.pow(1 - clamp(x), 3);
+const lerp = (a, b, k) => a + (b - a) * k;
+const win = (t, a, b, f = 1) => sm(a, a + f, t) * (1 - sm(b - f, b, t));
+const pulse = (t, t0, d = 1.2) => (t > t0 ? Math.exp(-(t - t0) / d * 3) : 0);
+function rng(a) { return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const SANS = '"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif', MONO = '"SF Mono",Menlo,Consolas,monospace', SERIF = '"Songti SC","STSong","Noto Serif SC",serif';
+const GOLD = "rgb(230,197,143)", WARM = "rgb(255,243,220)", SUB = "rgb(150,146,138)", CARD = "#141a24";
+
+const cv = $("cv"), ctx = cv.getContext("2d");
+const glow = document.createElement("canvas"); glow.width = glow.height = 128;
+{ const g = glow.getContext("2d"), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, "rgba(255,240,212,1)"); gr.addColorStop(0.12, "rgba(250,222,170,.62)"); gr.addColorStop(0.4, "rgba(232,196,138,.14)"); gr.addColorStop(1, "rgba(232,196,138,0)");
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128); }
+const bg = document.createElement("canvas"); bg.width = W; bg.height = H;
+{ const g = bg.getContext("2d"); let gr = g.createLinearGradient(0, 0, W * 0.3, H);
+  gr.addColorStop(0, "#0b1018"); gr.addColorStop(0.55, "#080b11"); gr.addColorStop(1, "#05070a"); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  gr = g.createRadialGradient(W * 0.72, H * 0.2, 0, W * 0.72, H * 0.2, 1100); gr.addColorStop(0, "rgba(46,62,88,.30)"); gr.addColorStop(1, "rgba(46,62,88,0)"); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  gr = g.createRadialGradient(W / 2, H / 2, 300, W / 2, H / 2, 1150); gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(0,0,0,.6)"); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
+const DR = rng(21), dust = Array.from({ length: 130 }, () => ({ x: DR() * W, y: DR() * H, d: 0.2 + DR() * 0.8, a: 0.1 + DR() * 0.3, f: 0.2 + DR() * 0.5, p: DR() * 6.28, s: 0.8 + DR() * 1.6 }));
+let GA = 1;                                                  // 当前场景的整体透明度
+function G(x, y, r, a) { a *= GA; if (a <= 0.004 || r <= 0) return; ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = Math.min(1, a); ctx.drawImage(glow, x - r, y - r, r * 2, r * 2); ctx.globalCompositeOperation = "source-over"; }
+function rr(x, y, w, h, r) { r = Math.min(r, w / 2, h / 2); ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function box(x, y, w, h, r, fa, sa, fill = CARD, stroke = GOLD, lw = 1.2) { if (w <= 0 || h <= 0) return; rr(x, y, w, h, r);
+  if (fa > 0.004) { ctx.globalAlpha = clamp(fa * GA); ctx.fillStyle = fill; ctx.fill(); }
+  if (sa > 0.004) { ctx.globalAlpha = clamp(sa * GA); ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); } }
+function txt(s, x, y, size, a, col = WARM, align = "left", font = SANS, weight = 400, ls = 0) { a *= GA; if (a <= 0.004) return;
+  ctx.globalAlpha = clamp(a); ctx.fillStyle = col; ctx.font = `${weight} ${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = "middle";
+  if ("letterSpacing" in ctx) ctx.letterSpacing = ls + "px"; ctx.fillText(s, x + (align === "center" ? ls / 2 : 0), y); if ("letterSpacing" in ctx) ctx.letterSpacing = "0px"; }
+function tw(s, size, font = SANS, weight = 400) { ctx.font = `${weight} ${size}px ${font}`; return ctx.measureText(s).width; }
+function line(p, q, a, lw = 1, col = GOLD) { if (a <= 0.004) return; ctx.globalAlpha = clamp(a * GA); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); }
+function tick(x, y, s, a) { if (a <= 0.004) return; ctx.globalAlpha = clamp(a * GA); ctx.strokeStyle = GOLD; ctx.lineWidth = s * 0.16; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(x - s * 0.4, y); ctx.lineTo(x - s * 0.1, y + s * 0.3); ctx.lineTo(x + s * 0.45, y - s * 0.35); ctx.stroke(); }
+function pill(cx, cy, s, size, a, lit = 0, font = SANS, col = WARM) { const w = tw(s, size, font) + size * 2, h = size * 2.3;
+  if (lit > 0) G(cx, cy, w * 0.8, a * 0.3 * lit);
+  box(cx - w / 2, cy - h / 2, w, h, h / 2, a * 0.94, a * (0.5 + 0.4 * Math.min(1, lit)), "#161c27"); txt(s, cx, cy + 1, size, a, col, "center", font); return w; }
+// 金色指针：屏幕另一头的那个人
+function pointer(x, y, s, a) { if (a <= 0.004) return; G(x + 6 * s, y + 10 * s, 46 * s, a * 0.5);
+  ctx.globalAlpha = clamp(a * GA); ctx.fillStyle = "#e9c98f"; ctx.strokeStyle = "#0a0d13"; ctx.lineWidth = 1.2 * s; ctx.lineJoin = "round"; ctx.beginPath();
+  [[0, 0], [0, 20], [5, 15.5], [8.5, 23], [11.5, 21.5], [8, 14.5], [14, 14.5]].forEach(([px, py], i) => i ? ctx.lineTo(x + px * s, y + py * s) : ctx.moveTo(x + px * s, y + py * s)); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+function bubble(cx, cy, s, size, a, gold) { if (a <= 0.004) return; const w = tw(s, size) + size * 1.8, h = size * 2.4;
+  box(cx - w / 2, cy - h / 2, w, h, h * 0.42, a * 0.96, a * 0.8, gold ? "#221c12" : "#1b222e", gold ? GOLD : "#d97757", 1.4); txt(s, cx, cy + 1, size, a, WARM, "center"); }
+
+// ───────── 试剪：踩错一条记录 → 找到对的那一行 → 递出第一份成果（16.8 秒） ─────────
+// 音轨 trial.wav：以配乐 29.80–46.60 秒为底，重排鼓声。下面的时刻都是试剪内的秒数。
+const BPT = 0.53141, bt = (k) => 0.0946 - 29.8 + BPT * k;     // 第 k 拍（实测拍子网格，误差约 2 毫秒）
+const KA = 6.964, KB = 9.088, KF = 11.215, KC = 13.338;       // 三记重拍：托住、合表、交付；折文件是过渡
+const SECTIONS = [0, 2.71, KA, KB, KF, KC];
+const KEYS = [{ name: "托住脚", t: KA, act: "小人下落的脚，落在浮上来的那一行上", vis: "切回全景，正确记录托住小人，连出第一段路" },
+  { name: "排成表", t: KB, act: "小人的脚落到对岸；六行记录同时停进表格的格子", vis: "切到表格，六行同时锁定，脚下的路留在画面里" },
+  { name: "递出去", t: KC, act: "文件到达金色指针", vis: "镜头落在接收者身上，文件定住并出现「已收到」" }];
+const ORANGE = "#d97757", EYE = "#17110e";
+const GYT = 800, SEA0 = 430, SEA1 = 1250;
+// 记录：[工厂, 日期, 订单]
+const WANT = ["ABG1", "11.10"], ROWTXT = (r) => `${r[0]}   2026.${r[1]}   ${r[2]}`;
+const R1 = { x: 590, y: 730, r: ["ABG1", "11.10", "100482311"] }, RW = { x: 800, y: 670, r: ["ABG2", "11.09", "100471906"] }, RC = { x: 800, r: ["ABG1", "11.10", "100482316"] };
+const R3 = { x: 1000, y: 610, r: ["ABG1", "11.10", "100482317"] }, R4 = { x: 1150, y: 700, r: ["ABG1", "11.10", "100482318"] };
+const CAND = [[560, 540, ["ABK1", "11.10", "100455120"], bt(65), 0], [1050, 520, ["ABG1", "11.08", "100479833"], bt(66), 1], [800, 470, ["ABG2", "11.10", "100480012"], bt(67), 0]];   // 它看过、又放下的三条：[x, y, 记录, 哪一拍看它, 哪一栏不对]
+const TBL = { x: 455, y: 262, w: 670, rh: 48 }, FILEP = [790, 396], PTR = [1740, 615];
+const TROWS = [R1.r, RC.r, R3.r, R4.r, ["ABG1", "11.10", "100482319"], ["ABG1", "11.10", "100482320"]];
+function rowBox(cx, y, r, a, gold, bad = -1, w = 220) { if (a <= 0.004) return; const sv = GA; GA = sv * a; if (gold > 0) G(cx, y + 15, 170, 0.3 * gold);
+  box(cx - w / 2, y, w, 30, 7, 0.96, 0.3 + 0.6 * gold, gold > 0.5 ? "#241d12" : "#141a24", bad >= 0 ? "rgb(170,96,88)" : GOLD, 1.3);
+  const left = cx - w / 2;
+  const xs = [left + w * 0.06, left + w * 0.30, left + w * 0.56], size = lerp(14, 23, clamp((w - 220) / 450));
+  r.forEach((v, i) => txt(v, xs[i], y + 16, size, 0.98, i === bad ? "#ff9a80" : gold > 0.5 ? WARM : SUB, "left", MONO));
+  GA = sv; }
+function hillsT(off, base, amp, col, a) { ctx.globalAlpha = clamp(a * GA); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, H);
+  for (let x = 0; x <= W; x += 40) { const wx = x + off; ctx.lineTo(x, base + Math.sin(wx * 0.0021) * amp + Math.sin(wx * 0.0057 + 1.3) * amp * 0.45); } ctx.lineTo(W, H); ctx.closePath(); ctx.fill(); }
+// 小人：每一次落脚的时刻都是一个拍点。hopTo(落脚时刻, 起点, 终点)：起跳在落脚前 0.34 秒
+const A = { a: 0 };
+const sinkAt = (t) => t < bt(63) ? 0 : 22 * (1 - Math.exp(-(t - bt(63)) * 9)) + [64, 65, 66, 67].reduce((s, k) => s + 7 * eo((t - bt(k)) / 0.12), 0);   // 踩错的那条：落上去就往下沉，每一拍再陷一点
+const TBRK = 6.72;                                              // 踩错的记录碎掉的时刻（重击前约四分之一秒）
+function feetY(t) { if (t < TBRK) return RW.y + sinkAt(t); if (t < KA) { const k = (t - TBRK) / (KA - TBRK); return RW.y + sinkAt(TBRK) + (780 - RW.y - sinkAt(TBRK)) * k * k; }
+  const k = clamp((t - KA) / 0.34); return 780 - 158 * (1 - Math.pow(1 - k, 3)) - 14 * Math.sin(k * Math.PI) * (1 - k); }                              // 被接住，再被托高
+const WK0 = bt(79) + 0.2, WK1 = bt(80) + 0.25;                 // 抱着文件走向那个人
+function standAt(t) { if (t < bt(60)) return [lerp(90, 390, clamp((t - 0.2) / (bt(60) - 0.2))), GYT]; if (t < bt(61)) return [390, GYT]; if (t < bt(63)) return [R1.x, R1.y]; if (t < bt(71)) return [RW.x, feetY(t)];
+  if (t < bt(72)) return [R3.x, R3.y]; if (t < KB) return [R4.x, R4.y]; if (t < WK0) return [1350, GYT]; return [lerp(1350, 1430, clamp((t - WK0) / (WK1 - WK0))), GYT]; }
+const LANDS = [bt(61), bt(63), bt(71), bt(72), KB, bt(83)];     // 每一次落脚的时刻，都是一个拍点；起跳在落脚前 0.34 秒
+function actor(t) { const o = { a: sm(0.1, 0.4, t), u: 12, ex: 1, ey: 0, aL: 0, aR: 0, rL: 0, rR: 0, lean: 0, crouch: 0, tuck: 0, yo: 0, legs: 0, blink: t % 3.3 < 0.12 }, p = standAt(t); o.x = p[0]; o.y = p[1];
+  if ((t > 0.2 && t < bt(60)) || (t > WK0 && t < WK1)) o.legs = Math.floor((t - bt(56)) / (BPT / 2)) % 2 ? 1 : 2;                                      // 走路：每半拍换一次脚
+  if (t >= bt(62) && t < bt(63) - 0.46) o.ey = -1;
+  if (t >= bt(63) && t < KA) { o.ex = 0; o.ey = 1; if (t < bt(64)) o.lean = Math.floor((t - bt(63)) * 9) % 2 ? 1 : -1;                                // 晃一下，停住，找
+    if (t >= bt(65) && t < bt(66)) { o.ex = -1; o.ey = -1; } else if (t >= bt(66) && t < bt(67)) { o.ex = 1; o.ey = -1; } else if (t >= bt(67) && t < bt(68)) { o.ex = 0; o.ey = -1; } else if (t >= bt(68) && t < TBRK) { o.ex = 0; o.ey = 0; o.lean = -1; }
+    if (t >= TBRK) { o.tuck = 1; o.aL = -2; o.aR = -2; o.rL = 1; o.rR = 1; o.ey = 1; } }                                                               // 脚下一空，往下掉
+  if (t >= KA && t < KA + 0.13) { o.crouch = 1; o.aL = -1; o.aR = -1; o.ey = 1; }
+  if (t >= KB && t < bt(78)) { o.ex = -1; o.ey = -1; const k = Math.floor((t - bt(74)) / BPT); if (t >= bt(74) && k < 3 && t - bt(74 + k) < 0.3) { o.aL = -3; o.rL = 1; } }   // 回头看表，每一拍点一下、核一栏
+  if (t >= bt(78) && t < 13.08) { if (t < bt(79)) { o.ex = -1; o.ey = -1; } if (t >= bt(78) + 0.3) { o.aL = -5; o.aR = -5; } if (t >= bt(79) && t < bt(79) + 0.1) o.crouch = 1; }   // 举手接住文件
+  if (t >= 13.08 && t < KC) { o.crouch = 1; o.aL = -5; o.aR = -5; o.lean = -1; } else if (t >= KC && t < KC + 0.5) { o.aR = -2; o.rR = 1; o.aL = -2; o.lean = 1; }   // 往后一收，落拍时送出去
+  for (const tl of LANDS) { const k = (t - (tl - 0.34)) / 0.34; if (t >= tl - 0.46 && t < tl - 0.34) o.crouch = 1; else if (t >= tl && t < tl + 0.09) o.crouch = 1;
+    else if (k > 0 && k < 1) { const a = standAt(tl - 0.35), b = standAt(tl); o.x = lerp(a[0], b[0], k); o.y = lerp(a[1], b[1], k); o.yo = -(60 + Math.abs(b[1] - a[1]) * 0.3) * 4 * k * (1 - k); o.tuck = k > 0.12 && k < 0.88 ? 1 : 0; o.ex = 1; o.ey = 0; o.lean = 0; o.crouch = 0; } }
+  if (t > 14.6 && t < 15.7) { o.aR = Math.floor((t - 14.6) * 5) % 2 ? -4 : -3; o.rR = 1; o.ex = 0; o.ey = 0; } else if (t >= 15.7) { o.ex = 0; o.ey = 0; }
+  o.br = o.crouch || o.tuck || o.legs ? 0 : Math.round(1 + Math.sin(t * 2.1)); o.top = o.y + o.yo - 10 * o.u + (o.crouch ? o.u : 0); Object.assign(A, o); }
+function drawActor() { if (A.a <= 0.004) return;
+  const u = A.u, x0 = Math.round(A.x) - 8 * u, gy = Math.round(A.y + A.yo), bx = x0 + A.lean * u, bb = gy - (A.crouch ? u : 2 * u) - A.br, btp = bb - 8 * u;
+  GA = 1; G(A.x, gy - 5 * u, 14 * u, 0.12 * A.a);
+  ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = A.a; ctx.fillStyle = ORANGE;
+  ctx.fillRect(bx - A.rL * u, btp + (4 + A.aL) * u, (2 + A.rL) * u, 2 * u); ctx.fillRect(bx + 14 * u, btp + (4 + A.aR) * u, (2 + A.rR) * u, 2 * u);
+  ctx.fillRect(bx + 2 * u, btp, 12 * u, 8 * u);
+  [3, 5, 10, 12].forEach((c, j) => { const lift = A.tuck || (A.legs && j % 2 === A.legs - 1) ? u : 0; if (gy - bb - lift > 0) ctx.fillRect(x0 + c * u, bb, u, gy - bb - lift); });
+  ctx.fillStyle = EYE; const eh = A.blink ? u : 2 * u, ey = btp + (2 + A.ey) * u + (A.blink ? u : 0);
+  ctx.fillRect(bx + (4 + A.ex) * u, ey, u, eh); ctx.fillRect(bx + (11 + A.ex) * u, ey, u, eh); ctx.globalAlpha = 1; }
+// 身后留下的星：每做成一件事，升起几颗
+const SR = rng(9), STARS = [KA, KB, KC].flatMap((t0, g) => Array.from({ length: 5 }, (_, j) => ({ t0: t0 + 0.05 + j * 0.04, x: 260 + g * 560 + SR() * 300, y: 90 + SR() * 150, b: 0.5 + SR() * 0.5, f: 0.6 + SR() * 1.6, p: SR() * 6.28 })));
+function ripple(x, y, t0, t) { const a = t - t0; if (a < 0 || a > 0.9) return; ctx.globalAlpha = (1 - a / 0.9) * 0.8; ctx.strokeStyle = GOLD; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y, 40 + a * 420, 8 + a * 60, 0, 0, 6.3); ctx.stroke(); }
+function narr(t, t0, t1, x, y, s, size) { if (t <= t0 || t >= t1) return; const out = 1 - sm(t1 - 0.5, t1, t); ctx.save(); ctx.font = `400 ${size}px ${SERIF}`; ctx.shadowColor = "rgba(4,6,9,.95)"; ctx.shadowBlur = 24; ctx.textAlign = "left"; ctx.textBaseline = "middle"; let dx = 0;
+  [...s].forEach((ch, i) => { const k = sm(t0 + i * 0.05, t0 + i * 0.05 + 0.45, t); ctx.globalAlpha = k * out; ctx.fillStyle = WARM; ctx.fillText(ch, x + dx, y + (1 - k) * 12); dx += ctx.measureText(ch).width + 4; }); ctx.restore(); }
+
+let CHECK = new URLSearchParams(location.search).has("check"), SYNC = 0;      // 检查模式；人工校准的毫秒数（蓝牙耳机等有延迟的设备用）
+try { SYNC = parseInt(localStorage.getItem("lingxiSync") || "0", 10) || 0; } catch (e) {}
+function draw(t) {
+  const r = cv.width / W;
+  // 错行用近景。落拍切开空间，让新出现的路、表格和交付分别占住画面。
+  let Z = 1, fx = 960, fy = 540;
+  if (t < KA) {
+    const approach = sm(3.45, 4.45, t);
+    Z = lerp(1, 1.62, approach); fx = lerp(960, 780, approach); fy = lerp(540, 628, approach);
+  } else if (t < KB) {
+    Z = 1.04; fx = 900; fy = 560;
+  } else if (t < KF) {
+    Z = 1.29; fx = 876; fy = 501;
+  } else if (t < KC) {
+    const follow = sm(11.45, 12.96, t);
+    Z = lerp(1.29, 1.20, follow); fx = lerp(876, 1250, follow); fy = 501;
+  } else {
+    const release = sm(KC + 0.12, 14.8, t);
+    Z = lerp(1.24, 1, release); fx = lerp(1370, 960, release); fy = lerp(558, 540, release);
+  }
+  const ox = 960 - Z * fx, oy = 540 - Z * fy;
+  ctx.setTransform(r, 0, 0, r, 0, 0);
+  ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1; ctx.drawImage(bg, 0, 0);
+  ctx.setTransform(r * Z, 0, 0, r * Z, r * ox, r * oy);
+  GA = 1; for (const d of dust) G((d.x + t * 6 * d.d) % W, d.y, d.s * 5, d.a * 0.6 * (0.6 + 0.4 * Math.sin(t * d.f + d.p)));
+  actor(t);
+  for (const s of STARS) { if (t < s.t0) continue; const k = eo((t - s.t0) / 1.1), x = lerp(A.x, s.x, k), y = lerp(A.top, s.y, k) - Math.sin(k * Math.PI) * 40, a = s.b * (0.6 + 0.4 * Math.sin(t * s.f + s.p)) + (1 - k) * 0.6;
+    G(x, y, 8 + 6 * s.b + 12 * (1 - k), a); ctx.globalAlpha = clamp(a + 0.2); ctx.fillStyle = "#fff3dc"; ctx.fillRect(x - 1, y - 1, 2, 2); }
+  GA = 1; hillsT(300, 690, 46, "#0c121b", 0.9); hillsT(1200, 752, 30, "#0a0f17", 0.95);
+  ctx.globalAlpha = 0.96; ctx.fillStyle = "#06080c"; ctx.fillRect(0, GYT, SEA0, 280); ctx.fillRect(SEA1, GYT, W - SEA1, 280);
+  line([0, GYT], [SEA0, GYT], 0.5, 1.3); line([SEA1, GYT], [W, GYT], 0.5, 1.3);
+  // 数据的海：几百万行里的一小片，安静地流
+  for (let l = 0; l < 8; l++) for (let j = 0; j < 4; j++) { const wx = SEA0 + ((((j * 235 + l * 77 - t * (34 + l * 9)) % 940) + 940) % 940) - 80, ma = sm(SEA0, SEA0 + 90, wx) * (1 - sm(SEA1 - 130, SEA1 - 10, wx + 200)); if (ma <= 0) continue;
+    const y = 660 + l * 36 + Math.sin(t * 1.2 + j * 1.7 + l) * 6; box(wx, y, 200, 26, 6, 0.4 * ma, 0.16 * ma, "#121822"); txt(`AB${"GKG"[(j + l) % 3]}${1 + (j * 3 + l) % 3}  11.${p2(4 + (j * 5 + l * 3) % 8)}  1004${70000 + (j * 9173 + l * 3119) % 12000}`, wx + 12, y + 14, 13, 0.36 * ma, SUB, "left", MONO); }
+  // 它要找的：工厂和日期（从上一幕带过来的两样东西）
+  GA = sm(0.4, 0.9, t) * (1 - sm(3.2, 3.6, t));
+  pill(180, 258, "ABG1 工厂", 26, 1, 0.3); pill(392, 258, "11.10 的工单", 26, 1, 0.3); GA = 1;
+  // 铺出来的路：踩过的、对的记录留在原地
+  const gone = t >= bt(72) ? 1 : 0;  // 同一组记录从踏板转为表格的行
+  rowBox(R1.x, R1.y, R1.r, 1 - gone, t > bt(61) ? 0.5 + 0.5 * pulse(t, bt(61), 0.6) : 0.12);
+  // 踩错的那条：一栏不对；落上去就暗、就沉；重击前碎掉
+  { const sk = sinkAt(Math.min(t, TBRK)), brk = clamp((t - TBRK) / 0.3); if (brk < 1) { const hit = t >= bt(63) ? 1 : 0; ctx.save(); ctx.translate(RW.x, RW.y + sk + 15 + 260 * brk * brk); ctx.rotate((hit ? 0.05 * Math.sin((t - bt(63)) * 14) * Math.exp(-(t - bt(63)) * 3) : 0) + 0.5 * brk);
+      rowBox(0, -15, RW.r, (t > 1.2 ? 1 : 0) * (1 - brk), hit ? 0 : 0.12, hit ? 0 : -1); ctx.restore(); } }
+  if (t >= bt(63) && t < KA) {
+    const error = win(t, bt(63), KA, 0.23);
+    const color = "#ff967e";
+    const y = RW.y + sinkAt(Math.min(t, TBRK)) + 57;
+    line([RW.x, y - 16], [RW.x, y - 30], error * 0.75, 2, color);
+    txt("ABG2  ≠  ABG1", RW.x, y + 2, 27, error, color, "center", MONO, 600);
+  }
+  CAND.forEach(([x, y, r, tk, bad]) => {
+    const seen = t >= tk, lit = pulse(t, tk, 0.5);
+    rowBox(x, y, r, win(t, 3.6, KA, 0.4) * (seen ? 0.48 : 0.29), lit * 0.45, seen ? bad : -1);
+  });
+  // 第一记重拍把散着的踏板连成一条路。经过之后，连线继续留在原地。
+  const bridge = [[430, 800, KA], [R1.x, R1.y, KA], [RC.x, 622, KA],
+    [R3.x, R3.y, bt(70)], [R4.x, R4.y, bt(71)], [1250, 800, bt(72)]];
+  for (let i = 1; i < bridge.length; i++) {
+    const [x0, y0] = bridge[i - 1], [x1, y1, at] = bridge[i];
+    const k = eo((t - at) / 0.27);
+    if (!k) continue;
+    const y = i === 2 ? feetY(t) : y1;
+    const a = 0.58 + 0.37 * pulse(t, at, 0.55);
+    line([x0, y0 + 18], [lerp(x0, x1, k), lerp(y0 + 18, y + 18, k)], a, 2.4);
+    G(x1, y1 + 18, 78, k * a * 0.55);
+  }
+  // 对的那一行：从深处浮起，在重击的那一刻接住它的脚，再把它托高
+  if (t >= KA - 0.16) {
+    const up = clamp((t - (KA - 0.16)) / 0.16);
+    const y = t < KA ? lerp(1150, 780, up * up) : feetY(t);
+    const hit = pulse(t, KA, 0.75);
+    G(RC.x, y + 10, 160 + 160 * hit, 0.22 + 0.59 * hit);
+    rowBox(RC.x, y, RC.r, (t < KA ? up * 0.55 : 1) * (1 - gone), 1, -1, 300);
+    ripple(RC.x, y + 20, KA, t);
+    if (t >= KA && t < bt(71)) {
+      const a = 1 - sm(bt(70), bt(71), t);
+      tick(RC.x - 108, y + 69, 24, a);
+      txt("ABG1 · 11.10", RC.x - 78, y + 70, 24, a, WARM, "left", MONO, 600);
+    }
+  }
+  // 之后每一拍浮起一级：脚先看见落点，再落上去
+  [[R3, bt(70)], [R4, bt(71)]].forEach(([R, tr]) => { if (t < tr - 0.3) return; const k = eo((t - (tr - 0.3)) / 0.3); rowBox(R.x, lerp(R.y + 240, R.y, k), R.r, k * (1 - gone), 1); });
+  // 排成表：六行在重击的那一刻同时停进格子
+  if (t >= bt(72)) { const fk = clamp((t - bt(76)) / (KF - bt(76))), fold = fk * fk, filed = t >= KF ? 1 : 0, ta = 1 - filed;
+    const src = [[R1.x, R1.y], [RC.x, 622], [R3.x, R3.y], [R4.x, R4.y], [640, 700], [980, 740]];
+    if (ta > 0) { const k = clamp((t - (KB - 0.32)) / 0.32), kk = k * k, land = t >= KB ? 1 : 0;
+      if (land) { GA = (1 - fold); box(TBL.x - 16, TBL.y - 46, TBL.w + 32, 46 + 6 * TBL.rh * (1 - fold) + 14, 14, 0.9, 0.55, "#10151d"); ["工厂", "日期", "订单"].forEach((h, i) => { const hx = TBL.x + TBL.w * [0.06, 0.30, 0.56][i], ck = t >= bt(74 + i) ? 1 : 0;
+          txt(h, hx, TBL.y - 22, 23, 0.95, ck ? GOLD : SUB); if (ck) { tick(hx + 63, TBL.y - 22, 19, sm(bt(74 + i), bt(74 + i) + 0.15, t)); G(hx + 30, TBL.y - 22, 80, 0.5 * pulse(t, bt(74 + i), 0.5)); } }); GA = 1; G(TBL.x + TBL.w / 2, TBL.y + 90, 520, 0.4 * pulse(t, KB, 0.8)); }
+      TROWS.forEach((r, i) => { const ty = TBL.y + i * TBL.rh * (1 - fold), x = lerp(src[i][0], TBL.x + TBL.w / 2, kk), y = lerp(src[i][1], ty, kk) - Math.sin(k * Math.PI) * 60 * (1 - land); rowBox(x, y, r, (i < 4 ? 1 : sm(bt(72), bt(72) + 0.2, t)) * (1 - 0.8 * fold * (i ? 1 : 0)), land ? 0.25 + 0.75 * pulse(t, KB, 0.7) : 1, -1, lerp(220, TBL.w, kk)); }); }
+    // 折成文件 → 落到它手里 → 递出去
+    if (filed) { const c1 = sm(bt(78), bt(79), t), c2 = t < 13.08 ? 0 : Math.pow(clamp((t - 13.08) / (KC - 13.08)), 2), done = t >= KC ? 1 : 0;
+      let p = [lerp(FILEP[0], A.x, c1), lerp(FILEP[1], A.top - 28, c1) - Math.sin(c1 * Math.PI) * 50]; if (c2 > 0) p = [lerp(A.x, PTR[0] - 130, c2), lerp(A.top - 28, PTR[1] - 60, c2) - Math.sin(c2 * Math.PI) * 70];
+      G(p[0], p[1], 220 + 260 * (pulse(t, KF, 0.7) + pulse(t, KC, 0.8)), 0.3 + 0.6 * (pulse(t, KF, 0.7) + pulse(t, KC, 0.8)));
+      ctx.save(); ctx.translate(...p);
+      const scale = done ? 1.25 : 1; ctx.scale(scale, scale); ctx.translate(-p[0], -p[1]);
+      box(p[0] - 150, p[1] - 34, 300, 68, 14, 0.97, 0.9, "#171d28", GOLD, 1.5); box(p[0] - 134, p[1] - 19, 30, 38, 6, 1, 0, "#2c6a4a"); txt("X", p[0] - 119, p[1] + 1, 16, 1, "#dff3e6", "center", SANS, 700);
+      txt("ABG1_工单_1110.xlsx", p[0] - 92, p[1] - 8, 18, 1, WARM); txt("6 张工单 · 工厂、日期已核对", p[0] - 92, p[1] + 15, 15, 0.95, SUB);
+      if (done) {
+        const a = sm(KC, KC + 0.18, t);
+        pill(p[0], p[1] + 83, "已收到", 22, a, 0.85);
+        tick(p[0] + 124, p[1], 21, a); ripple(p[0], p[1] + 50, KC, t);
+      }
+      ctx.restore();
+    }
+  }
+  ripple(1350, GYT, KB, t);
+  pointer(PTR[0], PTR[1] + Math.sin(t * 2.2) * 6, 2.3, sm(9.4, 10.2, t));
+  ctx.setTransform(r, 0, 0, r, 0, 0);
+  A.x = A.x * Z + ox; A.y = A.y * Z + oy; A.yo *= Z;
+  A.u = Math.round(A.u * Z);
+  drawActor();
+  narr(t, 0.45, 3.6, 122, 150, "能自己找到吗？", 46);
+  if (CHECK) checkPanel(t);
+  const blk = Math.max(1 - sm(0, 0.3, t), sm(15.7, 16.7, t)); if (blk > 0) { ctx.globalAlpha = blk; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); } ctx.globalAlpha = 1; }
+// 检查面板（按 D）：三个关键拍的「音频起音、动作落点、画面变化」和连播时的实测偏差
+function checkPanel(t) { GA = 1; box(60, 846, 1800, 190, 14, 0.9, 0.4, "#0b0e14");
+  KEYS.forEach((k, i) => { const y = 884 + i * 40, hot = pulse(t, k.t, 0.6); if (hot > 0.02) box(70, y - 18, 1780, 36, 6, 0.25 * hot, 0, "#e6c58f");
+    txt(`${i + 1} ${k.name}`, 84, y, 20, 1, GOLD); txt(`起音 ${k.t.toFixed(3)} 秒`, 210, y, 18, 0.95, WARM, "left", MONO); txt(`落点：${k.act}`, 420, y, 18, 0.9, WARM); txt(`变化：${k.vis}`, 1010, y, 16, 0.75, SUB);
+    txt(k.rec == null ? "" : `首帧偏差 ${k.rec >= 0 ? "+" : ""}${(k.rec * 1000).toFixed(0)} 毫秒`, 1840, y, 16, 0.9, GOLD, "right", MONO); });
+  const X = (v) => 84 + v / T * 1752; line([84, 1012], [1836, 1012], 0.3, 1); for (let k = 56; k <= 87; k++) line([X(bt(k)), 1006], [X(bt(k)), 1018], 0.4, 1);
+  [KA, KB, KF, KC].forEach((v) => { line([X(v), 998], [X(v), 1026], 0.95, 3); }); ctx.globalAlpha = 1; ctx.fillStyle = "#fff"; ctx.fillRect(X(t) - 1, 994, 2, 36);
+  txt(`校准 ${SYNC >= 0 ? "+" : ""}${SYNC} 毫秒（[ ] 调整）`, 1836, 862, 14, 0.7, SUB, "right", MONO); }
+
+// 音频是播放时钟。暂停或跳看静帧时用手动定位的位置。
+const audio = $("music"), stage = $("stage");
+let playing = false, base = 0, started = false;
+const now = () => playing && audio.readyState > 0 ? audio.currentTime : base;
+function fit() {
+  const k = Math.min(innerWidth / W, innerHeight / H);
+  stage.style.transform = `translate(-50%,-50%) scale(${k})`;
+  const r = Math.min(2, Math.max(1, k * (devicePixelRatio || 1)));
+  cv.width = Math.round(W * r); cv.height = Math.round(H * r); render();
+}
+function render() {
+  const t = clamp(now() + SYNC / 1000, 0, T);
+  draw(t);
+  if (!playing || audio.paused || audio.seeking) return;
+  for (const key of KEYS) {
+    if (key.rec == null && t >= key.t && t < key.t + 0.2) key.rec = audio.currentTime - key.t;
+  }
+}
+function seek(t) {
+  base = clamp(t, 0, T);
+  audio.currentTime = base;
+  for (const key of KEYS) if (key.t >= base) key.rec = null;
+  render();
+}
+function play() {
+  if (base >= T - 0.05) seek(0);
+  audio.currentTime = base;
+  playing = true;
+  document.body.classList.add("playing");
+  audio.play().catch(() => {
+    pause();
+    started = false;
+    $("start").style.display = "flex";
+  });
+}
+function pause() {
+  base = now();
+  playing = false;
+  audio.pause();
+  document.body.classList.remove("playing");
+  render();
+}
+audio.addEventListener("ended", pause);
+function loop() {
+  if (playing) render();
+  requestAnimationFrame(loop);
+}
+function begin() { started = true; $("start").style.display = "none"; seek(0); play(); }
+$("start").addEventListener("click", (e) => {
+  if (!e.target.closest("a")) begin();
+});
+addEventListener("resize", fit);
+addEventListener("keydown", (e) => {
+  if (e.target instanceof HTMLAnchorElement) return;
+  if (e.key === "f" || e.key === "F") { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); return; }
+  if (e.key === "d" || e.key === "D") { CHECK = !CHECK; render(); return; }
+  if (e.key === "[" || e.key === "]") { SYNC += e.key === "]" ? 10 : -10; try { localStorage.setItem("lingxiSync", SYNC); } catch (x) {} render(); return; }
+  if (!started) { if (e.key === " " || e.key === "Enter") begin(); return; }
+  const t = now();
+  if (e.key === " ") { e.preventDefault(); playing ? pause() : play(); }
+  else if (e.key === "r" || e.key === "R") { seek(0); if (!playing) play(); }
+  else if (e.key === "ArrowRight") seek(SECTIONS.find((v) => v > t + 0.1) ?? T);
+  else if (e.key === "ArrowLeft") seek([...SECTIONS].reverse().find((v) => v < t - 1) ?? 0);
+});
+window.__seek = seek; window.__keys = KEYS;
+const at = new URLSearchParams(location.search).get("at");
+if (at != null) { started = true; $("start").style.display = "none"; base = clamp(parseFloat(at) || 0, 0, T); }
+fit(); requestAnimationFrame(loop);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(render);
+</script>
+</body>
+</html>

@@ -21,11 +21,12 @@ body.playing{cursor:none}
 <div id="start"><div class="p">▶</div><p>点击开始播放（请打开声音）<br><kbd>空格</kbd> 暂停 / 继续　<kbd>←</kbd> <kbd>→</kbd> 上一段 / 下一段　<kbd>R</kbd> 从头　<kbd>F</kbd> 全屏　<kbd>D</kbd> 检查面板</p></div>
 <audio id="music" src="trial.wav" preload="auto"></audio>
 
+<script src="trial-beats.js"></script>
 <script>
 "use strict";
 const p2 = (n) => String(n).padStart(2, "0");
 // ───────── 基础 ─────────
-const W = 1920, H = 1080, T = 16.8, SECTIONS = [0, 2.71, 6.96, 9.09, 11.21, 13.34];
+const W = 1920, H = 1080, T = 16.8, SECTIONS = [0, ...TRIAL_BEATS.map((b) => b.t)];
 const $ = (id) => document.getElementById(id);
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const sm = (a, b, x) => { x = clamp((x - a) / (b - a)); return x * x * (3 - 2 * x); };
@@ -70,122 +71,97 @@ function pointer(x, y, s, a) { if (a <= 0.004) return; G(x + 6 * s, y + 10 * s, 
 function bubble(cx, cy, s, size, a, gold) { if (a <= 0.004) return; const w = tw(s, size) + size * 1.8, h = size * 2.4;
   box(cx - w / 2, cy - h / 2, w, h, h * 0.42, a * 0.96, a * 0.8, gold ? "#221c12" : "#1b222e", gold ? GOLD : "#d97757", 1.4); txt(s, cx, cy + 1, size, a, WARM, "center"); }
 
-// ───────── 试剪：踩错一条记录 → 找到对的那一行 → 递出第一份成果（16.8 秒） ─────────
-// 音轨 trial.wav：配乐 29.80–46.60 秒，四个关键拍上叠了一记低频重击。下面的时刻都是这段音轨里的秒数。
-const BPT = 0.53141, bt = (k) => 0.0946 - 29.8 + BPT * k;     // 第 k 拍（实测拍子网格，误差约 2 毫秒）
-const KA = 6.964, KB = 9.088, KF = 11.215, KC = 13.338;       // 四记重击：托住脚、排成表、折成文件、递出去
-const KEYS = [{ name: "托住脚", t: KA, act: "小人下落的脚，落在浮上来的那一行上", vis: "踩错的记录碎掉；对的一行从深处升起，接住它再把它托高" },
-  { name: "排成表", t: KB, act: "小人的脚落到对岸；六行记录同时停进表格的格子", vis: "散着的记录变成一张对齐的表，表头亮起" },
-  { name: "递出去", t: KC, act: "文件到达金色指针", vis: "文件从小人手里飞到那个人面前，打上勾" }];
-const ORANGE = "#d97757", EYE = "#17110e";
-const GYT = 800, SEA0 = 430, SEA1 = 1250;
-// 记录：[工厂, 日期, 订单]
-const WANT = ["ABG1", "11.10"], ROWTXT = (r) => `${r[0]}   2026.${r[1]}   ${r[2]}`;
-const R1 = { x: 590, y: 730, r: ["ABG1", "11.10", "100482311"] }, RW = { x: 800, y: 670, r: ["ABG2", "11.09", "100471906"] }, RC = { x: 800, r: ["ABG1", "11.10", "100482316"] };
-const R3 = { x: 1000, y: 610, r: ["ABG1", "11.10", "100482317"] }, R4 = { x: 1150, y: 700, r: ["ABG1", "11.10", "100482318"] };
-const CAND = [[560, 540, ["ABK1", "11.10", "100455120"], bt(65), 0], [1050, 520, ["ABG1", "11.08", "100479833"], bt(66), 1], [800, 470, ["ABG2", "11.10", "100480012"], bt(67), 0]];   // 它看过、又放下的三条：[x, y, 记录, 哪一拍看它, 哪一栏不对]
-const TBL = { x: 560, y: 236, w: 520, rh: 36 }, FILEP = [820, 320], PTR = [1800, 650];
-const TROWS = [R1.r, RC.r, R3.r, R4.r, ["ABG1", "11.10", "100482319"], ["ABG1", "11.10", "100482320"]];
-function rowBox(cx, y, r, a, gold, bad = -1, w = 220) { if (a <= 0.004) return; const sv = GA; GA = sv * a; if (gold > 0) G(cx, y + 15, 170, 0.3 * gold);
-  box(cx - w / 2, y, w, 30, 7, 0.96, 0.3 + 0.6 * gold, gold > 0.5 ? "#241d12" : "#141a24", bad >= 0 ? "rgb(170,96,88)" : GOLD, 1.3);
-  const xs = [cx - w / 2 + 12, cx - w / 2 + 62, cx - w / 2 + 128]; [r[0], r[1], r[2]].forEach((v, i) => txt(v, xs[i], y + 16, 14, 0.95, i === bad ? "rgb(214,120,108)" : gold > 0.5 ? WARM : SUB, "left", MONO)); GA = sv; }
+// ───────── 试剪（K 线式卡点）：踩错一条记录 → 找到对的那一行 → 递出第一份成果 ─────────
+// 规则只有一条：两记重音之间画面不动；每一记重音，完成一个动作——落拍的那一帧就变过去一大半，约 0.2 秒内停住。没有预备动作，也没有飞行过程。
+const ACC = TRIAL_BEATS.map((b) => b.t), HEAVY = TRIAL_BEATS.map((b) => b.heavy);
+const STEPS = [                                                 // 每一记重音对应的动作（顺序和 trial-beats.js 一致）
+  ["踏上第一条", "小人从岸上到了第一条记录上，记录亮起"], ["看准下一条", "它看向前面那条，那条记录的边框亮一下"], ["踩错了", "它落上去，记录变暗、发红，连人一起往下一沉"],
+  ["再陷一截", "又往下一沉；周围三条它看过的记录同时标出不对的那一栏"], ["托住脚", "对的一行从下面顶上来，把它托到高处；踩错的那条碎掉"], ["再上一级", "下一条对的记录顶起来，它已经站在上面"],
+  ["到对岸", "它站到了对岸，走过的三条记录连成一条金线"], ["排成表", "六行记录同时出现在表格的格子里，表头亮起"], ["折成文件", "整张表收成一份文件"],
+  ["接到手里", "文件到了它举起的手上"], ["递出去", "文件到了金色指针面前，打上勾"], ["留下星", "五颗星出现在它走过的路上方"], ["挥手", "它举起手"]];
+const stepAt = (t) => { let n = -1; for (let i = 0; i < ACC.length; i++) if (t >= ACC[i]) n = i; return n; };
+const sp = (a) => a < 0 ? 0 : 0.62 + 0.38 * (1 - Math.exp(-a * 18));      // 落拍那一帧先到六成，其余 0.2 秒内收住
+const hitp = (t, i, r = 14) => t < ACC[i] ? 0 : Math.exp(-(t - ACC[i]) * r);   // 落拍后的余震
+const on = (t, i) => t >= ACC[i];
+const ORANGE = "#d97757", EYE = "#17110e", GYT = 800, SEA0 = 430, SEA1 = 1250, BAD = "rgb(214,120,108)";
+const R1 = { x: 590, y: 730, r: ["ABG1", "11.10", "100482311"] }, RW = { x: 800, y: 670, r: ["ABG2", "11.09", "100471906"] }, RC = { x: 800, y: 600, r: ["ABG1", "11.10", "100482316"] }, R3 = { x: 1010, y: 540, r: ["ABG1", "11.10", "100482317"] };
+const CAND = [[560, 540, ["ABK1", "11.10", "100455120"], 0], [1050, 430, ["ABG1", "11.08", "100479833"], 1], [800, 430, ["ABG2", "11.10", "100480012"], 0]];   // 三条不对的：[x, y, 记录, 哪一栏不对]
+const TBL = { x: 560, y: 236, w: 520, rh: 36 }, FILEP = [820, 326], PTR = [1800, 650], HAND = [1670, 590];
+const TROWS = [R1.r, RC.r, R3.r, ["ABG1", "11.10", "100482318"], ["ABG1", "11.10", "100482319"], ["ABG1", "11.10", "100482320"]];
+// 小人每一步站在哪里：HP[n+1] 是第 n 记重音之后的位置
+const HP = [[390, GYT], [R1.x, R1.y], [R1.x, R1.y], [RW.x, RW.y + 44], [RW.x, RW.y + 78], [RC.x, RC.y], [R3.x, R3.y], [1350, GYT], [1350, GYT], [1350, GYT], [1350, GYT], [1350, GYT], [1350, GYT], [1350, GYT]];
+function rowBox(cx, y, r, a, gold, bad = -1, w = 220, k = 1) { if (a <= 0.004) return; const sv = GA; GA = sv * a; ctx.save(); ctx.translate(cx, y + 15); ctx.scale(k, k); if (gold > 0) G(0, 0, 170, 0.3 * gold);
+  box(-w / 2, -15, w, 30, 7, 0.96, 0.3 + 0.6 * Math.max(gold, bad >= 0 ? 0.6 : 0), gold > 0.5 ? "#241d12" : bad >= 0 ? "#1c1416" : "#141a24", bad >= 0 ? "rgb(170,96,88)" : GOLD, 1.3);
+  const xs = [-w / 2 + 12, -w / 2 + 62, -w / 2 + 128]; r.forEach((v, i) => txt(v, xs[i], 1, 14, 0.95, i === bad ? BAD : gold > 0.5 ? WARM : SUB, "left", MONO)); ctx.restore(); GA = sv; }
+function candle(x, top, a) { if (a <= 0.004) return; const g = ctx.createLinearGradient(0, top, 0, 940); g.addColorStop(0, "rgba(230,197,143,.75)"); g.addColorStop(1, "rgba(230,197,143,0)"); ctx.globalAlpha = clamp(a); ctx.fillStyle = g; ctx.fillRect(x - 46, top + 30, 92, 940 - top - 30); }   // 顶起记录的那根光柱
 function hillsT(off, base, amp, col, a) { ctx.globalAlpha = clamp(a * GA); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, H);
   for (let x = 0; x <= W; x += 40) { const wx = x + off; ctx.lineTo(x, base + Math.sin(wx * 0.0021) * amp + Math.sin(wx * 0.0057 + 1.3) * amp * 0.45); } ctx.lineTo(W, H); ctx.closePath(); ctx.fill(); }
-// 小人：每一次落脚的时刻都是一个拍点。hopTo(落脚时刻, 起点, 终点)：起跳在落脚前 0.34 秒
+function ring(x, y, t, i, R = 220) { if (!on(t, i)) return; const a = t - ACC[i]; if (a > 0.4) return; ctx.globalAlpha = (1 - a / 0.4) * 0.9; ctx.strokeStyle = GOLD; ctx.lineWidth = 3 * (1 - a / 0.4) + 0.5; ctx.beginPath(); ctx.ellipse(x, y, 30 + R * eo(a / 0.4), (30 + R * eo(a / 0.4)) * 0.28, 0, 0, 6.3); ctx.stroke(); }
 const A = { a: 0 };
-const sinkAt = (t) => t < bt(63) ? 0 : 22 * (1 - Math.exp(-(t - bt(63)) * 9)) + [64, 65, 66, 67].reduce((s, k) => s + 7 * eo((t - bt(k)) / 0.12), 0);   // 踩错的那条：落上去就往下沉，每一拍再陷一点
-const TBRK = 6.72;                                              // 踩错的记录碎掉的时刻（重击前约四分之一秒）
-function feetY(t) { if (t < TBRK) return RW.y + sinkAt(t); if (t < KA) { const k = (t - TBRK) / (KA - TBRK); return RW.y + sinkAt(TBRK) + (780 - RW.y - sinkAt(TBRK)) * k * k; }
-  const k = clamp((t - KA) / 0.34); return 780 - 110 * (1 - Math.pow(1 - k, 3)) - 14 * Math.sin(k * Math.PI) * (1 - k); }                              // 被接住，再被托高
-const WK0 = bt(79) + 0.2, WK1 = bt(80) + 0.25;                 // 抱着文件走向那个人
-function standAt(t) { if (t < bt(60)) return [lerp(90, 390, clamp((t - 0.2) / (bt(60) - 0.2))), GYT]; if (t < bt(61)) return [390, GYT]; if (t < bt(63)) return [R1.x, R1.y]; if (t < bt(71)) return [RW.x, feetY(t)];
-  if (t < bt(72)) return [R3.x, R3.y]; if (t < KB) return [R4.x, R4.y]; if (t < WK0) return [1350, GYT]; return [lerp(1350, 1430, clamp((t - WK0) / (WK1 - WK0))), GYT]; }
-const LANDS = [bt(61), bt(63), bt(71), bt(72), KB, bt(83)];     // 每一次落脚的时刻，都是一个拍点；起跳在落脚前 0.34 秒
-function actor(t) { const o = { a: sm(0.1, 0.4, t), u: 12, ex: 1, ey: 0, aL: 0, aR: 0, rL: 0, rR: 0, lean: 0, crouch: 0, tuck: 0, yo: 0, legs: 0, blink: t % 3.3 < 0.12 }, p = standAt(t); o.x = p[0]; o.y = p[1];
-  if ((t > 0.2 && t < bt(60)) || (t > WK0 && t < WK1)) o.legs = Math.floor((t - bt(56)) / (BPT / 2)) % 2 ? 1 : 2;                                      // 走路：每半拍换一次脚
-  if (t >= bt(62) && t < bt(63) - 0.46) o.ey = -1;
-  if (t >= bt(63) && t < KA) { o.ex = 0; o.ey = 1; if (t < bt(64)) o.lean = Math.floor((t - bt(63)) * 9) % 2 ? 1 : -1;                                // 晃一下，停住，找
-    if (t >= bt(65) && t < bt(66)) { o.ex = -1; o.ey = -1; } else if (t >= bt(66) && t < bt(67)) { o.ex = 1; o.ey = -1; } else if (t >= bt(67) && t < bt(68)) { o.ex = 0; o.ey = -1; } else if (t >= bt(68) && t < TBRK) { o.ex = 0; o.ey = 0; o.lean = -1; }
-    if (t >= TBRK) { o.tuck = 1; o.aL = -2; o.aR = -2; o.rL = 1; o.rR = 1; o.ey = 1; } }                                                               // 脚下一空，往下掉
-  if (t >= KA && t < KA + 0.1) o.crouch = 1;
-  if (t >= KB && t < bt(78)) { o.ex = -1; o.ey = -1; const k = Math.floor((t - bt(74)) / BPT); if (t >= bt(74) && k < 3 && t - bt(74 + k) < 0.3) { o.aL = -3; o.rL = 1; } }   // 回头看表，每一拍点一下、核一栏
-  if (t >= bt(78) && t < 13.08) { if (t < bt(79)) { o.ex = -1; o.ey = -1; } if (t >= bt(78) + 0.3) { o.aL = -5; o.aR = -5; } if (t >= bt(79) && t < bt(79) + 0.1) o.crouch = 1; }   // 举手接住文件
-  if (t >= 13.08 && t < KC) { o.crouch = 1; o.aL = -5; o.aR = -5; o.lean = -1; } else if (t >= KC && t < KC + 0.5) { o.aR = -2; o.rR = 1; o.aL = -2; o.lean = 1; }   // 往后一收，落拍时送出去
-  for (const tl of LANDS) { const k = (t - (tl - 0.34)) / 0.34; if (t >= tl - 0.46 && t < tl - 0.34) o.crouch = 1; else if (t >= tl && t < tl + 0.09) o.crouch = 1;
-    else if (k > 0 && k < 1) { const a = standAt(tl - 0.35), b = standAt(tl); o.x = lerp(a[0], b[0], k); o.y = lerp(a[1], b[1], k); o.yo = -(60 + Math.abs(b[1] - a[1]) * 0.3) * 4 * k * (1 - k); o.tuck = k > 0.12 && k < 0.88 ? 1 : 0; o.ex = 1; o.ey = 0; o.lean = 0; o.crouch = 0; } }
-  if (t > 14.6 && t < 15.7) { o.aR = Math.floor((t - 14.6) * 5) % 2 ? -4 : -3; o.rR = 1; o.ex = 0; o.ey = 0; } else if (t >= 15.7) { o.ex = 0; o.ey = 0; }
-  o.br = o.crouch || o.tuck || o.legs ? 0 : Math.round(1 + Math.sin(t * 2.1)); o.top = o.y + o.yo - 10 * o.u + (o.crouch ? o.u : 0); Object.assign(A, o); }
-function drawActor() { if (A.a <= 0.004) return;
-  const u = A.u, x0 = Math.round(A.x) - 8 * u, gy = Math.round(A.y + A.yo), bx = x0 + A.lean * u, bb = gy - (A.crouch ? u : 2 * u) - A.br, btp = bb - 8 * u;
-  GA = 1; G(A.x, gy - 5 * u, 14 * u, 0.12 * A.a);
-  ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = A.a; ctx.fillStyle = ORANGE;
-  ctx.fillRect(bx - A.rL * u, btp + (4 + A.aL) * u, (2 + A.rL) * u, 2 * u); ctx.fillRect(bx + 14 * u, btp + (4 + A.aR) * u, (2 + A.rR) * u, 2 * u);
-  ctx.fillRect(bx + 2 * u, btp, 12 * u, 8 * u);
-  [3, 5, 10, 12].forEach((c, j) => { const lift = A.tuck || (A.legs && j % 2 === A.legs - 1) ? u : 0; if (gy - bb - lift > 0) ctx.fillRect(x0 + c * u, bb, u, gy - bb - lift); });
-  ctx.fillStyle = EYE; const eh = A.blink ? u : 2 * u, ey = btp + (2 + A.ey) * u + (A.blink ? u : 0);
-  ctx.fillRect(bx + (4 + A.ex) * u, ey, u, eh); ctx.fillRect(bx + (11 + A.ex) * u, ey, u, eh); ctx.globalAlpha = 1; }
-// 身后留下的星：每做成一件事，升起几颗
-const SR = rng(9), STARS = [KA, KB, KC].flatMap((t0, g) => Array.from({ length: 5 }, (_, j) => ({ t0: t0 + 0.05 + j * 0.04, x: 260 + g * 560 + SR() * 300, y: 90 + SR() * 150, b: 0.5 + SR() * 0.5, f: 0.6 + SR() * 1.6, p: SR() * 6.28 })));
-function ripple(x, y, t0, t) { const a = t - t0; if (a < 0 || a > 0.9) return; ctx.globalAlpha = (1 - a / 0.9) * 0.8; ctx.strokeStyle = GOLD; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y, 40 + a * 420, 8 + a * 60, 0, 0, 6.3); ctx.stroke(); }
-function narr(t, t0, t1, x, y, s, size) { if (t <= t0 || t >= t1) return; const out = 1 - sm(t1 - 0.5, t1, t); ctx.save(); ctx.font = `400 ${size}px ${SERIF}`; ctx.shadowColor = "rgba(4,6,9,.95)"; ctx.shadowBlur = 24; ctx.textAlign = "left"; ctx.textBaseline = "middle"; let dx = 0;
-  [...s].forEach((ch, i) => { const k = sm(t0 + i * 0.05, t0 + i * 0.05 + 0.45, t); ctx.globalAlpha = k * out; ctx.fillStyle = WARM; ctx.fillText(ch, x + dx, y + (1 - k) * 12); dx += ctx.measureText(ch).width + 4; }); ctx.restore(); }
-
-let CHECK = new URLSearchParams(location.search).has("check"), SYNC = 0;      // 检查模式；人工校准的毫秒数（蓝牙耳机等有延迟的设备用）
+function actor(t) { const n = stepAt(t), a = n >= 0 ? t - ACC[n] : 9, p = HP[Math.max(0, n)], q = HP[n + 1], k = n >= 0 ? sp(a) : 1;
+  const o = { a: sm(0.05, 0.35, t), u: 12, x: lerp(p[0], q[0], k), y: lerp(p[1], q[1], k), px: p[0], py: p[1], ghost: n >= 0 && (p[0] !== q[0] || p[1] !== q[1]) ? Math.exp(-a * 24) : 0,
+    ex: 1, ey: 0, aL: 0, aR: 0, rL: 0, rR: 0, lean: 0, crouch: 0, tuck: 0, yo: 0, legs: 0, blink: t % 3.3 < 0.12 };
+  if (n >= 0 && n <= 6 && n !== 1 && n !== 3 && a < 0.09) o.crouch = 1;                                   // 落到新位置的那一下，身体一顿
+  if (n === 1) { o.ex = 1; o.ey = -1; if (a < 0.5) { o.aR = -2; o.rR = 1; } } else if (n === 2) { o.ex = 0; o.ey = 1; o.lean = a < 0.5 ? (Math.floor(a * 9) % 2 ? 1 : -1) : 0; o.aL = -1; o.aR = -1; o.rL = 1; o.rR = 1; }
+  else if (n === 3) { o.ex = 0; o.ey = -1; o.lean = -1; } else if (n === 4) { o.ex = 0; o.ey = 0; if (a < 0.5) { o.aL = -4; o.aR = -4; } } else if (n === 5) { o.ex = 1; o.ey = 1; }
+  else if (n === 6) { o.ex = -1; o.ey = 0; } else if (n === 7) { o.ex = -1; o.ey = -1; o.aL = -3; o.rL = 1; } else if (n === 8) { o.ex = -1; o.ey = -1; }
+  else if (n === 9) { o.ex = 0; o.ey = -1; o.aL = -5; o.aR = -5; } else if (n === 10) { o.ex = 1; o.ey = 0; o.aR = -2; o.rR = 1; o.lean = a < 0.4 ? 1 : 0; } else if (n === 11) { o.ex = 0; o.ey = -1; }
+  else if (n === 12) { o.ex = 0; o.ey = 0; o.aR = Math.floor(a * 5) % 2 ? -4 : -3; o.rR = 1; o.yo = -40 * Math.exp(-a * 7) * Math.abs(Math.cos(a * 9)); }
+  o.br = o.crouch ? 0 : Math.round(1 + Math.sin(t * 2.1)); o.top = o.y + o.yo - 10 * o.u + (o.crouch ? o.u : 0); Object.assign(A, o); }
+function drawActor() { if (A.a <= 0.004) return; const u = A.u;
+  if (A.ghost > 0.03) { ctx.fillStyle = ORANGE; [0.3, 0.6].forEach((f) => { ctx.globalAlpha = A.a * A.ghost * 0.35; ctx.fillRect(Math.round(lerp(A.px, A.x, f)) - 6 * u, Math.round(lerp(A.py, A.y, f)) - 10 * u, 12 * u, 8 * u); }); }   // 换位置的那一瞬留下的残影
+  const x0 = Math.round(A.x) - 8 * u, gy = Math.round(A.y + A.yo), bx = x0 + A.lean * u, bb = gy - (A.crouch ? u : 2 * u) - A.br, btp = bb - 8 * u;
+  GA = 1; G(A.x, gy - 5 * u, 14 * u, 0.12 * A.a); ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = A.a; ctx.fillStyle = ORANGE;
+  ctx.fillRect(bx - A.rL * u, btp + (4 + A.aL) * u, (2 + A.rL) * u, 2 * u); ctx.fillRect(bx + 14 * u, btp + (4 + A.aR) * u, (2 + A.rR) * u, 2 * u); ctx.fillRect(bx + 2 * u, btp, 12 * u, 8 * u);
+  [3, 5, 10, 12].forEach((c) => { if (gy - bb > 0) ctx.fillRect(x0 + c * u, bb, u, gy - bb); });
+  ctx.fillStyle = EYE; const eh = A.blink ? u : 2 * u, ey = btp + (2 + A.ey) * u + (A.blink ? u : 0); ctx.fillRect(bx + (4 + A.ex) * u, ey, u, eh); ctx.fillRect(bx + (11 + A.ex) * u, ey, u, eh); ctx.globalAlpha = 1; }
+const SR = rng(9), STARS = Array.from({ length: 5 }, (_, j) => [620 + j * 150 + SR() * 60, 120 + SR() * 110, 0.6 + SR() * 0.4, 0.6 + SR() * 1.6, SR() * 6.28]);
+function narr(t, t0, t1, x, y, s, size) { if (t <= t0 || t >= t1) return; ctx.save(); ctx.font = `400 ${size}px ${SERIF}`; ctx.shadowColor = "rgba(4,6,9,.95)"; ctx.shadowBlur = 24; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.globalAlpha = win(t, t0, t1, 0.4); ctx.fillStyle = WARM;
+  if ("letterSpacing" in ctx) ctx.letterSpacing = "4px"; ctx.fillText(s, x, y); ctx.restore(); }
+let CHECK = new URLSearchParams(location.search).has("check"), SYNC = 0;      // 检查面板；人工校准的毫秒数（蓝牙耳机等有延迟的设备用）
 try { SYNC = parseInt(localStorage.getItem("lingxiSync") || "0", 10) || 0; } catch (e) {}
+const LATE = ACC.map(() => 0);
 function draw(t) {
-  const r = cv.width / W, push = 0.016 * (pulse(t, KA, 0.5) + pulse(t, KC, 0.5)), Z = 1 + push;      // 只在最关键的两拍，镜头轻轻往前一步
+  const r = cv.width / W, Z = 1 + 0.022 * (hitp(t, 4, 9) + hitp(t, 10, 9)) + 0.008 * [0, 2, 6, 8].reduce((s, i) => s + hitp(t, i, 9), 0);      // 底鼓上镜头往前顶一下，最重的两记顶得多一点
   ctx.setTransform(r, 0, 0, r, 0, 0); ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1; ctx.drawImage(bg, 0, 0);
   ctx.setTransform(r * Z, 0, 0, r * Z, r * 960 * (1 - Z), r * 620 * (1 - Z));
-  GA = 1; for (const d of dust) G((d.x + t * 6 * d.d) % W, d.y, d.s * 5, d.a * 0.6 * (0.6 + 0.4 * Math.sin(t * d.f + d.p)));
-  actor(t);
-  for (const s of STARS) { if (t < s.t0) continue; const k = eo((t - s.t0) / 1.1), x = lerp(A.x, s.x, k), y = lerp(A.top, s.y, k) - Math.sin(k * Math.PI) * 40, a = s.b * (0.6 + 0.4 * Math.sin(t * s.f + s.p)) + (1 - k) * 0.6;
-    G(x, y, 8 + 6 * s.b + 12 * (1 - k), a); ctx.globalAlpha = clamp(a + 0.2); ctx.fillStyle = "#fff3dc"; ctx.fillRect(x - 1, y - 1, 2, 2); }
+  GA = 1; for (const d of dust) G(d.x, d.y, d.s * 5, d.a * 0.5 * (0.6 + 0.4 * Math.sin(t * d.f + d.p)));
+  actor(t); const n = stepAt(t);
+  if (on(t, 11)) for (const [x, y, b, f, p] of STARS) { const k = 1 + 1.5 * hitp(t, 11, 12), a = b * (0.6 + 0.4 * Math.sin(t * f + p)); G(x, y, (8 + 6 * b) * k, a + hitp(t, 11, 8)); ctx.globalAlpha = 1; ctx.fillStyle = "#fff3dc"; ctx.fillRect(x - 1, y - 1, 2, 2); }
   GA = 1; hillsT(300, 690, 46, "#0c121b", 0.9); hillsT(1200, 752, 30, "#0a0f17", 0.95);
-  ctx.globalAlpha = 0.96; ctx.fillStyle = "#06080c"; ctx.fillRect(0, GYT, SEA0, 280); ctx.fillRect(SEA1, GYT, W - SEA1, 280);
-  line([0, GYT], [SEA0, GYT], 0.5, 1.3); line([SEA1, GYT], [W, GYT], 0.5, 1.3);
-  // 数据的海：几百万行里的一小片，安静地流
-  for (let l = 0; l < 8; l++) for (let j = 0; j < 4; j++) { const wx = SEA0 + ((((j * 235 + l * 77 - t * (34 + l * 9)) % 940) + 940) % 940) - 80, ma = sm(SEA0, SEA0 + 90, wx) * (1 - sm(SEA1 - 130, SEA1 - 10, wx + 200)); if (ma <= 0) continue;
-    const y = 660 + l * 36 + Math.sin(t * 1.2 + j * 1.7 + l) * 6; box(wx, y, 200, 26, 6, 0.4 * ma, 0.16 * ma, "#121822"); txt(`AB${"GKG"[(j + l) % 3]}${1 + (j * 3 + l) % 3}  11.${p2(4 + (j * 5 + l * 3) % 8)}  1004${70000 + (j * 9173 + l * 3119) % 12000}`, wx + 12, y + 14, 13, 0.36 * ma, SUB, "left", MONO); }
-  // 它要找的：工厂和日期（从上一幕带过来的两样东西）
-  GA = sm(0.4, 0.9, t) * (1 - sm(9.3, 9.9, t)); pill(180, 250, "ABG1 工厂", 22, 1, 0.3); pill(360, 250, "今天 11.10", 22, 1, 0.3); GA = 1;
-  // 铺出来的路：踩过的、对的记录留在原地
-  const gone = sm(bt(72), KB, t);                                 // 重击前，脚下的记录开始飞向表格
-  rowBox(R1.x, R1.y, R1.r, 1 - gone, t > bt(61) ? 0.5 + 0.5 * pulse(t, bt(61), 0.6) : 0.12);
-  // 踩错的那条：一栏不对；落上去就暗、就沉；重击前碎掉
-  { const sk = sinkAt(Math.min(t, TBRK)), brk = clamp((t - TBRK) / 0.3); if (brk < 1) { const hit = t >= bt(63) ? 1 : 0; ctx.save(); ctx.translate(RW.x, RW.y + sk + 15 + 260 * brk * brk); ctx.rotate((hit ? 0.05 * Math.sin((t - bt(63)) * 14) * Math.exp(-(t - bt(63)) * 3) : 0) + 0.5 * brk);
-      rowBox(0, -15, RW.r, (t > 1.2 ? 1 : 0) * (1 - brk), hit ? 0 : 0.12, hit ? 0 : -1); ctx.restore(); } }
-  CAND.forEach(([x, y, r, tk, bad]) => { const seen = t >= tk ? 1 : 0, lit = pulse(t, tk, 0.5); rowBox(x, y + Math.sin(t * 1.3 + x) * 5, r, sm(3.3, 3.9, t) * (1 - sm(KA - 0.2, KA + 0.2, t)) * (seen ? 0.75 : 0.5), lit * 0.8, seen && lit < 0.4 ? bad : -1); });
-  // 对的那一行：从深处浮起，在重击的那一刻接住它的脚，再把它托高
-  if (t > 6.0) { const up = clamp((t - 6.1) / (KA - 6.1)), y = t < KA ? lerp(1130, 780, Math.pow(up, 1.6)) : feetY(t); G(RC.x, y + 15, 260 + 240 * pulse(t, KA, 0.8), 0.25 + 0.6 * pulse(t, KA, 0.8)); rowBox(RC.x, y, RC.r, sm(6.0, 6.3, t) * (1 - gone), 1); ripple(RC.x, y + 20, KA, t); }
-  // 之后每一拍浮起一级：脚先看见落点，再落上去
-  [[R3, bt(70)], [R4, bt(71)]].forEach(([R, tr]) => { if (t < tr - 0.3) return; const k = eo((t - (tr - 0.3)) / 0.3); rowBox(R.x, lerp(R.y + 240, R.y, k), R.r, k * (1 - gone), 1); });
-  // 排成表：六行在重击的那一刻同时停进格子
-  if (t >= bt(72)) { const fk = clamp((t - bt(76)) / (KF - bt(76))), fold = fk * fk, filed = t >= KF ? 1 : 0, ta = 1 - filed;
-    const src = [[R1.x, R1.y], [RC.x, 670], [R3.x, R3.y], [R4.x, R4.y], [640, 700], [980, 740]];
-    if (ta > 0) { const k = clamp((t - bt(72)) / (KB - bt(72))), kk = k * k, land = t >= KB ? 1 : 0;
-      if (land) { GA = (1 - fold); box(TBL.x - 16, TBL.y - 46, TBL.w + 32, 46 + 6 * TBL.rh * (1 - fold) + 14, 14, 0.9, 0.55, "#10151d"); ["工厂", "日期", "订单"].forEach((h, i) => { const hx = TBL.x + [16, 130, 270][i], ck = t >= bt(74 + i) ? 1 : 0;
-          txt(h, hx, TBL.y - 22, 16, 0.85, ck ? GOLD : SUB); if (ck) { tick(hx + 62, TBL.y - 22, 14, sm(bt(74 + i), bt(74 + i) + 0.15, t)); G(hx + 30, TBL.y - 22, 80, 0.5 * pulse(t, bt(74 + i), 0.5)); } }); GA = 1; G(TBL.x + TBL.w / 2, TBL.y + 90, 520, 0.4 * pulse(t, KB, 0.8)); }
-      TROWS.forEach((r, i) => { const ty = TBL.y + i * TBL.rh * (1 - fold), x = lerp(src[i][0], TBL.x + TBL.w / 2, kk), y = lerp(src[i][1], ty, kk) - Math.sin(k * Math.PI) * 60 * (1 - land); rowBox(x, y, r, (i < 4 ? 1 : sm(bt(72), bt(72) + 0.2, t)) * (1 - 0.8 * fold * (i ? 1 : 0)), land ? 0.25 + 0.75 * pulse(t, KB, 0.7) : 1, -1, lerp(220, TBL.w, kk)); }); }
-    // 折成文件 → 落到它手里 → 递出去
-    if (filed) { const c1 = sm(bt(78), bt(79), t), c2 = t < 13.08 ? 0 : Math.pow(clamp((t - 13.08) / (KC - 13.08)), 2), done = t >= KC ? 1 : 0;
-      let p = [lerp(FILEP[0], A.x, c1), lerp(FILEP[1], A.top - 44, c1) - Math.sin(c1 * Math.PI) * 50]; if (c2 > 0) p = [lerp(A.x, PTR[0] - 130, c2), lerp(A.top - 44, PTR[1] - 60, c2) - Math.sin(c2 * Math.PI) * 70];
-      G(p[0], p[1], 220 + 260 * (pulse(t, KF, 0.7) + pulse(t, KC, 0.8)), 0.3 + 0.6 * (pulse(t, KF, 0.7) + pulse(t, KC, 0.8)));
-      box(p[0] - 150, p[1] - 34, 300, 68, 14, 0.97, 0.9, "#171d28", GOLD, 1.5); box(p[0] - 134, p[1] - 19, 30, 38, 6, 1, 0, "#2c6a4a"); txt("X", p[0] - 119, p[1] + 1, 16, 1, "#dff3e6", "center", SANS, 700);
-      txt("ABG1_工单_1110.xlsx", p[0] - 92, p[1] - 8, 18, 1, WARM); txt("12 行 · 工厂、日期已核对", p[0] - 92, p[1] + 15, 13, 0.75, SUB); if (done) { tick(p[0] + 124, p[1], 20, sm(KC, KC + 0.15, t)); ripple(p[0], p[1] + 50, KC, t); } } }
-  ripple(1350, GYT, KB, t);
-  pointer(PTR[0], PTR[1] + Math.sin(t * 2.2) * 6, 2.3, sm(9.4, 10.2, t));
-  ctx.setTransform(r, 0, 0, r, 0, 0); A.x = 960 + (A.x - 960) * Z; A.y = 620 + (A.y - 620) * Z; drawActor();
-  narr(t, 0.5, 6.4, 120, 150, "能自己找到吗？", 46); narr(t, 9.5, 14.4, 120, 150, "能把事情接下去吗？", 46);
-  if (CHECK) checkPanel(t);
-  const blk = Math.max(1 - sm(0, 0.3, t), sm(15.7, 16.7, t)); if (blk > 0) { ctx.globalAlpha = blk; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); } ctx.globalAlpha = 1; }
-// 检查面板（按 D）：三个关键拍的「音频起音、动作落点、画面变化」和连播时的实测偏差
-function checkPanel(t) { GA = 1; box(60, 846, 1800, 190, 14, 0.9, 0.4, "#0b0e14");
-  KEYS.forEach((k, i) => { const y = 884 + i * 40, hot = pulse(t, k.t, 0.6); if (hot > 0.02) box(70, y - 18, 1780, 36, 6, 0.25 * hot, 0, "#e6c58f");
-    txt(`${i + 1} ${k.name}`, 84, y, 20, 1, GOLD); txt(`起音 ${k.t.toFixed(3)} 秒`, 210, y, 18, 0.95, WARM, "left", MONO); txt(`落点：${k.act}`, 420, y, 18, 0.9, WARM); txt(`变化：${k.vis}`, 1010, y, 16, 0.75, SUB);
-    txt(k.rec ? `本次连播：画面晚 ${(k.rec * 1000).toFixed(0)} 毫秒` : "", 1840, y, 16, 0.9, GOLD, "right", MONO); });
-  const X = (v) => 84 + v / T * 1752; line([84, 1012], [1836, 1012], 0.3, 1); for (let k = 56; k <= 87; k++) line([X(bt(k)), 1006], [X(bt(k)), 1018], 0.4, 1);
-  [KA, KB, KF, KC].forEach((v) => { line([X(v), 998], [X(v), 1026], 0.95, 3); }); ctx.globalAlpha = 1; ctx.fillStyle = "#fff"; ctx.fillRect(X(t) - 1, 994, 2, 36);
-  txt(`校准 ${SYNC >= 0 ? "+" : ""}${SYNC} 毫秒（[ ] 调整）`, 1836, 862, 14, 0.7, SUB, "right", MONO); }
+  ctx.globalAlpha = 0.96; ctx.fillStyle = "#06080c"; ctx.fillRect(0, GYT, SEA0, 280); ctx.fillRect(SEA1, GYT, W - SEA1, 280); line([0, GYT], [SEA0, GYT], 0.5, 1.3); line([SEA1, GYT], [W, GYT], 0.5, 1.3);
+  for (let l = 0; l < 8; l++) for (let j = 0; j < 4; j++) { const wx = SEA0 + ((((j * 235 + l * 77 - t * (10 + l * 2)) % 940) + 940) % 940) - 80, ma = sm(SEA0, SEA0 + 90, wx) * (1 - sm(SEA1 - 130, SEA1 - 10, wx + 200)); if (ma <= 0) continue;      // 数据的海，流得很慢，只作底
+    const y = 660 + l * 36; box(wx, y, 200, 26, 6, 0.32 * ma, 0.12 * ma, "#121822"); txt(`AB${"GKG"[(j + l) % 3]}${1 + (j * 3 + l) % 3}  11.${p2(4 + (j * 5 + l * 3) % 8)}  1004${70000 + (j * 9173 + l * 3119) % 12000}`, wx + 12, y + 14, 13, 0.3 * ma, SUB, "left", MONO); }
+  GA = sm(0.2, 0.6, t) * (on(t, 7) ? Math.exp(-(t - ACC[7]) * 10) : 1); pill(180, 250, "ABG1 工厂", 22, 1, 0.3); pill(360, 250, "今天 11.10", 22, 1, 0.3); GA = sm(0.2, 0.6, t);
+  // 铺出来的路：走过的、对的记录留在原地
+  rowBox(R1.x, R1.y, R1.r, 1, on(t, 0) ? 0.55 + 0.45 * hitp(t, 0, 6) : 0.1, -1, 220, 1 + 0.25 * hitp(t, 0));
+  if (on(t, 4)) { candle(RC.x, lerp(980, RC.y, sp(t - ACC[4])), 0.3 + 0.6 * hitp(t, 4, 5)); rowBox(RC.x, lerp(980, RC.y, sp(t - ACC[4])), RC.r, 1, 0.7 + 0.3 * hitp(t, 4, 5), -1, 220, 1 + 0.3 * hitp(t, 4)); }
+  if (on(t, 5)) { candle(R3.x, lerp(900, R3.y, sp(t - ACC[5])), 0.3 + 0.6 * hitp(t, 5, 5)); rowBox(R3.x, lerp(900, R3.y, sp(t - ACC[5])), R3.r, 1, 0.7 + 0.3 * hitp(t, 5, 5), -1, 220, 1 + 0.3 * hitp(t, 5)); }
+  if (on(t, 6)) { ctx.globalAlpha = 0.5 + 0.5 * hitp(t, 6, 6); ctx.strokeStyle = GOLD; ctx.lineWidth = 2 + 3 * hitp(t, 6); ctx.lineJoin = "round"; ctx.beginPath(); ctx.moveTo(390, GYT); [[R1.x, R1.y], [RC.x, RC.y], [R3.x, R3.y], [1350, GYT]].forEach(([x, y]) => ctx.lineTo(x, y + 15)); ctx.stroke(); }
+  // 踩错的那条：先是一条普通的记录；第 2 记被看准，第 3 记被踩上、变红下沉，第 4 记再沉，第 5 记碎掉
+  { const y = RW.y + (on(t, 2) ? 44 * sp(t - ACC[2]) : 0) + (on(t, 3) ? 34 * sp(t - ACC[3]) : 0);
+    if (!on(t, 4)) rowBox(RW.x, y, RW.r, 1, on(t, 1) && !on(t, 2) ? 0.35 + 0.65 * hitp(t, 1, 6) : 0.1, on(t, 2) ? 0 : -1, 220, 1 + 0.2 * hitp(t, 1) + 0.15 * hitp(t, 2));
+    else { const a = t - ACC[4]; [-1, 1].forEach((sd) => { ctx.save(); ctx.translate(RW.x + sd * (55 + 300 * a), y + 15 + 700 * a * a); ctx.rotate(sd * 3 * a); rowBox(0, -15, ["", "", ""], Math.max(0, 1 - a * 3), 0, 0, 110); ctx.restore(); }); } }
+  CAND.forEach(([x, y, r, bad]) => rowBox(x, y, r, on(t, 4) ? Math.max(0, 0.7 - (t - ACC[4]) * 4) : 0.7, 0, on(t, 3) ? bad : -1, 220, 1 + 0.18 * hitp(t, 3)));
+  ring(RW.x, RW.y + 60, t, 2, 160); ring(RC.x, RC.y + 30, t, 4, 420); ring(1350, GYT, t, 6, 260);
+  // 排成表 → 折成文件 → 接到手里 → 递出去：每一记重音换一个样子
+  if (on(t, 7) && !on(t, 8)) { const k = 1 + 0.12 * hitp(t, 7); ctx.save(); ctx.translate(TBL.x + TBL.w / 2, TBL.y + 90); ctx.scale(k, k); ctx.translate(-(TBL.x + TBL.w / 2), -(TBL.y + 90)); GA = 1; G(TBL.x + TBL.w / 2, TBL.y + 90, 520, 0.5 * hitp(t, 7, 6));
+    box(TBL.x - 16, TBL.y - 46, TBL.w + 32, 46 + 6 * TBL.rh + 14, 14, 0.92, 0.6, "#10151d"); ["工厂", "日期", "订单"].forEach((h, i) => txt(h, TBL.x + [16, 130, 270][i], TBL.y - 22, 16, 0.9, GOLD));
+    TROWS.forEach((rr2, i) => rowBox(TBL.x + TBL.w / 2, TBL.y + i * TBL.rh, rr2, 1, 0.3 + 0.7 * hitp(t, 7, 6), -1, TBL.w)); ctx.restore(); }
+  if (on(t, 8)) { let p = FILEP, i = 8; if (on(t, 10)) { p = HAND; i = 10; } else if (on(t, 9)) { p = [A.x, A.top - 44]; i = 9; } const k = 1 + 0.3 * hitp(t, i), fl = hitp(t, i, 6); GA = 1;
+    ctx.save(); ctx.translate(p[0], p[1]); ctx.scale(k, k); G(0, 0, 240 + 260 * fl, 0.3 + 0.6 * fl); box(-150, -34, 300, 68, 14, 0.97, 0.9, "#171d28", GOLD, 1.5); box(-134, -19, 30, 38, 6, 1, 0, "#2c6a4a"); txt("X", -119, 1, 16, 1, "#dff3e6", "center", SANS, 700);
+    txt("ABG1_工单_1110.xlsx", -92, -8, 18, 1, WARM); txt("12 行 · 工厂、日期已核对", -92, 15, 13, 0.75, SUB); if (on(t, 10)) tick(124, 0, 20, 1); ctx.restore(); if (i === 10) ring(HAND[0], HAND[1] + 60, t, 10, 300); }
+  GA = 1; pointer(PTR[0], PTR[1], 2.3, on(t, 6) ? 1 : 0); if (on(t, 10)) G(PTR[0] + 14, PTR[1] + 24, 160, 0.6 * hitp(t, 10, 5));
+  ctx.setTransform(r, 0, 0, r, 0, 0); A.x = 960 + (A.x - 960) * Z; A.y = 620 + (A.y - 620) * Z; A.px = 960 + (A.px - 960) * Z; A.py = 620 + (A.py - 620) * Z; drawActor();
+  narr(t, 0.4, ACC[4] - 0.1, 120, 150, "能自己找到吗？", 46); narr(t, ACC[6] + 0.3, ACC[11], 120, 150, "能把事情接下去吗？", 46);
+  if (CHECK) checkPanel(t, n);
+  const blk = Math.max(1 - sm(0, 0.3, t), sm(15.8, 16.7, t)); if (blk > 0) { ctx.globalAlpha = blk; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); } ctx.globalAlpha = 1; }
+// 检查面板（按 D）：每一记重音的时刻、对应的动作，和连播时画面比声音晚多少毫秒
+function checkPanel(t, n) { GA = 1; box(40, 846, 1840, 200, 14, 0.92, 0.4, "#0b0e14");
+  STEPS.forEach(([nm], i) => { const col = i % 7, row = Math.floor(i / 7), x = 70 + col * 258, y = 878 + row * 62, hot = hitp(t, i, 6); if (hot > 0.02) box(x - 12, y - 20, 250, 56, 8, 0.3 * hot, 0, "#e6c58f");
+    txt(`${HEAVY[i] ? "●" : "○"} ${nm}`, x, y, 19, i <= n ? 1 : 0.5, i <= n ? GOLD : SUB); txt(`${ACC[i].toFixed(3)} 秒${LATE[i] ? `　晚 ${(LATE[i] * 1000).toFixed(0)} 毫秒` : ""}`, x, y + 24, 14, 0.85, WARM, "left", MONO); });
+  const X = (v) => 70 + v / T * 1780; line([70, 1010], [1850, 1010], 0.3, 1); ACC.forEach((v, i) => line([X(v), HEAVY[i] ? 996 : 1002], [X(v), HEAVY[i] ? 1024 : 1018], 0.95, HEAVY[i] ? 3 : 1.5)); ctx.globalAlpha = 1; ctx.fillStyle = "#fff"; ctx.fillRect(X(t) - 1, 992, 2, 36);
+  txt(`● 底鼓　○ 轻敲　　校准 ${SYNC >= 0 ? "+" : ""}${SYNC} 毫秒（[ ] 调整）`, 1850, 1034, 13, 0.7, SUB, "right"); }
 
 // ───────── 播放：画面时间锁在音频时钟上（每帧微调，偏差超过 50 毫秒直接对齐） ─────────
 const audio = $("music"), stage = $("stage");
@@ -194,8 +170,8 @@ const now = () => playing ? base + (performance.now() - perf0) / 1000 : base;
 function fit() { const k = Math.min(innerWidth / W, innerHeight / H); stage.style.transform = `translate(-50%,-50%) scale(${k})`;
   const r = Math.min(2, Math.max(1, k * (devicePixelRatio || 1))); cv.width = Math.round(W * r); cv.height = Math.round(H * r); render(); }
 function render() { const t = clamp(now() + SYNC / 1000, 0, T); draw(t);
-  if (playing) for (const k of KEYS) if (!k.rec && t >= k.t && t < k.t + 0.2) k.rec = Math.max(0.0001, (audio.paused ? t : audio.currentTime + SYNC / 1000) - k.t); }      // 记录：第一帧画出落点时，音频已经走过起音多久
-function seek(t) { base = clamp(t, 0, T); perf0 = performance.now(); try { audio.currentTime = base; } catch (e) {} KEYS.forEach((k) => { if (k.t > base) k.rec = 0; }); render(); }
+  if (playing && !audio.paused) ACC.forEach((v, i) => { if (!LATE[i] && t >= v && t < v + 0.2) LATE[i] = Math.max(0.0001, audio.currentTime + SYNC / 1000 - v); }); }      // 记录：第一帧画出落点时，音频已经走过起音多久
+function seek(t) { base = clamp(t, 0, T); perf0 = performance.now(); try { audio.currentTime = base; } catch (e) {} ACC.forEach((v, i) => { if (v > base) LATE[i] = 0; }); render(); }
 function play() { if (base >= T - 0.05) seek(0); playing = true; perf0 = performance.now(); document.body.classList.add("playing"); try { audio.currentTime = base; } catch (e) {} audio.play().catch(() => {}); }
 function pause() { base = now(); playing = false; audio.pause(); document.body.classList.remove("playing"); }
 function loop() {
@@ -217,10 +193,10 @@ addEventListener("keydown", (e) => {
   const t = now();
   if (e.key === " ") { e.preventDefault(); playing ? pause() : play(); }
   else if (e.key === "r" || e.key === "R") { seek(0); if (!playing) play(); }
-  else if (e.key === "ArrowRight") seek(SECTIONS.find((v) => v > t + 0.1) ?? T);
+  else if (e.key === "ArrowRight") seek((SECTIONS.find((v) => v > t + 0.1) ?? T) - 0.02);
   else if (e.key === "ArrowLeft") seek([...SECTIONS].reverse().find((v) => v < t - 1) ?? 0);
 });
-window.__seek = seek; window.__keys = KEYS;
+window.__seek = seek; window.__late = LATE;
 const at = new URLSearchParams(location.search).get("at");
 if (at != null) { started = true; $("start").style.display = "none"; base = parseFloat(at) || 0; }
 fit(); requestAnimationFrame(loop);

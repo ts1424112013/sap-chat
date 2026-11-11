@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>灵犀 · 六图标卡点试剪</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#000;overflow:hidden;font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif}
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;overflow:hidden;background:#06080c}
+#cv{position:absolute;inset:0;width:1920px;height:1080px}
+#start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(4,6,9,.9);z-index:9;gap:26px;cursor:pointer}
+#start .p{width:104px;height:104px;border-radius:50%;border:1px solid #e6c58f;display:grid;place-items:center;color:#e6c58f;font-size:34px;padding-left:6px}
+#start p{font-size:16px;color:#8d8a83;line-height:2;text-align:center;letter-spacing:1px}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="cv"></canvas></div>
+<div id="start"><div class="p">▶</div><p>六图标卡点试剪<br>点击播放 · 空格暂停 · R 重播 · F 全屏</p></div>
+<audio id="music" src="图标卡点.wav" preload="auto"></audio>
+<script>
+"use strict";
+const W = 1920, H = 1080, T = 7.8;
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const sm = (a, b, x) => { x = clamp((x - a) / (b - a)); return x * x * (3 - 2 * x); };
+const eo = (x) => 1 - Math.pow(1 - clamp(x), 3);
+function rng(a) { return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const SANS = '"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif', MONO = '"SF Mono",Menlo,Consolas,monospace', SERIF = '"Songti SC","STSong","Noto Serif SC",serif';
+const GOLD = "rgb(230,197,143)", WARM = "rgb(255,243,220)", SUB = "rgb(150,146,138)", CARD = "#141a24";
+
+const cv = $("cv"), ctx = cv.getContext("2d");
+const glow = document.createElement("canvas"); glow.width = glow.height = 128;
+{ const g = glow.getContext("2d"), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, "rgba(255,240,212,1)"); gr.addColorStop(0.12, "rgba(250,222,170,.62)"); gr.addColorStop(0.4, "rgba(232,196,138,.14)"); gr.addColorStop(1, "rgba(232,196,138,0)");
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128); }
+const bg = document.createElement("canvas"); bg.width = W; bg.height = H;
+{ const g = bg.getContext("2d"); let gr = g.createLinearGradient(0, 0, W * 0.3, H);
+  gr.addColorStop(0, "#0b1018"); gr.addColorStop(0.55, "#080b11"); gr.addColorStop(1, "#05070a"); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  gr = g.createRadialGradient(W * 0.72, H * 0.2, 0, W * 0.72, H * 0.2, 1100); gr.addColorStop(0, "rgba(46,62,88,.30)"); gr.addColorStop(1, "rgba(46,62,88,0)"); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  gr = g.createRadialGradient(W / 2, H / 2, 300, W / 2, H / 2, 1150); gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(0,0,0,.6)"); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
+const DR = rng(21), dust = Array.from({ length: 130 }, () => ({ x: DR() * W, y: DR() * H, d: 0.2 + DR() * 0.8, a: 0.1 + DR() * 0.3, f: 0.2 + DR() * 0.5, p: DR() * 6.28, s: 0.8 + DR() * 1.6 }));
+let GA = 1;                                                  // 当前场景的整体透明度
+function G(x, y, r, a) { a *= GA; if (a <= 0.004 || r <= 0) return; ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = Math.min(1, a); ctx.drawImage(glow, x - r, y - r, r * 2, r * 2); ctx.globalCompositeOperation = "source-over"; }
+function rr(x, y, w, h, r) { r = Math.min(r, w / 2, h / 2); ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function box(x, y, w, h, r, fa, sa, fill = CARD, stroke = GOLD, lw = 1.2) { if (w <= 0 || h <= 0) return; rr(x, y, w, h, r);
+  if (fa > 0.004) { ctx.globalAlpha = clamp(fa * GA); ctx.fillStyle = fill; ctx.fill(); }
+  if (sa > 0.004) { ctx.globalAlpha = clamp(sa * GA); ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); } }
+function txt(s, x, y, size, a, col = WARM, align = "left", font = SANS, weight = 400, ls = 0) { a *= GA; if (a <= 0.004) return;
+  ctx.globalAlpha = clamp(a); ctx.fillStyle = col; ctx.font = `${weight} ${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = "middle";
+  if ("letterSpacing" in ctx) ctx.letterSpacing = ls + "px"; ctx.fillText(s, x + (align === "center" ? ls / 2 : 0), y); if ("letterSpacing" in ctx) ctx.letterSpacing = "0px"; }
+function line(p, q, a, lw = 1, col = GOLD) { if (a <= 0.004) return; ctx.globalAlpha = clamp(a * GA); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); }
+function drawActor() { if (A.a <= 0.004) return;
+  const u = A.u, x0 = Math.round(A.x) - 8 * u, gy = Math.round(A.y + A.yo), bx = x0 + A.lean * u, bb = gy - (A.crouch ? u : 2 * u) - A.br, bt = bb - 8 * u;
+  GA = 1; G(A.x, gy - 5 * u, 14 * u, 0.12 * A.a);
+  ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = A.a; ctx.fillStyle = ORANGE;
+  ctx.fillRect(bx - A.rL * u, bt + (4 + A.aL) * u, (2 + A.rL) * u, 2 * u); ctx.fillRect(bx + 14 * u, bt + (4 + A.aR) * u, (2 + A.rR) * u, 2 * u);
+  ctx.fillRect(bx + 2 * u, bt, 12 * u, 8 * u);
+  [3, 5, 10, 12].forEach((c, j) => { const lift = A.tuck || (A.legs && j % 2 === A.legs - 1) ? u : 0; if (gy - bb - lift > 0) ctx.fillRect(x0 + c * u, bb, u, gy - bb - lift); });
+  ctx.fillStyle = EYE; const eh = A.blink ? u : 2 * u, ey = bt + (2 + A.ey) * u + (A.blink ? u : 0);
+  ctx.fillRect(bx + (4 + A.ex) * u, ey, u, eh); ctx.fillRect(bx + (11 + A.ex) * u, ey, u, eh); ctx.globalAlpha = 1; }
+
+function hills(off, base, amp, col, a) { ctx.globalAlpha = clamp(a * GA); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, H);
+  for (let x = 0; x <= W; x += 40) { const wx = x + off; ctx.lineTo(x, base + Math.sin(wx * 0.0021) * amp + Math.sin(wx * 0.0057 + 1.3) * amp * 0.45); } ctx.lineTo(W, H); ctx.closePath(); ctx.fill(); }
+const TOOLS = ["图表", "报表", "定时", "Excel", "代码", "文档"];
+function toolIcon(k, x, y, a, accent) {
+  const sv = GA; GA = sv * a;
+  G(x, y, 80 + 70 * accent, 0.25 + 0.5 * accent);
+  ctx.globalAlpha = clamp(GA * 0.96); ctx.fillStyle = accent > 0.3 ? "#28251e" : "#161c27";
+  ctx.beginPath(); ctx.arc(x, y, 46, 0, 6.3); ctx.fill();
+  ctx.globalAlpha = clamp(GA * (0.76 + 0.24 * accent)); ctx.strokeStyle = GOLD;
+  ctx.lineWidth = 1.4 + 2 * accent; ctx.stroke();
+  ctx.globalAlpha = clamp(GA); ctx.fillStyle = GOLD; ctx.lineWidth = 2.4; ctx.lineCap = "round";
+  if (k === 0) [[-16, 12], [-4, 24], [8, 34]].forEach(([dx, h]) => ctx.fillRect(x + dx, y + 18 - h, 9, h));
+  else if (k === 1) { ctx.strokeRect(x - 20, y - 16, 40, 32); ctx.beginPath(); ctx.moveTo(x - 20, y - 5); ctx.lineTo(x + 20, y - 5); ctx.moveTo(x - 20, y + 6); ctx.lineTo(x + 20, y + 6); ctx.moveTo(x - 6, y - 16); ctx.lineTo(x - 6, y + 16); ctx.stroke(); }
+  else if (k === 2) { ctx.beginPath(); ctx.arc(x, y, 20, 0, 6.3); ctx.moveTo(x, y); ctx.lineTo(x, y - 13); ctx.moveTo(x, y); ctx.lineTo(x + 9, y + 5); ctx.stroke(); }
+  else if (k === 3) { box(x - 16, y - 20, 32, 40, 6, 1, 0, "#2c6a4a"); txt("X", x, y + 1, 22, 1, "#dff3e6", "center", SANS, 700); }
+  else if (k === 4) txt("</>", x, y + 1, 26, 1, GOLD, "center", MONO, 600);
+  else { ctx.strokeRect(x - 15, y - 20, 30, 40); ctx.beginPath(); [-9, 0, 9].forEach((d) => { ctx.moveTo(x - 8, y + d); ctx.lineTo(x + 8, y + d); }); ctx.stroke(); }
+  txt(TOOLS[k], x, y + 66, 20, 0.84 + 0.16 * accent, accent > 0.18 ? WARM : SUB, "center");
+  GA = sv;
+}
+
+function popTool(k, x, y, age, travel, opacity) {
+  // 先在重音上从下往上蹿，冲过目标位置一点，然后快速回落。
+  const up = eo(age / 0.082);
+  const settle = eo((age - 0.082) / 0.15);
+  const height = y + travel * (1 - up) - 26 * up * (1 - settle);
+  const scale = 1.16 * (0.78 + 0.46 * up - 0.24 * settle);
+  const accent = Math.exp(-age * 11);
+  const streak = (1 - sm(0.055, 0.19, age)) * opacity;
+  if (streak > 0) {
+    const tail = y + travel + 23;
+    line([x, height + 22], [x, tail], 0.8 * streak, 3, WARM);
+    line([x - 17, height + 32], [x - 17, tail - 10], 0.38 * streak, 1.6);
+    line([x + 17, height + 32], [x + 17, tail - 10], 0.38 * streak, 1.6);
+    G(x, y, 143, 0.45 * streak);
+  }
+  ctx.save();
+  ctx.translate(x, height);
+  ctx.scale(scale, scale);
+  toolIcon(k, 0, 0, opacity, accent);
+  ctx.restore();
+}
+
+const ORANGE = "#d97757", EYE = "#17110e";
+const A = {};
+// 对应原片 60.900 秒起，六个原曲重音的位置。
+const TOOL_BEATS = [0.565, 1.891, 2.952, 3.751, 5.082, 6.145];
+const TOOL_ANGLES = TOOL_BEATS.map((_, i) => -2.62 + i * Math.PI / 3);
+const starRandom = rng(31);
+const stars = Array.from({ length: 172 }, () => ({
+  x: 145 + starRandom() * 1620,
+  y: 72 + starRandom() * 425,
+  b: 0.15 + 0.43 * starRandom(),
+  phase: starRandom() * 6.28
+}));
+
+function pose(t) {
+  const last = TOOL_BEATS.findLastIndex(at => at <= t);
+  const age = last < 0 ? 1 : t - TOOL_BEATS[last];
+  const angle = last < 0 ? 0 : TOOL_ANGLES[last];
+  const gesture = age < 0.27, left = Math.cos(angle) < 0;
+  const lift = Math.sin(angle) < 0 ? -4 : 1;
+  const hop = clamp((t - (TOOL_BEATS.at(-1) + 0.02)) / 0.36);
+  Object.assign(A, {
+    a: 1, u: 12, x: 820, y: 800, yo: -60 * 4 * hop * (1 - hop),
+    br: Math.round(1 + Math.sin(t * 2.1)), lean: 0, crouch: 0,
+    legs: 0, tuck: hop > 0.1 && hop < 0.9,
+    blink: t % 3.3 < 0.12, ex: last >= 0 && age < 0.74 ? Math.round(Math.cos(angle)) : 0,
+    ey: last >= 0 && age < 0.74 ? Math.sign(Math.sin(angle)) : 0,
+    aL: gesture && left ? lift : 0, aR: gesture && !left ? lift : 0,
+    rL: gesture && left ? 1 : 0, rR: gesture && !left ? 1 : 0
+  });
+}
+
+function draw(t) {
+  const r = cv.width / W;
+  ctx.setTransform(r, 0, 0, r, 0, 0);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = GA = 1;
+  ctx.drawImage(bg, 0, 0);
+  for (const s of stars) {
+    const a = s.b * (0.82 + 0.18 * Math.sin(t * 1.3 + s.phase));
+    G(s.x, s.y, 8 + 9 * s.b, a);
+    ctx.globalAlpha = a; ctx.fillStyle = WARM; ctx.fillRect(s.x, s.y, 2, 2);
+  }
+  hills(525, 690, 46, "#0c121b", 0.9);
+  hills(2014, 752, 30, "#0a0f17", 0.95);
+  ctx.globalAlpha = 0.96; ctx.fillStyle = "#06080c"; ctx.fillRect(0, 800, W, H - 800);
+  line([0, 800], [W, 800], 0.5, 1.3);
+  const leave = sm(TOOL_BEATS.at(-1) + 0.78, 7.75, t);
+  TOOL_BEATS.forEach((at, i) => {
+    const age = t - at;
+    if (age < 0 || leave >= 1) return;
+    const angle = TOOL_ANGLES[i] + 0.28 * leave;
+    const vertical = Math.sin(angle);
+    popTool(i, 820 + 270 * Math.cos(angle), 693 + 172 * vertical - 760 * leave * leave,
+      age, 126 - 27 * Math.max(0, vertical), 1 - leave);
+  });
+  pose(t);
+  drawActor();
+  txt("然后，它长出了手。", 90, 266, 52, 0.94, WARM, "left", SERIF, 400, 5);
+  const fade = sm(7.54, T, t);
+  if (fade > 0) {
+    ctx.globalAlpha = fade; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+  }
+  ctx.globalAlpha = 1;
+}
+
+const audio = $("music");
+const stage = $("stage");
+const start = $("start");
+function render() { draw(clamp(audio.currentTime, 0, T)); }
+function fit() {
+  const scale = Math.min(innerWidth / W, innerHeight / H);
+  stage.style.transform = `translate(-50%,-50%) scale(${scale})`;
+  const pixels = Math.min(2, Math.max(1, scale * devicePixelRatio));
+  cv.width = Math.round(W * pixels);
+  cv.height = Math.round(H * pixels);
+  render();
+}
+function play() {
+  start.style.display = "none";
+  audio.play().catch(() => { start.style.display = "flex"; });
+}
+function frame() {
+  if (!audio.paused) render();
+  requestAnimationFrame(frame);
+}
+start.addEventListener("click", play);
+audio.addEventListener("ended", render);
+audio.addEventListener("seeked", render);
+addEventListener("resize", fit);
+addEventListener("keydown", event => {
+  if (event.code === "Space" || event.key === "Enter") {
+    event.preventDefault();
+    if (audio.paused) play();
+    else audio.pause();
+  } else if (event.key.toLowerCase() === "r") {
+    audio.currentTime = 0;
+    play();
+  } else if (event.key.toLowerCase() === "f") {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  }
+});
+fit();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

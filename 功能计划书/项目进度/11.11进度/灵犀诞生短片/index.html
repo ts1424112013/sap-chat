@@ -22,6 +22,7 @@ body.playing{cursor:none}
 <audio id="music" src="music.m4a" preload="auto"></audio>
 
 <script src="beat.js"></script>
+<script src="growth-beats.js"></script>
 <script>
 "use strict";
 // ───────── 真实数据：仓库 2026-10-05 至 2026-11-11 每天的提交次数（git log 统计）。每一次提交，是片中的一颗星 ─────────
@@ -34,13 +35,13 @@ const ASK = "ABG1 工厂今天开了多少工单？";
 const NARR = [[11.2, 13.8, "c", "答案，都在 *SAP* 里。"], [14.2, 17, "c", "可想问一句，得先知道敲哪个*事务码*。"],
   [18.4, 23.2, "c", "2026 年 10 月，有人换了个问法。"], [24.4, 29, "c", "于是，*第一行代码*写了下来。"], [29.8, 32.6, "c", "它最早的名字，叫 *Gale-SAP*。"],
   [34.8, 41, "m", "它先学会*听*。", "一句话里，有工厂、日期，和你想要的东西。"], [43.4, 49.8, "m", "再学会*找*。", "从几百万行里，捞出对的那几行。"],
-  [52, 59, "m", "名字换了三次。", "留下来的那个，叫*灵犀*。"], [61.6, 67.8, "m", "然后，它长出了*手*。", "画图、报表、定时、Excel、代码、文档。"],
+  [52, 59, "m", "它先后用了三个名字。"], [60.9, 67.8, "m", "然后，它长出了*手*。"],
   [70, 75.2, "m", "11 月 9 日，", "它走进了 *SAP*。"],
   [77.6, 83, "m", `${ND} 天，${TOTAL} 次提交。`, "每一次，都是*一颗星*。"], [84, 87.6, "m", "它不是一次写成的。"], [88.2, 92.6, "m", "是一个人和一个 AI，", "*一句一句*聊出来的。"],
   [94.8, 100.2, "c", "现在，那句话*有人接住了*。"], [101.6, 109, "c", "不用记事务码，也不用多说。"], [110.6, 116.8, "e", "心有灵犀，一点就通。"]];
 
 // ───────── 基础 ─────────
-const W = 1920, H = 1080, T = 130, SECTIONS = [0, 17, 33, 51.6, 76, 93, 110];
+const W = 1920, H = 1080, T = 130, SECTIONS = [0, 17, 33, 51.6, 60.9, 76, 93, 110];
 const $ = (id) => document.getElementById(id);
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const sm = (a, b, x) => { x = clamp((x - a) / (b - a)); return x * x * (3 - 2 * x); };
@@ -97,13 +98,15 @@ function gline(x0, x1, y, hx, a) { if (x1 <= x0 || a <= 0.004) return; ctx.globa
   for (let x = x0; x < x1 + 16; x += 16) { const xx = Math.min(x, x1); let dy = 0;
     for (let k = 0; k < 5 && OI - k >= 0; k++) { const age = NOW - ONS[OI - k][0]; if (age > 2.2) break; const d = (Math.abs(xx - hx) - age * 1000) / 110; dy -= ONS[OI - k][1] * 14 * Math.exp(-age * 1.5) * Math.exp(-d * d); }
     x === x0 ? ctx.moveTo(xx, y + dy) : ctx.lineTo(xx, y + dy); } ctx.stroke(); }
-const TT = [61.71, 62.5, 63.05, 64.1, 64.9, 65.96];           // 六样工具弹出的时刻（落在重音上）
+const NAME_BEATS = GROWTH_BEATS.names, TOOL_BEATS = GROWTH_BEATS.tools;
+const TOOL_ANGLES = TOOL_BEATS.map((_, i) => -2.62 + i * Math.PI / 3);
+const growthRevealActive = (t) => (t >= 51.6 && t < 59.4) || (t >= 60.9 && t < 68.6);
 // ───────── 卡点：平时安静，拍子上才动；重拍上整屏顶一下、闪一下，一个大字砸进来 ─────────
 const BP = 0.53128, B0 = 0.07, qb = (t) => B0 + Math.round((t - B0) / BP) * BP, QT = (k) => B0 + BP * (193 + 2 * k);   // 拍子网格（每拍 0.531 秒）；后段七个问题到达的拍点
-const HITS = [[1.13, 0.5], [3.25, 0.4], [5.38, 1], [7.5, 0.5], [9.63, 1], [17.6, 0.6], [26.6, 1], [28.76, 0.4], [33.54, 0.8], [36.2, 0.8], [44.7, 0.3], [45.76, 0.3], [46.82, 0.3], [47.89, 0.7], [49.75, 0.5], [52.41, 0.3], [57.46, 1],
-  ...TT.map((t) => [t, 0.35]), [67.03, 0.8], [73.94, 1], [77.65, 0.7], [79.78, 0.4], [81.9, 0.4], [84.02, 0.5], [94.13, 0.8], [96.52, 0.6], [99.4, 0.8], ...[0, 1, 2, 3, 4, 5, 6].map((k) => [QT(k), 0.3]), [109.8, 0.4], [112.72, 0.5], [116.97, 1], [119.9, 0.4]];   // [时刻, 力度]
+const HITS = [[1.13, 0.5], [3.25, 0.4], [5.38, 1], [7.5, 0.5], [9.63, 1], [17.6, 0.6], [26.6, 1], [28.76, 0.4], [33.54, 0.8], [36.2, 0.8], [44.7, 0.3], [45.76, 0.3], [46.82, 0.3], [47.89, 0.7], [49.75, 0.5],
+  [73.94, 1], [77.65, 0.7], [79.78, 0.4], [81.9, 0.4], [84.02, 0.5], [94.13, 0.8], [96.52, 0.6], [99.4, 0.8], ...[0, 1, 2, 3, 4, 5, 6].map((k) => [QT(k), 0.3]), [109.8, 0.4], [112.72, 0.5], [116.97, 1], [119.9, 0.4]];   // [时刻, 力度]
 function jolt(t, rate = 9) { let j = 0; for (const [h, f] of HITS) { const a = t - h; if (a >= 0 && a < 1) j += f * Math.exp(-a * rate); } return j; }
-const STAMPS = [[26.6, "诞生", "2026 年 10 月", 1440, 560], [36.2, "听", "", 1380, 430], [47.89, "找", "", 1400, 400], [57.46, "灵犀", "10.27 · 第三个名字", 1390, 650], [67.03, "动手", "", 1400, 400],
+const STAMPS = [[26.6, "诞生", "2026 年 10 月", 1440, 560], [36.2, "听", "", 1380, 430], [47.89, "找", "", 1400, 400],
   [73.94, "上线", "11.09", 640, 480], [77.65, "235", "次提交", 1440, 640], [99.4, "接住了", "", 620, 430]];                                          // 大字 [时刻, 字, 小字, x, y]
 function stamps(t) { for (const [t0, w, sub, x, y] of STAMPS) { const a = t - t0; if (a < 0 || a > 2.4) continue; const k = 1 + 1.6 * Math.exp(-a * 18);
     ctx.save(); ctx.translate(x, y); ctx.rotate(-0.05); ctx.scale(k, k); GA = clamp(a / 0.05) * (1 - sm(1.9, 2.4, a)); G(0, 0, 420, 0.3 + 0.5 * Math.exp(-a * 6));
@@ -117,7 +120,7 @@ const CELLS = []; for (let r = 0; r < 8; r++) for (let c = 2; c < 14; c++) CELLS
 // 位置关键帧 [时刻, x, y, 方式]：两帧之间走过去（脚自动迈步），方式为 "hop" 时跳过去。成长段（33–75 秒）的 x 是世界坐标，镜头跟着它走。
 const POS = [[26.6, 960, 640], [32.8, 960, 640],
   [32.84, 0, 800], [41, 0, 800], [42.8, 1500, 800], [44.1, 1500, 800], [44.7, 1640, 730, "hop"], [45.16, 1640, 730], [45.76, 1780, 670, "hop"], [46.22, 1780, 670], [46.82, 1920, 610, "hop"], [48.95, 1920, 610], [49.75, 2250, 800, "hop"],
-  [51.6, 3000, 800], [52.6, 3000, 800], [53.6, 3340, 800], [54.5, 3340, 800], [55.5, 3680, 800], [59.2, 3680, 800], [61, 5200, 800], [68, 5200, 800], [69.8, 6700, 800], [72.8, 6700, 800], [73.9, 7100, 800], [75.9, 7100, 800],
+  [51.6, 3000, 800], [53.58, 3000, 800], [54.72, 3340, 800], [55.69, 3340, 800], [56.85, 3680, 800], [59.2, 3680, 800], [61, 5200, 800], [68, 5200, 800], [69.8, 6700, 800], [72.8, 6700, 800], [73.9, 7100, 800], [75.9, 7100, 800],
   [76.2, 700, 880], [92.9, 700, 880],
   [93.43, 300, 800], [96.5, 300, 800], [99.18, 1250, 800], [100.6, 1250, 800], [101.4, 960, 800], [130, 960, 800]];
 const SEG = []; { let c = 0; for (let i = 1; i < POS.length; i++) { const a = POS[i - 1], b = POS[i], len = Math.hypot(b[1] - a[1], b[2] - a[2]), dur = b[0] - a[0];
@@ -129,16 +132,20 @@ const camAt = (t) => Math.min(posAt(t).x, 6700) - 820;       // 成长段的镜�
 // 表演：目光 [开始, 结束, 左右, 上下]、短肢 [开始, 结束, 左高低, 右高低, 左伸出, 右伸出]、挥手、点头、小跳 [时刻, 高度]、下蹲、侧倾
 const LOOK = [[27.4, 28, -1, 0], [28, 28.6, 1, 0], [29.7, 31, 0, -1],
   [34.2, 36.2, 0, -1], ...[0, 1, 2, 3, 4, 5].map((k) => [36.2 + k * 0.6, 36.8 + k * 0.6, k % 2 ? -1 : 1, 0]), [39.8, 40.9, 0, -1],
-  [42.8, 44.3, 1, 1], [47.4, 48.95, 0, -1], [51.6, 52.6, 0, -1], [53.6, 54.5, 0, -1], [55.5, 58.2, 0, -1],
-  ...[0, 1, 2, 3, 4, 5].map((k) => [TT[k], TT[k] + 0.75, k % 2 ? -1 : 1, -1]), [66.4, 68, 0, -1], [69.8, 71.6, 1, -1], [71.6, 72.5, 0, 0],
+  [42.8, 44.3, 1, 1], [47.4, 48.95, 0, -1], ...NAME_BEATS.map((t) => [t - 0.27, t + 0.65, 0, -1]),
+  ...TOOL_BEATS.map((t, i) => [t, t + 0.74, Math.round(Math.cos(TOOL_ANGLES[i])), Math.sign(Math.sin(TOOL_ANGLES[i]))]), [69.8, 71.6, 1, -1], [71.6, 72.5, 0, 0],
   [76.4, 84, 1, -1], [84, 85.4, 1, 0], [85.4, 88.2, 0, -1], [88.2, 89.6, 1, 0], [89.6, 92.9, 0, -1],
   [94.2, 96.5, 1, -1], [99.2, 100.6, 1, 0], ...[0, 1, 2, 3, 4, 5, 6].map((k) => [QT(k) - 1, QT(k), k % 2 ? 1 : -1, -1]), [109.6, 119.4, 0, -1]];
-const ARMS = [[35.1, 36.2, -5, -5, 0, 0], [47.7, 48.95, -5, -5, 0, 0], [57.19, 57.8, -5, -5, 0, 0],
-  ...[0, 1, 2, 3, 4, 5].map((k) => [TT[k], TT[k] + 0.5, k % 2 ? -4 : 0, k % 2 ? 0 : -4, k % 2 ? 1 : 0, k % 2 ? 0 : 1]), [66.9, 67.7, -5, -5, 0, 0],
+const ARMS = [[35.1, 36.2, -5, -5, 0, 0], [47.7, 48.95, -5, -5, 0, 0], [NAME_BEATS[2] - 0.27, NAME_BEATS[2] + 0.32, -5, -5, 0, 0],
+  ...TOOL_BEATS.map((t, i) => {
+    const left = Math.cos(TOOL_ANGLES[i]) < 0;
+    const lift = Math.sin(TOOL_ANGLES[i]) < 0 ? -4 : 1;
+    return [t, t + 0.27, left ? lift : 0, left ? 0 : lift, left ? 1 : 0, left ? 0 : 1];
+  }),
   [79, 81.6, 0, -4, 0, 1], [94.95, 99.2, -5, -5, 0, 0], [99.2, 100.2, 0, -2, 0, 1],
   ...[0, 1, 2, 3, 4, 5, 6].map((k) => [QT(k) - 0.08, QT(k) + 0.32, k % 2 ? 0 : -4, k % 2 ? -4 : 0, k % 2 ? 0 : 1, k % 2 ? 1 : 0])];
 const WAVE = [[31.2, 32.4], [122, 124]], NODS = [30.3, 39.4, 72.5, 86.15, 90.3, 119.9];
-const HOPS = [[28.62, 56], [57.14, 190], [66.89, 60], [100.63, 44], [116.83, 50]], SQUAT = [[35.25, 35.45], [95.05, 95.25]], LEAN = [[70.4, 71.6, -1]];
+const HOPS = [[28.62, 56], [NAME_BEATS[2] - 0.32, 190], [66.89, 60], [100.63, 44], [116.83, 50]], SQUAT = [[35.25, 35.45], [95.05, 95.25]], LEAN = [[70.4, 71.6, -1]];
 const hit = (L, t) => L.find((w) => t >= w[0] && t < w[1]);
 const A = { a: 0 };
 function actor(t) {
@@ -159,7 +166,7 @@ function actor(t) {
   for (const [h0, hh] of HOPS) { const v = t - h0;           // 压低 → 起跳 → 收脚 → 落地缓冲 → 站稳
     if (v >= 0 && v < 0.14) o.crouch = 1; else if (v >= 0.14 && v < 0.5) { const k = (v - 0.14) / 0.36; o.yo = -hh * 4 * k * (1 - k); o.tuck = k > 0.12 && k < 0.88 ? 1 : 0; } else if (v >= 0.5 && v < 0.62) o.crouch = 1; }
   const ln = hit(LEAN, t); if (ln) o.lean = ln[2];
-  if (!P.moving && !o.crouch && !o.tuck && t > 27.2 && bigAge(t) < 0.1) o.crouch = 1;                                                           // 重音上，身体跟着顿一下
+  if (!P.moving && !o.crouch && !o.tuck && t > 27.2 && !growthRevealActive(t) && bigAge(t) < 0.1) o.crouch = 1;                                                           // 重音上，身体跟着顿一下
   o.br = P.moving || o.crouch || o.tuck ? 0 : Math.round(1 + Math.sin(t * 2.1) + 2.5 * BT);                                                               // 站着时随呼吸起伏 0–2 像素
   o.top = o.y + o.yo - 10 * o.u + (o.crouch ? o.u : 0);                                                                                       // 头顶
   Object.assign(A, o);
@@ -200,9 +207,9 @@ function sky(t) { if (t < 34) return; GA = 1; const dimA = 1 - 0.5 * win(t, 93, 
 function hills(off, base, amp, col, a) { ctx.globalAlpha = clamp(a * GA); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, H);
   for (let x = 0; x <= W; x += 40) { const wx = x + off; ctx.lineTo(x, base + Math.sin(wx * 0.0021) * amp + Math.sin(wx * 0.0057 + 1.3) * amp * 0.45); } ctx.lineTo(W, H); ctx.closePath(); ctx.fill(); }
 function hud(t, a) { GA = a; const d = dayAt(t); let n = 0; for (const s of STARS) if (t >= s.t0) n++;
-  txt(`2026.${dlabel(d)}`, 92, 100, 22, 0.7, SUB, "left", MONO); const pop = pulse(t, dtick(d), 0.35), ag = t - dtick(d);
+  txt(`2026.${dlabel(d)}`, 92, 100, 22, 0.7, SUB, "left", MONO); const reveal = growthRevealActive(t), pop = reveal ? 0 : pulse(t, dtick(d), 0.35), ag = t - dtick(d);
   txt(`第 ${d + 1} 天`, 90, 146, 40 * (1 + 0.22 * pop), 0.95, WARM, "left", SERIF); txt(`✦ ${n}`, 92, 196, 26 * (1 + 0.3 * pop), 0.95, GOLD);
-  if (DAYS[d] && ag >= 0 && ag < 0.9 && A.a > 0) txt(`+${DAYS[d]}`, A.x + 8 * A.u + 16, A.top + 16 - 50 * eo(ag / 0.9), 36, 1 - ag / 0.9, GOLD, "left", SERIF); }   // 每一拍：天数跳一下，小人头顶冒出这一天的提交数
+  if (!reveal && DAYS[d] && ag >= 0 && ag < 0.9 && A.a > 0) txt(`+${DAYS[d]}`, A.x + 8 * A.u + 16, A.top + 16 - 50 * eo(ag / 0.9), 36, 1 - ag / 0.9, GOLD, "left", SERIF); }   // 每一拍：天数跳一下，小人头顶冒出这一天的提交数
 
 // ───────── 序：一颗像素的心跳 → 一道金线 → 一句话 → 一头扎进事务码里 ─────────
 const OPEN = "每一个工具，都从一个问题开始。";
@@ -257,9 +264,15 @@ function scBirth(t) { if (t < 19.8 || t > 33.4) return;
 // ───────── 成长：一路向右，五件事 ─────────
 const PR = rng(17), PEB = Array.from({ length: 220 }, () => [-900 + PR() * 9200, 6 + PR() * 60, 4 + PR() * 16, 0.1 + PR() * 0.3]);
 const CHIP3 = ["ABG1 工厂", "今天", "多少工单"], STONES = [[1640, 730], [1780, 670], [1920, 610]];
-const LAMPS = [[3000, "Gale-SAP", "10.05", 52.41, MONO, 30], [3340, "Momo", "10.24", 53.9, SANS, 36], [3680, "灵犀", "10.27", 57.46, SERIF, 48]];
+const LAMPS = [[3000, "Gale-SAP", "10.05", MONO, 30], [3340, "Momo", "10.24", SANS, 36], [3680, "灵犀", "10.27", SERIF, 48]];
 const TOOLS = ["图表", "报表", "定时", "Excel", "代码", "文档"];
-function toolIcon(k, x, y, a) { const sv = GA; GA = sv * a; G(x, y, 80, 0.25); ctx.globalAlpha = clamp(GA * 0.96); ctx.fillStyle = "#161c27"; ctx.beginPath(); ctx.arc(x, y, 46, 0, 6.3); ctx.fill(); ctx.globalAlpha = clamp(GA * 0.8); ctx.strokeStyle = GOLD; ctx.lineWidth = 1.4; ctx.stroke();
+function toolIcon(k, x, y, a, accent) {
+  const sv = GA; GA = sv * a;
+  G(x, y, 80 + 70 * accent, 0.25 + 0.5 * accent);
+  ctx.globalAlpha = clamp(GA * 0.96); ctx.fillStyle = accent > 0.3 ? "#28251e" : "#161c27";
+  ctx.beginPath(); ctx.arc(x, y, 46, 0, 6.3); ctx.fill();
+  ctx.globalAlpha = clamp(GA * (0.76 + 0.24 * accent)); ctx.strokeStyle = GOLD;
+  ctx.lineWidth = 1.4 + 2 * accent; ctx.stroke();
   ctx.globalAlpha = clamp(GA); ctx.fillStyle = GOLD; ctx.lineWidth = 2.4; ctx.lineCap = "round";
   if (k === 0) [[-16, 12], [-4, 24], [8, 34]].forEach(([dx, h]) => ctx.fillRect(x + dx, y + 18 - h, 9, h));
   else if (k === 1) { ctx.strokeRect(x - 20, y - 16, 40, 32); ctx.beginPath(); ctx.moveTo(x - 20, y - 5); ctx.lineTo(x + 20, y - 5); ctx.moveTo(x - 20, y + 6); ctx.lineTo(x + 20, y + 6); ctx.moveTo(x - 6, y - 16); ctx.lineTo(x - 6, y + 16); ctx.stroke(); }
@@ -284,14 +297,40 @@ function scWorld(t) { if (t < 32.4 || t > 76.4) return; const ga = sm(32.4, 33.3
     STONES.forEach(([wx, y], i) => { const on = Math.abs(posAt(t).x - wx) < 40 && t > 44.8 ? 1 : 0; if (on) G(X(wx), y + 13, 150, 0.35); box(X(wx) - 90, y, 180, 26, 6, 0.96, 0.6 + 0.35 * on, "#1a212d", GOLD, 1.3); txt(`1004823${11 + i}  ZP01  ABG1`, X(wx) - 78, y + 14, 13, 0.8, SUB, "left", MONO); });
     const pk = sm(47.6, 47.89, t), up = sm(48.95, 49.85, t); if (pk > 0 && up < 1) { const x = lerp(X(2040), A.x, pk), y = lerp(646, A.top - 26, pk) - 640 * up * up; GA = ga * (1 - up); G(x, y, 190, 0.5);
       box(x - 115, y - 16, 230, 32, 7, 0.97, 0.95, "#241d12", GOLD, 1.5); txt("100482316  M-18834  2,400", x, y + 1, 14, 1, WARM, "center", MONO); GA = ga; } }
-  // 三 · 名字：三盏灯，第三盏被它点亮
-  LAMPS.forEach(([wx, nm, dt, tp, font, size], i) => { const x = X(wx); if (x < -260 || x > W + 260) return;
-    const th = t > tp ? 0.13 * Math.sin((t - tp) * 5.2) * Math.exp(-(t - tp) * 0.8) : 0, lit = i === 2 ? sm(tp, tp + 0.35, t) : 0.9 * pulse(t, tp, 1.6);
-    ctx.save(); ctx.translate(x, 0); ctx.rotate(th); line([0, 0], [0, 388], 0.4, 1.2); if (lit > 0.02) G(0, 430, 260 + 160 * lit + 110 * BT + (i === 2 ? 300 * pulse(t, tp, 1.4) : 0), 0.5 * lit);
-    box(-115, 388, 230, 84, 16, 0.95, 0.3 + 0.65 * lit, i === 2 && lit > 0.5 ? "#2a2114" : "#141a24", GOLD, 1.3 + lit); txt(nm, 0, 431, size, 0.45 + 0.55 * lit, lit > 0.3 ? WARM : SUB, "center", font, 400, i === 2 ? 10 : 0); txt(dt, 0, 496, 15, 0.5, SUB, "center", MONO); ctx.restore(); });
-  // 四 · 手：一圈工具
-  { const x = X(5200); if (x > -400 && x < W + 400) for (let k = 0; k < 6; k++) { const tk = TT[k], r = (235 + 22 * BT) * eo((t - tk) / 0.5); if (t < tk) continue;
-      const fly = sm(67.3 + k * 0.08, 68.3 + k * 0.08, t), an = -1.57 + k * 1.047 + (t - 61) * 0.35 + 3 * sm(66.6, 68, t); toolIcon(k, x + Math.cos(an) * r, 700 + Math.sin(an) * r * 0.62 - 820 * fly * fly, sm(tk, tk + 0.3, t) * (1 - fly)); } }
+  // 三 · 名字：每次重拍放出一块牌，已经出现的名字保留在路上。
+  LAMPS.forEach(([wx, name, date, font, size], i) => {
+    const age = t - NAME_BEATS[i], x = X(wx);
+    if (age < 0 || x < -260 || x > W + 260) return;
+    const land = eo(age / 0.2), accent = Math.exp(-age * 6);
+    const newest = i === NAME_BEATS.length - 1 || t < NAME_BEATS[i + 1];
+    const light = (newest ? 0.74 : 0.3) + 0.26 * accent;
+    const y = 430 - 62 * (1 - land);
+    ctx.save(); ctx.translate(x, y);
+    ctx.rotate((i % 2 ? 1 : -1) * 0.085 * Math.sin(age * 20) * Math.exp(-age * 3.6));
+    line([0, -y - 28], [0, -42], 0.43, 1.2);
+    G(0, 0, 190 + 180 * accent, 0.5 * light);
+    box(-115, -42, 230, 84, 16, 0.98, 0.34 + 0.66 * light, newest ? "#262118" : "#151b25", GOLD, 1.3 + light);
+    txt(name, 0, 1, size, newest ? 1 : 0.68, WARM, "center", font, 400, i === 2 ? 10 : 0);
+    txt(date, 0, 66, 16, newest ? 0.83 : 0.53, GOLD, "center", MONO);
+    ctx.restore();
+  });
+  // 四 · 手：新图标在拍点上弹入，旧图标留在自己的位置，最后一起离场。
+  const toolX = X(5200);
+  if (toolX > -400 && toolX < W + 400) {
+    TOOL_BEATS.forEach((at, i) => {
+      const age = t - at;
+      if (age < 0) return;                                        // 落拍之前，什么都不出现
+      const accent = Math.exp(-age * 7.5), pop = 1 + 0.85 * Math.exp(-age * 15);                       // 落拍的第一帧最大最亮，约 0.2 秒收住
+      let bump = 0; for (let j = i + 1; j < TOOL_BEATS.length; j++) if (t >= TOOL_BEATS[j]) bump += 0.2 * Math.exp(-(t - TOOL_BEATS[j]) * 14);   // 后面每蹦出一个，已有的跟着顿一下
+      const leave = sm(TOOL_BEATS.at(-1) + 0.78, 68.65, t);
+      const orbit = TOOL_ANGLES[i] + 0.28 * leave;
+      const x = toolX + Math.cos(orbit) * 270 * (1 + 0.1 * bump);
+      const y = 693 + Math.sin(orbit) * 172 * (1 + 0.1 * bump) - 760 * leave * leave;
+      if (age < 0.36) { ctx.globalAlpha = clamp(GA * (1 - age / 0.36) * 0.9); ctx.strokeStyle = GOLD; ctx.lineWidth = 3 * (1 - age / 0.36) + 0.5; ctx.beginPath(); ctx.arc(x, y, 46 + 150 * eo(age / 0.36), 0, 6.3); ctx.stroke();   // 一圈冲击波
+        line([toolX + Math.cos(orbit) * 96, 700 + Math.sin(orbit) * 60], [x - Math.cos(orbit) * 50, y - Math.sin(orbit) * 50], (1 - age / 0.36) * 0.8, 2); }                                      // 从小人伸出的手到图标的一道光
+      ctx.save(); ctx.translate(x, y); ctx.scale(pop + bump, pop + bump); toolIcon(i, 0, 0, 1 - leave, accent); ctx.restore();
+    });
+  }
   // 五 · 门：走进 SAP
   { const x = X(7100); if (x < W + 300) { const near = sm(69.4, 73.9, t), sh = pulse(t, 73.94, 1.6); ctx.beginPath(); ctx.moveTo(x - 130, 800); ctx.lineTo(x - 130, 520); ctx.arc(x, 520, 130, Math.PI, 0); ctx.lineTo(x + 130, 800); ctx.closePath();
       const g = ctx.createLinearGradient(0, 390, 0, 800); g.addColorStop(0, `rgba(250,222,170,${0.1 + 0.25 * near + 0.5 * sh})`); g.addColorStop(1, `rgba(230,197,143,${0.02 + 0.1 * near + 0.4 * sh})`);
@@ -342,8 +381,9 @@ function narr(t, t0, t1, x, y, s, size, align = "left", ls = 4, base = WARM) { i
 
 // ───────── 一帧 ─────────
 function draw(t) {
-  NOW = t; OI = onsIdx(t); BT = beat(t); BIG = beat(t, 0.7); LO = env(MUSIC.lo, t); HI = env(MUSIC.hi, t);
-  const r = cv.width / W, J = jolt(t), Z = 1 + 0.055 * J + 0.006 * BIG + 0.003 * BT, ox = Math.sin(t * 85) * 9 * J, oy = Math.cos(t * 71) * 6 * J;      // 卡点：整个画面猛地一顶、一抖，再弹回来
+  const reveal = growthRevealActive(t);
+  NOW = t; OI = onsIdx(t); BT = reveal ? 0 : beat(t); BIG = reveal ? 0 : beat(t, 0.7); LO = env(MUSIC.lo, t); HI = env(MUSIC.hi, t);
+  const r = cv.width / W, J = reveal ? 0 : jolt(t), Z = 1 + 0.055 * J + 0.006 * BIG + 0.003 * BT, ox = Math.sin(t * 85) * 9 * J, oy = Math.cos(t * 71) * 6 * J;      // 卡点：整个画面猛地一顶、一抖，再弹回来
   ctx.setTransform(r, 0, 0, r, 0, 0); ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1; ctx.drawImage(bg, 0, 0);
   GA = 1; G(960, 720, 1100, (0.03 + 0.13 * LO + 0.08 * BIG) * sm(0.5, 3, t));                                  // 低频越厚，底光越暖
   ctx.setTransform(r * Z, 0, 0, r * Z, r * (960 * (1 - Z) + ox), r * (540 * (1 - Z) + oy));
@@ -351,7 +391,7 @@ function draw(t) {
   actor(t); sky(t);
   scOpen(t); scWall(t); scBirth(t); scWorld(t); scNight(t); scReturn(t); scEnd(t);
   ctx.setTransform(r, 0, 0, r, 0, 0); A.x = 960 + (A.x - 960) * Z + ox; A.y = 540 + (A.y - 540) * Z + oy; drawActor(); stamps(t);
-  const jf = jolt(t, 16); if (jf > 0.02) { ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = Math.min(0.3, 0.2 * jf); ctx.fillStyle = "#e6c58f"; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = "source-over"; }   // 卡点的那一下闪光
+  const jf = reveal ? 0 : jolt(t, 16); if (jf > 0.02) { ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = Math.min(0.3, 0.2 * jf); ctx.fillStyle = "#e6c58f"; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = "source-over"; }   // 卡点的那一下闪光
   const fl = pulse(t, 73.94, 1.8); if (fl > 0.01) { ctx.globalAlpha = fl * 0.6; ctx.fillStyle = "#f6dfb4"; ctx.fillRect(0, 0, W, H); }                  // 走进门的那一下
   for (const [p, q, at, s1, s2] of NARR) if (t > p && t < q) {
     if (at === "c") { line([96, 70], [96, 114], 0.7 * win(t, p, q, 0.5), 2); narr(t, p, q, 120, 92, s1, 44); }
@@ -363,19 +403,47 @@ function draw(t) {
 
 // ───────── 播放控制 ─────────
 const audio = $("music"), stage = $("stage");
-let playing = false, base = 0, perf0 = 0, started = false;
-const now = () => playing ? base + (performance.now() - perf0) / 1000 : base;
+let playing = false, base = 0, started = false;
+const now = () => playing && audio.readyState > 0 ? audio.currentTime : base;
 function fit() { const k = Math.min(innerWidth / W, innerHeight / H); stage.style.transform = `translate(-50%,-50%) scale(${k})`;
   const r = Math.min(2, Math.max(1, k * (devicePixelRatio || 1))); cv.width = Math.round(W * r); cv.height = Math.round(H * r); render(); }
 function render() { draw(clamp(now(), 0, T)); }
-function seek(t) { base = clamp(t, 0, T); perf0 = performance.now(); try { audio.currentTime = base; } catch (e) {} render(); }
-function play() { if (base >= T) base = 0; playing = true; perf0 = performance.now(); document.body.classList.add("playing"); try { audio.currentTime = base; } catch (e) {} audio.play().catch(() => {}); }
-function pause() { base = now(); playing = false; audio.pause(); document.body.classList.remove("playing"); }
+function seek(t) {
+  base = clamp(t, 0, T);
+  audio.currentTime = base;
+  render();
+}
+function play() {
+  if (base >= T - 0.05) seek(0);
+  audio.currentTime = base;
+  playing = true;
+  document.body.classList.add("playing");
+  audio.play().catch(() => {
+    pause();
+    started = false;
+    $("start").style.display = "flex";
+  });
+}
+function pause() {
+  base = clamp(now(), 0, T);
+  playing = false;
+  audio.pause();
+  document.body.classList.remove("playing");
+  render();
+}
+function finish() {
+  if (!playing) return;
+  playing = false;
+  base = T;
+  audio.pause();
+  document.body.classList.remove("playing");
+  render();
+}
+audio.addEventListener("ended", finish);
 function loop() {
   if (playing) {
-    if (!audio.paused && audio.readyState > 2) { const d = audio.currentTime - now(); if (Math.abs(d) > 0.15) base += d; }
-    if (now() >= T) { base = T; playing = false; audio.pause(); document.body.classList.remove("playing"); }
-    render();
+    if (now() >= T) finish();
+    else render();
   }
   requestAnimationFrame(loop);
 }
