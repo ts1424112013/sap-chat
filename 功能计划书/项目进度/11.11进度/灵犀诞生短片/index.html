@@ -29,14 +29,14 @@ const ND = DAYS.length, TOTAL = DAYS.reduce((a, b) => a + b, 0);
 const p2 = (n) => String(n).padStart(2, "0");
 const dlabel = (i) => i < 27 ? `10.${p2(5 + i)}` : `11.${p2(i - 26)}`;                    // 第 i 天的日期（i 从 0 起）
 const ASK = "ABG1 工厂今天开了多少工单？";
-// 字幕 [开始, 结束, 文字]
-const CAPS = [[6.5, 11, "答案都在 SAP 里。"], [11.5, 16.6, "可想问一句话，得先知道该敲哪个事务码。"],
-  [20, 23.4, "2026 年 10 月，有人换了个问法。"], [24.2, 29.2, "于是，第一行代码写了下来。"], [29.8, 32.8, "它最早的名字，叫 Gale-SAP。"],
-  [34.8, 41, "它先学会听：一句话里，有工厂、日期，和你想要的东西。"], [43.4, 49.8, "再学会找：从几百万行里，捞出对的那几行。"],
-  [52, 59, "名字换了三次。留下来的那个，叫灵犀。"], [61.6, 67.8, "然后它长出了手：画图、报表、定时、Excel、代码、文档。"],
-  [70, 75.2, "11 月 9 日，它走进了 SAP。"],
-  [77.6, 83, `${ND} 天，${TOTAL} 次提交。每一次，都是一颗星。`], [84, 87.6, "它不是一次写成的。"], [88.2, 92.6, "是一个人和一个 AI，一句一句聊出来的。"],
-  [94.8, 100.2, "现在，那句话有人接住了。"], [101.6, 109, "不用记事务码，也不用多说。"], [110.6, 115.6, "心有灵犀，一点就通。"]];
+// 画面里的话 [开始, 结束, 位置, 第一行, 第二行]。位置：c 左上角（墙的场景）、m 左侧日期下方（原野和星空）、e「灵犀」正下方。*…* 之间的字用金色
+const NARR = [[11.2, 13.8, "c", "答案，都在 *SAP* 里。"], [14.2, 17, "c", "可想问一句，得先知道敲哪个*事务码*。"],
+  [19.8, 23.2, "c", "2026 年 10 月，有人换了个问法。"], [24.4, 29, "c", "于是，*第一行代码*写了下来。"], [29.8, 32.6, "c", "它最早的名字，叫 *Gale-SAP*。"],
+  [34.8, 41, "m", "它先学会*听*。", "一句话里，有工厂、日期，和你想要的东西。"], [43.4, 49.8, "m", "再学会*找*。", "从几百万行里，捞出对的那几行。"],
+  [52, 59, "m", "名字换了三次。", "留下来的那个，叫*灵犀*。"], [61.6, 67.8, "m", "然后，它长出了*手*。", "画图、报表、定时、Excel、代码、文档。"],
+  [70, 75.2, "m", "11 月 9 日，", "它走进了 *SAP*。"],
+  [77.6, 83, "m", `${ND} 天，${TOTAL} 次提交。`, "每一次，都是*一颗星*。"], [84, 87.6, "m", "它不是一次写成的。"], [88.2, 92.6, "m", "是一个人和一个 AI，", "*一句一句*聊出来的。"],
+  [94.8, 100.2, "c", "现在，那句话*有人接住了*。"], [101.6, 109, "c", "不用记事务码，也不用多说。"], [110.6, 116.8, "e", "心有灵犀，一点就通。"]];
 
 // ───────── 基础 ─────────
 const W = 1920, H = 1080, T = 130, SECTIONS = [0, 17, 33, 51.6, 76, 93, 110];
@@ -174,21 +174,41 @@ function hills(off, base, amp, col, a) { ctx.globalAlpha = clamp(a * GA); ctx.fi
 function hud(t, a) { GA = a; const d = dayAt(t); let n = 0; for (const s of STARS) if (t >= s.t0) n++;
   txt(`2026.${dlabel(d)}`, 92, 100, 22, 0.7, SUB, "left", MONO); txt(`第 ${d + 1} 天`, 90, 146, 40, 0.95, WARM, "left", SERIF); txt(`✦ ${n}`, 92, 196, 26, 0.95, GOLD); }
 
-// ───────── 序：一句话，和一整面墙的事务码 ─────────
+// ───────── 序：一颗像素的心跳 → 一道金线 → 一句话 → 一头扎进事务码里 ─────────
 const OPEN = "每一个工具，都从一个问题开始。";
 const TC = ["SE16N", "COOIS", "MB52", "ME2N", "VA05", "MMBE", "CO03", "MD04", "ME23N", "VL06O", "MB51", "FBL3N", "FBL1N", "FBL5N", "CS03", "CA03", "MM03", "XK03", "VF05", "ME5A", "CO24", "COHV", "MB5B", "IW38", "QA33", "KSB1", "ZPP001", "ZMM017", "ZSD023", "SQ01", "SM37", "ME2L", "VA03", "MD4C", "CO41", "MF60", "LT23", "LX03", "VT11", "CS15", "MB25", "ME80FN", "VL10", "COOISPI", "MD05", "CKM3N"];
-const TR = rng(7), TILES = []; for (let r = 0; r < 7; r++) for (let c = 0; c < 13; c++) TILES.push({ x: 60 + c * 140, y: 150 + r * 90, s: TC[Math.floor(TR() * TC.length)], f: 0.4 + TR(), p: TR() * 6.28 });
-const CPATH = [[5.8, -280, 430], [7.6, 400, 335], [9.6, 820, 610], [11.6, 1260, 290], [13.6, 1540, 585], [15.4, 1100, 430], [17.6, 960, 300], [130, 960, 300]];
+const TR = rng(7), TILES = []; for (let r = 0; r < 7; r++) for (let c = 0; c < 13; c++) TILES.push({ x: 60 + c * 140, y: 150 + r * 90, s: TC[Math.floor(TR() * TC.length)], f: 0.4 + TR(), p: TR() * 6.28, grid: 1 });
+// 穿越：每块事务码在纵深里有一个位置，镜头向前飞；减速后，墙上的那 91 块各自落回格子里，其余的淡出
+const FR = rng(77), FLY = [...TILES, ...Array.from({ length: 170 }, () => ({ s: TC[Math.floor(FR() * TC.length)], f: 1, p: 0, grid: 0 }))];
+FLY.forEach((k) => { k.X = (FR() - 0.5) * 4600; k.Y = (FR() - 0.5) * 2600; k.z0 = FR() * 3000; k.r = FR(); });
+const wspeed = (t) => 1700 * sm(5.2, 6.4, t) * (1 - sm(8.2, 10.6, t)), WPH = [0]; for (let i = 1; i <= 600; i++) WPH.push(WPH[i - 1] + wspeed(i * 0.02) * 0.02);
+const wph = (t) => WPH[Math.min(600, Math.floor(t / 0.02))];
+const CPATH = [[9.8, -280, 430], [11.2, 420, 335], [12.5, 860, 610], [13.8, 1300, 290], [15, 1540, 585], [16.2, 1100, 430], [17.6, 960, 300], [130, 960, 300]];
 function cardPos(t) { let i = 1; while (i < CPATH.length - 1 && t > CPATH[i][0]) i++; const a = CPATH[i - 1], b = CPATH[i], k = sm(a[0], b[0], t);
   return [lerp(a[1], b[1], k), lerp(a[2], b[2], k) + Math.sin(t * 1.7) * 8]; }
 function askCard(x, y, a, s = ASK, lit = 0) { const sv = GA; GA = a; const w = tw(s, 26) + 70; G(x, y, 260, 0.3 + 0.5 * lit); box(x - w / 2, y - 40, w, 80, 22, 0.97, 0.85, lit > 0.5 ? "#2a2114" : "#1b222e", GOLD, 1.5); txt(s, x, y + 1, 26, 1, WARM, "center"); GA = sv; }
-function scOpen(t) { if (t > 6) return; GA = win(t, 0.5, 5.8, 0.7); const n = Math.floor(OPEN.length * clamp((t - 1.2) / 2.4)), full = tw(OPEN, 60, SERIF) + 6 * (OPEN.length - 1), x = W / 2 - full / 2;
-  txt(OPEN.slice(0, n), x, 540, 60, 1, WARM, "left", SERIF, 400, 6);
-  if ((t * 1.6) % 1 < 0.55) { const cx = x + (n ? tw(OPEN.slice(0, n), 60, SERIF) + 6 * n : 0) + 8; ctx.globalAlpha = GA; ctx.fillStyle = GOLD; ctx.fillRect(cx, 508, 3, 64); } }
-function scWall(t) { if (t < 5.4 || t > 33.4) return; const wa = sm(5.4, 7.6, t) * (1 - 0.72 * sm(16.6, 19, t)) * (1 - sm(31.4, 33.3, t)), cp = cardPos(t), hunt = 1 - sm(16.4, 17.6, t);
-  GA = wa; for (const k of TILES) { const near = hunt * clamp(1 - Math.hypot(k.x + 60 - cp[0], k.y + 28 - cp[1]) / 250), a = 0.24 + 0.1 * Math.sin(t * k.f + k.p) + 0.6 * near;
-    box(k.x, k.y, 120, 56, 10, a * 0.7, a * (0.25 + 0.6 * near), "#10151d"); txt(k.s, k.x + 60, k.y + 29, 19, a, near > 0.3 ? WARM : SUB, "center", MONO); }
-  askCard(cp[0], cp[1], sm(5.8, 6.5, t) * (1 - sm(28.2, 29.2, t))); }
+function scOpen(t) { if (t > 6.6) return; GA = 1;
+  const beat = pulse(t, 0.5, 0.5) + pulse(t, 1.15, 0.6), st = sm(1.6, 2.6, t), zoom = sm(5.2, 6.4, t), out = 1 - zoom;      // 心跳两下，拉成一道线
+  const w = lerp(16 * (1 + 0.5 * beat), 1040, eo(st)), h = lerp(16 * (1 + 0.5 * beat), 2, sm(1.6, 2.1, t)), ly = 590 + 60 * zoom;
+  const a0 = sm(0.2, 0.5, t) * out; G(960, ly, 60 + 140 * beat + 500 * st, a0 * (0.35 + 0.4 * beat));
+  ctx.globalAlpha = a0; ctx.fillStyle = st > 0.5 ? "#e6c58f" : ORANGE; ctx.fillRect(Math.round(960 - w * (1 + zoom) / 2), Math.round(ly - h / 2), Math.round(w * (1 + zoom)), Math.max(2, Math.round(h)));
+  if (t > 2) { ctx.save(); const k = 1 + 0.7 * zoom * zoom; ctx.translate(960, 500); ctx.scale(k, k); ctx.font = `400 76px ${SERIF}`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    const ws = [...OPEN].map((c) => ctx.measureText(c).width + 10), full = ws.reduce((a, b) => a + b, 0) - 10; let x = -full / 2; const sweep = lerp(-full / 2 - 200, full / 2 + 200, sm(3.9, 5.1, t));
+    [...OPEN].forEach((c, i) => { const a = sm(2.1 + i * 0.1, 2.9 + i * 0.1, t) * out, sh = clamp(1 - Math.abs(x + ws[i] / 2 - sweep) / 170);      // 字从线上升起，一道光扫过
+      if (a > 0.004) { if (sh > 0) G(x + ws[i] / 2, 0, 90, a * sh * 0.5); ctx.globalAlpha = a; ctx.fillStyle = sh > 0.5 ? "#ffffff" : WARM; ctx.fillText(c, x, 44 * (1 - eo(a))); } x += ws[i]; });
+    ctx.restore(); } }
+function scWall(t) { if (t < 5.2 || t > 33.4) return; const wa = sm(5.3, 6.3, t) * (1 - 0.72 * sm(16.6, 19, t)) * (1 - sm(31.4, 33.3, t)), cp = cardPos(t), hunt = sm(10.6, 11.4, t) * (1 - sm(16.4, 17.6, t));
+  GA = wa; const ph = wph(t), vn = wspeed(t) / 1700, ghost = 1 - sm(8.4, 10.2, t), list = [];
+  for (const k of FLY) { if (!k.grid && ghost <= 0) continue; const w = k.grid ? sm(8.7 + k.r * 0.9, 10.2 + k.r * 0.9, t) : 0, z = (((k.z0 - ph) % 3000) + 3000) % 3000 + 110;
+    let sc = 700 / z, x = 960 + k.X * sc, y = 540 + k.Y * sc, a = sm(110, 460, z) * (1 - sm(2400, 3110, z)) * (k.grid ? 1 : ghost);
+    if (w > 0) { x = lerp(x, k.x + 60, w); y = lerp(y, k.y + 28, w); sc = lerp(sc, 1, w); a = lerp(a, 1, w); }
+    if (a > 0.01 && x > -400 && x < W + 400 && y > -300 && y < H + 300) list.push([z * (1 - w), x, y, sc, a, k, w]); }
+  list.sort((p, q) => q[0] - p[0]);
+  for (const [, x, y, sc, a0, k, w] of list) { const near = hunt * clamp(1 - Math.hypot(x - cp[0], y - cp[1]) / 250), a = a0 * lerp(0.55, 0.24 + 0.1 * Math.sin(t * k.f + k.p), w) + 0.6 * near;
+    if (vn > 0.05 && w < 1) line([x, y], [960 + (x - 960) * (1 - 0.2 * vn), 540 + (y - 540) * (1 - 0.2 * vn)], a * 0.45 * vn * (1 - w), Math.max(1, 4 * sc));      // 飞行时的拖影
+    box(x - 60 * sc, y - 28 * sc, 120 * sc, 56 * sc, 10 * sc, a * 0.7, a * (0.25 + 0.6 * near + 0.3 * (1 - w)), "#10151d"); if (sc > 0.28) txt(k.s, x, y + sc, 19 * sc, a, near > 0.3 || w < 0.5 ? WARM : SUB, "center", MONO); }
+  if (vn > 0.02) { GA = 1; G(960, 540, 300 + 500 * vn, 0.18 * vn); }
+  askCard(cp[0], cp[1], sm(9.8, 10.5, t) * (1 - sm(28.2, 29.2, t))); }
 
 // ───────── 诞生 ─────────
 const SAY = "能不能，直接问？", CODE1 = "> zcl_ai_chat=>ask( '今天开了多少工单？' ).";
@@ -276,12 +296,19 @@ function scReturn(t) { if (t < 92.6 || t > 119.5) return; const ta = sm(92.8, 94
 
 // ───────── 满天的星，聚成它的名字 ─────────
 const LAST = "那么，你想问什么？";
-function scEnd(t) { if (t < 112) return; GA = 1; const k1 = sm(114.4, 117.4, t), k2 = sm(118.6, 120.8, t);
+function scEnd(t) { if (t < 112) return; GA = 1; const k1 = sm(114.4, 117.4, t), k2 = sm(117.4, 119.4, t);
   G(960, WMY, 560 + 200 * pulse(t, 116.2, 2.5), 0.2 * k1 + 0.35 * pulse(t, 116.2, 2.5));
   const gr = ctx.createLinearGradient(0, WMY - 110, 0, WMY + 110); gr.addColorStop(0, "#fff6e4"); gr.addColorStop(1, "#e2c08a");
   txt("灵犀", 960, WMY, 240, k1, gr, "center", SERIF, 400, 60); txt("让想法成为结果。", 960, 604, 38, k2, "#d9cdb4", "center", SERIF, 300, 12);
   GA = sm(123.4, 123.8, t); if (GA > 0) { const n = Math.floor(LAST.length * clamp((t - 123.6) / 1.5)), full = tw(LAST, 34, SERIF) + 5 * (LAST.length - 1), x = W / 2 - full / 2;
     txt(LAST.slice(0, n), x, 920, 34, 0.95, WARM, "left", SERIF, 400, 5); if ((t * 1.6) % 1 < 0.55) { ctx.globalAlpha = GA; ctx.fillStyle = GOLD; ctx.fillRect(x + (n ? tw(LAST.slice(0, n), 34, SERIF) + 5 * n : 0) + 6, 900, 3, 40); } } }
+
+// 画面里的话：衬线字，一个字一个字浮出来
+function narr(t, t0, t1, x, y, s, size, align = "left", ls = 4, base = WARM) { if (t <= t0 || t >= t1) return; const out = 1 - sm(t1 - 0.6, t1, t), chars = []; let gold = false, sum = 0;
+  ctx.font = `400 ${size}px ${SERIF}`; for (const ch of s) { if (ch === "*") { gold = !gold; continue; } chars.push([ch, sum, gold]); sum += ctx.measureText(ch).width + ls; }
+  const x0 = align === "center" ? x - (sum - ls) / 2 : x; ctx.save(); ctx.shadowColor = "rgba(4,6,9,.95)"; ctx.shadowBlur = 24; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  chars.forEach(([ch, dx, g], i) => { const k = sm(t0 + i * 0.05, t0 + i * 0.05 + 0.5, t), a = k * out; if (a <= 0.004) return; ctx.globalAlpha = a; ctx.fillStyle = g ? GOLD : base; ctx.fillText(ch, x0 + dx, y + (1 - k) * 14); });
+  ctx.restore(); }
 
 // ───────── 一帧 ─────────
 function draw(t) {
@@ -291,8 +318,10 @@ function draw(t) {
   scOpen(t); scWall(t); scBirth(t); scWorld(t); scNight(t); scReturn(t); scEnd(t);
   drawActor();
   const fl = pulse(t, 73.35, 1.8); if (fl > 0.01) { ctx.globalAlpha = fl * 0.6; ctx.fillStyle = "#f6dfb4"; ctx.fillRect(0, 0, W, H); }                  // 走进门的那一下
-  for (const [p, q, s] of CAPS) if (t > p && t < q) { GA = win(t, p, q, 0.5); const g = ctx.createLinearGradient(0, 860, 0, 1080); g.addColorStop(0, "rgba(5,7,10,0)"); g.addColorStop(0.6, "rgba(5,7,10,.75)"); g.addColorStop(1, "rgba(5,7,10,.9)");
-    ctx.globalAlpha = GA; ctx.fillStyle = g; ctx.fillRect(0, 860, W, 220); txt(s, 960, 986 + 6 * (1 - GA), 36, 1, WARM, "center", SANS, 400, 3); }
+  for (const [p, q, at, s1, s2] of NARR) if (t > p && t < q) {
+    if (at === "c") { line([96, 70], [96, 114], 0.7 * win(t, p, q, 0.5), 2); narr(t, p, q, 120, 92, s1, 44); }
+    else if (at === "m") { narr(t, p, q, 90, 266, s1, 52, "left", 5); if (s2) narr(t, p + 0.7, q, 92, 328, s2, 31, "left", 3, "rgb(217,205,180)"); }
+    else narr(t, p, q, 960, 604, s1, 38, "center", 12, "#d9cdb4"); }
   const blk = Math.max(1 - sm(0, 0.9, t), sm(127.6, 129.7, t)); if (blk > 0) { ctx.globalAlpha = blk; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); }
   ctx.globalAlpha = 1;
 }
