@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.argv[2] || 8094);
-const types = { ".html": "text/html; charset=utf-8", ".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".json": "application/json", ".svg": "image/svg+xml" };
+const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".json": "application/json", ".svg": "image/svg+xml" };
 
 http.createServer((req, res) => {
   const rel = decodeURIComponent(new URL(req.url, "http://x").pathname).replace(/^\/+/, "") || "index.html";

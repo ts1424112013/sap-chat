@@ -21,6 +21,7 @@ body.playing{cursor:none}
 <div id="start"><div class="p">▶</div><p>点击开始播放（请打开声音）<br><kbd>空格</kbd> 暂停 / 继续　<kbd>←</kbd> <kbd>→</kbd> 上一段 / 下一段　<kbd>R</kbd> 从头　<kbd>F</kbd> 全屏</p></div>
 <audio id="music" src="music.m4a" preload="auto"></audio>
 
+<script src="beat.js"></script>
 <script>
 "use strict";
 // ───────── 真实数据：仓库 2026-10-05 至 2026-11-11 每天的提交次数（git log 统计）。每一次提交，是片中的一颗星 ─────────
@@ -31,7 +32,7 @@ const dlabel = (i) => i < 27 ? `10.${p2(5 + i)}` : `11.${p2(i - 26)}`;          
 const ASK = "ABG1 工厂今天开了多少工单？";
 // 画面里的话 [开始, 结束, 位置, 第一行, 第二行]。位置：c 左上角（墙的场景）、m 左侧日期下方（原野和星空）、e「灵犀」正下方。*…* 之间的字用金色
 const NARR = [[11.2, 13.8, "c", "答案，都在 *SAP* 里。"], [14.2, 17, "c", "可想问一句，得先知道敲哪个*事务码*。"],
-  [19.8, 23.2, "c", "2026 年 10 月，有人换了个问法。"], [24.4, 29, "c", "于是，*第一行代码*写了下来。"], [29.8, 32.6, "c", "它最早的名字，叫 *Gale-SAP*。"],
+  [18.4, 23.2, "c", "2026 年 10 月，有人换了个问法。"], [24.4, 29, "c", "于是，*第一行代码*写了下来。"], [29.8, 32.6, "c", "它最早的名字，叫 *Gale-SAP*。"],
   [34.8, 41, "m", "它先学会*听*。", "一句话里，有工厂、日期，和你想要的东西。"], [43.4, 49.8, "m", "再学会*找*。", "从几百万行里，捞出对的那几行。"],
   [52, 59, "m", "名字换了三次。", "留下来的那个，叫*灵犀*。"], [61.6, 67.8, "m", "然后，它长出了*手*。", "画图、报表、定时、Excel、代码、文档。"],
   [70, 75.2, "m", "11 月 9 日，", "它走进了 *SAP*。"],
@@ -84,16 +85,30 @@ function pointer(x, y, s, a) { if (a <= 0.004) return; G(x + 6 * s, y + 10 * s, 
 function bubble(cx, cy, s, size, a, gold) { if (a <= 0.004) return; const w = tw(s, size) + size * 1.8, h = size * 2.4;
   box(cx - w / 2, cy - h / 2, w, h, h * 0.42, a * 0.96, a * 0.8, gold ? "#221c12" : "#1b222e", gold ? GOLD : "#d97757", 1.4); txt(s, cx, cy + 1, size, a, WARM, "center"); }
 
+// ───────── 音乐：画面跟着配乐起伏（数据在 beat.js，由 music.m4a 离线分析得到） ─────────
+const ONS = MUSIC.ons, BIGS = ONS.filter((o, i) => o[1] >= 0.7).map((o) => o[0]).filter((v, i, a) => !i || v - a[i - 1] > 0.45);   // 起音点；间隔开的重音
+function onsIdx(t) { let a = 0, b = ONS.length - 1; if (t < ONS[0][0]) return -1; while (a < b) { const m = (a + b + 1) >> 1; ONS[m][0] <= t ? a = m : b = m - 1; } return a; }
+function beat(t, min = 0) { let p = 0; for (let i = onsIdx(t), k = 0; i >= 0 && k < 10; i--, k++) { const age = t - ONS[i][0]; if (age > 1.2) break; if (ONS[i][1] >= min) p = Math.max(p, ONS[i][1] * Math.exp(-age * 7)); } return p; }
+const env = (a, t) => { const x = clamp(t * 20, 0, a.length - 1.001), i = Math.floor(x); return lerp(a[i], a[i + 1], x - i); };
+const bigAge = (t) => { let g = 9; for (const b of BIGS) { if (b > t) break; g = t - b; } return g; };
+let NOW = 0, OI = -1, BT = 0, BIG = 0, LO = 0, HI = 0;      // 本帧：时间、最近的起音点、节拍脉冲、重音脉冲、低频、高频
+const tflash = (k) => BT * (Math.sin(k.p * 50 + OI * 2.4) > 0.5 ? 1 : 0.15);                                  // 每个起音点，墙上随机亮起一批事务码
+function gline(x0, x1, y, hx, a) { if (x1 <= x0 || a <= 0.004) return; ctx.globalAlpha = clamp(a * GA); ctx.strokeStyle = GOLD; ctx.lineWidth = 1.3; ctx.beginPath();   // 地平线：每个起音点从小人脚下荡开一圈波纹
+  for (let x = x0; x < x1 + 16; x += 16) { const xx = Math.min(x, x1); let dy = 0;
+    for (let k = 0; k < 5 && OI - k >= 0; k++) { const age = NOW - ONS[OI - k][0]; if (age > 2.2) break; const d = (Math.abs(xx - hx) - age * 1000) / 110; dy -= ONS[OI - k][1] * 14 * Math.exp(-age * 1.5) * Math.exp(-d * d); }
+    x === x0 ? ctx.moveTo(xx, y + dy) : ctx.lineTo(xx, y + dy); } ctx.stroke(); }
+const TT = [61.71, 62.5, 63.05, 64.1, 64.9, 65.96];           // 六样工具弹出的时刻（落在重音上）
+
 // ───────── 主角：橙色像素小人（16×10 格；姿态变化都以整格为单位，每个镜头里一格的像素数是整数） ─────────
 const ORANGE = "#d97757", EYE = "#17110e";
 const CELLS = []; for (let r = 0; r < 8; r++) for (let c = 2; c < 14; c++) CELLS.push([c, r]);
 [0, 1, 14, 15].forEach((c) => [4, 5].forEach((r) => CELLS.push([c, r]))); [3, 5, 10, 12].forEach((c) => [8, 9].forEach((r) => CELLS.push([c, r])));
 // 位置关键帧 [时刻, x, y, 方式]：两帧之间走过去（脚自动迈步），方式为 "hop" 时跳过去。成长段（33–75 秒）的 x 是世界坐标，镜头跟着它走。
-const POS = [[26.6, 960, 640], [33.15, 960, 640],
-  [33.2, 0, 800], [41, 0, 800], [42.8, 1500, 800], [44.3, 1500, 800], [44.9, 1640, 730, "hop"], [45.7, 1640, 730], [46.3, 1780, 670, "hop"], [47.1, 1780, 670], [47.7, 1920, 610, "hop"], [49.1, 1920, 610], [49.9, 2250, 800, "hop"],
-  [51.6, 3000, 800], [52.6, 3000, 800], [53.6, 3340, 800], [54.5, 3340, 800], [55.5, 3680, 800], [59.2, 3680, 800], [61, 5200, 800], [68, 5200, 800], [69.8, 6700, 800], [72.2, 6700, 800], [73.3, 7100, 800], [75.9, 7100, 800],
+const POS = [[26.6, 960, 640], [32.8, 960, 640],
+  [32.84, 0, 800], [41, 0, 800], [42.8, 1500, 800], [44.3, 1500, 800], [44.9, 1640, 730, "hop"], [45.5, 1640, 730], [46.1, 1780, 670, "hop"], [47.1, 1780, 670], [47.7, 1920, 610, "hop"], [48.95, 1920, 610], [49.75, 2250, 800, "hop"],
+  [51.6, 3000, 800], [52.6, 3000, 800], [53.6, 3340, 800], [54.5, 3340, 800], [55.5, 3680, 800], [59.2, 3680, 800], [61, 5200, 800], [68, 5200, 800], [69.8, 6700, 800], [72.5, 6700, 800], [73.6, 7100, 800], [75.9, 7100, 800],
   [76.2, 700, 880], [92.9, 700, 880],
-  [93.6, 300, 800], [96.4, 300, 800], [99.2, 1250, 800], [100.6, 1250, 800], [101.4, 960, 800], [130, 960, 800]];
+  [93.43, 300, 800], [96.5, 300, 800], [99.18, 1250, 800], [100.6, 1250, 800], [101.4, 960, 800], [130, 960, 800]];
 const SEG = []; { let c = 0; for (let i = 1; i < POS.length; i++) { const a = POS[i - 1], b = POS[i], len = Math.hypot(b[1] - a[1], b[2] - a[2]), dur = b[0] - a[0];
   const n = len < 1 || b[3] ? 0 : Math.max(1, Math.round(Math.min(len / 46, dur * 6))); SEG.push([c, n]); c += n; } }
 function posAt(t) { let i = 1; while (i < POS.length - 1 && t > POS[i][0]) i++;
@@ -102,26 +117,26 @@ function posAt(t) { let i = 1; while (i < POS.length - 1 && t > POS[i][0]) i++;
 const camAt = (t) => Math.min(posAt(t).x, 6700) - 820;       // 成长段的镜头：跟着小人，到门前停住
 // 表演：目光 [开始, 结束, 左右, 上下]、短肢 [开始, 结束, 左高低, 右高低, 左伸出, 右伸出]、挥手、点头、小跳 [时刻, 高度]、下蹲、侧倾
 const LOOK = [[27.4, 28, -1, 0], [28, 28.6, 1, 0], [29.7, 31, 0, -1],
-  [34.2, 36.8, 0, -1], ...[0, 1, 2, 3, 4].map((k) => [36.8 + k * 0.6, 37.4 + k * 0.6, k % 2 ? -1 : 1, 0]), [39.8, 40.9, 0, -1],
+  [34.2, 36.2, 0, -1], ...[0, 1, 2, 3, 4, 5].map((k) => [36.2 + k * 0.6, 36.8 + k * 0.6, k % 2 ? -1 : 1, 0]), [39.8, 40.9, 0, -1],
   [42.8, 44.3, 1, 1], [47.8, 49.1, 0, -1], [51.6, 52.6, 0, -1], [53.6, 54.5, 0, -1], [55.5, 58.2, 0, -1],
-  ...[0, 1, 2, 3, 4, 5].map((k) => [61.6 + k * 0.8, 62.4 + k * 0.8, k % 2 ? -1 : 1, -1]), [66.4, 68, 0, -1], [69.8, 71.4, 1, -1], [71.4, 72.2, 0, 0],
+  ...[0, 1, 2, 3, 4, 5].map((k) => [TT[k], TT[k] + 0.75, k % 2 ? -1 : 1, -1]), [66.4, 68, 0, -1], [69.8, 71.4, 1, -1], [71.4, 72.2, 0, 0],
   [76.4, 84, 1, -1], [84, 85.4, 1, 0], [85.4, 88.2, 0, -1], [88.2, 89.6, 1, 0], [89.6, 92.9, 0, -1],
-  [94.3, 96.4, 1, -1], [99.2, 100.6, 1, 0], ...[0, 1, 2, 3, 4, 5, 6].map((k) => [101.7 + k, 102.7 + k, k % 2 ? 1 : -1, -1]), [109.6, 119.4, 0, -1]];
-const ARMS = [[35.4, 36.8, -5, -5, 0, 0], [47.9, 49.1, -5, -5, 0, 0], [56.05, 56.5, -5, -5, 0, 0],
-  ...[0, 1, 2, 3, 4, 5].map((k) => [61.6 + k * 0.8, 62.1 + k * 0.8, k % 2 ? -4 : 0, k % 2 ? 0 : -4, k % 2 ? 1 : 0, k % 2 ? 0 : 1]), [67.2, 67.9, -5, -5, 0, 0],
-  [79, 81.6, 0, -4, 0, 1], [95.1, 99.3, -5, -5, 0, 0], [99.3, 100.2, 0, -2, 0, 1],
+  [94.2, 96.5, 1, -1], [99.2, 100.6, 1, 0], ...[0, 1, 2, 3, 4, 5, 6].map((k) => [101.7 + k, 102.7 + k, k % 2 ? 1 : -1, -1]), [109.6, 119.4, 0, -1]];
+const ARMS = [[35.1, 36.2, -5, -5, 0, 0], [47.9, 48.95, -5, -5, 0, 0], [56.66, 57.25, -5, -5, 0, 0],
+  ...[0, 1, 2, 3, 4, 5].map((k) => [TT[k], TT[k] + 0.5, k % 2 ? -4 : 0, k % 2 ? 0 : -4, k % 2 ? 1 : 0, k % 2 ? 0 : 1]), [66.9, 67.7, -5, -5, 0, 0],
+  [79, 81.6, 0, -4, 0, 1], [94.95, 99.2, -5, -5, 0, 0], [99.2, 100.2, 0, -2, 0, 1],
   ...[0, 1, 2, 3, 4, 5, 6].map((k) => [102.6 + k, 103 + k, k % 2 ? 0 : -4, k % 2 ? -4 : 0, k % 2 ? 0 : 1, k % 2 ? 1 : 0])];
-const WAVE = [[31.3, 32.7], [121, 123.2]], NODS = [30.3, 39.4, 72, 86.2, 90.3, 119.6];
-const HOPS = [[28.9, 56], [56, 190], [67.2, 60], [100.25, 44], [116.4, 50]], SQUAT = [[35.55, 35.75], [95.2, 95.4]], LEAN = [[70.4, 71.4, -1]];
+const WAVE = [[31.2, 32.4], [122, 124]], NODS = [30.3, 39.4, 72.2, 86.15, 90.3, 119.9];
+const HOPS = [[28.62, 56], [56.61, 190], [66.89, 60], [100.63, 44], [116.83, 50]], SQUAT = [[35.25, 35.45], [95.05, 95.25]], LEAN = [[70.4, 71.4, -1]];
 const hit = (L, t) => L.find((w) => t >= w[0] && t < w[1]);
 const A = { a: 0 };
 function actor(t) {
   const P = posAt(t), o = { a: 0, u: 12, x: P.x, y: P.y, ex: 0, ey: 0, aL: 0, aR: 0, rL: 0, rR: 0, lean: 0, crouch: 0, tuck: 0, yo: 0, legs: 0, blink: t % 3.3 < 0.12 || (t + 1.1) % 7.9 < 0.12 };
   const drop = (t0) => { if (t < t0 + 0.7) { o.yo = -700 * (1 - eo((t - t0) / 0.7)); o.tuck = 1; } else if (t < t0 + 0.85) o.crouch = 1; };
-  if (t >= 26.6 && t < 33.2) { o.u = 16; o.a = 1 - sm(32.8, 33.2, t); if (t < 27.1) o.blink = true; }                                          // 诞生
-  else if (t >= 33.2 && t < 75) { o.a = sm(33.2, 33.5, t) * (1 - sm(73, 73.4, t)); o.x -= camAt(t); drop(33.2); }                             // 成长
+  if (t >= 26.6 && t < 32.84) { o.u = 16; o.a = 1 - sm(32.4, 32.8, t); if (t < 27.1) o.blink = true; }                                          // 诞生
+  else if (t >= 32.84 && t < 75) { o.a = sm(32.84, 33.1, t) * (1 - sm(73.3, 73.7, t)); o.x -= camAt(t); drop(32.84); }                             // 成长
   else if (t >= 76.2 && t < 92.9) { o.u = 16; o.a = win(t, 76.4, 92.9, 0.5); }                                                                 // 看星
-  else if (t >= 93.6) { o.a = sm(93.6, 93.9, t); drop(93.6); }                                                                                 // 回到墙前，直到谢幕
+  else if (t >= 93.43) { o.a = sm(93.43, 93.7, t); drop(93.43); }                                                                                 // 回到墙前，直到谢幕
   if (o.a <= 0) { A.a = 0; return; }
   if (P.moving) { o.ex = Math.sign(P.dx); if (P.mode === "hop") { o.yo = -90 * Math.sin(Math.PI * P.k); o.tuck = 1; } else o.legs = P.phase % 1 < 0.5 ? 1 : 2; }
   else if (t % 6.1 > 4.6 && t % 6.1 < 5.1) o.ex = Math.floor(t / 6.1) % 2 ? 1 : -1;
@@ -133,7 +148,8 @@ function actor(t) {
   for (const [h0, hh] of HOPS) { const v = t - h0;           // 压低 → 起跳 → 收脚 → 落地缓冲 → 站稳
     if (v >= 0 && v < 0.14) o.crouch = 1; else if (v >= 0.14 && v < 0.5) { const k = (v - 0.14) / 0.36; o.yo = -hh * 4 * k * (1 - k); o.tuck = k > 0.12 && k < 0.88 ? 1 : 0; } else if (v >= 0.5 && v < 0.62) o.crouch = 1; }
   const ln = hit(LEAN, t); if (ln) o.lean = ln[2];
-  o.br = P.moving || o.crouch || o.tuck ? 0 : Math.round(1 + Math.sin(t * 2.1));                                                               // 站着时随呼吸起伏 0–2 像素
+  if (!P.moving && !o.crouch && !o.tuck && t > 27.2 && bigAge(t) < 0.1) o.crouch = 1;                                                           // 重音上，身体跟着顿一下
+  o.br = P.moving || o.crouch || o.tuck ? 0 : Math.round(1 + Math.sin(t * 2.1) + 2.5 * BT);                                                               // 站着时随呼吸起伏 0–2 像素
   o.top = o.y + o.yo - 10 * o.u + (o.crouch ? o.u : 0);                                                                                       // 头顶
   Object.assign(A, o);
 }
@@ -148,7 +164,7 @@ function drawActor() { if (A.a <= 0.004) return;
   ctx.fillRect(bx + (4 + A.ex) * u, ey, u, eh); ctx.fillRect(bx + (11 + A.ex) * u, ey, u, eh); ctx.globalAlpha = 1; }
 
 // ───────── 星空：每一次提交是一颗星，在它发生的那一天从小人身边升起；同一天的星连成一个小星座 ─────────
-const TDAY = [[0, 34.2], [4, 40.6], [6, 43.2], [17, 49.6], [19, 52.2], [22, 56.3], [23, 61.6], [34, 67.4], [35, 73.4], [36, 77], [37, 78.2]];   // 第几天 ↔ 片中时刻
+const TDAY = [[0, 34.2], [4, 40.6], [6, 43.2], [17, 49.6], [19, 52.2], [22, 57], [23, 61.71], [34, 67.4], [35, 73.7], [36, 77], [37, 78.2]];   // 第几天 ↔ 片中时刻
 function tday(i) { let k = 1; while (k < TDAY.length - 1 && i > TDAY[k][0]) k++; const a = TDAY[k - 1], b = TDAY[k]; return lerp(a[1], b[1], clamp((i - a[0]) / (b[0] - a[0]))); }
 const dayAt = (t) => { let d = 0; for (let i = 0; i < ND; i++) if (tday(i) <= t) d = i; return d; };
 const WMY = 400, SR = rng(31), STARS = [];
@@ -164,11 +180,11 @@ function glyphs() {                                           // 「灵犀」两
 function starPos(s, t) { const k = eo((t - s.t0) / 1.6); let x = lerp(s.lx, s.x, k), y = lerp(s.ly, s.y, k) - Math.sin(k * Math.PI) * 40;
   const c = sm(110.2 + s.d, 113.6 + s.d, t); if (c > 0) { const sw = Math.sin(c * Math.PI) * 90; x = lerp(x, s.tx, c) + Math.cos(s.p) * sw; y = lerp(y, s.ty, c) + Math.sin(s.p) * sw; }
   return [x, y, k, c]; }
-function sky(t) { if (t < 34) return; GA = 1; const dimA = 1 - 0.5 * win(t, 93, 110.4, 1), la = 0.16 * sm(78, 82, t) * (1 - sm(108.5, 110.2, t)) * dimA, fin = 1 - 0.45 * sm(117, 121, t); let prev = null, pp = null;
-  for (const s of STARS) { if (t < s.t0) { prev = null; continue; } const q = starPos(s, t);
+function sky(t) { if (t < 34) return; GA = 1; const dimA = 1 - 0.5 * win(t, 93, 110.4, 1), la = 0.16 * sm(78, 82, t) * (1 - sm(108.5, 110.2, t)) * dimA, fin = 1 - 0.45 * sm(117, 121, t); let prev = null, pp = null, si = -1;
+  for (const s of STARS) { si++; if (t < s.t0) { prev = null; continue; } const q = starPos(s, t);
     if (la > 0 && prev && prev.day === s.day) line(pp, q, la, 1);
-    const a = s.b * (0.6 + 0.4 * Math.sin(t * s.f + s.p)) * dimA * (q[3] >= 1 ? fin : 1) + (1 - q[2]) * 0.6;
-    G(q[0], q[1], (7 + 6 * s.b + 12 * (1 - q[2])) * (1 - 0.35 * q[3]), a); ctx.globalAlpha = clamp(a + 0.2); ctx.fillStyle = "#fff3dc"; ctx.fillRect(q[0] - 1, q[1] - 1, 2, 2); prev = s; pp = q; } }
+    const fl = BT * ((si + OI) % 3 === 0 ? 1 : 0.2), a = s.b * (0.6 + 0.4 * Math.sin(t * s.f + s.p)) * dimA * (q[3] >= 1 ? fin : 1) * (1 + 1.1 * fl) + (1 - q[2]) * 0.6;   // 每个起音点，三分之一的星闪一下
+    G(q[0], q[1], (7 + 6 * s.b + 12 * (1 - q[2])) * (1 - 0.35 * q[3]) * (1 + 0.7 * fl), a); ctx.globalAlpha = clamp(a + 0.2); ctx.fillStyle = "#fff3dc"; ctx.fillRect(q[0] - 1, q[1] - 1, 2, 2); prev = s; pp = q; } }
 function hills(off, base, amp, col, a) { ctx.globalAlpha = clamp(a * GA); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, H);
   for (let x = 0; x <= W; x += 40) { const wx = x + off; ctx.lineTo(x, base + Math.sin(wx * 0.0021) * amp + Math.sin(wx * 0.0057 + 1.3) * amp * 0.45); } ctx.lineTo(W, H); ctx.closePath(); ctx.fill(); }
 function hud(t, a) { GA = a; const d = dayAt(t); let n = 0; for (const s of STARS) if (t >= s.t0) n++;
@@ -181,42 +197,42 @@ const TR = rng(7), TILES = []; for (let r = 0; r < 7; r++) for (let c = 0; c < 1
 // 穿越：每块事务码在纵深里有一个位置，镜头向前飞；减速后，墙上的那 91 块各自落回格子里，其余的淡出
 const FR = rng(77), FLY = [...TILES, ...Array.from({ length: 170 }, () => ({ s: TC[Math.floor(FR() * TC.length)], f: 1, p: 0, grid: 0 }))];
 FLY.forEach((k) => { k.X = (FR() - 0.5) * 4600; k.Y = (FR() - 0.5) * 2600; k.z0 = FR() * 3000; k.r = FR(); });
-const wspeed = (t) => 1700 * sm(5.2, 6.4, t) * (1 - sm(8.2, 10.6, t)), WPH = [0]; for (let i = 1; i <= 600; i++) WPH.push(WPH[i - 1] + wspeed(i * 0.02) * 0.02);
+const wspeed = (t) => 1700 * sm(5.3, 5.7, t) * (1 - sm(7.6, 9.63, t)), WPH = [0]; for (let i = 1; i <= 600; i++) WPH.push(WPH[i - 1] + wspeed(i * 0.02) * 0.02);
 const wph = (t) => WPH[Math.min(600, Math.floor(t / 0.02))];
 const CPATH = [[9.8, -280, 430], [11.2, 420, 335], [12.5, 860, 610], [13.8, 1300, 290], [15, 1540, 585], [16.2, 1100, 430], [17.6, 960, 300], [130, 960, 300]];
 function cardPos(t) { let i = 1; while (i < CPATH.length - 1 && t > CPATH[i][0]) i++; const a = CPATH[i - 1], b = CPATH[i], k = sm(a[0], b[0], t);
   return [lerp(a[1], b[1], k), lerp(a[2], b[2], k) + Math.sin(t * 1.7) * 8]; }
 function askCard(x, y, a, s = ASK, lit = 0) { const sv = GA; GA = a; const w = tw(s, 26) + 70; G(x, y, 260, 0.3 + 0.5 * lit); box(x - w / 2, y - 40, w, 80, 22, 0.97, 0.85, lit > 0.5 ? "#2a2114" : "#1b222e", GOLD, 1.5); txt(s, x, y + 1, 26, 1, WARM, "center"); GA = sv; }
-function scOpen(t) { if (t > 6.6) return; GA = 1;
-  const beat = pulse(t, 0.5, 0.5) + pulse(t, 1.15, 0.6), st = sm(1.6, 2.6, t), zoom = sm(5.2, 6.4, t), out = 1 - zoom;      // 心跳两下，拉成一道线
-  const w = lerp(16 * (1 + 0.5 * beat), 1040, eo(st)), h = lerp(16 * (1 + 0.5 * beat), 2, sm(1.6, 2.1, t)), ly = 590 + 60 * zoom;
-  const a0 = sm(0.2, 0.5, t) * out; G(960, ly, 60 + 140 * beat + 500 * st, a0 * (0.35 + 0.4 * beat));
+function scOpen(t) { if (t > 6.2) return; GA = 1;
+  const hb = pulse(t, 0.06, 0.45) + 0.6 * pulse(t, 0.6, 0.4) + pulse(t, 1.13, 0.6), st = sm(1.2, 2.2, t), zoom = sm(5.05, 5.9, t), out = 1 - zoom;      // 跟着开头的三个音跳，再拉成一道线
+  const w = lerp(16 * (1 + 0.6 * hb), 1040, eo(st)), h = lerp(16 * (1 + 0.6 * hb), 2, sm(1.2, 1.7, t)), ly = 590 + 60 * zoom;
+  const a0 = sm(0, 0.1, t) * out; G(960, ly, 60 + 160 * hb + 500 * st + 160 * BIG, a0 * (0.35 + 0.4 * hb + 0.3 * BIG));
   ctx.globalAlpha = a0; ctx.fillStyle = st > 0.5 ? "#e6c58f" : ORANGE; ctx.fillRect(Math.round(960 - w * (1 + zoom) / 2), Math.round(ly - h / 2), Math.round(w * (1 + zoom)), Math.max(2, Math.round(h)));
-  if (t > 2) { ctx.save(); const k = 1 + 0.7 * zoom * zoom; ctx.translate(960, 500); ctx.scale(k, k); ctx.font = `400 76px ${SERIF}`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-    const ws = [...OPEN].map((c) => ctx.measureText(c).width + 10), full = ws.reduce((a, b) => a + b, 0) - 10; let x = -full / 2; const sweep = lerp(-full / 2 - 200, full / 2 + 200, sm(3.9, 5.1, t));
-    [...OPEN].forEach((c, i) => { const a = sm(2.1 + i * 0.1, 2.9 + i * 0.1, t) * out, sh = clamp(1 - Math.abs(x + ws[i] / 2 - sweep) / 170);      // 字从线上升起，一道光扫过
+  if (t > 1.4) { ctx.save(); const k = 1 + 0.7 * zoom * zoom; ctx.translate(960, 500); ctx.scale(k, k); ctx.font = `400 76px ${SERIF}`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    const ws = [...OPEN].map((c) => ctx.measureText(c).width + 10), full = ws.reduce((a, b) => a + b, 0) - 10; let x = -full / 2; const sweep = lerp(-full / 2 - 200, full / 2 + 200, sm(2.7, 3.8, t));
+    [...OPEN].forEach((c, i) => { const a = sm(1.5 + i * 0.09, 2.3 + i * 0.09, t) * out, sh = clamp(1 - Math.abs(x + ws[i] / 2 - sweep) / 170);      // 字从线上升起，一道光扫过
       if (a > 0.004) { if (sh > 0) G(x + ws[i] / 2, 0, 90, a * sh * 0.5); ctx.globalAlpha = a; ctx.fillStyle = sh > 0.5 ? "#ffffff" : WARM; ctx.fillText(c, x, 44 * (1 - eo(a))); } x += ws[i]; });
     ctx.restore(); } }
-function scWall(t) { if (t < 5.2 || t > 33.4) return; const wa = sm(5.3, 6.3, t) * (1 - 0.72 * sm(16.6, 19, t)) * (1 - sm(31.4, 33.3, t)), cp = cardPos(t), hunt = sm(10.6, 11.4, t) * (1 - sm(16.4, 17.6, t));
-  GA = wa; const ph = wph(t), vn = wspeed(t) / 1700, ghost = 1 - sm(8.4, 10.2, t), list = [];
-  for (const k of FLY) { if (!k.grid && ghost <= 0) continue; const w = k.grid ? sm(8.7 + k.r * 0.9, 10.2 + k.r * 0.9, t) : 0, z = (((k.z0 - ph) % 3000) + 3000) % 3000 + 110;
+function scWall(t) { if (t < 5.2 || t > 33.4) return; const wa = sm(5.3, 5.6, t) * (1 - 0.72 * sm(16.6, 19, t)) * (1 - sm(31.2, 32.8, t)), cp = cardPos(t), hunt = sm(10, 10.8, t) * (1 - sm(16.4, 17.6, t));
+  GA = wa; const ph = wph(t), vn = wspeed(t) / 1700, ghost = 1 - sm(7.8, 9.4, t), list = [];
+  for (const k of FLY) { if (!k.grid && ghost <= 0) continue; const w = k.grid ? sm(7.9 + k.r * 0.8, 8.83 + k.r * 0.8, t) : 0, z = (((k.z0 - ph) % 3000) + 3000) % 3000 + 110;
     let sc = 700 / z, x = 960 + k.X * sc, y = 540 + k.Y * sc, a = sm(110, 460, z) * (1 - sm(2400, 3110, z)) * (k.grid ? 1 : ghost);
     if (w > 0) { x = lerp(x, k.x + 60, w); y = lerp(y, k.y + 28, w); sc = lerp(sc, 1, w); a = lerp(a, 1, w); }
     if (a > 0.01 && x > -400 && x < W + 400 && y > -300 && y < H + 300) list.push([z * (1 - w), x, y, sc, a, k, w]); }
   list.sort((p, q) => q[0] - p[0]);
-  for (const [, x, y, sc, a0, k, w] of list) { const near = hunt * clamp(1 - Math.hypot(x - cp[0], y - cp[1]) / 250), a = a0 * lerp(0.55, 0.24 + 0.1 * Math.sin(t * k.f + k.p), w) + 0.6 * near;
+  for (const [, x, y, sc, a0, k, w] of list) { const near = hunt * clamp(1 - Math.hypot(x - cp[0], y - cp[1]) / 250), a = a0 * lerp(0.55, 0.24 + 0.1 * Math.sin(t * k.f + k.p) + 0.32 * tflash(k) + 0.5 * pulse(t, 9.63, 0.6), w) + 0.6 * near;
     if (vn > 0.05 && w < 1) line([x, y], [960 + (x - 960) * (1 - 0.2 * vn), 540 + (y - 540) * (1 - 0.2 * vn)], a * 0.45 * vn * (1 - w), Math.max(1, 4 * sc));      // 飞行时的拖影
     box(x - 60 * sc, y - 28 * sc, 120 * sc, 56 * sc, 10 * sc, a * 0.7, a * (0.25 + 0.6 * near + 0.3 * (1 - w)), "#10151d"); if (sc > 0.28) txt(k.s, x, y + sc, 19 * sc, a, near > 0.3 || w < 0.5 ? WARM : SUB, "center", MONO); }
-  if (vn > 0.02) { GA = 1; G(960, 540, 300 + 500 * vn, 0.18 * vn); }
-  askCard(cp[0], cp[1], sm(9.8, 10.5, t) * (1 - sm(28.2, 29.2, t))); }
+  GA = 1; if (vn > 0.02) G(960, 540, 300 + 500 * vn, 0.18 * vn); G(960, 540, 1000, 0.5 * pulse(t, 5.38, 0.6)); G(960, 450, 1300, 0.3 * pulse(t, 9.63, 0.9));      // 起飞和落成墙的两下，都在重音上
+  askCard(cp[0], cp[1], sm(9.8, 10.5, t) * (1 - sm(28.2, 29.2, t)), ASK, 0.5 * BIG * (t > 17 ? 1 : 0)); }
 
 // ───────── 诞生 ─────────
 const SAY = "能不能，直接问？", CODE1 = "> zcl_ai_chat=>ask( '今天开了多少工单？' ).";
-const BR = rng(13), BORN = CELLS.map(([c, r]) => { const k = TILES[Math.floor(BR() * TILES.length)]; return { c, r, x: k.x + BR() * 104, y: k.y + BR() * 40, t0: 23.2 + BR() * 2.2 }; });
+const BR = rng(13), BORN = CELLS.map(([c, r]) => { const k = TILES[Math.floor(BR() * TILES.length)]; return { c, r, x: k.x + BR() * 104, y: k.y + BR() * 40, t0: 23.98 + BR() * 1.5 }; });
 function scBirth(t) { if (t < 19.8 || t > 33.4) return;
-  GA = sm(20.4, 21, t) * (1 - sm(23.2, 24.2, t)); if (GA > 0) { const n = Math.floor(SAY.length * clamp((t - 20.9) / 1.4)), full = tw(SAY, 64, SERIF) + 8 * (SAY.length - 1), x = W / 2 - full / 2;
+  GA = sm(19.6, 20, t) * (1 - sm(23, 23.9, t)); if (GA > 0) { const n = Math.floor(SAY.length * clamp((t - 20) / 1.6)), full = tw(SAY, 64, SERIF) + 8 * (SAY.length - 1), x = W / 2 - full / 2;
     txt(SAY.slice(0, n), x, 470, 64, 1, WARM, "left", SERIF, 400, 8); pointer(x + (n ? tw(SAY.slice(0, n), 64, SERIF) + 8 * n : 0) + 26, 478 + Math.sin(t * 3) * 4, 2, 1); }
-  GA = 1; if (t >= 23.2 && t < 26.6) { ctx.fillStyle = ORANGE; for (const b of BORN) { const k = eo((t - b.t0) / 1.1); if (k <= 0) continue;                 // 像素从事务码墙上飞来，拼成小人
+  GA = 1; if (t >= 23.98 && t < 26.6) { ctx.fillStyle = ORANGE; for (const b of BORN) { const k = eo((t - b.t0) / 1.1); if (k <= 0) continue;                 // 像素从事务码墙上飞来，拼成小人
       ctx.globalAlpha = clamp(k * 3); ctx.fillRect(Math.round(lerp(b.x, 960 - 128 + b.c * 16, k)), Math.round(lerp(b.y, 480 + b.r * 16, k) - Math.sin(k * Math.PI) * 60), 16, 16); } }
   G(960, 560, 150 + 380 * pulse(t, 26.6, 1.6), pulse(t, 26.6, 1.6) * 0.6);
   GA = sm(24.5, 25, t) * (1 - sm(28.6, 29.4, t)); if (GA > 0) { const n = Math.floor(CODE1.length * clamp((t - 24.7) / 2.2)), x = W / 2 - tw(CODE1, 28, MONO) / 2;
@@ -227,7 +243,7 @@ function scBirth(t) { if (t < 19.8 || t > 33.4) return;
 // ───────── 成长：一路向右，五件事 ─────────
 const PR = rng(17), PEB = Array.from({ length: 220 }, () => [-900 + PR() * 9200, 6 + PR() * 60, 4 + PR() * 16, 0.1 + PR() * 0.3]);
 const CHIP3 = ["ABG1 工厂", "今天", "多少工单"], STONES = [[1640, 730], [1780, 670], [1920, 610]];
-const LAMPS = [[3000, "Gale-SAP", "10.05", 52, MONO, 30], [3340, "Momo", "10.24", 53.9, SANS, 36], [3680, "灵犀", "10.27", 56.22, SERIF, 48]];
+const LAMPS = [[3000, "Gale-SAP", "10.05", 52.41, MONO, 30], [3340, "Momo", "10.24", 53.9, SANS, 36], [3680, "灵犀", "10.27", 56.93, SERIF, 48]];
 const TOOLS = ["图表", "报表", "定时", "Excel", "代码", "文档"];
 function toolIcon(k, x, y, a) { const sv = GA; GA = sv * a; G(x, y, 80, 0.25); ctx.globalAlpha = clamp(GA * 0.96); ctx.fillStyle = "#161c27"; ctx.beginPath(); ctx.arc(x, y, 46, 0, 6.3); ctx.fill(); ctx.globalAlpha = clamp(GA * 0.8); ctx.strokeStyle = GOLD; ctx.lineWidth = 1.4; ctx.stroke();
   ctx.globalAlpha = clamp(GA); ctx.fillStyle = GOLD; ctx.lineWidth = 2.4; ctx.lineCap = "round";
@@ -238,66 +254,66 @@ function toolIcon(k, x, y, a) { const sv = GA; GA = sv * a; G(x, y, 80, 0.25); c
   else if (k === 4) txt("</>", x, y + 1, 26, 1, GOLD, "center", MONO, 600);
   else { ctx.strokeRect(x - 15, y - 20, 30, 40); ctx.beginPath(); [-9, 0, 9].forEach((d) => { ctx.moveTo(x - 8, y + d); ctx.lineTo(x + 8, y + d); }); ctx.stroke(); }
   txt(TOOLS[k], x, y + 68, 17, 0.8, SUB, "center"); GA = sv; }
-function scWorld(t) { if (t < 32.8 || t > 76.4) return; const ga = sm(32.8, 33.8, t) * (1 - sm(74.8, 76.2, t)), cam = camAt(t), X = (wx) => wx - cam; GA = ga;
+function scWorld(t) { if (t < 32.4 || t > 76.4) return; const ga = sm(32.4, 33.3, t) * (1 - sm(74.8, 76.2, t)), cam = camAt(t), X = (wx) => wx - cam; GA = ga;
   hills(cam * 0.12, 690, 46, "#0c121b", 0.9); hills(cam * 0.3 + 700, 752, 30, "#0a0f17", 0.95);
   const s0 = X(1380), s1 = X(2160);                          // 地面，在「数据的海」那里断开
   ctx.globalAlpha = ga * 0.96; ctx.fillStyle = "#06080c"; ctx.fillRect(0, 800, Math.max(0, s0), 280); ctx.fillRect(s1, 800, Math.max(0, W - s1), 280);
-  line([0, 800], [Math.max(0, s0), 800], 0.45, 1.3); line([Math.min(W, s1), 800], [W, 800], 0.45, 1.3);
+  gline(0, Math.min(W, s0), 800, A.x, 0.5); gline(Math.max(0, s1), W, 800, A.x, 0.5);
   for (const [wx, dy, len, a] of PEB) { const x = X(wx); if (x < 0 || x > W || (wx > 1370 && wx < 2170)) continue; line([x, 806 + dy], [x + len, 806 + dy], a, 1); }
   // 一 · 听：接住第一句话，拆成三样东西
-  { const ca = sm(34.4, 34.8, t) * (1 - sm(36.7, 36.9, t)); if (ca > 0) { const c = sm(34.4, 35.5, t), x = lerp(A.x + 300, A.x, c) + Math.sin(t * 4) * 14 * (1 - c), y = lerp(-70, A.top - 50, c); askCard(x, y, ca * ga, "今天开了多少工单？", pulse(t, 36.5, 0.4)); }
-    if (t > 36.8 && t < 41.4) CHIP3.forEach((s, i) => { const born = sm(36.8, 37.2, t), up = sm(39.8 + i * 0.15, 41 + i * 0.15, t), an = (t - 36.8) * 2.2 + i * 2.094;
-      pill(A.x + Math.cos(an) * 230 * born, A.y - 60 + Math.sin(an) * 64 * born - 760 * up * up, s, 22, born * (1 - up), 0.6 + pulse(t, 36.8, 1)); }); }
+  { const ca = sm(34.2, 34.6, t) * (1 - sm(36.1, 36.3, t)); if (ca > 0) { const c = sm(34.2, 35.25, t), x = lerp(A.x + 300, A.x, c) + Math.sin(t * 4) * 14 * (1 - c), y = lerp(-70, A.top - 50, c); askCard(x, y, ca * ga, "今天开了多少工单？", pulse(t, 36, 0.4)); }
+    if (t > 36.2 && t < 41.4) CHIP3.forEach((s, i) => { const born = sm(36.2, 36.6, t), up = sm(39.8 + i * 0.15, 41 + i * 0.15, t), an = (t - 36.2) * 2.2 + i * 2.094;
+      pill(A.x + Math.cos(an) * 230 * born, A.y - 60 + Math.sin(an) * 64 * born - 760 * up * up, s, 22, born * (1 - up), 0.6 + pulse(t, 36.2, 1) + BT); }); }
   // 二 · 找：数据的海，踩着记录往上跳
   if (s1 > -100 && s0 < W + 100) { for (let l = 0; l < 8; l++) for (let j = 0; j < 4; j++) { const wx = 1380 + ((((j * 230 + l * 77 - t * (50 + l * 14)) % 920) + 920) % 920) - 60, ma = sm(1380, 1470, wx) * (1 - sm(2040, 2160, wx + 200)); if (ma <= 0) continue;
-      const y = 640 + l * 36 + Math.sin(t * 1.4 + j * 1.7 + l) * 7; box(X(wx), y, 200, 26, 6, 0.5 * ma, 0.22 * ma, "#121822"); txt(`1004823${p2((j * 7 + l * 13) % 60)}  M-${10000 + (j * 917 + l * 311) % 80000}`, X(wx) + 12, y + 14, 13, 0.45 * ma, SUB, "left", MONO); }
+      const y = 640 + l * 36 + Math.sin(t * 1.4 + j * 1.7 + l) * (5 + 14 * LO); box(X(wx), y, 200, 26, 6, 0.5 * ma, 0.22 * ma, "#121822"); txt(`1004823${p2((j * 7 + l * 13) % 60)}  M-${10000 + (j * 917 + l * 311) % 80000}`, X(wx) + 12, y + 14, 13, 0.45 * ma, SUB, "left", MONO); }
     STONES.forEach(([wx, y], i) => { const on = Math.abs(posAt(t).x - wx) < 40 && t > 44.8 ? 1 : 0; if (on) G(X(wx), y + 13, 150, 0.35); box(X(wx) - 90, y, 180, 26, 6, 0.96, 0.6 + 0.35 * on, "#1a212d", GOLD, 1.3); txt(`1004823${11 + i}  ZP01  ABG1`, X(wx) - 78, y + 14, 13, 0.8, SUB, "left", MONO); });
-    const pk = sm(47.75, 48.15, t), up = sm(49.1, 50, t); if (pk > 0 && up < 1) { const x = lerp(X(2040), A.x, pk), y = lerp(646, A.top - 26, pk) - 640 * up * up; GA = ga * (1 - up); G(x, y, 190, 0.5);
+    const pk = sm(47.75, 48.15, t), up = sm(48.95, 49.85, t); if (pk > 0 && up < 1) { const x = lerp(X(2040), A.x, pk), y = lerp(646, A.top - 26, pk) - 640 * up * up; GA = ga * (1 - up); G(x, y, 190, 0.5);
       box(x - 115, y - 16, 230, 32, 7, 0.97, 0.95, "#241d12", GOLD, 1.5); txt("100482316  M-18834  2,400", x, y + 1, 14, 1, WARM, "center", MONO); GA = ga; } }
   // 三 · 名字：三盏灯，第三盏被它点亮
   LAMPS.forEach(([wx, nm, dt, tp, font, size], i) => { const x = X(wx); if (x < -260 || x > W + 260) return;
     const th = t > tp ? 0.13 * Math.sin((t - tp) * 5.2) * Math.exp(-(t - tp) * 0.8) : 0, lit = i === 2 ? sm(tp, tp + 0.35, t) : 0.9 * pulse(t, tp, 1.6);
-    ctx.save(); ctx.translate(x, 0); ctx.rotate(th); line([0, 0], [0, 388], 0.4, 1.2); if (lit > 0.02) G(0, 430, 260 + 160 * lit + (i === 2 ? 300 * pulse(t, tp, 1.4) : 0), 0.5 * lit);
+    ctx.save(); ctx.translate(x, 0); ctx.rotate(th); line([0, 0], [0, 388], 0.4, 1.2); if (lit > 0.02) G(0, 430, 260 + 160 * lit + 110 * BT + (i === 2 ? 300 * pulse(t, tp, 1.4) : 0), 0.5 * lit);
     box(-115, 388, 230, 84, 16, 0.95, 0.3 + 0.65 * lit, i === 2 && lit > 0.5 ? "#2a2114" : "#141a24", GOLD, 1.3 + lit); txt(nm, 0, 431, size, 0.45 + 0.55 * lit, lit > 0.3 ? WARM : SUB, "center", font, 400, i === 2 ? 10 : 0); txt(dt, 0, 496, 15, 0.5, SUB, "center", MONO); ctx.restore(); });
   // 四 · 手：一圈工具
-  { const x = X(5200); if (x > -400 && x < W + 400) for (let k = 0; k < 6; k++) { const tk = 61.6 + k * 0.8, r = 235 * eo((t - tk) / 0.5); if (t < tk) continue;
-      const fly = sm(67.5 + k * 0.08, 68.5 + k * 0.08, t), an = -1.57 + k * 1.047 + (t - 61) * 0.35 + 3 * sm(66.6, 68, t); toolIcon(k, x + Math.cos(an) * r, 700 + Math.sin(an) * r * 0.62 - 820 * fly * fly, sm(tk, tk + 0.3, t) * (1 - fly)); } }
+  { const x = X(5200); if (x > -400 && x < W + 400) for (let k = 0; k < 6; k++) { const tk = TT[k], r = (235 + 22 * BT) * eo((t - tk) / 0.5); if (t < tk) continue;
+      const fly = sm(67.3 + k * 0.08, 68.3 + k * 0.08, t), an = -1.57 + k * 1.047 + (t - 61) * 0.35 + 3 * sm(66.6, 68, t); toolIcon(k, x + Math.cos(an) * r, 700 + Math.sin(an) * r * 0.62 - 820 * fly * fly, sm(tk, tk + 0.3, t) * (1 - fly)); } }
   // 五 · 门：走进 SAP
-  { const x = X(7100); if (x < W + 300) { const near = sm(69.4, 73.3, t), sh = pulse(t, 73.35, 1.6); ctx.beginPath(); ctx.moveTo(x - 130, 800); ctx.lineTo(x - 130, 520); ctx.arc(x, 520, 130, Math.PI, 0); ctx.lineTo(x + 130, 800); ctx.closePath();
+  { const x = X(7100); if (x < W + 300) { const near = sm(69.4, 73.6, t), sh = pulse(t, 73.67, 1.6); ctx.beginPath(); ctx.moveTo(x - 130, 800); ctx.lineTo(x - 130, 520); ctx.arc(x, 520, 130, Math.PI, 0); ctx.lineTo(x + 130, 800); ctx.closePath();
       const g = ctx.createLinearGradient(0, 390, 0, 800); g.addColorStop(0, `rgba(250,222,170,${0.1 + 0.25 * near + 0.5 * sh})`); g.addColorStop(1, `rgba(230,197,143,${0.02 + 0.1 * near + 0.4 * sh})`);
       ctx.globalAlpha = ga; ctx.fillStyle = g; ctx.fill(); ctx.globalAlpha = ga * (0.6 + 0.4 * near); ctx.strokeStyle = GOLD; ctx.lineWidth = 2; ctx.stroke();
       for (let i = 0; i < 9; i++) { const lx = x - 104 + i * 26, ph = (t * 0.5 + i * 0.37) % 1; line([lx, 800 - ph * 380], [lx, 800 - ph * 380 - 60], 0.35 * near * Math.sin(ph * Math.PI), 1.4); }
-      G(x, 600, 300 + 200 * near + 900 * sh, 0.2 + 0.3 * near + 0.5 * sh); txt("SAP", x, 348, 38, 0.6 + 0.4 * near, GOLD, "center", MONO, 600, 10); } }
+      G(x, 600, 300 + 200 * near + 160 * LO + 900 * sh, 0.2 + 0.3 * near + 0.5 * sh); txt("SAP", x, 348, 38, 0.6 + 0.4 * near, GOLD, "center", MONO, 600, 10); } }
   hud(t, ga); }
 
 // ───────── 看星：一个人和一个 AI ─────────
 function scNight(t) { if (t < 74.8 || t > 93.8) return; const na = sm(74.8, 76.4, t) * (1 - sm(92.6, 93.8, t)); GA = na;
-  hills(6000, 770, 46, "#0c121b", 0.9); hills(2800, 832, 30, "#0a0f17", 0.95); ctx.globalAlpha = na * 0.96; ctx.fillStyle = "#06080c"; ctx.fillRect(0, 880, W, 200); line([0, 880], [W, 880], 0.45, 1.3);
+  hills(6000, 770, 46, "#0c121b", 0.9); hills(2800, 832, 30, "#0a0f17", 0.95); ctx.globalAlpha = na * 0.96; ctx.fillStyle = "#06080c"; ctx.fillRect(0, 880, W, 200); gline(0, W, 880, A.x, 0.5);
   pointer(1000, 772 + Math.sin(t * 2.2) * 6, 2.4, sm(76.6, 77.6, t));
-  [[80.6, 1520, 110], [90.5, 620, 80]].forEach(([t0, x, y]) => { const k = (t - t0) / 0.9; if (k > 0 && k < 1) { const px = x - 460 * k, py = y + 170 * k; line([px, py], [px + 120, py - 44], Math.sin(k * Math.PI) * 0.9, 2, WARM); G(px, py, 40, Math.sin(k * Math.PI)); } });
-  bubble(1090, 690, "这里不对。", 28, win(t, 84.2, 86, 0.3), true); bubble(700, 650, "改好了。", 28, win(t, 85.6, 87.4, 0.3), false);
+  [[79.78, 1520, 110], [90.5, 620, 80]].forEach(([t0, x, y]) => { const k = (t - t0) / 0.9; if (k > 0 && k < 1) { const px = x - 460 * k, py = y + 170 * k; line([px, py], [px + 120, py - 44], Math.sin(k * Math.PI) * 0.9, 2, WARM); G(px, py, 40, Math.sin(k * Math.PI)); } });
+  bubble(1090, 690, "这里不对。", 28, win(t, 84.02, 85.9, 0.3), true); bubble(700, 650, "改好了。", 28, win(t, 85.09, 87, 0.3), false);
   bubble(1100, 690, "再试一次？", 28, win(t, 88.4, 90.2, 0.3), true); bubble(700, 650, "好。", 28, win(t, 89.8, 91.6, 0.3), false);
   hud(Math.max(t, 78.9), na * sm(76.4, 77.4, t)); }
 
 // ───────── 回到那面墙：那句话，有人接住了 ─────────
 const QS = ["上周出货了多少？", "这张采购单到哪了？", "库存还够吗？", "这个报表每天发我一份", "下个月要备多少料？", "帮我看看这段代码", "把结果做成图表"];
-function scReturn(t) { if (t < 92.6 || t > 119.5) return; const ta = sm(92.8, 94.2, t), front = lerp(-300, 2300, sm(96.2, 99.8, t));
-  GA = ta; for (const k of TILES) { const d = clamp((front - k.x) / 280); if (d >= 1) continue; const a = (0.26 + 0.1 * Math.sin(t * k.f + k.p)) * (1 - d);     // 一道光扫过，事务码一块块散成星光
+function scReturn(t) { if (t < 92.6 || t > 119.5) return; const ta = sm(92.8, 94.2, t), front = lerp(-300, 2300, sm(96.52, 99.8, t));
+  GA = ta; for (const k of TILES) { const d = clamp((front - k.x) / 280); if (d >= 1) continue; const a = (0.26 + 0.1 * Math.sin(t * k.f + k.p) + 0.32 * tflash(k)) * (1 - d);     // 一道光扫过，事务码一块块散成星光
     box(k.x + 60 * d, k.y + 28 * d, 120 * (1 - d), 56 * (1 - d), 10, a * 0.7, a * (0.3 + d), "#10151d"); if (d < 0.25) txt(k.s, k.x + 60, k.y + 29, 19, a, SUB, "center", MONO); if (d > 0) G(k.x + 60, k.y + 28 - 240 * d, 34, (1 - d) * 0.9); }
-  GA = 1; line([0, 800], [W, 800], 0.4 * sm(93.4, 94.4, t) * (1 - 0.6 * sm(117, 119, t)), 1.3);
+  GA = 1; gline(0, W, 800, A.x, 0.45 * sm(93.2, 94.1, t) * (1 - 0.6 * sm(117, 119, t)));
   pointer(1500, 640 + Math.sin(t * 2.2) * 6, 2.2, sm(96.8, 97.6, t) * (1 - sm(110, 111.5, t)));
-  { const ca = sm(92.9, 93.6, t) * (1 - sm(100.6, 101.3, t)); if (ca > 0) { const c = sm(94.4, 95.25, t), pv = sm(99.3, 99.9, t), go = sm(100.3, 101.2, t), done = t > 99.5;
+  { const ca = sm(92.9, 93.6, t) * (1 - sm(100.9, 101.5, t)); if (ca > 0) { const c = sm(94.25, 95.1, t), pv = sm(99.18, 99.8, t), go = sm(100.5, 101.3, t), done = t > 99.4;
       let p = [lerp(640, A.x, c), lerp(470 + Math.sin(t * 1.7) * 8, A.top - 50, c)]; p = [lerp(p[0], 1390, pv), lerp(p[1], 520, pv)]; p = [lerp(p[0], 1500, go), lerp(p[1], 600, go)];
-      askCard(p[0], p[1], ca, done ? "12 张工单 · Excel 已备好" : ASK, done ? 1 : 0); G(p[0], p[1], 400, 0.5 * pulse(t, 99.5, 1.2)); } }
-  QS.forEach((s, k) => { const tk = 102.7 + k, side = k % 2 ? 1 : -1; if (t < tk - 1.6 || t > tk + 1.3) return; const u = sm(tk - 1.6, tk, t), v = sm(tk, tk + 1.2, t), lit = t >= tk ? 1 : 0;
+      askCard(p[0], p[1], ca, done ? "12 张工单 · Excel 已备好" : ASK, done ? 1 : 0); G(p[0], p[1], 400, 0.5 * pulse(t, 99.4, 1.2)); } }
+  QS.forEach((s, k) => { const tk = 102.69 + k, side = k % 2 ? 1 : -1; if (t < tk - 1.6 || t > tk + 1.3) return; const u = sm(tk - 1.6, tk, t), v = sm(tk, tk + 1.2, t), lit = t >= tk ? 1 : 0;
     const x = lerp(960 + side * 1250, 960 + side * 170, u) + side * 150 * v, y = lerp(220 + (k * 131) % 260, 640, u) - Math.sin(u * Math.PI) * 120 - 460 * v * v, w = tw(s, 24) + 96;
     GA = (1 - v) * sm(tk - 1.6, tk - 1.2, t); G(x, y, 200, 0.2 + 0.6 * pulse(t, tk, 0.8)); box(x - w / 2, y - 34, w, 68, 20, 0.97, 0.85, lit ? "#2a2114" : "#1b222e", GOLD, 1.4);
     txt(s, x + (lit ? 14 : 0), y + 1, 24, 1, WARM, "center"); if (lit) tick(x - w / 2 + 32, y, 20, 1); }); }
 
 // ───────── 满天的星，聚成它的名字 ─────────
 const LAST = "那么，你想问什么？";
-function scEnd(t) { if (t < 112) return; GA = 1; const k1 = sm(114.4, 117.4, t), k2 = sm(117.4, 119.4, t);
-  G(960, WMY, 560 + 200 * pulse(t, 116.2, 2.5), 0.2 * k1 + 0.35 * pulse(t, 116.2, 2.5));
+function scEnd(t) { if (t < 112) return; GA = 1; const k1 = sm(114.4, 117, t), k2 = sm(117.77, 119.9, t);
+  G(960, WMY, 560 + 200 * pulse(t, 116.97, 2.5) + 90 * BT, 0.2 * k1 + 0.35 * pulse(t, 116.97, 2.5) + 0.1 * BT * k1);
   const gr = ctx.createLinearGradient(0, WMY - 110, 0, WMY + 110); gr.addColorStop(0, "#fff6e4"); gr.addColorStop(1, "#e2c08a");
   txt("灵犀", 960, WMY, 240, k1, gr, "center", SERIF, 400, 60); txt("让想法成为结果。", 960, 604, 38, k2, "#d9cdb4", "center", SERIF, 300, 12);
   GA = sm(123.4, 123.8, t); if (GA > 0) { const n = Math.floor(LAST.length * clamp((t - 123.6) / 1.5)), full = tw(LAST, 34, SERIF) + 5 * (LAST.length - 1), x = W / 2 - full / 2;
@@ -312,17 +328,21 @@ function narr(t, t0, t1, x, y, s, size, align = "left", ls = 4, base = WARM) { i
 
 // ───────── 一帧 ─────────
 function draw(t) {
-  const r = cv.width / W; ctx.setTransform(r, 0, 0, r, 0, 0); ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1; ctx.drawImage(bg, 0, 0);
-  GA = 1; for (const d of dust) G((d.x + t * 6 * d.d) % W, d.y, d.s * 5, d.a * 0.7 * (0.6 + 0.4 * Math.sin(t * d.f + d.p)));
+  NOW = t; OI = onsIdx(t); BT = beat(t); BIG = beat(t, 0.7); LO = env(MUSIC.lo, t); HI = env(MUSIC.hi, t);
+  const r = cv.width / W, Z = 1 + 0.014 * BIG + 0.004 * BT;      // 重音上，整个画面往前轻轻一顶
+  ctx.setTransform(r, 0, 0, r, 0, 0); ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1; ctx.drawImage(bg, 0, 0);
+  GA = 1; G(960, 720, 1100, (0.03 + 0.13 * LO + 0.08 * BIG) * sm(0.5, 3, t));                                  // 低频越厚，底光越暖
+  ctx.setTransform(r * Z, 0, 0, r * Z, r * 960 * (1 - Z), r * 540 * (1 - Z));
+  for (const d of dust) G((d.x + t * 6 * d.d) % W, d.y, d.s * (5 + 3 * BT), d.a * (0.4 + 1.3 * HI) * (0.6 + 0.4 * Math.sin(t * d.f + d.p)));   // 高频越亮，光尘越多
   actor(t); sky(t);
   scOpen(t); scWall(t); scBirth(t); scWorld(t); scNight(t); scReturn(t); scEnd(t);
-  drawActor();
-  const fl = pulse(t, 73.35, 1.8); if (fl > 0.01) { ctx.globalAlpha = fl * 0.6; ctx.fillStyle = "#f6dfb4"; ctx.fillRect(0, 0, W, H); }                  // 走进门的那一下
+  ctx.setTransform(r, 0, 0, r, 0, 0); A.x = 960 + (A.x - 960) * Z; A.y = 540 + (A.y - 540) * Z; drawActor();
+  const fl = pulse(t, 73.67, 1.8); if (fl > 0.01) { ctx.globalAlpha = fl * 0.6; ctx.fillStyle = "#f6dfb4"; ctx.fillRect(0, 0, W, H); }                  // 走进门的那一下
   for (const [p, q, at, s1, s2] of NARR) if (t > p && t < q) {
     if (at === "c") { line([96, 70], [96, 114], 0.7 * win(t, p, q, 0.5), 2); narr(t, p, q, 120, 92, s1, 44); }
     else if (at === "m") { narr(t, p, q, 90, 266, s1, 52, "left", 5); if (s2) narr(t, p + 0.7, q, 92, 328, s2, 31, "left", 3, "rgb(217,205,180)"); }
     else narr(t, p, q, 960, 604, s1, 38, "center", 12, "#d9cdb4"); }
-  const blk = Math.max(1 - sm(0, 0.9, t), sm(127.6, 129.7, t)); if (blk > 0) { ctx.globalAlpha = blk; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); }
+  const blk = Math.max(1 - sm(0, 0.12, t), sm(127.6, 129.7, t)); if (blk > 0) { ctx.globalAlpha = blk; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); }
   ctx.globalAlpha = 1;
 }
 
