@@ -38,6 +38,15 @@
         "8093"
       ],
       "port": 8093
+    },
+    {
+      "name": "birth-film",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "功能计划书/项目进度/11.11进度/灵犀诞生短片/serve.mjs",
+        "8094"
+      ],
+      "port": 8094
     }
   ]
 }
