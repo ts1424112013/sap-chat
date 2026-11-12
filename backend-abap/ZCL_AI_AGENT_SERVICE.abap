@@ -500,6 +500,7 @@ CLASS zcl_ai_agent_service DEFINITION
       IMPORTING iv_run_id  TYPE string
                 iv_tool    TYPE string
                 iv_args    TYPE string
+                iv_request_id TYPE string OPTIONAL
       EXPORTING ev_ok      TYPE abap_bool
                 ev_content TYPE string
                 ev_message TYPE string
@@ -4150,6 +4151,15 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     DATA(lv_rq_ok)  = xsdbool( lv_res_on = abap_true AND zcl_ai_result_query=>enabled( ) = abap_true ).
     DATA(lv_lk_ok)  = xsdbool( lv_res_on = abap_true AND zcl_ai_result_lookup=>allowed( iv_session_id ) = abap_true ).
     DATA(lv_rl_ok)  = xsdbool( lv_res_on = abap_true AND lv_rpt_on = abap_true AND zcl_ai_report_relay=>enabled( ) = abap_true ).
+    DATA(lv_joint_on) = abap_false.
+    IF lv_art_n >= 2 AND zcl_ai_combo_service=>enabled( ) = abap_true
+       AND zcl_ai_task_service=>task_enabled( ) = abap_true.
+      SELECT COUNT(*) FROM zai_artifact
+        WHERE session_id = @iv_session_id AND owner = @sy-uname AND status = 'AVAILABLE'
+          AND artifact_type IN ( 'REPORT_RESULT', 'FIORI_RESULT' )
+        INTO @DATA(lv_joint_n).
+      lv_joint_on = xsdbool( lv_joint_n >= 2 ).
+    ENDIF.
     DATA(lv_q_props) =
       `"filters":{"type":"array","items":{"type":"object"},"description":"[{column,op,value,values}]"},` &&
       `"group_by":{"type":"array","items":{"type":"string"}},` &&
@@ -4160,13 +4170,13 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     DATA(lv_rid_prop) = `"result_id":{"type":"string","description":"结果号(list_results 返回的 id)"}`.
     IF lv_res_on = abap_true.
       brun_add_tool( EXPORTING iv_name   = `list_results`
-                               iv_desc   = `列出本会话里可以分析的报表结果(结果号、名称、报表、行数、时间), 最新在前。` &&
+                               iv_desc   = `列出本会话里可以分析的报表和联合分析结果(结果号、名称、报表、行数、时间), 最新在前。` &&
                                            `用户说"这个结果 / 上面的报表 / 刚才的数据"时先调它找结果号。`
                                iv_params = `{"type":"object","properties":{}}`
                      CHANGING  cv_json   = lv_tools_json
                                cv_csv    = lv_tools_csv ).
       brun_add_tool( EXPORTING iv_name   = `read_result`
-                               iv_desc   = `读一份报表结果的概况: 列、总行数、后端统计和举例行(行数少时给全部明细)。` &&
+                               iv_desc   = `读一份报表或联合结果的概况: 列、总行数、后端统计和举例行(行数少时给全部明细)。` &&
                                            `要排名、汇总、筛选计数时接着用 query_result, 不要用举例行推算全量结论。`
                                iv_params = |\{"type":"object","properties":\{{ lv_rid_prop }\},"required":["result_id"]\}|
                      CHANGING  cv_json   = lv_tools_json
@@ -4181,11 +4191,26 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                      CHANGING  cv_json   = lv_tools_json
                                cv_csv    = lv_tools_csv ).
     ENDIF.
+    IF lv_joint_on = abap_true.
+      brun_add_tool( EXPORTING iv_name = 'combine_report_results'
+                               iv_desc = `按关联字段组合本会话内 2 份或以上报表。先用 list_results 确认来源，再用 read_result 确认字段名。 ` &&
+                                         `sources 第一份是主报表，keys 和 sources 一一对应，第一项填 []，后续填 [{a:主报表字段,b:该报表字段}]。 ` &&
+                                         `关联键按报表输出精确匹配，可用多列，需在各自报表内唯一。默认保留主表未匹配行，inner=true 仅保留都匹配的行。 ` &&
+                                         `成功后返回新结果号，可用 read_result 或 query_result 继续分析。缺少来源时先打开相应报表参数卡。`
+                               iv_params = `{"type":"object","properties":{"mode":{"type":"string","enum":["JOIN"]},` &&
+                                           `"sources":{"type":"array","minItems":2,"items":{"type":"object",` &&
+                                           `"properties":{"artifactId":{"type":"string"}},"required":["artifactId"]}},` &&
+                                           `"keys":{"type":"array","minItems":2,"items":{"type":"array","items":{"type":"object",` &&
+                                           `"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a","b"]}}},` &&
+                                           `"inner":{"type":"boolean"},"title":{"type":"string"}},` &&
+                                           `"required":["mode","sources","keys"]}`
+                     CHANGING cv_json = lv_tools_json cv_csv = lv_tools_csv ).
+    ENDIF.
     IF lv_lk_ok = abap_true.
       DATA(lv_k_desc) = zcl_ai_result_lookup=>tool_description( ).
       REPLACE ALL OCCURRENCES OF `不需要也不能指定结果号` IN lv_k_desc WITH `结果号用参数 result_id 指定`.
       brun_add_tool( EXPORTING iv_name   = zcl_ai_result_lookup=>gc_tool
-                               iv_desc   = |result_id = list_results 的结果号(必填), 其余参数直接放在同一层。{ lv_k_desc }|
+                               iv_desc   = |result_id = list_results 的报表或联合分析结果号(必填), 其余参数直接放在同一层。{ lv_k_desc }|
                                iv_params = |\{"type":"object","properties":\{{ lv_rid_prop },| &&
                                            |"table":\{"type":"string"\},"key_field":\{"type":"string"\},"source_column":\{"type":"string"\},| &&
                                            |"fields":\{"type":"array","items":\{"type":"string"\}\},| &&
@@ -4365,6 +4390,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                COND string( WHEN lv_rq_ok = abap_true THEN `; 排名 / 汇总 / 筛选计数用 query_result(后端在全部行上算)` ) &&
                COND string( WHEN lv_lk_ok = abap_true THEN `; 拿结果里的值去别的表查字段用 lookup_by_result` ) &&
                COND string( WHEN lv_rl_ok = abap_true THEN `; 把结果里某列的值带进另一张报表的参数用 prefill_report` ) &&
+               COND string( WHEN lv_joint_on = abap_true THEN `; 跨报表按键分析用 combine_report_results，关联前核对字段、粒度、单位和时间口径` ) &&
                |。所有数字都要来自工具结果, 不要用举例行推算全量结论。|.
     ENDIF.
 
@@ -4725,6 +4751,38 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       RETURN.
     ENDIF.
 
+    IF lv_tool = 'combine_report_results'.
+      DATA(lv_joint_session) = CONV string( ls_run-session_id ).
+      DATA(ls_joint) = zcl_ai_combo_service=>create( iv_session_id = lv_joint_session
+                                                     iv_spec_json  = iv_args
+                                                     iv_request_id = iv_request_id
+                                                     iv_browser    = abap_true ).
+      ev_ok = abap_true.
+      IF ls_joint-error IS NOT INITIAL.
+        ev_content = |\{"ok":false,"error":"{ json_text( ls_joint-error ) }"\}|.
+        RETURN.
+      ENDIF.
+      DATA ls_joint_data TYPE zcl_ai_odata_shaper=>ty_dataset.
+      zcl_ai_combo_service=>analysis_context(
+        EXPORTING iv_artifact_id = ls_joint-artifact_id iv_session_id = lv_joint_session
+                  iv_browser = abap_true iv_data_rows = 100
+        IMPORTING ev_ctx = DATA(lv_joint_ctx) ev_error = DATA(lv_joint_error) es_data = ls_joint_data ).
+      IF lv_joint_error IS NOT INITIAL.
+        ev_content = |\{"ok":false,"error":"{ json_text( lv_joint_error ) }"\}|.
+        RETURN.
+      ENDIF.
+      DATA(ls_joint_preview) = VALUE zcl_ai_data_analysis_service=>ty_dataset(
+        name = ls_joint-label status = 'OK' source = |RESULT:{ ls_joint-artifact_id }|
+        total_rows = ls_joint_data-total truncated = ls_joint_data-truncated elapsed_ms = ls_joint-elapsed_ms
+        columns = VALUE #( FOR ls_jc IN ls_joint_data-columns
+                           ( name = ls_jc-name label = ls_jc-label numeric = ls_jc-is_numeric ) )
+        rows = VALUE #( FOR ls_jr IN ls_joint_data-rows ( ls_jr-cells ) ) ).
+      ev_datasets = brun_ds_json( VALUE #( ( ls_joint_preview ) ) ).
+      ev_content = |已生成联合结果 { ls_joint-artifact_id }。\n| &&
+                   zcl_ai_agent_guard=>trim_result( iv_text = lv_joint_ctx iv_max = 16000 ).
+      RETURN.
+    ENDIF.
+
     " ---- V15.19: 报表 / 结果工具(参数是嵌套 JSON, 不走扁平 kv; 结果号每次核对本人 + 本会话 + AVAILABLE) ----
     IF lv_tool = 'list_results' OR lv_tool = 'read_result' OR lv_tool = 'open_report' OR lv_tool = 'open_fiori_report'
        OR lv_tool = 'get_report_parameters'
@@ -4765,13 +4823,20 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           DATA: lv_c_task TYPE string,
                 lv_c_lbl  TYPE string,
                 lv_c_all  TYPE abap_bool.
-          build_artifact_ctx( EXPORTING iv_artifact_id = lv_rid
-                                        iv_session_id  = CONV string( ls_run-session_id )
-                              IMPORTING ev_ctx         = lv_rj
-                                        ev_task_id     = lv_c_task
-                                        ev_label       = lv_c_lbl
-                                        ev_error       = lv_rerr
-                                        ev_all         = lv_c_all ).
+          IF zcl_ai_combo_service=>is_combo( lv_rid ) = abap_true.
+            zcl_ai_combo_service=>analysis_context(
+              EXPORTING iv_artifact_id = lv_rid iv_session_id = CONV string( ls_run-session_id )
+                        iv_browser = abap_true
+              IMPORTING ev_ctx = lv_rj ev_error = lv_rerr ).
+          ELSE.
+            build_artifact_ctx( EXPORTING iv_artifact_id = lv_rid
+                                          iv_session_id  = CONV string( ls_run-session_id )
+                                IMPORTING ev_ctx         = lv_rj
+                                          ev_task_id     = lv_c_task
+                                          ev_label       = lv_c_lbl
+                                          ev_error       = lv_rerr
+                                          ev_all         = lv_c_all ).
+          ENDIF.
           IF lv_rerr IS NOT INITIAL.
             lv_rj = |\{"ok":false,"error":"{ json_text( lv_rerr ) }"\}|.
           ENDIF.
@@ -4781,7 +4846,20 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           DATA: ls_r_ds  TYPE zcl_ai_data_analysis_service=>ty_dataset,
                 lv_r_lbl TYPE string,
                 lv_r_det TYPE string.
-          IF lv_tool = zcl_ai_result_query=>gc_tool.
+          IF lv_tool = zcl_ai_result_query=>gc_tool AND zcl_ai_combo_service=>is_combo( lv_rid ) = abap_true.
+            DATA ls_combo_data TYPE zcl_ai_odata_shaper=>ty_dataset.
+            DATA lv_combo_label TYPE string.
+            zcl_ai_combo_service=>analysis_context(
+              EXPORTING iv_artifact_id = lv_rid iv_session_id = CONV string( ls_run-session_id )
+                        iv_browser = abap_true
+              IMPORTING es_data = ls_combo_data ev_label = lv_combo_label ev_error = lv_rerr ).
+            IF lv_rerr IS INITIAL.
+              zcl_ai_result_query=>query_dataset(
+                EXPORTING is_ds = ls_combo_data iv_args_json = iv_args iv_res_text = lv_combo_label
+                          iv_source = |RESULT:{ lv_rid }| iv_label = lv_combo_label
+                IMPORTING ev_json = lv_rj es_ds = ls_r_ds ev_error = lv_rerr ).
+            ENDIF.
+          ELSEIF lv_tool = zcl_ai_result_query=>gc_tool.
             zcl_ai_result_query=>run( EXPORTING iv_artifact_id = lv_rid
                                                 iv_args_json   = iv_args
                                       IMPORTING ev_json        = lv_rj
@@ -4792,6 +4870,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           ELSE.
             zcl_ai_result_lookup=>run( EXPORTING iv_artifact_id = lv_rid
                                                  iv_args_json   = iv_args
+                                                 iv_session_id  = CONV string( ls_run-session_id )
                                        IMPORTING ev_json        = lv_rj
                                                  es_ds          = ls_r_ds
                                                  ev_label       = lv_r_lbl

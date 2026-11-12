@@ -51,6 +51,7 @@ CLASS zcl_ai_result_lookup DEFINITION
     CLASS-METHODS run
       IMPORTING iv_artifact_id TYPE string
                 iv_args_json   TYPE string
+                iv_session_id  TYPE string OPTIONAL
       EXPORTING ev_json        TYPE string
                 es_ds          TYPE zcl_ai_data_analysis_service=>ty_dataset
                 ev_label       TYPE string
@@ -124,6 +125,7 @@ CLASS zcl_ai_result_lookup DEFINITION
     CLASS-METHODS prepare
       IMPORTING iv_artifact_id TYPE string
                 iv_args_json   TYPE string
+                iv_session_id  TYPE string
       EXPORTING es_joined      TYPE zcl_ai_odata_shaper=>ty_dataset
                 ev_res_text    TYPE string
                 ev_label       TYPE string
@@ -477,13 +479,24 @@ CLASS zcl_ai_result_lookup IMPLEMENTATION.
     ENDIF.
 
     " ---- 5. 原结果: 全部存储行; 关联列 ----
-    zcl_ai_result_query=>load_dataset(
-      EXPORTING iv_artifact_id = iv_artifact_id
-      IMPORTING es_ds          = ls_src
-                ev_label       = ev_label
-                ev_report_id   = lv_rid
-                ev_session_id  = lv_sess
-                ev_error       = ev_error ).
+    DATA(lv_combo) = xsdbool( iv_session_id IS NOT INITIAL
+                              AND zcl_ai_combo_service=>is_combo( iv_artifact_id ) = abap_true ).
+    IF lv_combo = abap_true.
+      zcl_ai_combo_service=>analysis_context(
+        EXPORTING iv_artifact_id = iv_artifact_id iv_session_id = iv_session_id iv_browser = abap_true
+        IMPORTING es_data = ls_src ev_label = ev_label ev_error = ev_error ).
+      IF ev_error IS INITIAL AND ls_src-truncated = abap_true.
+        ev_error = '联合结果的明细有截断，请缩小来源范围后重新组合再查表'.
+      ENDIF.
+    ELSE.
+      zcl_ai_result_query=>load_dataset(
+        EXPORTING iv_artifact_id = iv_artifact_id
+        IMPORTING es_ds          = ls_src
+                  ev_label       = ev_label
+                  ev_report_id   = lv_rid
+                  ev_session_id  = lv_sess
+                  ev_error       = ev_error ).
+    ENDIF.
     IF ev_error IS NOT INITIAL.
       RETURN.
     ENDIF.
@@ -612,7 +625,9 @@ CLASS zcl_ai_result_lookup IMPLEMENTATION.
         ev_error = |关联值超过 { lv_maxk } 个(LOOKUP_MAX_KEYS), 请先用 filters 缩小范围|.
         RETURN.
       ENDIF.
-      INSERT VALUE #( ikey = lv_int nkey = zcl_ai_combo_service=>norm_key( lv_cell ) ) INTO TABLE lt_kmap.
+      INSERT VALUE #( ikey = lv_int
+                      nkey = COND #( WHEN lv_combo = abap_true THEN lv_int
+                                     ELSE zcl_ai_combo_service=>norm_key( lv_cell ) ) ) INTO TABLE lt_kmap.
       APPEND lv_int TO lt_keys.
     ENDLOOP.
     IF lt_keys IS INITIAL.
@@ -711,6 +726,10 @@ CLASS zcl_ai_result_lookup IMPLEMENTATION.
           INSERT ls_hit INTO TABLE lt_hit ASSIGNING <ls_hit>.
         ENDIF.
         <ls_hit>-cnt = <ls_hit>-cnt + 1.
+        IF lv_combo = abap_true AND <ls_hit>-cnt > 1.
+          ev_error = |表 { lv_tab } 有多个匹配记录，请增加表上的筛选条件以唯一定位数据|.
+          RETURN.
+        ENDIF.
         " 同一关联值多行: 每个字段取第一个非空值
         LOOP AT lt_fld INTO ls_fld.
           lv_fi = sy-tabix.
@@ -724,6 +743,10 @@ CLASS zcl_ai_result_lookup IMPLEMENTATION.
         ENDLOOP.
       ENDLOOP.
     ENDWHILE.
+    IF lv_combo = abap_true AND ( lv_cap = abap_true OR lv_read >= lv_maxr ).
+      ev_error = |表 { lv_tab } 已读到行数上限 { lv_maxr }，请缩小筛选范围后再查表|.
+      RETURN.
+    ENDIF.
 
     " ---- 10. 接回结果每一行; 统计 ----
     DATA: lt_vc    TYPE tt_vc,
@@ -737,7 +760,12 @@ CLASS zcl_ai_result_lookup IMPLEMENTATION.
       READ TABLE ls_row-cells INTO lv_cell INDEX lv_sci.
       lv_cell = condense( lv_cell ).
       IF lv_cell IS NOT INITIAL.
-        lv_nkey = zcl_ai_combo_service=>norm_key( lv_cell ).
+        IF lv_combo = abap_true.
+          to_internal( EXPORTING is_fld = ls_key iv_val = lv_cell
+                       IMPORTING ev_int = lv_nkey ev_error = lv_err ).
+        ELSE.
+          lv_nkey = zcl_ai_combo_service=>norm_key( lv_cell ).
+        ENDIF.
       ENDIF.
       READ TABLE lt_hit INTO ls_hit WITH TABLE KEY nkey = lv_nkey.
       IF sy-subrc <> 0.
@@ -834,6 +862,7 @@ CLASS zcl_ai_result_lookup IMPLEMENTATION.
 
     prepare( EXPORTING iv_artifact_id = iv_artifact_id
                        iv_args_json   = iv_args_json
+                       iv_session_id  = iv_session_id
              IMPORTING es_joined      = ls_joined
                        ev_res_text    = lv_res
                        ev_label       = lv_label

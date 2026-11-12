@@ -234,6 +234,7 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                   EXPORTING iv_run_id  = ls_tool-run_id
                             iv_tool    = ls_tool-tool
                             iv_args    = zcl_ai_agent_guard=>extract_args_object( lv_body )
+                            iv_request_id = ls_tool-request_id
                   IMPORTING ev_ok      = lv_ok
                             ev_content = lv_content
                             ev_message = lv_msg
