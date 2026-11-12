@@ -10,7 +10,7 @@ sap.ui.define([
 	 * =====================================================================
 	 * Claude Code 的结构和节奏、正常界面的排版：
 	 *   说明（模型在关键节点说的一句话）→ 工具行（图标 + 中文名 + 主要参数，点开看详情）
-	 *   → 结果行（一句话）→ 数据预览（完整表格在回答下方）→ 就地确认面板（1 / 2 / 3）
+	 *   → 结果行（一句话）→ 可展开的数据预览 → 就地确认面板（1 / 2 / 3）
 	 * 计划清单与状态行固定在过程最下面：后面不管输出多少说明和步骤，都能一眼看到进度。
 	 * 输入框下的信息栏（chat>/ba/infoHtml）同时显示引擎、文件夹、上下文用量、次数和计划进度。
 	 * 一次运行的状态在 this._mRt[uid]；画成 HTML 写进消息条目的 tlHtml（同 liveHtml / extraHtml 的做法）。
@@ -459,7 +459,7 @@ sap.ui.define([
 				h += '<div class="rtSum">已停止</div>';
 			}
 			if (x.ds) {
-				h += this._rtDsHtml(x.ds);
+				h += this._rtDsHtml(x.ds, i);
 			}
 			if (x.open && bDet) {
 				h += '<div class="rtDet">';
@@ -476,17 +476,24 @@ sap.ui.define([
 			return h + "</div>";
 		},
 
-		/** 数据预览：列名 + 前 3 行；完整表格（图表、导出、组合）在回答下方 */
-		_rtDsHtml: function (ds) {
+		/** 工具数据默认收起，展开后只显示列名与样例行 */
+		_rtDsHtml: function (ds, i) {
 			var aPv = ds.preview || [];
 			if (!aPv.length) {
-				return ds.count ? '<div class="rtDsLink" data-rt="todata" role="button" tabindex="0">' + ds.count + " 张数据表 · 在回答下方查看</div>" : "";
+				return ds.count ? '<div class="rtDsSummary">返回 ' + esc(ds.count) + " 张数据表</div>" : "";
 			}
-			var h = "";
+			var sLabel = aPv.length === 1 && aPv[0].total != null
+				? "数据预览 · " + Number(aPv[0].total).toLocaleString("zh-CN") + " 行"
+				: aPv.length + " 张数据表";
+			var h = '<button type="button" class="rtDsSummary' + (ds.open ? ' rtOpen' : '') + '" data-rt="datasets" data-i="' + i +
+				'" aria-expanded="' + !!ds.open + '">' + IC.chev + "<span>" + esc(sLabel) + "</span></button>";
+			if (!ds.open) {
+				return h;
+			}
 			aPv.forEach(function (p) {
 				h += '<div class="rtDs"><div class="rtDsHead"><b>' + esc(p.name || "数据") + "</b>" +
 					(p.total != null ? '<span class="rtSub">' + esc(Number(p.total).toLocaleString("zh-CN")) + " 行</span>" : "") +
-					'<span class="rtDsGo" data-rt="todata" role="button" tabindex="0">完整表格在回答下方</span></div>';
+					'<span class="rtSub rtDsSample">样例</span></div>';
 				if ((p.columns || []).length && (p.rows || []).length) {
 					h += '<table class="rtDsTb"><tr>' + p.columns.map(function (c, k) {
 						return "<th" + ((p.numeric || [])[k] ? ' class="rtNum"' : "") + ">" + esc(c) + "</th>";
@@ -604,7 +611,7 @@ sap.ui.define([
 			document.addEventListener("keydown", function (ev) {
 				var tgt = ev.target;
 				var bTyping = tgt && (tgt.tagName === "TEXTAREA" || tgt.tagName === "INPUT" || tgt.isContentEditable);
-				if (ev.key === "Enter" && tgt && tgt.getAttribute && tgt.getAttribute("data-rt")) {
+				if (ev.key === "Enter" && tgt && tgt.tagName !== "BUTTON" && tgt.getAttribute && tgt.getAttribute("data-rt")) {
 					tgt.click();
 					return;
 				}
@@ -632,13 +639,6 @@ sap.ui.define([
 
 		_rtAct: function (sUid, sAct, el) {
 			var s = this._mRt && this._mRt[sUid];
-			if (sAct === "todata") {
-				var oNode = document.querySelector('[data-rtuid="' + sUid + '"]');
-				var oMsg = oNode && oNode.closest(".sapMLIB");
-				var oTarget = oMsg && oMsg.querySelector(".analysisBlock");
-				if (oTarget && oTarget.scrollIntoView) { oTarget.scrollIntoView({ behavior: "smooth", block: "start" }); }
-				return;
-			}
 			if (!s) {
 				return;
 			}
@@ -648,6 +648,9 @@ sap.ui.define([
 				this._rtPrefCollapse(s.collapsed);
 			} else if (sAct === "tool" || sAct === "think") {
 				if (s.items[i]) { s.items[i].open = !s.items[i].open; }
+			} else if (sAct === "datasets") {
+				var oDs = s.items[i] && s.items[i].ds;
+				if (oDs) { oDs.open = !oDs.open; }
 			} else if (sAct === "pick") {
 				this._rtPick(sUid, Number(el.getAttribute("data-v")));
 				return;

@@ -284,7 +284,7 @@ sap.ui.define([
 					var res = that._result(r, sAnswer, aSteps, iTools, t0, "OK", "", o.modelId);
 					res.title = r.title || "";
 					// 报表参数卡：和原 Agent 同形的任务字段，控制器照常挂内联参数卡（_updateTaskState / _attachAskCard）
-					// 工具带回的数据集：原样交给控制器（ChatService._sanitizeAnalysis 清洗后画表格 / 图表）
+					// 回答区只接引擎选定的结果表。其余数据预览由过程事件挂到工具步骤。
 					if (r.datasets && r.datasets.length) {
 						res.analysisRaw = { summary: "", findings: [], charts: [], datasets: r.datasets };
 					}

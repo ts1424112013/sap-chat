@@ -116,6 +116,18 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   const ChatService = load('zai/chat/service/ChatService');
   const LingXiState = load('zai/chat/utils/LingXiState');
 
+  console.log('\n━━ 新引擎过程数据');
+  const RunTimeline = load('zai/chat/controller/mixin/RunTimeline');
+  const processData = { count: 1, preview: [{ name: '试查', total: 150, columns: ['料号'], rows: [['001']] }] };
+  const collapsed = RunTimeline._rtDsHtml(processData, 2);
+  check('中间表默认只显示预览入口', collapsed.includes('aria-expanded="false"') && !collapsed.includes('<table'));
+  const opened = RunTimeline._rtDsHtml({ ...processData, open: true }, 2);
+  check('展开中间表只在对应步骤显示样例', opened.includes('aria-expanded="true"') &&
+    opened.includes('<table') && opened.includes('001') && !opened.includes('回答下方'));
+  check('恢复历史时只显示表格数量，没有失效的跳转按钮',
+    /返回 1 张数据表/.test(RunTimeline._rtDsHtml({ count: 1 }, 2)) &&
+    !RunTimeline._rtDsHtml({ count: 1 }, 2).includes('<button'));
+
   console.log('\n━━ 首页时段问候');
   const HeroGreeting = load('zai/chat/utils/HeroGreeting');
   const atHour = (h, m = 0) => new Date(2026, 0, 1, h, m);

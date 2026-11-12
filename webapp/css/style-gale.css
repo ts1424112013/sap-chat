@@ -2391,9 +2391,12 @@ body.schedOn .dataTools .dtSched { display: inline-block !important; }
 .rtDetLabel { color: var(--sub); font-size: .74rem; }
 .rtDs { margin: .3rem 0 .4rem 1.55rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: .45rem .65rem; }
 .rtDsHead { display: flex; align-items: baseline; gap: .5rem; font-size: .82rem; }
-.rtDsGo, .rtDsLink { margin-left: auto; color: var(--accent); cursor: pointer; font-size: .78rem; }
-.rtDsLink { display: block; margin: .1rem 0 .3rem 1.55rem; }
-.rtDsGo:hover, .rtDsLink:hover { text-decoration: underline; }
+.rtDsSummary { display: flex; align-items: center; gap: .25rem; margin: .1rem 0 .3rem 1.55rem; padding: .1rem 0; font: inherit; font-size: .78rem; color: var(--sub); }
+button.rtDsSummary { border: 0; background: none; color: var(--accent); cursor: pointer; }
+button.rtDsSummary:hover { text-decoration: underline; }
+.rtDsSummary svg { width: .8rem; height: .8rem; transform: rotate(-90deg); }
+.rtDsSummary.rtOpen svg { transform: none; }
+.rtDsSample { margin-left: auto; }
 .rtDsTb { width: 100%; border-collapse: collapse; margin-top: .3rem; font-size: .78rem; }
 .rtDsTb th, .rtDsTb td { padding: .18rem .4rem; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 12rem; }
 .rtDsTb th { color: var(--sub); font-weight: 400; }

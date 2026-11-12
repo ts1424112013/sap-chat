@@ -387,7 +387,8 @@ const server = http.createServer(async (req, res) => {
       const c10 = (SCRIPT10[run.step10 - 1] || (() => null))();
       if (c10) return reply({ role: "assistant", content: "", tool_calls: c10 }, c10);
       run.toolTexts10 = msgs.filter(m => m.role === "tool").map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content));
-      return reply({ role: "assistant", content: "完成 场景十" });
+      const table = run.toolTexts10.map(t => /可展示的结果表编号：(D\d+)/.exec(t)).find(Boolean);
+      return reply({ role: "assistant", content: "完成 场景十" + (table ? "\n[[结果表:" + table[1] + "]]" : "") });
     }
     if (run.question && run.question.includes("场景九")) {
       run.step9 = (run.step9 || 0) + 1;

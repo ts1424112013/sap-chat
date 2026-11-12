@@ -124,7 +124,8 @@ async function main() {
     check("参数卡交回界面", r3.card && r3.card.taskId === "T1" && /请填参数/.test(r3.answer), r3.answer);
     check("参数卡写回会话", run3.status === "OK" && /请填参数/.test(run3.answer || ""));
     check("技能事件", ev3.some(e => e.type === "skill" && e.name === "库存盘点"));
-    check("工具带回的数据集交给界面", Array.isArray(r3.datasets) && r3.datasets.length === 1 && r3.datasets[0].name === "库存结果");
+    check("参数卡前的库存表留在过程步骤里", r3.datasets.length === 0 &&
+      ev3.some(e => e.type === "datasets" && e.preview.some(d => d.name === "库存结果")));
     // ---- 场景四：SAP 确定性回答（Fiori 参数卡），不调模型 ----
     const r4 = await LingxiAgent.run({ question: "场景四", context: { focusArtifactId: "FA1" }, sap: { base: "/sap/bc/zai_agent" }, onEvent: e => events.push(e) });
     const runs4 = await (await fetch("/__runs")).json();

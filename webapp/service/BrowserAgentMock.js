@@ -114,6 +114,8 @@ sap.ui.define([], function () {
 
 	function answer(aMsgs, sQ, bFolder, sKind) {
 		var aTool = aMsgs.filter(function (m) { return m.role === "tool"; }).map(textOf);
+		var aRefs = aTool.map(function (s) { return /\n\n可展示的结果表编号：(D\d+)/.exec(s); }).filter(Boolean);
+		var sResult = aRefs.length ? "\n[[结果表:" + aRefs[aRefs.length - 1][1] + "]]" : "";
 		if (sKind === "ADT") {
 			return "**ZCL_AI_AGENT_SERVICE**（包 ZIDPPP）是任务模式的编排类（演示数据）。\n\n" +
 				"- 新引擎相关的方法：`BROWSER_START`（第 3690 行）、`BROWSER_TOOL`（第 4287 行）、`BROWSER_FINISH`（第 4698 行）；原引擎入口是 `ANALYZE_AGENT`（第 412 行）。\n" +
@@ -130,11 +132,11 @@ sap.ui.define([], function () {
 		if (sKind === "PLAN") {
 			aLines.push("- 按受控查询计划统计了物料类型分布：原材料（ROH）最多，9120 个；成品（FERT）1280 个。明细见下方表格，可以直接生成图表。",
 				"", "要按工厂再拆分吗？", "[[选项: 按工厂拆分 | 不用了]]");   // 20261110（11.10 #08）：演示回答后的选项按钮
-			return aLines.join("\n");
+			return aLines.join("\n") + sResult;
 		}
 		if (sKind === "FUNC") {
 			aLines.push("- 调用函数 Z_AI_DEMO_PO_OPEN 查到工厂 1000 有 3 张未清采购单，供应商 100023 占 2 张。明细见下方表格。");
-			return aLines.join("\n");
+			return aLines.join("\n") + sResult;
 		}
 		var sSkill = aTool.filter(function (t) { return /以下是管理员维护的做法/.test(t); })[0];
 		if (sSkill) {
@@ -142,11 +144,7 @@ sap.ui.define([], function () {
 			aLines.push("- 先读了技能「" + (mName ? mName[1] : "") + "」的做法，再按做法执行。");
 		}
 		if (sKind === "RESULT") {
-			aLines.push("- 本会话的结果「成品可用庫存報表（演示）」共 " + DEMO_ROWS.length + " 行，库存最高的 5 个料号：", "",
-				"| 鴻海料號 | 倉碼 | 庫存 |", "|---|---|---:|");
-			DEMO_ROWS.slice().sort(function (a, b) { return b[2] - a[2]; }).slice(0, 5).forEach(function (r) {
-				aLines.push("| " + r[0] + " | " + r[1] + " | " + r[2] + " |");
-			});
+			aLines.push("- 本会话的结果「成品可用庫存報表（演示）」共 " + DEMO_ROWS.length + " 行，排名见下方表格。");
 			aLines.push("");
 			if (aTool.some(function (t) { return /^已保存/.test(t); })) {
 				aLines.push("- 整份结果已按你的确认存到 `/灵犀导出/成品可用库存.csv`（Excel 可直接打开）。");
@@ -155,7 +153,7 @@ sap.ui.define([], function () {
 			} else if (!bFolder && /存|导出|保存/.test(sQ)) {
 				aLines.push("- 要存到电脑上，先点输入框下方的「选择文件夹」。");
 			}
-			return aLines.join("\n");
+			return aLines.join("\n") + sResult;
 		}
 		if (bFolder) {
 			var sLs = aTool.filter(function (t) { return /\(directory\)|bytes\)/.test(t); })[0] || "";

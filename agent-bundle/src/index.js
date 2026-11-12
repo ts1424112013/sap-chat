@@ -22,6 +22,7 @@ import { summarizeStep, mainArg, toolOk } from "./step-summary.js";
 import { createAdtClient, ADT_TOOL_SPECS, ADT_PROMPT, ADT_SQL_PROMPT, normalizeUri, parseDataPreview } from "./adt-client.js";
 import { buildXlsx, buildDocx, officeToText, parseCsv, csvValue } from "./office.js";
 import { lintAbap, lintText } from "./abap-lint.js";
+import { withTableRefs, withoutTableRefs, selectResultTables } from "./result-tables.js";
 
 export const VERSION = "0.17.0";
 export const MEMORY_FILE = "/灵犀记忆.md";
@@ -59,7 +60,7 @@ export function contextPlan(ctxTokens) {
 
 const SUMMARY_PROMPT = `你在为一个 SAP 业务助手压缩对话记录。请用中文写一份简洁的总结，后面的工作只能看到这份总结：
 1. 用户要做的事、已经定下的口径和结论；
-2. 已经查到的关键数字、表名、字段、报表 / 结果号（result_id）、对象名，原样保留；
+2. 已经查到的关键数字、表名、字段、报表 / 结果号（result_id）、本轮可展示的结果表编号（D1 等）、对象名，原样保留；
 3. 改过或新建的文件路径；
 4. 还没做完的事（对照待办）。
 不要编造内容，不要写客套话。
@@ -74,7 +75,7 @@ const BASE_PROMPT = `你是「灵犀」，公司内部的 SAP 业务助手，运
 - 多步任务先用 write_todos 列出计划，做完一项勾一项；简单问题直接回答，不必列计划。
 - SAP 数据只能通过 SAP 工具获取，不要编造数字；工具返回"部分数据 / 已截断"时，回答里要说明。
 - 回答用中文，先给结论，再给依据。
-- 查数工具（run_sql、query_result、数据分析等）查出的数据，界面会在回答下方自动显示完整表格（可排序、导出、画图）。回答里只写结论、关键数字和说明，不要把查到的数据再整张抄成 Markdown 表格；确实要对比时最多列 5 行的小表。
+- 查数工具返回的表在对应过程步骤里。用户需要明细、排名或对照表时，在最终回答末尾另起一行写 [[结果表:D2,D4]]。工具回传的编号按表格顺序对应，只选本轮直接回答问题的表，最多 4 张。界面会在回答下方展示所选表格（可排序、导出、画图）。探索、试查、估算用的表不选。只需文字结论时省略这行。正文写结论、关键数字和说明，不要复抄整张表。
 - 工具报「没有权限」「表 / 对象不存在」这类错误时，重试也一样失败：不要用同样的参数再调用，也不要把同一个计划原样再走一遍；换别的办法，换不了就停下来告诉用户缺什么（如缺哪张表的权限）。
 过程说明（用户在界面上实时看你的每一步）：
 - 开始干活时，在第一次调用工具的同时用一句话说打算怎么做（先查什么、再看什么）。
@@ -311,10 +312,6 @@ function buildSapTools(client, run, emit, signal, onCard, onDatasets, folderBack
       }
       const r = await client.execTool({ runId: run.runId, tool: t.name, args: args || {}, requestId }, { signal });
       if (r && r.display) emit({ type: "display", tool: t.name, display: r.display });
-      // 数据集（查数 / 结果查询 / 数据分析 / 函数）直接交给界面画表格和图表，不经过模型；带上调用编号，界面挂到对应那一步
-      if (r && Array.isArray(r.datasets) && r.datasets.length && onDatasets) {
-        onDatasets(t.name, r.datasets, config && config.toolCall && config.toolCall.id);
-      }
       if (r && r.ok === false) {
         const msg = r.message || "未知原因";
         return `工具执行失败：${msg}` + (NO_RETRY_RE.test(msg) ? NO_RETRY_HINT : "");
@@ -324,7 +321,9 @@ function buildSapTools(client, run, emit, signal, onCard, onDatasets, folderBack
         return CARD_TOOL_TEXT;
       }
       const out = clip(r && r.content != null ? r.content : r);
-      return lint ? out + "\n\n" + lint : out;
+      const ids = r && Array.isArray(r.datasets) && toolOk(out)
+        ? onDatasets(t.name, r.datasets, config && config.toolCall && config.toolCall.id) : [];
+      return withTableRefs(lint ? out + "\n\n" + lint : out, ids);
     },
     {
       name: t.name,
@@ -575,17 +574,17 @@ function buildAdtSqlTool(adt, client, run, signal, onDatasets) {
         return `工具执行失败：${(e && e.message) || "SAP 审计接口不可用，不能执行 SQL"}`;
       }
       const t0 = Date.now();
-      let out, status = "OK";
+      let out, status = "OK", ids = [];
       try {
         out = await adt.runSql(a, signal);
-        if (out.dataset && onDatasets) onDatasets(ADT_SQL_TOOL, [out.dataset], config && config.toolCall && config.toolCall.id);
+        if (out.dataset) ids = onDatasets(ADT_SQL_TOOL, [out.dataset], config && config.toolCall && config.toolCall.id);
       } catch (e) {
         if (signal && signal.aborted) throw e;
         status = e && (e.status === 401 || e.status === 403) ? "DENIED" : "ERROR";
         out = { text: `工具执行失败：${(e && e.message) || e}`, rows: 0 };
       }
       client.auditAdt({ runId: run.runId, seq, status, ms: Date.now() - t0, rows: out.rows || 0 }, {}).catch(() => {});
-      return clip(out.text);
+      return withTableRefs(clip(out.text), ids);
     },
     { name: ADT_SQL_TOOL, description: spec.description || ADT_SQL_TOOL,
       schema: spec.parameters && typeof spec.parameters === "object" ? spec.parameters : { type: "object", properties: { sql: { type: "string" } }, required: ["sql"] } }
@@ -942,19 +941,26 @@ export async function run(o) {
     inner.abort(new Error("lingxi-card"));
   };
 
-  const datasets = [];
+  const resultTables = new Map();
   const onDatasets = (toolName, list, callId) => {
-    const first = datasets.length;
-    for (const d of list) if (d && typeof d === "object" && datasets.length < 8) datasets.push(d);
-    // index = 这一步的数据集在本次运行 datasets 里从第几个开始（界面按它把数据卡挂到这一步下面）
-    // preview：每个数据集只带列名和前 3 行，供过程里就地预览；完整数据在运行结果的 datasets 里
-    track({ type: "datasets", tool: toolName, id: callId || "", index: first, count: datasets.length - first,
-      preview: list.slice(0, 2).map(d => ({
-        name: (d && d.name) || "", total: d && (d.total_rows != null ? d.total_rows : (d.rows || []).length),
-        columns: ((d && d.columns) || []).slice(0, 6).map(c => (c && (c.label || c.name)) || ""),
-        numeric: ((d && d.columns) || []).slice(0, 6).map(c => !!(c && c.numeric)),
-        rows: ((d && d.rows) || []).slice(0, 3).map(r => (Array.isArray(r) ? r : []).slice(0, 6))
-      })) });
+    const first = resultTables.size;
+    const ids = [];
+    const preview = [];
+    for (const d of list) {
+      if (!d || (d.status && d.status !== "OK") || !Array.isArray(d.columns) || !d.columns.length || !Array.isArray(d.rows)) continue;
+      const id = "D" + (resultTables.size + 1);
+      resultTables.set(id, d);
+      ids.push(id);
+      const columns = d.columns.slice(0, 6);
+      preview.push({
+        name: d.name || "", total: d.total_rows ?? d.rows.length,
+        columns: columns.map(c => (c && (c.label || c.name)) || ""),
+        numeric: columns.map(c => !!(c && c.numeric)),
+        rows: d.rows.slice(0, 3).map(r => (Array.isArray(r) ? r : []).slice(0, 6))
+      });
+    }
+    if (ids.length) track({ type: "datasets", tool: toolName, id: callId || "", index: first, count: ids.length, preview });
+    return ids;
   };
   const tools = buildSapTools(client, runInfo, emit, inner.signal, onCard, onDatasets, folderBackend);
   if (folderBackend && !(folderBackend.opts && folderBackend.opts.readOnly)) tools.push(buildDeleteTool(folderBackend), ...buildOfficeTools(folderBackend));
@@ -1042,6 +1048,7 @@ export async function run(o) {
   let loopStop = null;
   let lastModelAt = Date.now();
   let answer = "";
+  let datasets = [];
   let status = "OK";
   let errorMsg = "";
   try {
@@ -1076,10 +1083,13 @@ export async function run(o) {
                 callArgs[c.id] = c.args;
                 track({ type: "tool_start", id: c.id, tool: c.name, args: c.args, arg: mainArg(c.name, c.args) });
               }
-              if (!calls.length && t) { answer = t; emit({ type: "answer", text: t }); }
+              if (!calls.length && t) {
+                ({ answer, datasets } = selectResultTables(t, resultTables));
+                emit({ type: "answer", text: answer });
+              }
             } else if (ty === "tool") {
               if (m.name === "write_todos") continue;
-              const t = textOf(m);
+              const t = withoutTableRefs(textOf(m));
               const ok = toolOk(t, m.status);
               track({ type: "tool_end", id: m.tool_call_id, tool: m.name, ok,
                 summary: summarizeStep(m.name, callArgs[m.tool_call_id], t, ok), preview: t.slice(0, 1000) });
@@ -1109,6 +1119,7 @@ export async function run(o) {
   if (card && status === "OK") answer = String(card.answer || answer || "请在下面的参数卡里核对参数后提交。");
   else if (askOther && status === "OK") answer = askOther + "\n\n请在输入框里直接说明。";
   else if (loopStop && status === "OK") answer = loopStopAnswer(loopStop, loopStop.label || loopStop.tool);
+  if (card || askOther || loopStop) datasets = [];
 
   // 会话标题：只在任务第一轮、正常结束时起；用一个不开流式、输出很短的模型实例
   let title = "";
