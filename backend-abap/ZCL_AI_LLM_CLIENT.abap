@@ -935,11 +935,18 @@ CLASS zcl_ai_llm_client IMPLEMENTATION.
     ev_elapsed = ( lv_t2 - lv_t1 ) / 1000.
 
     IF ev_error IS INITIAL AND ev_code <> 200.
-      DATA(lv_snip) = ev_resp.
-      IF strlen( lv_snip ) > 300.
-        lv_snip = lv_snip(300).
+      DATA(lv_trim) = to_lower( condense( ev_resp ) ).
+      IF ev_code = 504.
+        ev_error = |HTTP 504 网关超时: 上游模型服务响应时间过长, 请缩小查询范围或关闭「深度思考」后重试|.
+      ELSEIF lv_trim CS '<html' OR lv_trim CS '<!doctype'.
+        ev_error = |HTTP { ev_code } { lv_reason }: 上游网关返回了网页错误(非 JSON), 请稍后重试或检查网关日志|.
+      ELSE.
+        DATA(lv_snip) = ev_resp.
+        IF strlen( lv_snip ) > 300.
+          lv_snip = lv_snip(300).
+        ENDIF.
+        ev_error = |HTTP { ev_code } { lv_reason }: { lv_snip }|.
       ENDIF.
-      ev_error = |HTTP { ev_code } { lv_reason }: { lv_snip }|.
     ENDIF.
     IF ev_error IS INITIAL.
       ev_usage = parse_usage( ev_resp ).

@@ -286,22 +286,23 @@ sap.ui.define([
 		// 发送（_executeSend 在浏览器引擎开着时调用这里，代替 ChatService.sendByMode）
 		// ------------------------------------------------------------------
 
-		_baHistory: function () {
+		_baHistory: function (sPendingUid) {
 			var aMsgs = this.getView().getModel("chat").getProperty("/messages") || [];
 			var a = [];
-			aMsgs.forEach(function (m) {
-				if (!m || m.streaming || (m.role !== "user" && m.role !== "assistant")) {
-					return;
-				}
-				var s = m.role === "user" ? (m.question || m.raw || "") : (m.raw || "");
-				if (s) {
-					a.push({ role: m.role, content: String(s).slice(0, 4000) });
-				}
-			});
-			// 最后一条是本轮刚推进去的用户消息，由引擎自己加
-			if (a.length && a[a.length - 1].role === "user") {
-				a.pop();
+			var iPending = aMsgs.findIndex(function (m) { return m && m.uid === sPendingUid; });
+			var aPrevious = iPending < 0 ? aMsgs : aMsgs.slice(0, iPending);
+			var oQuestion = aPrevious[aPrevious.length - 1];
+			if (iPending >= 0 && oQuestion && oQuestion.role === "user" && oQuestion.runUid === sPendingUid) {
+				aPrevious.pop();
 			}
+			var oRecovery = null;
+			aPrevious.forEach(function (m) {
+				if (!m || m.streaming || (m.role !== "user" && m.role !== "assistant")) { return; }
+				var oRt = this._mRt && this._mRt[m.uid];
+				oRecovery = m.role === "assistant" && oRt ? oRt.recovery : null;
+				var s = m.role === "user" ? (m.question || m.raw || "") : (oRecovery && oRecovery.answer) || m.raw || "";
+				if (s) { a.push({ role: m.role, content: String(s).slice(0, 4000) }); }
+			}, this);
 			return a.slice(-MAX_HISTORY);
 		},
 
@@ -317,7 +318,7 @@ sap.ui.define([
 			var oAbort = new AbortController();
 			this._baAbort = oAbort;
 			oRt.abort = oAbort;   // 20261109：停止只停当前任务这一轮（切走期间别的任务可能也在跑）
-			var aHist = this._baHistory();
+			var aHist = this._baHistory(sUid);
 			var sTitleAtStart = String(((this._findSession && this._findSession(p.sessionId)) || {}).Title || "");
 			return BrowserAgentService.send({
 				question: p.question,
@@ -349,7 +350,11 @@ sap.ui.define([
 					} : null
 				} : null,
 				onEvent: function (e) {
-					that._rtEvent(sUid, e);
+					if (e.type === "recovery") {
+						oRt.recovery = { answer: e.answer };
+					} else {
+						that._rtEvent(sUid, e);
+					}
 				},
 				confirm: function (req) {
 					return that._rtConfirm(sUid, req);
@@ -366,7 +371,7 @@ sap.ui.define([
 					delete r.analysisRaw;
 				}
 				// 演示模式没有 SAP 的 run/finish：本地记进会话，左侧列表与重开会话都能看到
-				if (ChatService.getMode() === "mock" && r && r.status === "OK" && ChatService._mockRecordExchange) {
+				if (ChatService.getMode() === "mock" && r && r.answer && ChatService._mockRecordExchange) {
 					ChatService._mockRecordExchange({ sessionId: p.sessionId, question: p.question, modelId: p.modelId, scene: p.scene }, r.answer);
 					if (r.title) {
 						ChatService.updateSession({ sessionId: p.sessionId, title: r.title }).catch(function () { /* 演示：存不了就算了 */ });
@@ -409,19 +414,16 @@ sap.ui.define([
 
 		/** 停止生成时中断浏览器里的运行（已发到 SAP 的请求以 SAP 状态为准） */
 		_baStop: function () {
-			if (this._fnBaDlgCancel) {
-				this._fnBaDlgCancel();   // 还开着的确认框按「不要改」收掉
-			}
-			// 时间线里还在等确认的面板也按「不要」收掉，引擎才能停下来
 			var sRt = this._rtActiveUid && this._rtActiveUid();
-			if (sRt && this._mRt[sRt].ask) {
-				this._rtCancelAsk(sRt);
-			}
-			var oAb = sRt ? this._mRt[sRt].abort : null;
+			var oRt = sRt ? this._mRt[sRt] : null;
+			var oAb = oRt && oRt.abort;
 			if (oAb) {
 				oAb.abort(new Error("用户停止"));
+				this._rtCancelAsk(sRt);
 				if (this._baAbort === oAb) { this._baAbort = null; }
 			}
+			if (this._fnBaDlgCancel) { this._fnBaDlgCancel(); }
+			return oRt && oRt.recovery && oRt.recovery.answer;
 		},
 
 		// ------------------------------------------------------------------

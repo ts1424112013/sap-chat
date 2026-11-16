@@ -224,7 +224,9 @@ async function makeTitle(model, question, answer, signal) {
  * 工具结果里先提醒模型；同一工具 + 同样参数再失败就由引擎直接停下（见 run() 里的 failGuard）。
  */
 export const NO_RETRY_RE = /权限|未授权|没有授权|无权|not authori[sz]ed|no authori[sz]ation|forbidden|\b403\b|不存在|does not exist|not found|未找到|找不到|未登记|不在白名单|不允许/i;
+export const QUOTA_RE = /已达.*(?:上限|次数上限)|次数已达上限|调用已达上限/;
 const NO_RETRY_HINT = "\n（这类错误重试也不会成功：不要用同样的参数再调用；换别的办法，换不了就告诉用户缺什么。）";
+const QUOTA_HINT = "\n（本次运行该工具的调用次数已用完，换条件重试也会被拒绝：不要再调用这个工具，请直接基于已查到的结果回答。）";
 /** 同一工具 + 同样参数失败到这么多次就停：确定性错误 2 次，其他（超时等）3 次；整轮连续失败到 6 次也停 */
 export const FAIL_LIMIT = { same: 3, sameNoRetry: 2, inARow: 6 };
 
@@ -235,8 +237,9 @@ function stableArgs(a) {
 }
 
 /**
- * 失败计数：返回 null = 继续；返回 {reason, tool, noRetry} = 该停了。
+ * 失败计数：返回 null = 继续；返回 {reason, tool, noRetry, quota} = 该停了。
  * 成功的一步会清零「连续失败」，但同一调用的失败次数保留（隔几步再原样调一次照样算）。
+ * 次数耗尽（quota）按工具名本身累计：换 SQL / 换参数再试同样直接停下，避免无意义空转。
  */
 export function createFailGuard(limit = FAIL_LIMIT) {
   const byKey = new Map();
@@ -245,12 +248,14 @@ export function createFailGuard(limit = FAIL_LIMIT) {
     note(toolName, args, ok, text) {
       if (ok) { inARow = 0; return null; }
       inARow++;
-      const key = toolName + "|" + stableArgs(args);
+      const s = String(text || "");
+      const quota = QUOTA_RE.test(s);
+      const noRetry = quota || NO_RETRY_RE.test(s);
+      const key = quota ? toolName + "|__QUOTA__" : toolName + "|" + stableArgs(args);
       const n = (byKey.get(key) || 0) + 1;
       byKey.set(key, n);
-      const noRetry = NO_RETRY_RE.test(String(text || ""));
-      if (n >= (noRetry ? limit.sameNoRetry : limit.same)) return { reason: "same", tool: toolName, count: n, noRetry, text: String(text || "") };
-      if (inARow >= limit.inARow) return { reason: "inARow", tool: toolName, count: inARow, noRetry, text: String(text || "") };
+      if (n >= (noRetry ? limit.sameNoRetry : limit.same)) return { reason: "same", tool: toolName, count: n, noRetry, quota, text: s };
+      if (inARow >= limit.inARow) return { reason: "inARow", tool: toolName, count: inARow, noRetry, quota, text: s };
       return null;
     }
   };
@@ -258,12 +263,16 @@ export function createFailGuard(limit = FAIL_LIMIT) {
 
 export function loopStopAnswer(stop, label) {
   const why = String(stop.text || "").replace(/^(Error:\s*|工具执行失败[:：]\s*)/, "").split("\n")[0].slice(0, 200);
-  const head = stop.reason === "same"
-    ? `同一步（${label}）用同样的条件已经失败 ${stop.count} 次，再试结果也一样，我先停下来。`
-    : `连续 ${stop.count} 步都失败了，我先停下来，免得空转。`;
-  const tip = stop.noRetry
-    ? "看起来是权限不够或对象不存在：如果确实需要，可以在灵犀里申请对应权限，或者换个说法 / 指定别的报表再问我。"
-    : "可以稍后再试，或者换个说法再问我。";
+  const head = stop.quota
+    ? `工具（${stop.tool || label}）的调用次数已达本次运行上限（连续尝试 ${stop.count} 次），继续重试也会被拒绝，我先停下来。`
+    : stop.reason === "same"
+      ? `同一步（${label}）用同样的条件已经失败 ${stop.count} 次，再试结果也一样，我先停下来。`
+      : `连续 ${stop.count} 步都失败了，我先停下来，免得空转。`;
+  const tip = stop.quota
+    ? "可以直接基于上面已经查到的结果继续追问，或缩小范围后重新提问。"
+    : stop.noRetry
+      ? "看起来是权限不够或对象不存在：如果确实需要，可以在灵犀里申请对应权限，或者换个说法 / 指定别的报表再问我。"
+      : "可以稍后再试，或者换个说法再问我。";
   return `${head}\n\n最后一次的错误：${why || "未知原因"}\n\n${tip}`;
 }
 
@@ -314,16 +323,19 @@ function buildSapTools(client, run, emit, signal, onCard, onDatasets, folderBack
       if (r && r.display) emit({ type: "display", tool: t.name, display: r.display });
       if (r && r.ok === false) {
         const msg = r.message || "未知原因";
-        return `工具执行失败：${msg}` + (NO_RETRY_RE.test(msg) ? NO_RETRY_HINT : "");
+        const hint = QUOTA_RE.test(msg) ? QUOTA_HINT : NO_RETRY_RE.test(msg) ? NO_RETRY_HINT : "";
+        return `工具执行失败：${msg}` + hint;
       }
       if (r && r.card && typeof r.card === "object") {
         onCard(r.card);
         return CARD_TOOL_TEXT;
       }
       const out = clip(r && r.content != null ? r.content : r);
-      const ids = r && Array.isArray(r.datasets) && toolOk(out)
+      const ok = toolOk(out);
+      const ids = r && Array.isArray(r.datasets) && ok
         ? onDatasets(t.name, r.datasets, config && config.toolCall && config.toolCall.id) : [];
-      return withTableRefs(lint ? out + "\n\n" + lint : out, ids);
+      const extraHint = !ok ? (QUOTA_RE.test(out) ? QUOTA_HINT : NO_RETRY_RE.test(out) ? NO_RETRY_HINT : "") : "";
+      return withTableRefs((lint ? out + "\n\n" + lint : out) + extraHint, ids);
     },
     {
       name: t.name,
@@ -742,7 +754,7 @@ export function interruptedAnswer(trace, reason, changes) {
   for (const e of trace || []) if (e.type === "todos") todos = e.todos;
   const left = (todos || []).filter(t => t && t.status !== "completed");
   if (left.length) { out.push("", "计划里还没做的："); left.slice(0, 10).forEach(t => out.push(`- ${String(t.content || "").slice(0, 80)}`)); }
-  out.push("", "发「继续」可以从这里接着做，已完成的步骤不用重做。");
+  out.push("", "发「继续」可以根据已保存的进度接着做。需要原始数据时，可能需要重新读取。");
   return out.join("\n").slice(0, 3500);
 }
 
@@ -784,6 +796,7 @@ export async function run(o) {
   const ctx = o.context || {};
   const started = Date.now();
   const trace = [];
+  const changes = [];
   const track = e => { trace.push({ ...e, at: Date.now() - started }); emit(e); };
 
   emit({ type: "phase", phase: "start" });
@@ -799,44 +812,104 @@ export async function run(o) {
     limits: { maxModelCalls: (runInfo.limits && runInfo.limits.maxModelCalls) || 0, maxToolCalls: (runInfo.limits && runInfo.limits.maxToolCalls) || 0,
       contextTokens: (runInfo.limits && runInfo.limits.contextTokens) || 0 } });
 
+  const saveFinish = async body => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await client.finishRun(body);
+        return true;
+      } catch (error) {
+        const status = error?.status;
+        const retryable = !status || status === 408 || status === 429 || status >= 500;
+        if (retryable && attempt < 2) {
+          await new Promise(resolve => setTimeout(resolve, 250 * 2 ** attempt));
+          continue;
+        }
+        emit({ type: "save_failed", message: "本轮结果未确认保存到 SAP，刷新前请保留当前会话中的进度。" });
+        return false;
+      }
+    }
+  };
+
   // SAP 已经给出确定性回答（Fiori 报表参数卡 / 候选清单 / 闸门提示）：不调模型，直接收尾
   if (runInfo.answer) {
     const det = { answer: String(runInfo.answer), card: runInfo.card && typeof runInfo.card === "object" ? runInfo.card : null };
     if (det.card) track({ type: "card", tool: det.card.tool || "", taskId: det.card.taskId || "" });
-    try {
-      await client.finishRun({ runId: runInfo.runId, status: "OK", answer: det.answer, message: "", skillsUsed: [], steps: compactSteps(trace) });
-    } catch (e) { emit({ type: "warn", message: "运行结果未能写回 SAP 会话：" + e.message }); }
+    await saveFinish({ runId: runInfo.runId, status: "OK", answer: det.answer, message: "", skillsUsed: [], steps: compactSteps(trace) });
     emit({ type: "phase", phase: "done", status: "OK" });
     return { answer: det.answer, runId: runInfo.runId, trace, card: det.card, skills: [], datasets: [], deterministic: true,
       changes: [], elapsedMs: Date.now() - started, folder: o.folderBackend || null };
   }
 
-  // 11.11 #04：页面关闭 / 刷新时运行还没收尾 → 用 keepalive 把问题、进度说明和过程记录写回 SAP 会话，
-  // 刷新后能看到停在哪一步，「继续」也有上下文（以前这一轮什么都不留，会话里只剩上一次的结果）
+  const inner = new AbortController();
+  const abortFromCaller = () => inner.abort(o.signal.reason);
+  if (o.signal) {
+    if (o.signal.aborted) abortFromCaller();
+    else o.signal.addEventListener("abort", abortFromCaller, { once: true });
+  }
+  inner.signal.addEventListener("abort", () => emit({ type: "cancel_asks" }), { once: true });
+  const publishRecovery = reason => {
+    const answer = interruptedAnswer(trace, reason, changes);
+    emit({ type: "recovery", answer });
+    return answer;
+  };
   let finished = false;
-  let folderRef = null;
+  let finishPayload;
+  const reportStop = () => { if (!finished) publishRecovery("你停止了这次运行"); };
+  if (o.signal) o.signal.addEventListener("abort", reportStop, { once: true });
+
   const onHide = () => {
     if (finished) return;
-    finished = true;
-    const body = { runId: runInfo.runId, status: "ERROR", message: "页面刷新或关闭，运行中断", skillsUsed: [],
-      answer: interruptedAnswer(trace, "页面刷新或关闭，运行中断", folderRef ? folderRef.changes : []),
-      steps: compactSteps(trace) };
-    if (JSON.stringify(body).length > 56000) body.steps = body.steps.slice(-40);
-    if (JSON.stringify(body).length > 56000) body.steps = [];
-    client.finishRun(body, { keepalive: true }).catch(() => {});
+    if (!finishPayload) {
+      inner.abort(new Error("页面刷新或关闭，运行中断"));
+      finishPayload = { runId: runInfo.runId, status: "ERROR", message: "页面刷新或关闭，运行中断", skillsUsed: [],
+        answer: interruptedAnswer(trace, "页面刷新或关闭，运行中断", changes), steps: compactSteps(trace) };
+    }
+    const body = { ...finishPayload };
+    if (new TextEncoder().encode(JSON.stringify(body)).length > 56000) body.steps = body.steps.slice(-40);
+    if (new TextEncoder().encode(JSON.stringify(body)).length > 56000) body.steps = [];
+    client.finishRun(body, { keepalive: true }).then(() => { finished = true; }).catch(() => {});
   };
   const hasWin = typeof window !== "undefined" && typeof window.addEventListener === "function";
   if (hasWin) window.addEventListener("pagehide", onHide);
 
+  const finish = async body => {
+    if (finished) return;
+    finishPayload ||= { ...body, runId: runInfo.runId, steps: compactSteps(trace) };
+    finished = await saveFinish(finishPayload) || finished;
+  };
+  try {
+    return await executeRun(o, { runInfo, client, inner, trace, changes, started, emit, track, publishRecovery, finish });
+  } catch (e) {
+    if (finishPayload) throw e;
+    const status = o.signal && o.signal.aborted ? "CANCELLED" : "ERROR";
+    const message = (e && e.message) || String(e);
+    inner.abort(e);
+    const partial = publishRecovery(status === "CANCELLED" ? "你停止了这次运行" : message);
+    await finish({ status, answer: partial, message, skillsUsed: [] });
+    throw Object.assign(new Error(message), { status, trace, runId: runInfo.runId, partial });
+  } finally {
+    if (hasWin) window.removeEventListener("pagehide", onHide);
+    if (o.signal) {
+      o.signal.removeEventListener("abort", abortFromCaller);
+      o.signal.removeEventListener("abort", reportStop);
+    }
+  }
+}
+
+async function executeRun(o, { runInfo, client, inner, trace, changes, started, emit, track, publishRecovery, finish }) {
   let allowAllWrites = false;
-  // 文件夹后端：调用方可传入同一个实例跨多轮复用（撤回要用到之前的修改记录）
-  let folderBackend = o.folderBackend || (o.folder ? new FolderBackend(o.folder) : null);
-  folderRef = folderBackend;
+  const sharedFolder = o.folderBackend || (o.folder ? new FolderBackend(o.folder) : null);
+  // Each run owns its confirmation callback, even when two sessions use the same folder.
+  const folderBackend = sharedFolder && Object.create(sharedFolder);
   if (folderBackend) {
     folderBackend.opts = {
       ...folderBackend.opts,
       question: () => o.question,
-      onChange: c => track({ type: "file_changed", action: c.action, path: c.path, backup: c.backup }),
+      onChange: c => {
+        changes.push(c);
+        track({ type: "file_changed", action: c.action, path: c.path, backup: c.backup });
+      },
+      signal: inner.signal,
       confirm: o.confirmWrites === false ? null : async req => {
         // 用户在本次运行里选过「都不再询问」：同类写入自动通过（只在本次运行有效）
         const isDelete = req.action === "删除";
@@ -847,6 +920,7 @@ export async function run(o) {
         track({ type: "confirm", action: req.action, path: req.path });
         // 没有确认界面时一律拒绝，绝不静默写用户文件
         const r = o.confirm ? await o.confirm(req) : { approved: false, message: "界面不支持确认" };
+        if (inner.signal.aborted) return { approved: false, message: "运行已中断" };
         const ok = r === true || (r && r.approved === true);
         // 「本次都不再询问」只管写和改；删除每次都问（11.8 #02）
         const always = !isDelete && !!(r && r.always === true);
@@ -927,11 +1001,6 @@ export async function run(o) {
   }
 
   // 报表参数卡：工具拿到卡就停下（和原 Agent 一样，参数由用户在卡上确认后提交，聊天里不执行报表）
-  const inner = new AbortController();
-  if (o.signal) {
-    if (o.signal.aborted) inner.abort(o.signal.reason);
-    else o.signal.addEventListener("abort", () => inner.abort(o.signal.reason), { once: true });
-  }
   let card = null;
   const onCard = c => {
     if (card) return;
@@ -1017,7 +1086,16 @@ export async function run(o) {
     middleware: [todoListMiddleware(), summarization]
   });
 
-  const messages = [...(o.history || []).map(h => ({ role: h.role, content: h.content })), { role: "user", content: o.question }];
+  const messages = (o.history || []).map(h => ({ role: h.role, content: h.content }));
+  const lastReply = messages[messages.length - 1];
+  const resume = /^(?:请)?继续(?:上次|刚才)?(?:的任务)?[。！!\s]*$/.test(String(o.question || "").trim())
+    && lastReply && lastReply.role === "assistant" && /^（(?:浏览器 Agent )?未完成/.test(lastReply.content);
+  let question = o.question;
+  if (resume) {
+    question += "\n\n请根据上一轮的进度说明和原任务继续。已完成的写入、删除和提交不要重复执行。只补读取继续所必需的内容，剩余写入仍按当前确认流程处理。";
+    question += " 需要引用或修改本地文件时，先读取文件的当前内容。";
+  }
+  messages.push({ role: "user", content: question });
   const config = { configurable: { thread_id: runInfo.runId }, recursionLimit: (runInfo.limits && runInfo.limits.recursionLimit) || 120, signal: inner.signal };
 
   const skillsUsed = new Map();
@@ -1135,33 +1213,29 @@ export async function run(o) {
 
   // 11.11 #04 / #05：没正常结束 → 回答换成进度说明（存进会话，「继续」据此接着做）
   let partial = "";
-  if (status !== "OK" && !answer) {
-    partial = interruptedAnswer(trace, status === "CANCELLED" ? "你停止了这次运行" : errorMsg,
-      folderBackend ? folderBackend.changes : []);
+  if (o.signal && o.signal.aborted) {
+    status = "CANCELLED";
+    errorMsg = "用户停止";
   }
-  if (hasWin) window.removeEventListener("pagehide", onHide);
-  if (finished) {   // 页面已在关闭，收尾已经用 keepalive 发过
-    emit({ type: "phase", phase: "done", status });
-    if (status !== "OK") throw Object.assign(new Error(errorMsg || status), { status, trace, runId: runInfo.runId, partial });
+  if (status !== "OK") {
+    inner.abort(new Error(errorMsg || status));
+    partial = publishRecovery(status === "CANCELLED" ? "你停止了这次运行" : errorMsg);
+    answer = "";
   }
-  finished = true;
-  try {
-    await client.finishRun({
-      runId: runInfo.runId, status, answer: answer || partial, message: errorMsg,
-      skillsUsed: [...skillsUsed.keys()].filter(k => !k.startsWith("folder:") && !k.startsWith("builtin:")),
-      steps: compactSteps(trace),
-      title
-    });
-  } catch (e) { emit({ type: "warn", message: "运行结果未能写回 SAP 会话：" + e.message }); }
+  await finish({
+    status, answer: answer || partial, message: errorMsg,
+    skillsUsed: [...skillsUsed.keys()].filter(k => !k.startsWith("folder:") && !k.startsWith("builtin:")),
+    title
+  });
 
   // 记忆超过上限：回答已经给出、会话已写回，再整理（要用户确认写入）
-  if (folderBackend && status === "OK" && !(o.signal && o.signal.aborted)) {
+  if (folderBackend && status === "OK" && !inner.signal.aborted) {
     const makeModel = () => new ChatOpenAI({
       model: runInfo.model || "lingxi", apiKey: "sap-session", temperature: 0, maxTokens: 8000, maxRetries: 0,
       timeout: (runInfo.limits && runInfo.limits.modelTimeoutMs) || 240000, streaming: false,
       configuration: { baseURL: client.root, fetch: client.modelFetch(runInfo.runId), dangerouslyAllowBrowser: true }
     });
-    try { await compactMemoryAfterRun(folderBackend, makeModel, track, o.signal); }
+    try { await compactMemoryAfterRun(folderBackend, makeModel, track, inner.signal); sharedFolder._memSkip = folderBackend._memSkip; }
     catch (e) { emit({ type: "warn", message: "整理记忆失败：" + ((e && e.message) || e) }); }
   }
 
@@ -1170,7 +1244,7 @@ export async function run(o) {
   return {
     answer, runId: runInfo.runId, trace, card, datasets, title,
     skills: [...skillsUsed.values()],
-    changes: folderBackend ? folderBackend.changes.slice() : [], elapsedMs: Date.now() - started, folder: folderBackend
+    changes: changes.slice(), elapsedMs: Date.now() - started, folder: sharedFolder
   };
 }
 

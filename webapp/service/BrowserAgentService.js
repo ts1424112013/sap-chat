@@ -195,6 +195,11 @@ sap.ui.define([
 			return f.backend.undoLast();
 		},
 
+		grantedFolder: function () {
+			var f = this._oFolder;
+			return f && f.permission === "granted" ? f.handle : null;
+		},
+
 		_folderBackend: function (LA) {
 			var f = this._oFolder;
 			if (!f || f.permission !== "granted") {
@@ -302,7 +307,7 @@ sap.ui.define([
 					return res;
 				}, function (e) {
 					var bStop = o.signal && o.signal.aborted;
-					var res = that._result({ trace: e && e.trace }, "", aSteps, iTools, t0, bStop ? "STOPPED" : "ERROR",
+					var res = that._result({ trace: e && e.trace }, (e && e.partial) || "", aSteps, iTools, t0, bStop ? "STOPPED" : "ERROR",
 						(e && e.message) || String(e), o.modelId);
 					if (bStop) {
 						return res;

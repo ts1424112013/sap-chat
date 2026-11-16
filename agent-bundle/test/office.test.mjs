@@ -344,3 +344,21 @@ test("xlsx 颜色：读别人做的文件 —— 样式字色 + 一句话里部�
   assert.match(t, /B3 其中「这几个字是红的」是红\(#FF0000\)字/);
   assert.doesNotMatch(t, /A1 /);
 });
+
+test("备份期间停止时，编辑和删除都保留原文件", async () => {
+  for (const operation of ["edit", "delete"]) {
+    const controller = new AbortController();
+    const backend = new FolderBackend(new MemDir(), { signal: controller.signal });
+    await backend.write("/stock.txt", "original");
+    const backup = backend._backup.bind(backend);
+    backend._backup = async path => {
+      const result = await backup(path);
+      controller.abort(new Error("运行已中断"));
+      return result;
+    };
+    const result = await backend[operation]("/stock.txt", "original", "changed");
+    assert.match(result.error, /运行已中断/);
+    assert.equal(await (await backend._readFile("/stock.txt")).text(), "original");
+    assert.equal(backend.changes.length, 1);
+  }
+});

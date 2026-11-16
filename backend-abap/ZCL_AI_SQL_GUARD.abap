@@ -222,10 +222,14 @@ CLASS zcl_ai_sql_guard IMPLEMENTATION.
       RETURN.
     ENDIF.
     " V1.2.3: 字符串常量之外只能是 ASCII —— 中文别名、全角逗号 / 括号会在生成程序里编译失败
-    DATA(lv_ascii) = `ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_~,()=<>*+-/%:@!&|^?[]{}$#.\ `.
+    DATA(lv_ascii) = `ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_~,()=<>*+-/%:!&|^?[]{}$#.\ `.
     IF lv_bare CN lv_ascii.
       ev_error = `别名和字段名只能用英文字母、数字、下划线(检测到中文或全角符号); ` &&
                  `中文只能出现在单引号常量里, 逗号和括号用半角`.
+      RETURN.
+    ENDIF.
+    IF lv_bare CS '@' OR lv_bare CS '=>' OR lv_bare CS '->'.
+      ev_error = '不允许在 SQL 中使用 ABAP 宿主表达式(@)或方法调用(=>/->)'.
       RETURN.
     ENDIF.
     IF lv_scan NS 'FROM'.

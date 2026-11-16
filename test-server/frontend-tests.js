@@ -128,6 +128,27 @@ const countOf = (s, sub) => s.split(sub).length - 1;
     /返回 1 张数据表/.test(RunTimeline._rtDsHtml({ count: 1 }, 2)) &&
     !RunTimeline._rtDsHtml({ count: 1 }, 2).includes('<button'));
 
+  const timeline = Object.assign({}, RunTimeline, {
+    _mRt: { run: { uid: 'run', sid: 'session', folder: {}, items: [], status: 'RUNNING' } },
+    _rtRender() {}, _rtInfo() {}, _rtBind() {}, _rtPrefCollapse() { return true; }
+  });
+  const first = timeline._rtConfirm('run', { action: '修改', path: '/a.txt' });
+  const second = timeline._rtConfirm('run', { action: '修改', path: '/b.txt' });
+  const question = timeline._rtQuestion('run', { question: '继续吗？', options: ['继续', '稍等'] });
+  check('两个并发修改只启用当前卡，其余确认和问题排队',
+    timeline._mRt.run.ask.item.req.path === '/a.txt' && timeline._mRt.run.askQ.length === 2);
+  timeline._rtPick('run', 0, 0);
+  timeline._rtPick('run', 0, 0);
+  check('旧卡的点击不能批准下一张卡',
+    (await first).approved && timeline._mRt.run.ask.item.req.path === '/b.txt');
+  timeline._rtSetWriteGrant(timeline._mRt.run);
+  timeline._rtCancelAsk('run');
+  const late = await timeline._rtConfirm('run', { action: '修改', path: '/late.txt' });
+  check('中断拒绝全部剩余确认，已有写入许可也不能批准排队或迟到的请求',
+    !(await second).approved && (await question).cancel && !late.approved && !timeline._mRt.run.ask);
+  check('刷新后时间线保留中断状态',
+    timeline._rtFromSteps('old', [], 'session', '', '（未完成：你停止了这次运行）').includes('已停止'));
+
   console.log('\n━━ 首页时段问候');
   const HeroGreeting = load('zai/chat/utils/HeroGreeting');
   const atHour = (h, m = 0) => new Date(2026, 0, 1, h, m);

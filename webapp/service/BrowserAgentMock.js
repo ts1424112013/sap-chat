@@ -520,7 +520,7 @@ sap.ui.define([], function () {
 					try {
 						var k = "lingxi-mock-steps:" + (o.sessionId || "");
 						var a = JSON.parse(window.localStorage.getItem(k) || "[]");
-						a.push({ msgSeq: 0, answerHead: String((p && p.answer) || "").slice(0, 60), steps: (p && p.steps) || [] });
+						a.push({ msgSeq: 0, status: p && p.status, answerHead: String((p && p.answer) || "").slice(0, 60), steps: (p && p.steps) || [] });
 						window.localStorage.setItem(k, JSON.stringify(a.slice(-50)));
 					} catch (e) { /* 存不了就算了 */ }
 					return Promise.resolve({ ok: true });

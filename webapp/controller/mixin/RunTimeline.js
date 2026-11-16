@@ -64,7 +64,7 @@ sap.ui.define([
 			this._rtBind();
 			this._mRt = this._mRt || {};
 			var s = this._mRt[sUid] = {
-				uid: sUid, sid: sSid, items: [], byId: {}, plan: null, status: "RUNNING", verb: "理解问题",
+				uid: sUid, sid: sSid, folder: BrowserAgentService.grantedFolder(), items: [], byId: {}, plan: null, status: "RUNNING", verb: "理解问题",
 				t0: Date.now(), model: 0, tool: 0, lastWasTool: false, limits: {}, ctxUsed: 0, ask: null, collapsed: false
 			};
 			this._rtRender(sUid);
@@ -81,6 +81,13 @@ sap.ui.define([
 			}
 			var oIt;
 			switch (e.type) {
+			case "cancel_asks":
+				this._rtCancelAsk(sUid);
+				return;
+			case "save_failed":
+				s.saveFailed = true;
+				s.items.push({ k: "note", st: "ERROR", text: e.message });
+				break;
 			case "run":
 				s.limits = e.limits || {};
 				break;
@@ -171,11 +178,11 @@ sap.ui.define([
 		_rtConfirm: function (sUid, req) {
 			var that = this;
 			var s = this._mRt && this._mRt[sUid];
-			if (!s) {
-				return Promise.resolve({ approved: false, message: "界面不支持确认" });
+			if (!s || s.status !== "RUNNING" || s.asksClosed) {
+				return Promise.resolve({ approved: false, message: "运行已结束或确认不可用" });
 			}
 			// 20261109（11.9 #02）：这个任务里选过「都不再询问」→ 后面每一轮的写和改都自动通过（删除照样问）
-			if (req.action !== "删除" && this._rtHasWriteGrant(s.sid)) {
+			if (req.action !== "删除" && this._rtHasWriteGrant(s)) {
 				s.items.push({ k: "note", st: "OK", text: "已按你的允许自动" + (req.action || "修改") + " " + (req.path || "") });
 				this._rtRenderSoon(sUid);
 				return Promise.resolve({ approved: true, always: true });
@@ -201,8 +208,8 @@ sap.ui.define([
 		_rtQuestion: function (sUid, req) {
 			var that = this;
 			var s = this._mRt && this._mRt[sUid];
-			if (!s) {
-				return Promise.resolve({ other: true });
+			if (!s || s.status !== "RUNNING" || s.asksClosed) {
+				return Promise.resolve({ cancel: true });
 			}
 			return new Promise(function (resolve) {
 				var oIt = { k: "q", question: req.question || "", options: (req.options || []).slice(0, 4), done: null };
@@ -235,7 +242,7 @@ sap.ui.define([
 			while (!s.ask && q.length) {
 				var a = q.shift();
 				a.item.queued = false;
-				if (a.item.k === "ask" && a.item.req && a.item.req.action !== "删除" && this._rtHasWriteGrant(s.sid)) {
+				if (a.item.k === "ask" && a.item.req && a.item.req.action !== "删除" && this._rtHasWriteGrant(s)) {
 					a.item.done = "auto";
 					a.resolve({ approved: true, always: true });
 				} else {
@@ -247,41 +254,57 @@ sap.ui.define([
 		/** 收掉还开着和排队中的确认 / 问题（停止、运行结束时） */
 		_rtCancelAsk: function (sUid) {
 			var s = this._mRt && this._mRt[sUid];
-			var nGuard = 50;
-			while (s && s.ask && nGuard-- > 0) {
-				this._rtPick(sUid, s.ask.item.k === "q" ? -1 : 2);
-			}
+			if (!s) { return; }
+			s.asksClosed = true;
+			if (!s.ask && !(s.askQ || []).length) { return; }
+			var aAsks = s.ask ? [s.ask].concat(s.askQ || []) : (s.askQ || []);
+			s.ask = null;
+			s.askQ = [];
+			aAsks.forEach(function (a) {
+				a.item.queued = false;
+				var bQuestion = a.item.k === "q";
+				a.item.done = bQuestion ? { cancel: true } : "cancelled";
+				a.resolve(bQuestion ? a.item.done : { approved: false, message: "运行已结束，确认已取消" });
+			});
+			this._rtRender(sUid);
+			this._rtInfo(s);
 		},
 
 		/**
 		 * 选了一项。改文件确认：0 = 是，1 = 是且本次都不再询问，2 = 否；
 		 * 问题卡：0..n-1 = 候选，n = 我直接说，-1 = 停止
 		 */
-		_rtPick: function (sUid, iOpt) {
+		_rtPick: function (sUid, iOpt, iItem) {
 			var s = this._mRt && this._mRt[sUid];
-			if (!s || !s.ask) {
+			if (!s || !s.ask || s.status !== "RUNNING" || s.asksClosed ||
+				(iItem !== undefined && s.items[iItem] !== s.ask.item) || !Number.isInteger(iOpt)) {
 				return;
 			}
 			var a = s.ask;
 			if (a.item.k === "q") {
 				var aOpt = a.item.options;
-				if (iOpt >= aOpt.length + 1) {
+				if (iOpt < 0 || iOpt > aOpt.length) {
 					return;
 				}
 				s.ask = null;
-				a.item.done = iOpt < 0 ? { cancel: true } : (iOpt === aOpt.length ? { other: true } : { answer: aOpt[iOpt] });
-				this._rtNextAsk(s);
+				a.item.done = iOpt === aOpt.length ? { other: true } : { answer: aOpt[iOpt] };
+				a.resolve(a.item.done);
+				if (a.item.done.other) {
+					this._rtCancelAsk(sUid);
+				} else {
+					this._rtNextAsk(s);
+				}
 				this._rtRender(sUid);
 				this._rtInfo(s);
-				a.resolve(a.item.done);
 				return;
 			}
+			if (iOpt < 0 || iOpt > 2) { return; }
 			if (a.item.req && a.item.req.action === "删除" && iOpt === 1) {
 				iOpt = 2;   // 删除卡第 2 项是「不要」
 			}
 			s.ask = null;
 			if (iOpt === 1) {
-				this._rtSetWriteGrant(s.sid);
+				this._rtSetWriteGrant(s);
 			}
 			a.item.done = iOpt === 2 ? "no" : (iOpt === 1 ? "all" : "yes");
 			this._rtNextAsk(s);
@@ -294,19 +317,14 @@ sap.ui.define([
 		 * 20261109（11.9 #02）：「写文件都不再询问」管整个任务（会话），不只一轮。
 		 * 只记在本页内存：刷新页面、换了文件夹就失效，要重新确认。
 		 */
-		_rtSetWriteGrant: function (sSid) {
-			var oF = BrowserAgentService.folderInfo() || {};
+		_rtSetWriteGrant: function (s) {
+			if (!s.folder) { return; }
 			this._mWriteGrant = this._mWriteGrant || {};
-			this._mWriteGrant[sSid || ""] = String(oF.name || "");
+			this._mWriteGrant[s.sid || ""] = s.folder;
 		},
 
-		_rtHasWriteGrant: function (sSid) {
-			var m = this._mWriteGrant || {};
-			if (!Object.prototype.hasOwnProperty.call(m, sSid || "")) {
-				return false;
-			}
-			var oF = BrowserAgentService.folderInfo() || {};
-			return m[sSid || ""] === String(oF.name || "");
+		_rtHasWriteGrant: function (s) {
+			return !!(s.folder && this._mWriteGrant && this._mWriteGrant[s.sid || ""] === s.folder);
 		},
 
 		/** 运行结束（成功 / 出错 / 停止） */
@@ -315,10 +333,9 @@ sap.ui.define([
 			if (!s) {
 				return;
 			}
-			if (s.ask) {   // 停止时还开着的确认按「不要」、问题按「停止」收掉
-				this._rtCancelAsk(sUid);
-			}
 			s.status = sStatus === "OK" ? "OK" : (sStatus === "STOPPED" ? "STOPPED" : "ERROR");
+			this._rtCancelAsk(sUid);
+			if (s.status !== "OK" && this._mWriteGrant) { delete this._mWriteGrant[s.sid || ""]; }
 			s.items.forEach(function (x) {
 				if (x.k === "tool" && x.st === "RUNNING") { x.st = s.status === "OK" ? "OK" : "STOPPED"; x.ms = Date.now() - x.t; }
 			});
@@ -328,7 +345,7 @@ sap.ui.define([
 			bDet = bDet || s.items.some(function (x) { return x.k === "q" && x.done && x.done.other; });
 			if (s.status === "OK" && !bDet) { s.model++; }
 			s.ms = Date.now() - s.t0;
-			s.collapsed = this._rtPrefCollapse();
+			s.collapsed = !s.saveFailed && this._rtPrefCollapse();
 			this._rtRender(sUid);
 			this._rtInfo(s);
 		},
@@ -435,9 +452,9 @@ sap.ui.define([
 			case "card":
 				return '<div class="rtNote">' + IC.note + "<span>参数卡已生成</span></div>";
 			case "ask":
-				return this._rtAskHtml(x);
+				return this._rtAskHtml(x, i);
 			case "q":
-				return this._rtQHtml(x);
+				return this._rtQHtml(x, i);
 			case "tool":
 				return this._rtToolHtml(x, i);
 			default:
@@ -509,8 +526,11 @@ sap.ui.define([
 			return h;
 		},
 
-		_rtAskHtml: function (x) {
+		_rtAskHtml: function (x, i) {
 			var req = x.req || {};
+			if (x.done === "cancelled") {
+				return '<div class="rtNote">' + IC.stop + "<span>确认已取消：" + esc(req.path) + "</span></div>";
+			}
 			if (x.done) {
 				return x.done === "no"
 					? '<div class="rtNote rtErr">' + IC.err + "<span>你拒绝了" + esc(req.action) + " " + esc(req.path) + "，没有改动文件</span></div>"
@@ -530,11 +550,11 @@ sap.ui.define([
 			return '<div class="rtAsk"><div class="rtAskHead"><b>' + esc(sQ) + '</b><span class="rtSub">' + esc(req.path) + "</span></div>" +
 				'<div class="rtAskDiff">' + (this._baDiffHtml ? this._baDiffHtml(req) : "") + "</div>" +
 				aOpt.map(function (o, k) {
-					return '<div class="rtOpt" data-rt="pick" data-v="' + o[1] + '" role="button" tabindex="0"><span class="rtKey">' + (k + 1) + "</span><span>" + esc(o[0]) + "</span></div>";
+					return '<div class="rtOpt" data-rt="pick" data-i="' + i + '" data-v="' + o[1] + '" role="button" tabindex="0"><span class="rtKey">' + (k + 1) + "</span><span>" + esc(o[0]) + "</span></div>";
 				}).join("") + "</div>";
 		},
 
-		_rtQHtml: function (x) {
+		_rtQHtml: function (x, i) {
 			if (x.queued && !x.done) {
 				return '<div class="rtAsk rtQ rtAskQueued"><div class="rtAskHead"><b>' + esc(x.question) + "</b>" +
 					'<span class="rtSub">等上一项确认后再回答</span></div></div>';
@@ -550,7 +570,7 @@ sap.ui.define([
 			return '<div class="rtAsk rtQ"><div class="rtAskHead"><b>' + esc(x.question) + "</b>" +
 				'<span class="rtSub">灵犀需要你确认一下再继续</span></div>' +
 				aOpt.map(function (t, k) {
-					return '<div class="rtOpt' + (k === aOpt.length - 1 ? " rtOptOther" : "") + '" data-rt="pick" data-v="' + k +
+					return '<div class="rtOpt' + (k === aOpt.length - 1 ? " rtOptOther" : "") + '" data-rt="pick" data-i="' + i + '" data-v="' + k +
 						'" role="button" tabindex="0"><span class="rtKey">' + (k + 1) + "</span><span>" + esc(t) + "</span></div>";
 				}).join("") + "</div>";
 		},
@@ -652,7 +672,7 @@ sap.ui.define([
 				var oDs = s.items[i] && s.items[i].ds;
 				if (oDs) { oDs.open = !oDs.open; }
 			} else if (sAct === "pick") {
-				this._rtPick(sUid, Number(el.getAttribute("data-v")));
+				this._rtPick(sUid, Number(el.getAttribute("data-v")), i);
 				return;
 			} else {
 				return;
@@ -709,18 +729,19 @@ sap.ui.define([
 				var nHit = 0;
 				aRuns.forEach(function (r) {
 					var iSeq = Number(r.msgSeq) || 0;
-					var oE = iSeq ? aAi.filter(function (e) { return e.msgSeq === iSeq && !mUsed[e.uid]; })[0] : null;
+					var aMatches = iSeq ? aAi.filter(function (e) { return e.msgSeq === iSeq; }) : [];
 					// 20261111（11.11 #04 串台）：有消息序号却没对上时不再按回答开头猜 —— 两轮回答开头一样
 					//（同样的问候语、都以「（浏览器 Agent 未完成」开头）会把这轮的过程画到别的回复上
-					if (!oE && !iSeq && r.answerHead) {
-						oE = aAi.filter(function (e) { return !mUsed[e.uid] && String(e.raw || "").indexOf(r.answerHead) === 0; })[0];
+					if (!iSeq && r.answerHead && aRuns.filter(function (x) { return x.answerHead === r.answerHead; }).length === 1) {
+						aMatches = aAi.filter(function (e) { return String(e.raw || "").indexOf(r.answerHead) === 0; });
 					}
-					if (!oE || !(r.steps || []).length) {
+					var oE = aMatches.length === 1 ? aMatches[0] : null;
+					if (!oE || mUsed[oE.uid] || !(r.steps || []).length) {
 						return;
 					}
 					mUsed[oE.uid] = true;
 					oE.tl = true;
-					oE.tlHtml = that._rtFromSteps(oE.uid, r.steps, sSid);
+					oE.tlHtml = that._rtFromSteps(oE.uid, r.steps, sSid, r.status, oE.raw);
 					nHit++;
 				});
 				if (nHit && that._sMessagesSession === sSid) {
@@ -730,8 +751,10 @@ sap.ui.define([
 		},
 
 		/** 精简过程记录（引擎 compactSteps）→ 已完成的时间线 HTML */
-		_rtFromSteps: function (sUid, aSteps, sSid) {
-			var s = { uid: sUid, sid: sSid || "", items: [], plan: null, status: "OK", ms: 0, collapsed: this._rtPrefCollapse() };
+		_rtFromSteps: function (sUid, aSteps, sSid, sRunStatus, sAnswer) {
+			var sStatus = sRunStatus === "CANCELLED" || /^（已停止|^（未完成：你停止/.test(sAnswer || "") ? "STOPPED"
+				: sRunStatus === "ERROR" || /^（(?:浏览器 Agent )?未完成/.test(sAnswer || "") ? "ERROR" : "OK";
+			var s = { uid: sUid, sid: sSid || "", items: [], plan: null, status: sStatus, ms: 0, collapsed: this._rtPrefCollapse() };
 			(aSteps || []).forEach(function (x) {
 				switch (x.k) {
 				case "say": s.items.push({ k: "say", text: x.text }); break;

@@ -378,9 +378,11 @@ export class FolderBackend {
 
   /** 改前确认：返回 null 表示同意，否则返回给 Agent 的拒绝说明 */
   async _confirm(action, path, before, after) {
+    if (this.opts.signal?.aborted) return "Error: 运行已中断，文件操作已取消";
     if (!this.opts.confirm) return null;
     let r;
     try { r = await this.opts.confirm({ action, path, before, after }); } catch (e) { r = { approved: false, message: (e && e.message) || "确认失败" }; }
+    if (this.opts.signal?.aborted) return "Error: 运行已中断，文件操作已取消";
     const approved = r === true || (r && r.approved === true);
     if (approved) return null;
     const why = r && r.message ? `：${r.message}` : "";
@@ -397,10 +399,19 @@ export class FolderBackend {
   }
 
   async _writeText(path, content) {
+    this.opts.signal?.throwIfAborted();
     const h = await this._file(path, true);
+    this.opts.signal?.throwIfAborted();
     const w = await h.createWritable();
-    await w.write(content);
-    await w.close();
+    try {
+      this.opts.signal?.throwIfAborted();
+      await w.write(content);
+      this.opts.signal?.throwIfAborted();
+      await w.close();
+    } catch (error) {
+      await w.abort().catch(() => {});
+      throw error;
+    }
   }
 
   /** @param {string} [action] 确认框和修改记录里的说法，默认「覆盖 / 新建」（引擎整理记忆时传「整理记忆」） */
@@ -478,6 +489,7 @@ export class FolderBackend {
       const backup = await this._backup(path);
       if (!backup) return { error: `Error: '${path}' not found or is a directory (only single files can be deleted)` };
       const dir = await this._dir(parts.slice(0, -1));
+      this.opts.signal?.throwIfAborted();
       await dir.removeEntry(parts[parts.length - 1]);
       const rec = await this._log("删除", path, "已备份");
       this.changes.push({ ...rec, backup, created: false, deleted: true });

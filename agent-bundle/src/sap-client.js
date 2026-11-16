@@ -40,6 +40,13 @@ function sapQuery() {
   } catch (e) { return ""; }
 }
 
+function gatewayErrorText(status, text) {
+  if (status === 504) return "模型或网关响应超时（HTTP 504），当前查询数据量可能较大，请缩小范围或关闭「深度思考」后重试";
+  if (status === 502 || status === 503) return `网关或模型服务暂不可用（HTTP ${status}），请稍后重试`;
+  if (/^\s*<(?:!doctype|html)/i.test(text || "")) return `SAP 或代理返回了网页错误（HTTP ${status}），请稍后重试或联系管理员核对网关日志`;
+  return `SAP 返回 ${status}`;
+}
+
 export function createSapClient({ base = "/sap/bc/zai_agent", origin, timeoutMs = 300000, authHeader = "" } = {}) {
   // 只接受 Basic（本地开发经代理时灵犀自己的登录头）；模型 SDK 自带的 Bearer 一律丢弃
   const basic = /^Basic\s+\S+$/.test(authHeader || "") ? authHeader : "";
@@ -75,7 +82,7 @@ export function createSapClient({ base = "/sap/bc/zai_agent", origin, timeoutMs 
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch (e) { /* 非 JSON（如 ICF 错误页） */ }
     if (!res.ok) {
-      const msg = (data && (data.message || (data.error && data.error.message))) || `SAP 返回 ${res.status}`;
+      const msg = (data && (data.message || (data.error && data.error.message))) || gatewayErrorText(res.status, text);
       throw new SapAgentError(msg, res.status, data || text.slice(0, 500));
     }
     // 工具执行的 ok:false 是给模型看的失败原因（参数被拒等），不终止运行
@@ -85,11 +92,23 @@ export function createSapClient({ base = "/sap/bc/zai_agent", origin, timeoutMs 
 
   /** 给 ChatOpenAI 用的 fetch：只允许打到本服务，补头、去 Authorization */
   function modelFetch(runId) {
-    return (input, init = {}) => {
+    return async (input, init = {}) => {
       const url = typeof input === "string" ? input : input.url;
-      if (!url.startsWith(root)) return Promise.reject(new SapAgentError("模型请求只能发往 SAP Agent 服务", 0));
+      if (!url.startsWith(root)) throw new SapAgentError("模型请求只能发往 SAP Agent 服务", 0);
       const u = url.includes("?") || !qs ? url : url + qs;
-      return fetch(u, { ...init, credentials: "same-origin", headers: headers(runId, init.headers) });
+      const res = await fetch(u, { ...init, credentials: "same-origin", headers: headers(runId, init.headers) });
+      if (res.ok) return res;
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch (e) { /* 非 JSON（如 504 网关 HTML 页） */ }
+      if (data && data.error && data.error.message) {
+        return new Response(text, { status: res.status, headers: { "Content-Type": "application/json" } });
+      }
+      const message = (data && data.message) || gatewayErrorText(res.status, text);
+      return new Response(JSON.stringify({ error: { message, type: "gateway_error" } }), {
+        status: res.status,
+        headers: { "Content-Type": "application/json" }
+      });
     };
   }
 

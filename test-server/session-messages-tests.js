@@ -189,12 +189,12 @@ async function test(name, fn) { await fn(); passed++; console.log('  ✅ ' + nam
       { param_id: 'ENUM', data_type: 'ENUM', enum_json: [{ key: 'A' }, { key: 'B' }], multi_value: true }
     ] };
     let controls = render(ask);
-    const inputs = controls.filter((o) => o.events.liveChange && !o.o.placeholder?.includes('Agent'));
+    const inputs = controls.filter((o) => o.events.liveChange && !o.o.placeholder?.includes('告诉灵犀'));
     inputs[0].fire('liveChange', '草稿'); inputs[1].fire('liveChange', 'A，B C');
     inputs[3].fire('liveChange', '2000'); // 只填范围“至”
     controls.find((o) => o.events.input).fire('input', '2026-10-');
     controls.filter((o) => o.d.key).forEach((o) => o.fire('press', true));
-    controls.find((o) => o.o.placeholder?.includes('Agent')).fire('liveChange', '稍后按月份看');
+    controls.find((o) => o.o.placeholder?.includes('告诉灵犀')).fire('liveChange', '稍后按月份看');
     assert.deepEqual(ask.values, { TXT: '草稿', MULTI: 'A，B C', RANGE: ',2000', DATE: '2026-10-', ENUM: 'A,B' });
     controls = render(ask);
     assert.ok(controls.some((o) => o.o.value === '草稿'));

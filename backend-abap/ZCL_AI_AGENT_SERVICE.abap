@@ -723,7 +723,8 @@ CLASS zcl_ai_agent_service DEFINITION
                 iv_answer     TYPE string
                 iv_model_id   TYPE string
                 iv_status     TYPE string
-                iv_ms         TYPE i.
+                iv_ms         TYPE i
+      EXPORTING ev_msg_seq TYPE i.
 
     " 审计入库: 运行头 + 全部步骤
     CLASS-METHODS save_audit
@@ -3311,6 +3312,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
   METHOD save_chat.
 
+    CLEAR ev_msg_seq.
     DATA: ls_msg  TYPE zai_chat_msg,
           ls_sess TYPE zai_chat_sess.
 
@@ -3357,6 +3359,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     ls_msg-created_at   = |{ sy-datum }{ sy-uzeit }|.
     ls_msg-created_by   = sy-uname.
     INSERT zai_chat_msg FROM @ls_msg.
+    IF sy-subrc = 0.
+      ev_msg_seq = ls_msg-msg_seq.
+    ENDIF.
 
     " ---- 会话头: ensure_agent_session 已前置建头, 此处回写终态/计数 ----
     " V12 任务状态: OK→COMPLETED / TIMEOUT→PARTIAL / 其余→FAILED
@@ -4324,6 +4329,26 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       lv_sys = |{ lv_sys }\n\n【SQL 约定】调用 run_sql 前, SQL 里的每张表都要先用 describe_table 确认字段; | &&
                |只读查询, 结果只回填前 { zcl_ai_sql_executor=>gc_llm_rows } 行, 回答里要说明总行数。|.
     ENDIF.
+    IF lv_tools_csv CS zcl_ai_tool_registry=>gc_tool_data_analysis.
+      DATA(lt_da_caps) = zcl_ai_data_analysis_service=>get_capabilities( ).
+      DATA lv_da_info TYPE string.
+      LOOP AT lt_da_caps INTO DATA(ls_da_cap).
+        DATA lv_da_flds TYPE string.
+        CLEAR lv_da_flds.
+        LOOP AT ls_da_cap-fields INTO DATA(ls_da_f).
+          IF sy-tabix > 20.
+            lv_da_flds = |{ lv_da_flds } 等|.
+            EXIT.
+          ENDIF.
+          lv_da_flds = COND #( WHEN lv_da_flds IS INITIAL THEN ls_da_f-name
+                               ELSE |{ lv_da_flds },{ ls_da_f-name }| ).
+        ENDLOOP.
+        lv_da_info = |{ lv_da_info }\n- { ls_da_cap-entity }({ ls_da_cap-label }): { lv_da_flds }|.
+      ENDLOOP.
+      IF lv_da_info IS NOT INITIAL.
+        lv_sys = |{ lv_sys }\n\n【受控数据分析目录(sap_data_analysis)】仅可查询以下实体与字段:{ lv_da_info }|.
+      ENDIF.
+    ENDIF.
     " V15.20: Fiori 场景走到模型这一步只有 ANALYZE(用户已同意): 结果上下文同原 Agent
     IF lv_scene = zcl_ai_intent_router=>gc_scene_fiori AND ls_fturn-kind = zcl_ai_fiori_report_service=>gc_turn_analyze.
       lv_sys = |{ lv_sys }\n\n{ ls_fturn-context }\n| &&
@@ -5243,21 +5268,34 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         lv_ms = 0.
     ENDTRY.
 
-    save_chat( iv_session_id = CONV string( ls_run-session_id )
-               iv_question   = ls_run-question
-               iv_answer     = lv_answer
-               iv_model_id   = CONV string( ls_run-model_id )
-               iv_status     = COND #( WHEN lv_status = 'OK' THEN `OK` ELSE `ERROR` )
-               iv_ms         = lv_ms ).
+    " Claim this run before writing messages. A concurrent keepalive / finish can only win once.
     UPDATE zai_brun SET status = @lv_status, finished_at = @lv_now
-      WHERE run_id = @ls_run-run_id.
+      WHERE run_id = @ls_run-run_id AND status = 'RUNNING'.
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
 
-    " ---- V15.19: 本轮问答序号(save_chat 刚写入 MAX-1 / MAX) ----
-    SELECT MAX( msg_seq ) FROM zai_chat_msg
-      WHERE session_id = @ls_run-session_id
-      INTO @DATA(lv_max_seq).
-    DATA lv_seq TYPE i.
-    lv_seq = COND #( WHEN sy-subrc = 0 THEN lv_max_seq ELSE 0 ).
+    " Serialize browser finishes for a session before allocating message sequence numbers.
+    SELECT SINGLE FOR UPDATE session_id FROM zai_chat_sess
+      WHERE session_id = @ls_run-session_id INTO @DATA(lv_locked_session).
+    IF sy-subrc <> 0.
+      ev_http = 409.
+      ev_error = '会话已关闭或无法锁定'.
+      RETURN.
+    ENDIF.
+
+    save_chat( EXPORTING iv_session_id = CONV string( ls_run-session_id )
+                         iv_question   = ls_run-question
+                         iv_answer     = lv_answer
+                         iv_model_id   = CONV string( ls_run-model_id )
+                         iv_status     = COND #( WHEN lv_status = 'OK' THEN `OK` ELSE `ERROR` )
+                         iv_ms         = lv_ms
+               IMPORTING ev_msg_seq   = DATA(lv_seq) ).
+    IF lv_seq IS INITIAL.
+      ev_http = 409.
+      ev_error = '运行结果未能写入会话'.
+      RETURN.
+    ENDIF.
 
     " 出过参数卡: 本轮问答归入那个报表任务(同原 Agent 的 finish_det)
     IF ls_run-task_id IS NOT INITIAL AND lv_seq >= 2.

@@ -4,7 +4,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createFailGuard, loopStopAnswer, NO_RETRY_RE } from "../src/index.js";
+import { createFailGuard, loopStopAnswer, NO_RETRY_RE, QUOTA_RE } from "../src/index.js";
 
 test("权限类错误：同一工具同样参数第 2 次失败就停（参数键顺序不同也算同一次）", () => {
   const g = createFailGuard();
@@ -36,4 +36,17 @@ test("参数每次都换但连续 6 步失败也停；成功一步清零连续�
 test("不可重试错误的识别", () => {
   for (const t of ["没有权限读取表", "表 ZXX 不存在", "Not authorized", "HTTP 403", "未登记的报表"]) assert.ok(NO_RETRY_RE.test(t), t);
   for (const t of ["timeout", "语法错误：缺少 FROM", "连接中断"]) assert.ok(!NO_RETRY_RE.test(t), t);
+});
+
+test("次数上限错误：即使每次改 SQL 参数且中间调了其他工具，第 2 次仍直接停", () => {
+  const msg = '{"ok":false,"error":"已达本次运行的 SQL 执行次数上限, 请基于已有结果回答"}';
+  assert.ok(QUOTA_RE.test(msg));
+  const g = createFailGuard();
+  assert.equal(g.note("run_sql", { sql: "SELECT * FROM MARA" }, false, msg), null);
+  assert.equal(g.note("describe_table", { table: "MARC" }, true, '{"ok":true}'), null);
+  const s = g.note("run_sql", { sql: "SELECT MATNR FROM MARA" }, false, msg);
+  assert.ok(s);
+  assert.equal(s.reason, "same");
+  assert.equal(s.quota, true);
+  assert.match(loopStopAnswer(s, "run_sql"), /调用次数已达本次运行上限[\s\S]*基于上面已经查到的结果/);
 });

@@ -214,12 +214,16 @@ CLASS zcl_ai_tool_registry IMPLEMENTATION.
       tool_id     = gc_tool_data_analysis
       description = 'SAP 数据分析(受控查询计划): 对能力目录声明的实体做明细/分组/趋势取数, '
                     && '返回统一数据集(表格+图表可用)。args 必须是查询计划 JSON 对象: '
-                    && '{"intent":"table_analysis","queries":[{"name":"<查询名>",'
-                    && '"entity":"<实体>","operation":"detail|group|trend",'
+                    && '分组/趋势示例 {"intent":"table_analysis","queries":[{"name":"<查询名>",'
+                    && '"entity":"<实体>","operation":"group|trend",'
                     && '"dimensions":["<维度字段>"],"metrics":["count"],'
                     && '"filters":[{"field":"<字段>","operator":"eq|ne|like|ge|le|between",'
-                    && '"value":"<值>","value_to":"<between第二值>"}]}]}。'
-                    && '用户问统计/汇总/趋势/分布/占比类问题且需要物料主档数据时调用本工具。'
+                    && '"value":"<值>","value_to":"<between第二值>"}]}]}；'
+                    && '查明细示例(operation=detail 时 dimensions 和 metrics 必须留空 [] 或不传): '
+                    && '{"intent":"table_analysis","queries":[{"name":"物料明细",'
+                    && '"entity":"MARA","operation":"detail","dimensions":[],"metrics":[],'
+                    && '"filters":[{"field":"MTART","operator":"eq","value":"FERT"}]}]}。'
+                    && '用户问统计/汇总/趋势/分布/占比/明细类问题且需要能力目录实体数据时调用本工具。'
       params      = lt_p
       read_only   = abap_true ) TO rt_tools.
 

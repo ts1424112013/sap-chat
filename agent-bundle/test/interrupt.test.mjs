@@ -4,7 +4,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { lastCallInit, budgetFetch, interruptedAnswer, LAST_CALL_NOTE } from "../src/index.js";
+import { lastCallInit, budgetFetch, interruptedAnswer, LAST_CALL_NOTE, run } from "../src/index.js";
 import { toolOk } from "../src/step-summary.js";
 
 test("#03 SAP 工具回 {\"ok\":false} 算失败，不再打绿勾", () => {
@@ -57,8 +57,84 @@ test("#04 中断进度说明：原因、已完成 / 失败步骤、改过的文�
   assert.match(a, /失败的步骤：\n- read_program_source ZIDPMM501_SUB → 不存在/);
   assert.match(a, /已经改动的文件：\n- 修改 \/代码\/ZIDPMM501\.abap/);
   assert.match(a, /计划里还没做的：\n- 改表名\n- 语法检查/);
-  assert.match(a, /发「继续」可以从这里接着做/);
+  assert.match(a, /发「继续」可以根据已保存的进度接着做/);
   assert.ok(!/edit_file/.test(a.split("已经改动")[0].split("失败的步骤")[0]), "没做完的步骤不算已完成");
   assert.ok(interruptedAnswer([], "").startsWith("（未完成：运行中断）"));
   assert.ok(interruptedAnswer(trace, "x".repeat(10000)).length <= 3500);
+});
+
+test("初始化异常也写回当前运行的中断进度，并关闭确认入口", async () => {
+  const finishes = [];
+  const events = [];
+  await assert.rejects(run({
+    question: "继续任务",
+    context: { sessionId: "S1" },
+    folderBackend: { changes: [{ action: "修改", path: "/other-session.txt" }], ls: async () => {
+      throw new Error("文件夹暂时不可用");
+    } },
+    client: {
+      root: "https://sap.invalid",
+      startRun: async () => ({ runId: "R1", tools: [] }),
+      modelFetch: () => async () => { throw new Error("不应调用模型"); },
+      finishRun: async body => finishes.push(body)
+    },
+    onEvent: e => events.push(e)
+  }), { status: "ERROR", runId: "R1", message: "文件夹暂时不可用" });
+  assert.equal(finishes.length, 1);
+  assert.match(finishes[0].answer, /^（未完成：文件夹暂时不可用）/);
+  assert.doesNotMatch(finishes[0].answer, /other-session/);
+  assert.ok(events.some(e => e.type === "cancel_asks"));
+});
+
+test("继续使用前一轮的原问题、进度并要求读取当前文件，SAP 仍收到用户原话", async () => {
+  const requests = [];
+  const starts = [];
+  const finishes = [];
+  const answer = await run({
+    question: "继续",
+    history: [
+      { role: "user", content: "核对需求并检查代码" },
+      { role: "assistant", content: "（未完成：你停止了这次运行）\n已完成 1 步" }
+    ],
+    client: {
+      root: "https://sap.invalid",
+      startRun: async body => { starts.push(body); return { runId: "R2", model: "mock", tools: [] }; },
+      modelFetch: () => async (_url, init) => {
+        requests.push(JSON.parse(init.body));
+        return new Response(JSON.stringify({ id: "reply", object: "chat.completion", model: "mock", choices: [
+          { index: 0, finish_reason: "stop", message: { role: "assistant", content: "核对完成" } }
+        ] }), { headers: { "Content-Type": "application/json" } });
+      },
+      finishRun: async body => finishes.push(body)
+    }
+  });
+  assert.equal(starts[0].question, "继续");
+  const messages = requests[0].messages;
+  assert.ok(messages.some(m => m.content === "核对需求并检查代码"));
+  assert.ok(messages.some(m => typeof m.content === "string" && m.content.includes("已完成 1 步")));
+  assert.match(messages.at(-1).content, /已完成的写入、删除和提交不要重复执行/);
+  assert.match(messages.at(-1).content, /先读取文件的当前内容/);
+  assert.equal(answer.answer, "核对完成");
+  assert.equal(finishes[0].status, "OK");
+});
+
+test("收尾遇到临时网络错误时重发同一结果，权限错误直接提示", async () => {
+  for (const status of [503, 403]) {
+    const bodies = [];
+    const events = [];
+    await run({
+      question: "测试收尾",
+      client: {
+        startRun: async () => ({ runId: "R3", answer: "已完成" }),
+        finishRun: async body => {
+          bodies.push(body);
+          if (bodies.length === 1) throw Object.assign(new Error("SAP 请求失败"), { status });
+        }
+      },
+      onEvent: event => events.push(event)
+    });
+    assert.equal(bodies.length, status === 503 ? 2 : 1);
+    if (status === 503) assert.deepEqual(bodies[1], bodies[0]);
+    assert.equal(events.some(event => event.type === "save_failed"), status === 403);
+  }
 });

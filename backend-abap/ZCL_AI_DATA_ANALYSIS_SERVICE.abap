@@ -188,7 +188,7 @@ CLASS zcl_ai_data_analysis_service DEFINITION
   PRIVATE SECTION.
 
     TYPES: BEGIN OF ty_group_row,
-             dimval TYPE c LENGTH 18,   " 维度值统一 CHAR18(DATS 可转换)
+             dimval TYPE c LENGTH 64,   " 维度值统一 CHAR64(DATS / 长字符键可转换)
              cnt    TYPE i,
            END OF ty_group_row.
 
@@ -437,7 +437,32 @@ CLASS zcl_ai_data_analysis_service IMPLEMENTATION.
 
     DATA(ls_cap) = find_cap( is_query-entity ).
     IF ls_cap-entity IS INITIAL.
-      rv_err = |查询 { iv_index }: 实体 { is_query-entity } 不在能力目录中, 当前支持: MARA|.
+      DATA lv_sup TYPE string.
+      LOOP AT get_capabilities( ) INTO DATA(ls_one_cap).
+        lv_sup = COND #( WHEN lv_sup IS INITIAL THEN ls_one_cap-entity
+                         ELSE |{ lv_sup }, { ls_one_cap-entity }| ).
+      ENDLOOP.
+      rv_err = |查询 { iv_index }: 实体 { is_query-entity } 不在能力目录中, 当前支持: { lv_sup }|.
+      RETURN.
+    ENDIF.
+
+    " 敏感表黑名单与 SAP 表显示权限检查(与 SQL 守卫同口径)
+    IF zcl_ai_sql_guard=>is_sensitive( ls_cap-entity ) = abap_true.
+      rv_err = |查询 { iv_index }: 实体 { ls_cap-entity } 属于受保护表, 不允许查询|.
+      RETURN.
+    ENDIF.
+    DATA lv_vname TYPE dd02v-tabname.
+    lv_vname = ls_cap-entity.
+    CALL FUNCTION 'VIEW_AUTHORITY_CHECK'
+      EXPORTING
+        view_name                = lv_vname
+      EXCEPTIONS
+        no_authority             = 1
+        no_clientindep_authority = 2
+        table_not_found          = 3
+        OTHERS                   = 4.
+    IF sy-subrc <> 0.
+      rv_err = |查询 { iv_index }: 没有权限读取表 { ls_cap-entity } (需要 S_TABU_NAM/S_TABU_DIS 显示权限)|.
       RETURN.
     ENDIF.
 
@@ -647,38 +672,54 @@ CLASS zcl_ai_data_analysis_service IMPLEMENTATION.
                                                        THEN abap_true
                                                        ELSE abap_false ) ).
 
+    DATA(lv_entity) = ls_cap-entity.
+
     TRY.
         CASE lv_op.
 
           WHEN 'detail'.
-            " 固定列投影 = 能力目录声明字段(计划 §11 返回字段按白名单投影)
-            SELECT matnr, mtart, matkl, ersda, meins
-              FROM mara
+            " 动态列投影 = 能力目录声明字段(按实体动态读取, 支持 MARA 及登记的 Z 表)
+            DATA: lv_sel_cols TYPE string,
+                  lv_order    TYPE string,
+                  lr_det_tab  TYPE REF TO data,
+                  lt_flds     TYPE tt_field.
+            FIELD-SYMBOLS: <lt_det> TYPE STANDARD TABLE,
+                           <ls_row> TYPE any,
+                           <lv_val> TYPE any.
+
+            lt_flds = ls_cap-fields.
+            IF lines( lt_flds ) > 30.
+              DELETE lt_flds FROM 31.
+            ENDIF.
+            LOOP AT lt_flds INTO DATA(ls_cf).
+              lv_sel_cols = COND #( WHEN lv_sel_cols IS INITIAL THEN ls_cf-name
+                                    ELSE |{ lv_sel_cols }, { ls_cf-name }| ).
+              APPEND VALUE #( name    = ls_cf-name
+                              label   = ls_cf-label
+                              numeric = ls_cf-numeric ) TO rs_ds-columns.
+            ENDLOOP.
+            lv_order = lt_flds[ 1 ]-name.
+
+            CREATE DATA lr_det_tab TYPE STANDARD TABLE OF (lv_entity).
+            ASSIGN lr_det_tab->* TO <lt_det>.
+
+            SELECT (lv_sel_cols)
+              FROM (lv_entity)
               WHERE (lv_where)
-              ORDER BY matnr
-              INTO TABLE @DATA(lt_detail)
+              ORDER BY (lv_order)
+              INTO CORRESPONDING FIELDS OF TABLE @<lt_det>
               UP TO @lv_fetch ROWS.
 
-            rs_ds-columns = VALUE #(
-              ( name = 'MATNR' label = '物料号'   numeric = abap_false )
-              ( name = 'MTART' label = '物料类型' numeric = abap_false )
-              ( name = 'MATKL' label = '物料组'   numeric = abap_false )
-              ( name = 'ERSDA' label = '创建日期' numeric = abap_false )
-              ( name = 'MEINS' label = '基本单位' numeric = abap_false ) ).
-
-            DATA(ls_f_matnr) = find_field( is_cap = ls_cap iv_name = 'MATNR' ).
-            DATA(ls_f_mtart) = find_field( is_cap = ls_cap iv_name = 'MTART' ).
-            DATA(ls_f_matkl) = find_field( is_cap = ls_cap iv_name = 'MATKL' ).
-            DATA(ls_f_ersda) = find_field( is_cap = ls_cap iv_name = 'ERSDA' ).
-            DATA(ls_f_meins) = find_field( is_cap = ls_cap iv_name = 'MEINS' ).
-
-            LOOP AT lt_detail INTO DATA(ls_d).
+            LOOP AT <lt_det> ASSIGNING <ls_row>.
               CLEAR ls_cells.
-              APPEND format_cell( is_field = ls_f_matnr iv_raw = ls_d-matnr ) TO ls_cells.
-              APPEND format_cell( is_field = ls_f_mtart iv_raw = ls_d-mtart ) TO ls_cells.
-              APPEND format_cell( is_field = ls_f_matkl iv_raw = ls_d-matkl ) TO ls_cells.
-              APPEND format_cell( is_field = ls_f_ersda iv_raw = ls_d-ersda ) TO ls_cells.
-              APPEND format_cell( is_field = ls_f_meins iv_raw = ls_d-meins ) TO ls_cells.
+              LOOP AT lt_flds INTO ls_cf.
+                ASSIGN COMPONENT ls_cf-name OF STRUCTURE <ls_row> TO <lv_val>.
+                IF sy-subrc = 0.
+                  APPEND format_cell( is_field = ls_cf iv_raw = <lv_val> ) TO ls_cells.
+                ELSE.
+                  APPEND '(空)' TO ls_cells.
+                ENDIF.
+              ENDLOOP.
               APPEND ls_cells TO rs_ds-rows.
             ENDLOOP.
 
@@ -692,7 +733,7 @@ CLASS zcl_ai_data_analysis_service IMPLEMENTATION.
             DATA(lv_cols) = |{ lv_dim } AS dimval, COUNT( * ) AS cnt|.
 
             SELECT (lv_cols)
-              FROM mara
+              FROM (lv_entity)
               WHERE (lv_where)
               GROUP BY (lv_dim)
               ORDER BY cnt DESCENDING

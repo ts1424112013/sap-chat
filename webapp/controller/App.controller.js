@@ -2046,7 +2046,7 @@ sap.ui.define([
                         }
                         this._sAbortToken = this._sStreamToken;
                         this._sStreamToken = "";
-                        this._baStop();               // 20261107：浏览器引擎在本页运行，直接中断
+                        var sBrowserProgress = this._baStop();  // 浏览器引擎中断时立即保留进度
                         this._stopThinkingTicker();   // V13：Agent 等待期思考状态一并停止
                         if (this._mSessRun) {
                                 delete this._mSessRun[this._sAbortToken];   // 20261028：停止后侧栏不再转圈（下面 _syncActivity 会同步）
@@ -2065,7 +2065,11 @@ sap.ui.define([
                                 if (oLast.requestPending) {
                                         this._attachAgentProcess(aMsgs.length - 1, { status: "STOPPED", traceValid: false });
                                 }
-                                if (!oLast.raw) {
+                                if (sBrowserProgress) {
+                                        var oProgress = this._buildEntry("assistant", sBrowserProgress, "", "");
+                                        oLast.raw = oProgress.raw;
+                                        oLast.html = oProgress.html;
+                                } else if (!oLast.raw) {
                                         oLast.html = "";
                                 }
                                 this._settleThink(oLast);   // 20261029：还在「正在思考」的收掉；已放出的思考保留、收起

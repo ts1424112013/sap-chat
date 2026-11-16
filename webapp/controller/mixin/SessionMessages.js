@@ -86,6 +86,7 @@ sap.ui.define([
                                         }
                                 }
                                 if (iMatch >= 0) {
+                                        oEntry.msgSeq = aHistory[iMatch].msgSeq;
                                         aOut = aOut.concat(aHistory.slice(iNext, iMatch), [oEntry]);
                                         iNext = iMatch + 1;
                                 }
