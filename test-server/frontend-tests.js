@@ -149,6 +149,38 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   check('刷新后时间线保留中断状态',
     timeline._rtFromSteps('old', [], 'session', '', '（未完成：你停止了这次运行）').includes('已停止'));
 
+  const fileRun = {
+    uid: 'files', status: 'OK', plan: [{ text: '核对字段', st: 'completed' }], items: [
+      { k: 'say', text: '我现在查下表结构' },
+      { k: 'tool', tool: 'ls', label: '列目录', arg: '/', sum: '3 个文件夹', st: 'OK' },
+      { k: 'tool', tool: 'read_file', label: '读文件', arg: '/a.txt', sum: '10 行', st: 'OK' },
+      { k: 'tool', tool: 'read_file', label: '读文件', arg: '/b.txt', sum: '文件不存在', st: 'ERROR' },
+      { k: 'say', text: '继续核对字段' },
+      { k: 'tool', tool: 'describe_table', label: '表结构', sum: '8 字段', st: 'OK' },
+      { k: 'tool', tool: 'grep', label: '搜内容', arg: 'WERKS', sum: '2 处命中', st: 'OK' }
+    ]
+  };
+  timeline._mRt.files = fileRun;
+  const fileFolded = timeline._rtHtml(fileRun);
+  check('例行文件操作成组收起，过程说明、失败和表结构即时可见',
+    /aria-expanded="false">.*列目录、读文件.*2 步/.test(fileFolded) &&
+    /rtSay">我现在查下表结构/.test(fileFolded) && /文件不存在/.test(fileFolded) &&
+    /8 字段/.test(fileFolded) && /class="rtPlan"/.test(fileFolded) && !/3 个文件夹|10 行|2 处命中/.test(fileFolded));
+  const fileGroup = { getAttribute: () => '1' };
+  timeline._rtAct('files', 'file-steps', fileGroup);
+  const fileOpen = timeline._rtHtml(fileRun);
+  check('只展开选中的文件操作组，保留原操作顺序和详情',
+    fileOpen.includes('aria-expanded="true"') && /3 个文件夹.*10 行/.test(fileOpen) &&
+    !fileOpen.includes('2 处命中'));
+  timeline._rtAct('files', 'file-steps', fileGroup);
+  const restoredFiles = timeline._rtFromSteps.call(
+    Object.assign({}, timeline, { _rtPrefCollapse: () => false }),
+    'old-files', [{ k: 'tool', tool: 'ls', arg: '/', sum: '3 个文件夹' }], 'session'
+  );
+  check('重开聊天和手动收起后，例行文件操作都折起来',
+    !timeline._rtHtml(fileRun).includes('3 个文件夹') &&
+    /aria-expanded="false">.*列目录/.test(restoredFiles) && !restoredFiles.includes('3 个文件夹'));
+
   console.log('\n━━ 首页时段问候');
   const HeroGreeting = load('zai/chat/utils/HeroGreeting');
   const atHour = (h, m = 0) => new Date(2026, 0, 1, h, m);
@@ -889,6 +921,112 @@ const countOf = (s, sub) => s.split(sub).length - 1;
     /that\._askDraftClear\(oAsk\.taskId\)/.test(ctlSrc) && /that\._askDraftClear\(oAsk\.taskId\)/.test(fpSrc));
   check('草稿只存还没提交的参数卡，按 用户 + 任务号，最多 30 张、14 天', /oAsk\.kind !== "params" \|\| oAsk\.state !== "open" \|\| !oAsk\.taskId/.test(rrSrc) &&
     /"zaiChat\.askDraft\.v1\." \+ this\._modelUserKey\(\)/.test(rrSrc) && /aIds\.slice\(30\)/.test(rrSrc) && /14 \* 86400000/.test(rrSrc));
+
+  console.log('\n━━ 11.17 记录：底栏计数口径 / 改动块去重 / 报表后任务链续接（20261117）');
+  // 1) RunTimeline：纯文字回复模型计数 + 多轮会话累计展示
+  let sInfoHtml = '', sContextHtml = '';
+  const rtCtl = Object.assign({}, RunTimeline, {
+    _sMessagesSession: 'S1',
+    _mSessionMessages: { S1: { messages: [] }, S2: { messages: [] }, S3: { messages: [] } },
+    _mRt: {},
+    _entryByUid: () => null,
+    _rtBind() {}, _rtTicker() {}, _rtRender() {}, _rtRenderSoon() {}, _rtPrefCollapse() { return true; },
+    getView: () => ({ getModel: () => ({ setProperty: (p, v) => {
+      if (p === '/ba/infoHtml') { sInfoHtml = v; }
+      if (p === '/ba/contextHtml') { sContextHtml = v; }
+    } }) })
+  });
+  const r1 = rtCtl._rtStart('u1', 'S1');
+  rtCtl._rtEvent('u1', { type: 'run', limits: { maxModelCalls: 120, maxToolCalls: 60, contextTokens: 256000 } });
+  rtCtl._rtEvent('u1', { type: 'tool_start', id: 't1', tool: 'run_sql', args: {} });
+  rtCtl._rtEvent('u1', { type: 'tool_end', id: 't1', tool: 'run_sql', ok: true });
+  rtCtl._rtEvent('u1', { type: 'todos', todos: [{ content: '查库存', status: 'completed' }] });
+  rtCtl._rtEvent('u1', { type: 'usage', input: 35840, ctx: 256000 });
+  rtCtl._rtEvent('u1', { type: 'answer', text: 'ok' });
+  rtCtl._rtFinish('u1', 'OK');
+  check('首轮带工具运行：圆环显示 14%，模型 2 次、工具 1 次', r1.model === 2 && r1.tool === 1 &&
+    /14% 已用（剩余 86%）/.test(sContextHtml) && /模型 2\/120 · 工具 1\/60/.test(sContextHtml) &&
+    sInfoHtml === '' && !/会话累计/.test(sContextHtml), sContextHtml);
+  const r2 = rtCtl._rtStart('u2', 'S1');
+  rtCtl._rtEvent('u2', { type: 'run', limits: { maxModelCalls: 120, maxToolCalls: 60, contextTokens: 256000 } });
+  rtCtl._rtEvent('u2', { type: 'usage', input: 12800, ctx: 256000 });
+  rtCtl._rtEvent('u2', { type: 'answer', text: '好的，明白了。' });
+  rtCtl._rtFinish('u2', 'OK');
+  check('纯文字回复模型计 1 次；圆环取最新一次用量，累计调用次数照常显示', r2.model === 1 && r2.tool === 0 &&
+    /5% 已用（剩余 95%）/.test(sContextHtml) && /已用 12.8k token，共 256k/.test(sContextHtml) &&
+    /模型 1\/120 · 工具 0\/60/.test(sContextHtml) && /会话累计 模型 3 · 工具 1/.test(sContextHtml), sContextHtml);
+  const rDet = rtCtl._rtStart('u3', 'S1');
+  rtCtl._rtFinish('u3', 'OK');
+  check('确定性回答（无任何模型事件）仍计 0 次模型', rDet.model === 0);
+
+  const stepsService = load('zai/chat/service/BrowserAgentService');
+  const originalSteps = stepsService.getSteps;
+  const originalAvailable = stepsService.available;
+  stepsService.available = () => true;
+  stepsService.getSteps = async () => ({ runs: [], contextUsage: { input: 166000, limit: 475000 } });
+  rtCtl._sMessagesSession = 'S2';
+  rtCtl._rtContextInfo();
+  check('切到未加载的聊天先显示空圆环，不沿用上一聊天的用量', /暂无上下文用量/.test(sContextHtml));
+  await rtCtl._rtRestore('S2', rtCtl._mSessionMessages.S2);
+  check('没有可见过程步骤时也能从历史恢复圆环和用量', /35% 已用（剩余 65%）/.test(sContextHtml) &&
+    /已用 166k token，共 475k/.test(sContextHtml));
+  const restoringS3 = rtCtl._rtRestore('S3', rtCtl._mSessionMessages.S3);
+  rtCtl._sMessagesSession = 'S1';
+  rtCtl._rtContextInfo();
+  await restoringS3;
+  check('切回聊天立即显示该会话用量，迟到的历史请求不串台', /已用 12.8k token，共 256k/.test(sContextHtml));
+  stepsService.getSteps = originalSteps;
+  stepsService.available = originalAvailable;
+
+  // 2) BrowserAgentService：去重 aChanges + 剥离模型正文中仿写的「本次改动的文件」块
+  const baSvcSrc = fs.readFileSync(path.join(WEBAPP, 'service/BrowserAgentService.js'), 'utf8');
+  check('BrowserAgentService：剥离正文重复「本次改动的文件」块且对 aChanges 去重',
+    /replace\(\/\\n\*\\\*\\\*本次改动的文件\\\*\\\*（改之前的原样在/.test(baSvcSrc) && /aUniq\.map/.test(baSvcSrc));
+  fakeWindow.isSecureContext = true;
+  fakeWindow.fetch = fakeFetch;
+  fakeWindow.LingxiAgent = {
+    run: (o) => {
+      o.onEvent({ type: 'file_changed', action: '覆盖', path: '/a.xlsx' });
+      o.onEvent({ type: 'file_changed', action: '覆盖', path: '/a.xlsx' });
+      return Promise.resolve({
+        answer: '核对完成。\n\n**本次改动的文件**（改之前的原样在 `.lingxi/备份/`，可在文件夹菜单里撤回）\n- 覆盖　`/a.xlsx`',
+        trace: [], elapsedMs: 10
+      });
+    }
+  };
+  const BrowserAgentService = load('zai/chat/service/BrowserAgentService');
+  const baRes = await BrowserAgentService.send({ question: 'test', sessionId: 'S1' });
+  delete fakeWindow.LingxiAgent;
+  check('BrowserAgentService.send：正文中「本次改动的文件」只保留 1 块且文件不重复',
+    countOf(baRes.answer, '**本次改动的文件**') === 1 && countOf(baRes.answer, '/a.xlsx') === 1, baRes.answer);
+
+  // 3) RunTracker：报表参数卡执行就绪后自动续接原指令后续动作
+  const RunTracker = load('zai/chat/controller/mixin/RunTracker');
+  check('RunTracker._hasPostReportIntent：繁体/简体后续动作均识别，纯跑报表不触发',
+    RunTracker._hasPostReportIntent('OK，基於以上，請執行T-CODE ZDPMM159：工廠等於以上報表的工廠，cpn欄位等於以上報表的客戶料號，請將執行出來的報表欄位mcoo flag是CN的數據抓出來。') &&
+    RunTracker._hasPostReportIntent('执行 ZMM001，然后导出到文件夹') &&
+    !RunTracker._hasPostReportIntent('执行 ZDPMM159，工厂 ABZ1'));
+  let followed = null;
+  const rtTracker = Object.assign({}, RunTracker, {
+    _sMessagesSession: 'S1',
+    getView: () => ({ getModel: () => ({ getProperty: (p) => p === '/busy' ? false : null }) }),
+    _sendFollowUp: (d, q) => { followed = { d, q }; }
+  });
+  const oRunCont = { runId: 'R1', shortId: 'R1', sessionId: 'S1', artifactId: 'ART999', originQuestion: '执行 ZDPMM159 并把 mcoo flag=CN 的数据抓出来' };
+  rtTracker._maybeContinueReport(oRunCont, { label: 'ZDPMM159 结果', rowCount: 300 });
+  await new Promise((r) => setTimeout(r, 80));
+  check('RunTracker._maybeContinueReport：就绪后带 result_id 与原指令续发且防重复执行同一参数卡',
+    followed && /ART999/.test(followed.q) && /不要重复打开或再次执行同一张报表参数卡/.test(followed.q) && oRunCont.autoContinued === true);
+  followed = null;
+  rtTracker._maybeContinueReport({ runId: 'R2', sessionId: 'S1', artifactId: 'ART0', originQuestion: '执行 ZDPMM159 并抓出数据' }, { rowCount: 0 });
+  await new Promise((r) => setTimeout(r, 80));
+  check('RunTracker._maybeContinueReport：0 行结果不触发多余续发', followed === null);
+  check('控制器 / 恢复层：参数卡保存并跨刷新保留 originQuestion，预填键名大小写兜底对齐',
+    /oAsk\.originQuestion = this\._originQuestionForAsk/.test(ctlSrc) &&
+    /oAsk\.originQuestion\s*\)/.test(ctlSrc) &&
+    /originQuestion: oRun\.originQuestion \|\| ""/.test(rrSrc) &&
+    /r\.originQuestion/.test(rrSrc) &&
+    /String\(k\)\.toUpperCase\(\) === sUp/.test(ctlSrc));
 
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);

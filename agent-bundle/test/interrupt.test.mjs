@@ -94,16 +94,22 @@ test("继续使用前一轮的原问题、进度并要求读取当前文件，SA
     question: "继续",
     history: [
       { role: "user", content: "核对需求并检查代码" },
-      { role: "assistant", content: "（未完成：你停止了这次运行）\n已完成 1 步" }
+      { role: "assistant", content: "（未完成：你停止了这次运行）\n已完成 1 步", unsaved: true }
     ],
     client: {
       root: "https://sap.invalid",
-      startRun: async body => { starts.push(body); return { runId: "R2", model: "mock", tools: [] }; },
+      startRun: async body => {
+        starts.push(body);
+        return {
+          runId: "R2", model: "mock", tools: [],
+          chatContext: { through: 0, summary: "", messages: [] }
+        };
+      },
       modelFetch: () => async (_url, init) => {
         requests.push(JSON.parse(init.body));
         return new Response(JSON.stringify({ id: "reply", object: "chat.completion", model: "mock", choices: [
           { index: 0, finish_reason: "stop", message: { role: "assistant", content: "核对完成" } }
-        ] }), { headers: { "Content-Type": "application/json" } });
+        ], usage: { prompt_tokens: 340, completion_tokens: 12, total_tokens: 352 } }), { headers: { "Content-Type": "application/json" } });
       },
       finishRun: async body => finishes.push(body)
     }
@@ -116,6 +122,98 @@ test("继续使用前一轮的原问题、进度并要求读取当前文件，SA
   assert.match(messages.at(-1).content, /先读取文件的当前内容/);
   assert.equal(answer.answer, "核对完成");
   assert.equal(finishes[0].status, "OK");
+  assert.deepEqual(finishes[0].steps.at(-1), { k: "usage", ds: 340, dn: 256000 });
+});
+
+test("跨轮压缩会保存覆盖序号，新运行沿用摘要并带上后续原文", async () => {
+  const history = Array.from({ length: 66 }, (_, i) => ({
+    seq: i + 1, role: i % 2 ? "assistant" : "user", content: `原始消息 ${i + 1}`
+  }));
+  const requests = [];
+  const events = [];
+  let checkpoint;
+  const makeClient = () => ({
+    root: "https://sap.invalid",
+    startRun: async body => {
+      assert.equal(body.chatContext, true);
+      return {
+        runId: checkpoint ? "R4" : "R3", model: "mock", tools: [],
+        chatContext: checkpoint || { through: 0, summary: "", messages: history }
+      };
+    },
+    modelFetch: () => async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      const summarizing = request.messages.some(m => typeof m.content === "string" && m.content.startsWith("你在压缩当前 SAP 聊天"));
+      const content = summarizing ? "已确认仅查工厂 1000" : "当前回答";
+      return new Response(JSON.stringify({ id: "reply", object: "chat.completion", model: "mock", choices: [
+        { index: 0, finish_reason: "stop", message: { role: "assistant", content } }
+      ] }), { headers: { "Content-Type": "application/json" } });
+    },
+    finishRun: async body => {
+      if (checkpoint) {
+        assert.equal(body.contextSeq, undefined, "短的后续对话无需重新压缩");
+        return;
+      }
+      assert.equal(body.contextSeq, 60);
+      assert.equal(body.contextSummary, "已确认仅查工厂 1000");
+      checkpoint = {
+        through: body.contextSeq,
+        summary: body.contextSummary,
+        messages: [
+          ...history.filter(m => m.seq > body.contextSeq),
+          { seq: 67, role: "user", content: "查本期库存" },
+          { seq: 68, role: "assistant", content: body.answer }
+        ]
+      };
+    }
+  });
+
+  await run({ question: "查本期库存", client: makeClient(), onEvent: e => events.push(e) });
+  const summarized = JSON.parse(requests[0].messages.at(-1).content);
+  assert.equal(summarized.messages.length, 60);
+  assert.equal(summarized.messages[0].content, "原始消息 1");
+  assert.ok(events.some(e => e.type === "compacted" && e.scope === "chat"));
+
+  const result = await run({ question: "换成上期", client: makeClient() });
+  assert.equal(result.answer, "当前回答");
+  assert.equal(requests.length, 3);
+  const continued = requests[2].messages;
+  assert.ok(continued.some(m => m.content === "【本聊天历史摘要】\n已确认仅查工厂 1000"));
+  assert.ok(continued.some(m => m.content === "原始消息 61"));
+  assert.ok(continued.some(m => m.content === "查本期库存"));
+  assert.ok(!continued.some(m => m.content === "原始消息 60"));
+  assert.equal(continued.at(-1).content, "换成上期");
+});
+
+test("摘要请求失败仍可回答，并保留上次已保存的摘要", async () => {
+  const requests = [];
+  const finishes = [];
+  const messages = Array.from({ length: 10 }, (_, i) => ({
+    seq: i + 11, role: i % 2 ? "assistant" : "user", content: `历史 ${i + 11} ` + "长".repeat(2500)
+  }));
+  const result = await run({
+    question: "最新问题",
+    client: {
+      root: "https://sap.invalid",
+      startRun: async () => ({
+        runId: "R5", model: "mock", tools: [], limits: { contextTokens: 16000 },
+        chatContext: { through: 10, summary: "旧口径", messages }
+      }),
+      modelFetch: () => async (_url, init) => {
+        requests.push(JSON.parse(init.body));
+        if (requests.length === 1) throw new Error("摘要调用失败");
+        return new Response(JSON.stringify({ id: "reply", object: "chat.completion", model: "mock", choices: [
+          { index: 0, finish_reason: "stop", message: { role: "assistant", content: "最新回答" } }
+        ] }), { headers: { "Content-Type": "application/json" } });
+      },
+      finishRun: async body => finishes.push(body)
+    }
+  });
+  assert.equal(result.answer, "最新回答");
+  assert.equal(finishes[0].contextSeq, undefined);
+  assert.ok(requests[1].messages.some(m => m.content === "【本聊天历史摘要】\n旧口径"));
+  assert.ok(requests[1].messages.some(m => m.content === messages.at(-1).content));
 });
 
 test("收尾遇到临时网络错误时重发同一结果，权限错误直接提示", async () => {

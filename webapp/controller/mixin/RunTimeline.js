@@ -12,9 +12,12 @@ sap.ui.define([
 	 *   说明（模型在关键节点说的一句话）→ 工具行（图标 + 中文名 + 主要参数，点开看详情）
 	 *   → 结果行（一句话）→ 可展开的数据预览 → 就地确认面板（1 / 2 / 3）
 	 * 计划清单与状态行固定在过程最下面：后面不管输出多少说明和步骤，都能一眼看到进度。
-	 * 输入框下的信息栏（chat>/ba/infoHtml）同时显示引擎、文件夹、上下文用量、次数和计划进度。
+	 * 输入区显示上下文圆环、调用次数和运行状态。
 	 * 一次运行的状态在 this._mRt[uid]；画成 HTML 写进消息条目的 tlHtml（同 liveHtml / extraHtml 的做法）。
 	 * 所有动态文字先转义，标签由本文件构造。原引擎不经过这里。方法名统一 _rt 前缀。
+	 * 20261117（11.17 记录 #01）：
+	 *   ① _rtEvent / _rtFinish 记 hasModel，修复纯文字回复（无工具/无 say）误判为确定性导致模型次数停在 0 的问题
+	 *   ② _rtInfo 增加 _rtSessionTotals 同会话累计口径：多轮时显示单轮配额与累计调用次数
 	 * =====================================================================
 	 */
 
@@ -55,6 +58,17 @@ sap.ui.define([
 		return ms >= 50 ? (ms / 1000).toFixed(1) + " 秒" : "";
 	}
 
+	function tokens(n) {
+		if (n < 1000) { return String(n); }
+		var iUnit = n >= 1000000 ? 1000000 : 1000;
+		return Math.round(n / iUnit * 10) / 10 + (iUnit === 1000 ? "k" : "M");
+	}
+
+	function isRoutineFileStep(x) {
+		return x.k === "tool" && !x.ds && (x.st === "OK" || x.st === "RUNNING") &&
+			["ls", "read_file", "glob", "grep"].indexOf(x.tool) !== -1;
+	}
+
 	return {
 
 		/* ---------------- 运行中 ---------------- */
@@ -65,7 +79,7 @@ sap.ui.define([
 			this._mRt = this._mRt || {};
 			var s = this._mRt[sUid] = {
 				uid: sUid, sid: sSid, folder: BrowserAgentService.grantedFolder(), items: [], byId: {}, plan: null, status: "RUNNING", verb: "理解问题",
-				t0: Date.now(), model: 0, tool: 0, lastWasTool: false, limits: {}, ctxUsed: 0, ask: null, collapsed: false
+				t0: Date.now(), model: 0, tool: 0, hasModel: false, lastWasTool: false, limits: {}, ask: null, collapsed: false
 			};
 			this._rtRender(sUid);
 			this._rtTicker();
@@ -94,20 +108,29 @@ sap.ui.define([
 			case "say":
 				// 说明和同一轮的工具调用是一次模型回应：这里先记一次，紧跟的工具不再重复计
 				s.items.push({ k: "say", text: e.text });
+				s.hasModel = true;
 				s.model++;
 				s.lastWasTool = true;
 				break;
 			case "think":
+				s.hasModel = true;
 				s.items.push({ k: "think", text: e.text, ms: e.ms || 0, open: false });
 				break;
 			case "usage":
-				s.ctxUsed = e.input || 0;
-				if (e.ctx) { s.limits.contextTokens = e.ctx; }
+				s.hasModel = true;
+				var oState = this._mSessionMessages && this._mSessionMessages[s.sid];
+				var iLimit = e.ctx || s.limits.contextTokens;
+				if (oState && e.input > 0 && iLimit > 0) { oState.rtContext = { input: e.input, limit: iLimit }; }
 				break;
+			case "answer":
+				// 20261117（11.17 #01）：纯文字回复没有 say/tool_start，靠 answer 标明确实调过模型
+				s.hasModel = true;
+				return;
 			case "todos":
 				s.plan = (e.todos || []).map(function (t) { return { text: t.content, st: t.status }; });
 				break;
 			case "tool_start":
+				s.hasModel = true;
 				if (e.tool === "ask_user") {   // 问用户：由 _rtQuestion 画成问题卡，不另画工具行
 					if (!s.lastWasTool) { s.model++; }
 					s.lastWasTool = true;
@@ -150,7 +173,8 @@ sap.ui.define([
 				s.items.push({ k: "skill", text: e.name + (e.source === "FOLDER" ? "（文件夹）" : e.source === "BUILTIN" ? "（内置）" : "") });
 				break;
 			case "compacted":
-				s.items.push({ k: "note", text: "对话较长，已自动压缩（早期内容总结成一段，原文留在本次运行的草稿里）" });
+				s.items.push({ k: "note", text: e.scope === "chat" ? "已压缩较早的聊天记录" :
+					"对话较长，已自动压缩（早期内容总结成一段，原文留在本次运行的草稿里）" });
 				break;
 			case "card":
 				s.items.forEach(function (x) { if (x.k === "tool" && x.st === "RUNNING") { x.st = "OK"; x.ms = Date.now() - x.t; } });
@@ -339,11 +363,11 @@ sap.ui.define([
 			s.items.forEach(function (x) {
 				if (x.k === "tool" && x.st === "RUNNING") { x.st = s.status === "OK" ? "OK" : "STOPPED"; x.ms = Date.now() - x.t; }
 			});
-			// 最后给出回答的那一轮（SAP 直接回答的——如 Fiori 参数卡——没有调模型，不计）
-			var bDet = !s.tool && !s.items.some(function (x) { return x.k === "say"; });
-			// 选了「我直接说」：引擎直接收尾，没有最后那一轮模型
-			bDet = bDet || s.items.some(function (x) { return x.k === "q" && x.done && x.done.other; });
-			if (s.status === "OK" && !bDet) { s.model++; }
+			// 20261117（11.17 #01）：最后给出回答的那一轮（SAP 直接回答的——如 Fiori 参数卡——没有调模型事件，不计；
+			// 纯文字回复虽然没调工具也没有 say，但已有 answer/usage/think 事件，要计入 1 次模型调用）
+			var bAskOther = s.items.some(function (x) { return x.k === "q" && x.done && x.done.other; });
+			var bDet = !s.hasModel && !s.tool && !s.items.some(function (x) { return x.k === "say"; });
+			if (s.status === "OK" && !bDet && !bAskOther) { s.model++; }
 			s.ms = Date.now() - s.t0;
 			s.collapsed = !s.saveFailed && this._rtPrefCollapse();
 			this._rtRender(sUid);
@@ -392,7 +416,6 @@ sap.ui.define([
 
 		/** 整段过程 HTML。restore = 刷新后从精简记录画回来（没有返回全文、没有交互确认） */
 		_rtHtml: function (s) {
-			var that = this;
 			var bRun = s.status === "RUNNING";
 			var nSteps = s.items.filter(function (x) { return x.k === "tool"; }).length;
 			var h = '<div class="rt' + (bRun ? " rtRunning" : "") + (s.collapsed ? " rtCollapsed" : "") + '" data-rtuid="' + esc(s.uid) + '">';
@@ -406,12 +429,21 @@ sap.ui.define([
 			}
 			if (!s.collapsed || bRun) {
 				h += '<div class="rtBody">';
-				s.items.forEach(function (x, i) { h += that._rtItemHtml(s, x, i); });
+				for (var i = 0; i < s.items.length;) {
+					if (!isRoutineFileStep(s.items[i])) {
+						h += this._rtItemHtml(s, s.items[i], i++);
+						continue;
+					}
+					var end = i + 1;
+					while (end < s.items.length && isRoutineFileStep(s.items[end])) { end++; }
+					h += this._rtFileStepsHtml(s, i, end);
+					i = end;
+				}
 				h += "</div>";
 			}
 			// 计划固定在最下面（紧挨状态行），过程再长也能看到进度
 			if (s.plan && s.plan.length && (!s.collapsed || bRun)) {
-				h += that._rtPlanHtml(s.plan);
+				h += this._rtPlanHtml(s.plan);
 			}
 			if (bRun) {
 				h += s.ask
@@ -420,6 +452,24 @@ sap.ui.define([
 					: '<div class="rtStatus">' + IC.spin + '<span class="rtShim">' + esc(s.verb) + "…</span>" +
 						'<span class="rtTimer" data-t0="' + s.t0 + '">' + Math.round((Date.now() - s.t0) / 1000) + " 秒</span>" +
 						'<span class="rtHint">Esc 停止</span></div>';
+			}
+			return h + "</div>";
+		},
+
+		_rtFileStepsHtml: function (s, i, end) {
+			var aSteps = s.items.slice(i, end);
+			var aLabels = Array.from(new Set(aSteps.map(function (x) { return x.label || x.tool; })));
+			var bOpen = !!(s.openFileSteps && s.openFileSteps[i]);
+			var bWorking = aSteps.some(function (x) { return x.st === "RUNNING"; });
+			var sCaption = aSteps.length === 1 ? aSteps[0].arg : aSteps.length + " 步";
+			var h = '<div class="rtFileSteps"><button type="button" class="rtFileStepsButton" data-rt="file-steps" data-i="' + i +
+				'" aria-expanded="' + bOpen + '">' + (bWorking ? IC.spin : "") +
+				"<span>" + esc(aLabels.join("、")) + "</span>" +
+				(sCaption ? '<span class="rtFileStepsCaption">' + esc(sCaption) + '</span>' : '') + IC.chev + "</button>";
+			if (bOpen) {
+				h += '<div class="rtFileStepsBody">';
+				for (var j = i; j < end; j++) { h += this._rtToolHtml(s.items[j], j); }
+				h += "</div>";
 			}
 			return h + "</div>";
 		},
@@ -577,6 +627,20 @@ sap.ui.define([
 
 		/* ---------------- 输入框下的信息栏 ---------------- */
 
+		/** 20261117（11.17 #01）：统计本页面生命周期内同一会话的模型 / 工具累计次数 */
+		_rtSessionTotals: function (sSid) {
+			var m = this._mRt || {}, iModel = 0, iTool = 0, iRuns = 0;
+			Object.keys(m).forEach(function (k) {
+				var x = m[k];
+				if (x && x.sid === sSid && x.t0) {
+					iRuns++;
+					iModel += x.model || 0;
+					iTool += x.tool || 0;
+				}
+			});
+			return { runs: iRuns, model: iModel, tool: iTool };
+		},
+
 		_rtInfo: function (s) {
 			var oChat = this.getView().getModel("chat");
 			if (!oChat) {
@@ -586,27 +650,52 @@ sap.ui.define([
 			if (s && s.sid && this._sMessagesSession && s.sid !== this._sMessagesSession) {
 				return;
 			}
-			var a = [];
-			// 20261108：不再写「文件夹 xxx」—— 左边的文件夹胶囊已经显示了，重复
-			if (s) {
-				var ctx = (s.limits && s.limits.contextTokens) || 0;
-				if (ctx && s.ctxUsed) {
-					var pct = Math.min(100, Math.round(s.ctxUsed * 100 / ctx));
-					a.push('<span>上下文 <i class="rtMeter"><b style="width:' + pct + '%"></b></i> ' + pct + "%</span>");
-				}
-				var mm = (s.limits && s.limits.maxModelCalls) || 0, mt = (s.limits && s.limits.maxToolCalls) || 0;
-				a.push("<span>模型 " + s.model + (mm ? "/" + mm : "") + " · 工具 " + s.tool + (mt ? "/" + mt : "") + "</span>");
-				if (s.plan && s.plan.length) {
-					var nDone = s.plan.filter(function (t) { return t.st === "completed"; }).length;
-					var cur = s.plan.filter(function (t) { return t.st === "in_progress"; })[0];
-					a.push('<span class="rtInfoPlan">计划 ' + nDone + "/" + s.plan.length +
-						(cur && s.status === "RUNNING" ? " · 正在：" + esc(cur.text) : "") + "</span>");
-				}
-				if (s.status === "RUNNING") {
-					a.push('<span class="rtInfoRun">' + (s.ask ? (s.ask.item.k === "q" ? "等你回答" : "等你确认") : esc(s.verb) + "…") + "</span>");
+			this._rtContextInfo(s);
+			var sInfo = "";
+			if (s && s.status === "RUNNING") {
+				var sStatus = s.ask ? (s.ask.item.k === "q" ? "等你回答" : "等你确认") : esc(s.verb) + "…";
+				sInfo = '<div class="rtInfo"><span class="rtInfoRun">' + sStatus + "</span></div>";
+			}
+			oChat.setProperty("/ba/infoHtml", sInfo);
+		},
+
+		_rtContextInfo: function (oRun) {
+			var sSid = this._sMessagesSession;
+			var oState = sSid && this._mSessionMessages && this._mSessionMessages[sSid];
+			var oUsage = oState && oState.rtContext;
+			var iUsed = Number(oUsage && oUsage.input);
+			var iLimit = Number(oUsage && oUsage.limit);
+			var bKnown = Number.isFinite(iUsed) && iUsed > 0 && Number.isFinite(iLimit) && iLimit > 0;
+			var nPct = bKnown ? Math.min(100, iUsed * 100 / iLimit) : 0;
+			var iPct = Math.round(nPct);
+			var sDetails = bKnown
+				? '<span>' + iPct + '% 已用（剩余 ' + (100 - iPct) + '%）</span><span>已用 ' +
+					tokens(iUsed) + ' token，共 ' + tokens(iLimit) + '</span>'
+				: '<span>暂无上下文用量</span>';
+			if (oRun === undefined && sSid) {
+				var mRt = this._mRt || {};
+				oRun = mRt[this._rtActiveUid()] || Object.values(mRt).filter(function (x) {
+					return x.sid === sSid && x.t0;
+				}).pop();
+			}
+			var sCalls = "";
+			if (oRun && oRun.sid === sSid) {
+				var oLimits = oRun.limits || {};
+				sCalls = esc("模型 " + oRun.model + (oLimits.maxModelCalls ? "/" + oLimits.maxModelCalls : "") +
+					" · 工具 " + oRun.tool + (oLimits.maxToolCalls ? "/" + oLimits.maxToolCalls : ""));
+				var oTotals = this._rtSessionTotals(sSid);
+				sDetails += '<span class="rtContextCallDetails">' + sCalls + '</span>';
+				if (oTotals.runs > 1) {
+					sDetails += '<span class="rtContextTotal">会话累计 模型 ' + oTotals.model + ' · 工具 ' + oTotals.tool + '</span>';
 				}
 			}
-			oChat.setProperty("/ba/infoHtml", a.length ? '<div class="rtInfo">' + a.join("") + "</div>" : "");
+			var sHtml = sSid ? '<div class="rtContext">' +
+				'<button type="button" class="rtContextButton" aria-label="上下文窗口" aria-describedby="rtContextTip">' +
+				'<i class="rtContextRing" style="--rt-context-fill:' + nPct + '%" aria-hidden="true"></i></button>' +
+				(sCalls ? '<span class="rtContextCalls">' + sCalls + '</span>' : '') +
+				'<div class="rtContextTip" id="rtContextTip" role="tooltip"><span class="rtContextTitle">上下文窗口</span>' +
+				sDetails + '</div></div>' : "";
+			this.getView().getModel("chat").setProperty("/ba/contextHtml", sHtml);
 		},
 
 		/* ---------------- 交互 ---------------- */
@@ -666,6 +755,9 @@ sap.ui.define([
 			if (sAct === "fold") {
 				s.collapsed = !s.collapsed;
 				this._rtPrefCollapse(s.collapsed);
+			} else if (sAct === "file-steps" && s.items[i] && isRoutineFileStep(s.items[i])) {
+				s.openFileSteps = s.openFileSteps || {};
+				s.openFileSteps[i] = !s.openFileSteps[i];
 			} else if (sAct === "tool" || sAct === "think") {
 				if (s.items[i]) { s.items[i].open = !s.items[i].open; }
 			} else if (sAct === "datasets") {
@@ -720,10 +812,15 @@ sap.ui.define([
 			if (!oState || !BrowserAgentService.available()) {
 				return Promise.resolve();
 			}
-			return BrowserAgentService.getSteps(sSid, { authHeader: fnAuth }).then(function (aRuns) {
-				if (!aRuns.length || !that._mSessionMessages || that._mSessionMessages[sSid] !== oState) {
+			return BrowserAgentService.getSteps(sSid, { authHeader: fnAuth }).then(function (oHistory) {
+				if (!that._mSessionMessages || that._mSessionMessages[sSid] !== oState) {
 					return;
 				}
+				if (!oState.rtContext && oHistory.contextUsage) {
+					oState.rtContext = oHistory.contextUsage;
+					if (that._sMessagesSession === sSid) { that._rtContextInfo(); }
+				}
+				var aRuns = oHistory.runs;
 				var aAi = oState.messages.filter(function (e) { return e.role === "assistant" && !e.tlHtml; });
 				var mUsed = {};
 				var nHit = 0;

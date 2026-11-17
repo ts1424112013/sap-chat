@@ -4850,6 +4850,8 @@ sap.ui.define([
                         var oEntry = (oChatModel.getProperty("/messages") || [])[iAssistantIdx];
                         var oAsk = oEntry && oTask.needsInput ? this._paramAsk(oTask, oPendingObj, aPending, sSessionId) : null;
                         if (oAsk) {
+                                // 20261117（11.17 #02②）：记下发起参数卡那轮的用户原话（用于报表跑完就绪后自动续接后续动作）
+                                oAsk.originQuestion = this._originQuestionForAsk ? this._originQuestionForAsk(iAssistantIdx) : this._prevUserText(iAssistantIdx);
                                 oEntry.ask = oAsk;
                                 if (!oAsk.fiori) {
                                         this._enrichReportAsk(oEntry);
@@ -4914,6 +4916,21 @@ sap.ui.define([
                                         autoFocus: false
                                 };
                         }
+                        // 20261117（11.17 #02①）：后端预填 values 键名大小写不一致时兜底对齐参数定义的 param_id
+                        var mRawVals = (oPendingObj && oPendingObj.values) || {};
+                        var mNormVals = jQuery.extend({}, mRawVals);
+                        (aPending || []).forEach(function (p) {
+                                if (p && p.param_id && mNormVals[p.param_id] === undefined) {
+                                        var sUp = String(p.param_id).toUpperCase();
+                                        Object.keys(mRawVals).some(function (k) {
+                                                if (String(k).toUpperCase() === sUp) {
+                                                        mNormVals[p.param_id] = mRawVals[k];
+                                                        return true;
+                                                }
+                                                return false;
+                                        });
+                                }
+                        });
                         return {
                                 kind: "params",
                                 state: "open",
@@ -4922,7 +4939,7 @@ sap.ui.define([
                                 params: aPending,
                                 // 20261105（联合分析 #01 报表接力）：后端预填的值（上一份结果带入的多值 + 同名参数）与来源说明；
                                 // 20261105：再叠上本机草稿（用户填过的值优先）
-                                values: jQuery.extend({}, (oPendingObj && oPendingObj.values) || {}, this._askDraftOf(oTask.taskId).values),
+                                values: jQuery.extend({}, mNormVals, this._askDraftOf(oTask.taskId).values),
                                 paste: jQuery.extend({}, this._askDraftOf(oTask.taskId).paste),
                                 prefill: (oPendingObj && oPendingObj.prefill) || null,
                                 options: [
@@ -5138,6 +5155,23 @@ sap.ui.define([
                         return "";
                 },
 
+                /** 20261117（11.17 #02②）：取发起参数卡那轮的用户原话；若本轮是短答澄清，合并上一条指令 */
+                _originQuestionForAsk: function (iIndex, aMsgsOverride) {
+                        var aMsgs = aMsgsOverride || this.getView().getModel("chat").getProperty("/messages") || [];
+                        var aParts = [];
+                        for (var i = iIndex - 1; i >= 0; i--) {
+                                if (aMsgs[i] && aMsgs[i].role === "user") {
+                                        var s = String(aMsgs[i].raw || aMsgs[i].question || "").trim();
+                                        if (!s) { continue; }
+                                        aParts.unshift(s);
+                                        if (aParts.length >= 2 || s.length >= 20) {
+                                                break;
+                                        }
+                                }
+                        }
+                        return aParts.join("\n");
+                },
+
                 /**
                   * V16：内联确认卡动作分发（卡片只收集，业务动作在这里执行）
                   * @param {string} sUid 消息 uid
@@ -5262,7 +5296,7 @@ sap.ui.define([
                                 that._renderAsk(sUid);
                                 that._askDraftClear(oAsk.taskId);   // 20261105：已提交，草稿作废
                                 that._rlRemember(oRes.reportRunId, oAsk);   // 20261105 报表接力：记下来源结果，结果卡出「关联」按钮
-                                that._trackRun(sUid, oRes.reportRunId, oAsk.sessionId, oRes.shortId);
+                                that._trackRun(sUid, oRes.reportRunId, oAsk.sessionId, oRes.shortId, null, oAsk.originQuestion);
                         }).catch(function (oErr) {
                                 oAsk.state = "open";
                                 oAsk.error = (oErr && oErr.message) || String(oErr);

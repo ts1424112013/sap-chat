@@ -859,6 +859,9 @@ CLASS ZCL_AI_CHAT_SERVICE IMPLEMENTATION.
       lv_hit = abap_true.
     ENDIF.
 
+    DELETE FROM zai_bstep
+      WHERE session_id = @iv_session_id AND userid = @sy-uname AND kind IN ( 'CONTEXT', 'USAGE' ).
+
     COMMIT WORK.
 
     IF lv_hit = abap_true.

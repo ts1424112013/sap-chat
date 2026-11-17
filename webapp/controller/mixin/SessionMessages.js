@@ -60,6 +60,7 @@ sap.ui.define([
                         oChat.setProperty("/taskBadge", oState.taskBadge);
                         oChat.setProperty("/taskBadgeState", oState.taskBadgeState || "None");
                         oChat.setProperty("/taskBadgeTip", oState.taskBadgeTip || "");
+                        if (this._rtContextInfo) { this._rtContextInfo(); }
                 },
 
                 /** 回读被中断的回复时复用已有条目，并把本地报表结果留在原来的位置。 */

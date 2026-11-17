@@ -20,6 +20,8 @@ sap.ui.define([
          *  ⑤ 结果在本页显示过一次，就在本机记下结果号；服务器索引（Tasks / TaskContext）查不到时，
          *     同一浏览器仍按结果号走 ReportResult / FioriReportResult 取回（这两个接口执行时就在用）；
          *  ⑥ 取不回的结果在原位置留一行说明（原因写明），不再静默消失。
+         * 20261117（11.17 #02②）：本机运行记录与未提交参数卡恢复时同步保留 originQuestion，
+         * 保证刷新后报表就绪仍能自动续接原指令的后续动作。
          * 不恢复：数据分析（SQL）的数据集 —— 后端只登记行数、不存明细，刷新后只剩文字回答。
          * 不需要改 ABAP / SE11 / SEGW；任务接口不可用时什么都不补，历史照常显示。
          * 以 mixin 方式并入 zai.chat.controller.App（方法里的 this 就是控制器）；
@@ -234,7 +236,11 @@ sap.ui.define([
                         var o = this._rrRead();
                         var oS = this._rrSession(o, oRun.sessionId, true);
                         oS.runs = oS.runs || {};
-                        oS.runs[oRun.runId] = { shortId: oRun.shortId || "", start: oRun.start || Date.now() };
+                        oS.runs[oRun.runId] = {
+                                shortId: oRun.shortId || "",
+                                start: oRun.start || Date.now(),
+                                originQuestion: oRun.originQuestion || ""
+                        };
                         this._rrWrite(o);
                 },
 
@@ -516,7 +522,7 @@ sap.ui.define([
                                 var oEntry = that._buildEntry("assistant", that._rb().getText("runResumedText", [sShort]), "", "");
                                 oEntry.sender = that._rb().getText("agentSender");
                                 oEntry.localResult = true;
-                                oEntry.resumeRun = { runId: sRunId, shortId: sShort, start: r.start };
+                                oEntry.resumeRun = { runId: sRunId, shortId: sShort, start: r.start, originQuestion: r.originQuestion || "" };
                                 aOut.push(oEntry);
                         });
                         return aOut;
@@ -567,7 +573,7 @@ sap.ui.define([
                                 }
                                 aRuns.forEach(function (oEntry) {
                                         var r = oEntry.resumeRun;
-                                        that._trackRun(oEntry.uid, r.runId, sSid, r.shortId, r.start);
+                                        that._trackRun(oEntry.uid, r.runId, sSid, r.shortId, r.start, r.originQuestion);
                                 });
                         };
                         fnGo();
@@ -626,6 +632,11 @@ sap.ui.define([
                                 return false;
                         }
                         oAsk.autoFocus = false;
+                        // 20261117（11.17 #02②）：恢复参数卡时同步回溯发起参数卡的用户原话
+                        var iHit = aMsgs.indexOf(oHit);
+                        if (iHit > 0 && this._originQuestionForAsk) {
+                                oAsk.originQuestion = this._originQuestionForAsk(iHit, aMsgs);
+                        }
                         oHit.ask = oAsk;
                         if (!oAsk.fiori) {
                                 this._enrichReportAsk(oHit);

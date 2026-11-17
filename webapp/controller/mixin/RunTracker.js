@@ -12,6 +12,8 @@ sap.ui.define([
          * 轮询独立于聊天 busy，结果只写回发起时的会话。
          * 以 mixin 方式并入 zai.chat.controller.App（方法里的 this 就是控制器）；
          * 20261011（改进清单 FE-09）从 App.controller.js 原样搬出，逻辑未改。
+         * 20261117（11.17 记录 #02②）：_trackRun 记录发起参数卡的原问题 originQuestion；
+         * READY 插入结果后若原指令包含执行后动作（筛选/统计/分析/导出等），自动续发跟进处理。
          * =====================================================================
          */
         return {
@@ -22,8 +24,9 @@ sap.ui.define([
                  * TIMEOUT/UNKNOWN 继续查询（不等于作业停止），上限后提示人工核对，不伪造结果
                  * --------------------------------------------------------- */
 
-                /** iStart：提交时间（毫秒）；刷新后续跟时传记下的时间，耗时从提交算起（20261025 DATA-01） */
-                _trackRun: function (sUid, sRunId, sSessionId, sShort, iStart) {
+                /** iStart：提交时间（毫秒）；刷新后续跟时传记下的时间，耗时从提交算起（20261025 DATA-01）
+                  * sOriginQuestion：发起参数卡那轮的用户原话（20261117 11.17 #02② 用于结果就绪后自动续接后续动作） */
+                _trackRun: function (sUid, sRunId, sSessionId, sShort, iStart, sOriginQuestion) {
                         if (!this._sessionMessageState(sSessionId)) { return; }
                         this._mRuns = this._mRuns || Object.create(null);
                         if (this._mRuns[sRunId]) { return; }
@@ -31,7 +34,8 @@ sap.ui.define([
                                 uid: sUid, runId: sRunId, sessionId: sSessionId,
                                 shortId: sShort || String(sRunId || "").substring(0, 8),
                                 start: iStart || Date.now(), count: 0, empty: 0,
-                                status: "SUBMITTED", phase: "active", message: ""
+                                status: "SUBMITTED", phase: "active", message: "",
+                                originQuestion: sOriginQuestion || ""
                         };
                         this._rrRememberRun(oRun);   // 刷新页面后按运行号继续跟踪
                         this._resumeRun(oRun);
@@ -180,6 +184,8 @@ sap.ui.define([
                                 // 20261011：记为本会话聚焦结果，之后"分析一下这个结果"带给后端
                                 that._mFocusArt = that._mFocusArt || {};
                                 that._mFocusArt[o.sessionId] = o.artifactId;
+                                // 20261117（11.17 #02②）：原指令带了报表跑完后的筛选/分析要求 → 自动续接，不让任务链在参数卡后断掉
+                                that._maybeContinueReport(o, oRes);
                         }).catch(function (oErr) {
                                 o.loadingResult = false;
                                 if (that._sessionMessageState(o.sessionId) !== oState) { return; }
@@ -187,6 +193,53 @@ sap.ui.define([
                                 o.message = (oErr && oErr.message) || that._rb().getText("runResultReadFail");
                                 that._renderRun(o);
                         });
+                },
+
+                /** 20261117（11.17 #02②）：判断发起参数卡的原问题是否包含报表执行后的筛选/统计/分析/导出等后续动作 */
+                _hasPostReportIntent: function (sText) {
+                        var s = String(sText || "").trim();
+                        if (!s) {
+                                return false;
+                        }
+                        if (/(抓出|筛选|篩選|筛出|篩出|过滤|過濾|汇总|匯總|彙總|统计|統計|分析|对比|對比|比较|比較|核对|核對|整理|导出|導出|匯出|汇出|存到|保存|写入|寫入|生成图表|生成圖表|画图|畫圖|排名前|分组|分組|找出|挑出|剔除)/.test(s)) {
+                                return true;
+                        }
+                        if (/(执行出来|執行出來|跑出来|跑出來|跑完|出来后|出來後|之后|之後|以后|以後|然后|然後|接着|接著|再把|并将|並將|并且|並且|并把|並把).{0,24}(抓|筛|篩|滤|濾|算|看|列|找|查|取|出|写|寫|存|做)/.test(s)) {
+                                return true;
+                        }
+                        return false;
+                },
+
+                /** 20261117（11.17 #02②）：报表就绪后自动续接原指令的后续动作（当前正在该会话且空闲时触发） */
+                _maybeContinueReport: function (oRun, oRes) {
+                        if (!oRun || oRun.autoContinued || !oRun.originQuestion || !this._sendFollowUp) {
+                                return;
+                        }
+                        var iTotal = parseInt(oRes && oRes.rowCount, 10) || 0;
+                        if (iTotal <= 0 || !this._hasPostReportIntent(oRun.originQuestion)) {
+                                return;
+                        }
+                        if (this._sMessagesSession !== oRun.sessionId) {
+                                return;
+                        }
+                        var oChat = this.getView().getModel("chat");
+                        if (!oChat || oChat.getProperty("/busy")) {
+                                return;
+                        }
+                        oRun.autoContinued = true;
+                        var sLabel = (oRes && oRes.label) || oRun.shortId || "";
+                        var sDisplay = "报表已就绪（" + sLabel + "，共 " + iTotal + " 行），继续执行原指令的后续处理…";
+                        var sPrompt = "刚刚提交的报表已经执行完成，结果号是 " + oRun.artifactId +
+                                "（" + sLabel + "，共 " + iTotal + " 行）。\n" +
+                                "用户的原指令是：「" + oRun.originQuestion + "」\n" +
+                                "请直接针对这份新结果（result_id=" + oRun.artifactId + "）继续完成原指令里要求在报表执行后做的筛选、统计、分析或整理工作；" +
+                                "不要重复打开或再次执行同一张报表参数卡。";
+                        var that = this;
+                        window.setTimeout(function () {
+                                if (that._sMessagesSession === oRun.sessionId && !oChat.getProperty("/busy")) {
+                                        that._sendFollowUp(sDisplay, sPrompt);
+                                }
+                        }, 60);
                 },
 
                 /** 步骤条 HTML（写入发起提交那条回复的 runHtml） */

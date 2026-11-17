@@ -14,6 +14,7 @@ sap.ui.define([
 	 *    返回与 ChatService.sendTask 相同形状的结果（answer / status / trace …），控制器无需区分
 	 *  · 演示模式（ZAI_CONFIG.mode = mock 或探测失败降级）走 BrowserAgentMock，不连 SAP
 	 * 模型密钥、工具权限都在 SAP（/sap/bc/zai_agent）；本层不做任何授权判断。
+	 * 20261117（11.17 #01 附带）：send() 对 aChanges 按 action+path 去重，并去掉模型正文里仿写的重复「本次改动的文件」块。
 	 * =====================================================================
 	 */
 
@@ -67,12 +68,12 @@ sap.ui.define([
 
 		/**
 		 * 会话里新引擎各轮的精简过程记录（刷新 / 重开会话时画回来）。
-		 * @returns {Promise<Array<{msgSeq:number, answerHead:string, steps:Array}>>} 拿不到时返回 []
+		 * @returns {Promise<{runs:Array, contextUsage:?{input:number, limit:number}}> }
 		 */
 		getSteps: function (sSessionId, oOpt) {
 			var that = this;
 			if (!sSessionId || !this.available()) {
-				return Promise.resolve([]);
+				return Promise.resolve({ runs: [], contextUsage: null });
 			}
 			return this.load().then(function (LA) {
 				var o = oOpt || {};
@@ -80,9 +81,20 @@ sap.ui.define([
 					: LA.createSapClient({ base: cfg().path, authHeader: o.authHeader ? o.authHeader() : "" });
 				return client.getSteps ? client.getSteps({ sessionId: sSessionId }) : { runs: [] };
 			}).then(function (r) {
-				return (r && Array.isArray(r.runs)) ? r.runs : [];
+				var oUsage = r && r.contextUsage;
+				var aRuns = r && Array.isArray(r.runs) ? r.runs : [];
+				// 演示模式和旧 SAP 从过程记录读取用量；这些行不需要绘制到消息里。
+				var oStepUsage = null;
+				aRuns.forEach(function (oRun) {
+					oRun.steps = (oRun.steps || []).filter(function (oStep) {
+						if (oStep.k !== "usage") { return true; }
+						if (oStep.ds > 0 && oStep.dn > 0) { oStepUsage = { input: oStep.ds, limit: oStep.dn }; }
+						return false;
+					});
+				});
+				return { runs: aRuns, contextUsage: oUsage || oStepUsage };
 			}).catch(function () {
-				return [];   // SAP 还没部署 /run/steps 等：不影响历史显示
+				return { runs: [], contextUsage: null };
 			});
 		},
 
@@ -218,7 +230,7 @@ sap.ui.define([
 		/**
 		 * @param {object} o
 		 * @param {string} o.question
-		 * @param {Array<{role,content}>} o.history
+		 * @param {Array<{role,content,unsaved?:boolean}>} o.history
 		 * @param {string} o.sessionId / o.scene / o.modelId / o.skillId / o.focusArtifactId
 		 * @param {boolean} o.think
 		 * @param {function(object)} o.onEvent 引擎事件（原样转发，RunTimeline 据此画过程）
@@ -282,9 +294,20 @@ sap.ui.define([
 				}
 				return LA.run(oRun).then(function (r) {
 					var sAnswer = r.answer || "";
+					// 20261117（11.17 #01 附带）：模型在多轮历史里见到过「本次改动的文件」块时可能自己仿写一遍，
+					// 这里先剥掉正文里的重复模板块，再按本轮真实的 aChanges 去重后统一追加一次
+					sAnswer = sAnswer.replace(/\n*\*\*本次改动的文件\*\*（改之前的原样在[^\n]*\r?\n(?:[ \t]*[-•*][ \t]+[^\n]*(?:\r?\n|$))*/g, "").replace(/\s+$/, "");
 					if (aChanges.length) {
+						var mSeen = {}, aUniq = [];
+						aChanges.forEach(function (c) {
+							var k = (c.action || "") + "\0" + (c.path || "");
+							if (!mSeen[k]) {
+								mSeen[k] = true;
+								aUniq.push(c);
+							}
+						});
 						sAnswer += "\n\n**本次改动的文件**（改之前的原样在 `.lingxi/备份/`，可在文件夹菜单里撤回）\n" +
-							aChanges.map(function (c) { return "- " + c.action + "　`" + c.path + "`"; }).join("\n");
+							aUniq.map(function (c) { return "- " + c.action + "　`" + c.path + "`"; }).join("\n");
 					}
 					var res = that._result(r, sAnswer, aSteps, iTools, t0, "OK", "", o.modelId);
 					res.title = r.title || "";

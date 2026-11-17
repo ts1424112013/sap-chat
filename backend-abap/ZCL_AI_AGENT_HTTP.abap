@@ -66,6 +66,7 @@ CLASS zcl_ai_agent_http DEFINITION
              skill_id   TYPE string,
              focus_artifact_id TYPE string,   " V1.2: 前端聚焦的结果(Fiori「交给模型分析」)
              builtin_version   TYPE string,   " V1.8: 浏览器手里那份内置技能的版本号
+             chat_context      TYPE abap_bool,
            END OF ty_start_req.
     TYPES: BEGIN OF ty_tool_req,
              run_id     TYPE string,
@@ -80,6 +81,8 @@ CLASS zcl_ai_agent_http DEFINITION
              skills_used TYPE string_table,   " V1.1: 模型读过的 SAP 技能编号
              steps       TYPE zcl_ai_agent_service=>tt_bstep_in,   " V1.4: 精简过程记录
              title       TYPE string,                               " V1.6: 模型总结的会话标题
+             context_seq TYPE i,
+             context_summary TYPE string,
            END OF ty_finish_req.
     TYPES: BEGIN OF ty_audit_req,      " V1.5: ADT 调用报备(seq = 0)/ 回填(seq > 0)
              run_id TYPE string,
@@ -173,6 +176,7 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                         iv_think      = COND #( WHEN ls_start-think = abap_true THEN `X` ELSE `` )
                         iv_focus_artifact_id = ls_start-focus_artifact_id
                         iv_builtin_ver = ls_start-builtin_version
+                        iv_chat_context = ls_start-chat_context
               IMPORTING es_start      = ls_out
                         ev_error      = lv_err
                         ev_http       = lv_http ).
@@ -193,6 +197,7 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                              COND string( WHEN ls_out-builtin_json IS NOT INITIAL THEN |"builtinSkills":{ ls_out-builtin_json },| ) &&
                              |"answer":{ jstr( ls_out-answer ) },| &&
                              COND string( WHEN ls_out-card IS NOT INITIAL THEN |"card":{ ls_out-card },| ) &&
+                             COND string( WHEN ls_out-chat_context IS NOT INITIAL THEN |"chatContext":{ ls_out-chat_context },| ) &&
                              |"limits":\{"maxModelCalls":{ ls_out-max_model },"maxToolCalls":{ ls_out-max_tool },| &&
                              |"contextTokens":{ ls_out-ctx_tokens },| &&
                              |"recursionLimit":{ ( ls_out-max_model + ls_out-max_tool ) * 2 + 10 }\}\}| ).
@@ -340,6 +345,8 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                         it_skills  = ls_fin-skills_used
                         it_steps   = ls_fin-steps
                         iv_title   = ls_fin-title
+                        iv_context_seq = ls_fin-context_seq
+                        iv_context_summary = ls_fin-context_summary
               IMPORTING ev_error   = lv_err
                         ev_http    = lv_http ).
             IF lv_err IS NOT INITIAL.

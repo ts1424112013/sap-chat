@@ -16,8 +16,13 @@
 *         ZCL_AI_TASK_SERVICE / ZCL_AI_ODATA_SHAPER
 * 安装:   SE24 -> 创建类 -> 源代码粘帖 (ABAP 7.50 语法, 755 适用); 先激活 ZCL_AI_RESULT_QUERY V1.1
 * V1.0    20261105: 首版
+* V1.1    20261117(11.17 记录 #02① / 澄清勘误):
+*   ① prefill_report 支持可选 params 对象({"参数编号或标题":"值"}), 工厂/日期等其它已知参数可与多值列一并预填,
+*      避免只带入多值列而工厂(必填)等留空; 与来源同名参数合并去重, 显式 params 优先
+*   ② 键名改用参数定义原样 ls_p-param_id(不再强转大写, 与 chat_prefill / AskCard 一致)
+*   ③ 统计筛选后非空原始行数 lv_raw_n, 在 ev_note 与 ev_json(raw_rows) 同时写明「共 N 行、去重后 M 个唯一值」
 * ★ 重贴后核对标记: 有 METHOD enabled / tool_description / run / merge_pending / source_params;
-*   本类没有 SUBMIT / start_run / INSERT / UPDATE(只算值, 不执行)
+*   run 解析 args-params 并输出 raw_rows / prefilled; 本类没有 SUBMIT / start_run / INSERT / UPDATE(只算值, 不执行)
 *=======================================================================
 CLASS zcl_ai_report_relay DEFINITION
   PUBLIC
@@ -96,15 +101,17 @@ CLASS zcl_ai_report_relay IMPLEMENTATION.
 
     rv = '把当前这份报表结果里某一列的值(去重, 可先筛选)填进用户点名的下一张报表的多值参数, 生成参数卡让用户确认提交'
       && '(只预填, 不执行; 值由后端从全部行里取, 不要自己罗列; 只能用本轮正在分析的这一份结果)。'
-      && '用户说"根据上面的结果 / 把这些料号带进 / 塞进某报表"时用本工具; 调用成功后不要再调用其他工具, '
+      && '用户说"根据上面的结果 / 把这些料号带进 / 塞进某报表"时用本工具; 若还有工厂、日期等其它已知参数(用户说了或从结果查出的),'
+      && '务必放进 params 一并预填(先用 get_report_parameters 确认目标参数编号), 不要留空。调用成功后不要再调用其他工具, '
       && '直接 action=final 用一两句话说明带入了什么、请用户核对参数卡后提交。'
       && 'args: {"tcode":"<目标报表事务码>","target_param":"<目标报表的参数编号或标题, 必须是多值或范围参数>",'
       && '"source_column":"<结果里的列名或标题>",'
       && '"filters":[{"column":"<结果里的列>","op":"eq|ne|gt|ge|lt|le|contains|not_contains|starts_with|in|not_in|empty|not_empty",'
-      && '"value":"<值>"}](可选, 先筛行再取值)}。'
-      && '返回 values_count = 带入的值个数; carried = 从来源运行一起带入的同名参数。'
-      && '例: {"tcode":"ZDPMM159","target_param":"料號","source_column":"鴻海料號",'
-      && '"filters":[{"column":"鴻海料號","op":"starts_with","value":"1AM"}]}'.
+      && '"value":"<值>"}](可选, 先筛行再取值),'
+      && '"params":{"<其它已知参数编号或标题>":"<值>"}(可选, 工厂/日期等单值或固定参数, 值写字符串, 日期 YYYYMMDD)}。'
+      && '返回 raw_rows = 筛选后行数, values_count = 去重后唯一值个数; carried = 从来源运行带入的同名参数; prefilled = params 预填的参数。'
+      && '例: {"tcode":"ZDPMM159","target_param":"CPN","source_column":"客戶料號",'
+      && '"filters":[{"column":"客戶料號","op":"ne","value":"MQ"}],"params":{"P_WERKS":"ABZ1"}}'.
 
   ENDMETHOD.
 
@@ -201,11 +208,21 @@ CLASS zcl_ai_report_relay IMPLEMENTATION.
           lt_seen TYPE HASHED TABLE OF string WITH UNIQUE KEY table_line,
           lt_vals TYPE tt_str,
           lv_bad  TYPE i,
+          lv_raw  TYPE i,
           lt_kv   TYPE tt_kv,
           lv_srun TYPE string,
           lt_carr TYPE tt_str,
+          lt_exp  TYPE tt_str,
           lt_vj   TYPE tt_str,
           lt_pj   TYPE tt_str.
+    TYPES: BEGIN OF ty_ext,
+             key     TYPE string,
+             param   TYPE string,
+             label   TYPE string,
+             value   TYPE string,
+             carried TYPE abap_bool,
+           END OF ty_ext.
+    DATA lt_ext TYPE STANDARD TABLE OF ty_ext WITH DEFAULT KEY.
     CLEAR: ev_json, ev_extra, ev_note, ev_label, ev_detail, ev_error.
 
     DO 1 TIMES.
@@ -315,6 +332,7 @@ CLASS zcl_ai_report_relay IMPLEMENTATION.
         IF lv_cell IS INITIAL.
           CONTINUE.
         ENDIF.
+        lv_raw = lv_raw + 1.
         " 参数卡多值按 , 和 | 拆分: 含这两个字符的值放不进去
         IF lv_cell CA ',|' OR strlen( lv_cell ) > 60.
           lv_bad = lv_bad + 1.
@@ -343,16 +361,70 @@ CLASS zcl_ai_report_relay IMPLEMENTATION.
       " ---- 来源运行里同名的参数一起带入(目标参数本身除外) ----
       source_params( EXPORTING iv_artifact_id = iv_artifact_id
                      IMPORTING et_kv = lt_kv ev_run_id = lv_srun ).
-      APPEND |{ js( to_upper( lv_tid ) ) }:{ js( concat_lines_of( table = lt_vals sep = `,` ) ) }| TO lt_vj.
+      APPEND |{ js( lv_tid ) }:{ js( concat_lines_of( table = lt_vals sep = `,` ) ) }| TO lt_vj.
       LOOP AT lt_p INTO ls_p.
         IF to_upper( ls_p-param_id ) = to_upper( lv_tid ).
           CONTINUE.
         ENDIF.
         READ TABLE lt_kv INTO DATA(ls_kv) WITH KEY name = to_upper( ls_p-param_id ).
         IF sy-subrc = 0.
-          APPEND |{ js( to_upper( ls_p-param_id ) ) }:{ js( ls_kv-value ) }| TO lt_vj.
-          APPEND |{ js( to_upper( ls_p-param_id ) ) }:\{"carried":true\}| TO lt_pj.
-          APPEND ls_p-display_label TO lt_carr.
+          APPEND VALUE #( key = to_upper( ls_p-param_id ) param = ls_p-param_id
+                          label = ls_p-display_label value = ls_kv-value carried = abap_true ) TO lt_ext.
+        ENDIF.
+      ENDLOOP.
+
+      " ---- V1.1(11.17 #02①): args.params 里的其它已知参数(工厂 / 日期等)一并预填, 优先于来源同名参数 ----
+      DATA(lv_pobj) = lo->child( iv_id = lv_root iv_name = 'params' ).
+      IF lv_pobj > 0 AND lo->kind( lv_pobj ) = 'O'.
+        LOOP AT lo->kids( lv_pobj ) INTO DATA(lv_pid).
+          DATA(lv_pv) = condense( lo->text( lv_pid ) ).
+          IF lv_pv IS INITIAL.
+            CONTINUE.
+          ENDIF.
+          DATA(lv_pk) = to_upper( condense( lo->name_of( lv_pid ) ) ).
+          DATA(lv_phit) = abap_false.
+          LOOP AT lt_p INTO ls_p.
+            IF to_upper( ls_p-param_id ) = lv_pk.
+              lv_phit = abap_true.
+              EXIT.
+            ENDIF.
+          ENDLOOP.
+          IF lv_phit = abap_false.
+            LOOP AT lt_p INTO ls_p.
+              IF to_upper( condense( ls_p-display_label ) ) = lv_pk.
+                lv_phit = abap_true.
+                EXIT.
+              ENDIF.
+            ENDLOOP.
+          ENDIF.
+          IF lv_phit = abap_false OR to_upper( ls_p-param_id ) = to_upper( lv_tid ).
+            CONTINUE.
+          ENDIF.
+          IF to_upper( ls_p-data_type ) CS 'DAT'.
+            REPLACE ALL OCCURRENCES OF REGEX `[-/.]` IN lv_pv WITH ``.
+          ENDIF.
+          IF strlen( lv_pv ) > 4000.
+            lv_pv = lv_pv(4000).
+          ENDIF.
+          DATA(lv_pku) = to_upper( ls_p-param_id ).
+          READ TABLE lt_ext ASSIGNING FIELD-SYMBOL(<ls_ext>) WITH KEY key = lv_pku.
+          IF sy-subrc = 0.
+            <ls_ext>-value   = lv_pv.
+            <ls_ext>-carried = abap_false.
+          ELSE.
+            APPEND VALUE #( key = lv_pku param = ls_p-param_id
+                            label = ls_p-display_label value = lv_pv carried = abap_false ) TO lt_ext.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+
+      LOOP AT lt_ext INTO DATA(ls_ext).
+        APPEND |{ js( ls_ext-param ) }:{ js( ls_ext-value ) }| TO lt_vj.
+        IF ls_ext-carried = abap_true.
+          APPEND |{ js( ls_ext-param ) }:\{"carried":true\}| TO lt_pj.
+          APPEND ls_ext-label TO lt_carr.
+        ELSE.
+          APPEND |{ ls_ext-label } = { COND string( WHEN strlen( ls_ext-value ) > 60 THEN |{ substring( val = ls_ext-value len = 60 ) }…| ELSE ls_ext-value ) }| TO lt_exp.
         ENDIF.
       ENDLOOP.
     ENDDO.
@@ -365,13 +437,20 @@ CLASS zcl_ai_report_relay IMPLEMENTATION.
     ENDIF.
 
     DATA(lv_short) = zcl_ai_task_service=>short_id( iv_artifact_id ).
-    INSERT |{ js( to_upper( lv_tid ) ) }:\{"count":{ lines( lt_vals ) },"source_column":{ js( lv_scol ) },| &&
+    INSERT |{ js( lv_tid ) }:\{"count":{ lines( lt_vals ) },"raw_rows":{ lv_raw },"source_column":{ js( lv_scol ) },| &&
            |"source_artifact":{ js( to_upper( condense( iv_artifact_id ) ) ) },"source_short":{ js( lv_short ) },| &&
            |"source_label":{ js( lv_lbl ) },"source_run":{ js( lv_srun ) }\}| INTO lt_pj INDEX 1.
     ev_extra = |"values":\{{ concat_lines_of( table = lt_vj sep = `,` ) }\},| &&
                |"prefill":\{{ concat_lines_of( table = lt_pj sep = `,` ) }\}|.
 
-    ev_note = |已从结果 { lv_short }「{ lv_lbl }」的「{ lv_scol }」列带入 { lines( lt_vals ) } 个值到参数「{ lv_tlbl }」|.
+    IF lv_raw > lines( lt_vals ).
+      ev_note = |已从结果 { lv_short }「{ lv_lbl }」的「{ lv_scol }」列（共 { lv_raw } 行, 去重后 { lines( lt_vals ) } 个唯一值）带入参数「{ lv_tlbl }」|.
+    ELSE.
+      ev_note = |已从结果 { lv_short }「{ lv_lbl }」的「{ lv_scol }」列带入 { lines( lt_vals ) } 个值到参数「{ lv_tlbl }」|.
+    ENDIF.
+    IF lt_exp IS NOT INITIAL.
+      ev_note = |{ ev_note }; 并按条件预填: { concat_lines_of( table = lt_exp sep = `、` ) }|.
+    ENDIF.
     IF lt_carr IS NOT INITIAL.
       ev_note = |{ ev_note }; 同名参数 { concat_lines_of( table = lt_carr sep = `、` ) } 沿用上一次运行的值|.
     ENDIF.
@@ -386,9 +465,13 @@ CLASS zcl_ai_report_relay IMPLEMENTATION.
     LOOP AT lt_carr INTO DATA(lv_c1).
       lv_carr_j = COND #( WHEN lv_carr_j IS INITIAL THEN js( lv_c1 ) ELSE lv_carr_j && `,` && js( lv_c1 ) ).
     ENDLOOP.
+    DATA(lv_exp_j) = ``.
+    LOOP AT lt_exp INTO DATA(lv_e1).
+      lv_exp_j = COND #( WHEN lv_exp_j IS INITIAL THEN js( lv_e1 ) ELSE lv_exp_j && `,` && js( lv_e1 ) ).
+    ENDLOOP.
     ev_json = |\{"ok":true,"tcode":{ js( lv_tc ) },"target_param":{ js( lv_tlbl ) },| &&
-              |"source_column":{ js( lv_scol ) },"values_count":{ lines( lt_vals ) },"values_skipped":{ lv_bad },| &&
-              |"carried":[{ lv_carr_j }],| &&
+              |"source_column":{ js( lv_scol ) },"raw_rows":{ lv_raw },"values_count":{ lines( lt_vals ) },"values_skipped":{ lv_bad },| &&
+              |"carried":[{ lv_carr_j }],"prefilled":[{ lv_exp_j }],| &&
               |"note":"参数卡已生成, 等用户核对后提交; 不要再调用工具, 直接 action=final 简短说明"\}|.
 
   ENDMETHOD.

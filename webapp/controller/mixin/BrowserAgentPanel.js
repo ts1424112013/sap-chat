@@ -301,7 +301,10 @@ sap.ui.define([
 				var oRt = this._mRt && this._mRt[m.uid];
 				oRecovery = m.role === "assistant" && oRt ? oRt.recovery : null;
 				var s = m.role === "user" ? (m.question || m.raw || "") : (oRecovery && oRecovery.answer) || m.raw || "";
-				if (s) { a.push({ role: m.role, content: String(s).slice(0, 4000) }); }
+				if (s) {
+					a.push({ role: m.role, content: String(s).slice(0, 4000),
+						unsaved: !!(m.role === "assistant" && oRt && oRt.saveFailed) });
+				}
 			}, this);
 			return a.slice(-MAX_HISTORY);
 		},
@@ -353,6 +356,7 @@ sap.ui.define([
 					if (e.type === "recovery") {
 						oRt.recovery = { answer: e.answer };
 					} else {
+						if (e.type === "save_failed") { oRt.saveFailed = true; }
 						that._rtEvent(sUid, e);
 					}
 				},

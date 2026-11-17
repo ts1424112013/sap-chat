@@ -1536,5 +1536,28 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     [cpRaw, agRaw, htRaw].every(r => r.split(/\r?\n/).every(l => l.length <= 255)) && ![cp, ag, ht].some(c => /\bFINAL\(/.test(c)));
 }
 
+// ---------- 11.17 #02①：报表接力参数全预填（args.params）+ 去重报数口径 ----------
+{
+  console.log('\n[11.17 #02①] 报表接力 args.params 预填与 raw_rows 去重口径');
+  const rlRaw = read('ZCL_AI_REPORT_RELAY.abap'), rl = codeOnly(rlRaw);
+  const agRaw = read('ZCL_AI_AGENT_SERVICE.abap'), ag = codeOnly(agRaw);
+  const runM = (rl.match(/METHOD run\.[\s\S]*?ENDMETHOD\./i) || [''])[0];
+  const bsM = (ag.match(/METHOD browser_start\.[\s\S]*?ENDMETHOD\./i) || [''])[0];
+  const cpM = (ag.match(/METHOD chat_prefill\.[\s\S]*?ENDMETHOD\./i) || [''])[0];
+  check('REPORT_RELAY V1.1：头注释含 V1.1 20261117；行长 ≤ 255、无 FINAL( )、仍无写库/SUBMIT',
+    /^\* V1\.1\s+20261117/m.test(rlRaw) && rlRaw.split(/\r?\n/).every(l => l.length <= 255) &&
+    !/\bFINAL\(/.test(rl) && !/\bSUBMIT\b|start_run|\bUPDATE\s+zai|\bMODIFY\b|\bDELETE\s+(FROM|zai)|COMMIT WORK/i.test(rl));
+  check('REPORT_RELAY V1.1：解析 args.params 合并进 values（按 param_id / display_label 匹配，优先于同名参数），键名保持 ls_p-param_id 原样',
+    /lo->child\( iv_id = lv_root iv_name = 'params' \)/.test(runM) &&
+    /to_upper\( condense\( ls_p-display_label \) \) = lv_pk/.test(runM) &&
+    /js\( lv_tid \)/.test(runM) && /js\( ls_ext-param \)/.test(runM));
+  check('REPORT_RELAY V1.1：统计原始非空行数 lv_raw，输出 raw_rows 与「共 N 行, 去重后 M 个唯一值」',
+    /lv_raw = lv_raw \+ 1\./.test(runM) && /"raw_rows":/.test(runM) && /去重后.*个唯一值/.test(runM));
+  check('AGENT_SERVICE V15.33：browser_start 的 prefill_report 参数模式含 params，系统说明提示一并预填；chat_prefill 兜底按标题匹配',
+    /^\* V15\.33 20261117/m.test(agRaw) && agRaw.split(/\r?\n/).every(l => l.length <= 255) && !/\bFINAL\(/.test(ag) &&
+    bsM.indexOf('zcl_ai_report_relay=>gc_tool') > 0 && /"params":\\\{/.test(bsM) && /用 params 一并预填/.test(bsM) &&
+    /to_upper\( condense\( ls_p-display_label \) \) = lv_kname/.test(cpM));
+}
+
 console.log('\n' + (fail === 0 ? '全部通过: ' + pass + ' 项' : '失败: ' + fail + ' 项 / 通过: ' + pass + ' 项'));
 process.exit(fail === 0 ? 0 : 1);

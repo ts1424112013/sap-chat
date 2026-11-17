@@ -366,6 +366,12 @@
 *   ② BRUN_MAX_MODEL 默认 40 → 100(一次读 3 个程序 + 改 3 个文件 + 语法检查就会用满 40 次); 上限仍可配 5~200
 *   依赖: ZCL_AI_CODE_PROVIDER V1.2(超长名字不查 TSTC / TFDIR)先激活
 *   ★ 重贴后核对标记: exec_read_source 有「按 { lv_prog } 读取」; browser_start / browser_model 的 BRUN_MAX_MODEL 默认 100
+* V15.33 20261117(11.17 记录 #02①): 只改 build_protocol_prompt / chat_prefill / browser_start ——
+*   ① browser_start: prefill_report 的工具参数模式增加可选 params 对象({参数编号或标题: 值}),
+*      并在【报表结果】系统说明里提示把工厂、日期等已知单值参数一并放进 params 预填(与 ZCL_AI_REPORT_RELAY V1.1 配合)
+*   ② chat_prefill: 按 param_id 匹配不到时兜底按 display_label 匹配(如模型传了「工廠」而非参数编号)
+*   依赖: ZCL_AI_REPORT_RELAY V1.1(支持 args-params 与 raw_rows 口径)先激活
+*   ★ 重贴后核对标记: browser_start 的 prefill_report 参数含 "params":\{; chat_prefill 有 condense( ls_p-display_label ) = lv_kname
 CLASS zcl_ai_agent_service DEFINITION
   PUBLIC
   FINAL
@@ -470,6 +476,7 @@ CLASS zcl_ai_agent_service DEFINITION
              builtin_ver  TYPE string,  " V15.30: 当前用户能用的内置技能版本号(空 = 没有)
              builtin_json TYPE string,  " V15.30: 内置技能 [{dir,title,content,files}]; 浏览器版本号相同时为空
              skills_open  TYPE abap_bool, " V15.30: X = 管理员(IT), 技能内容不对他保密
+             chat_context TYPE string,
            END OF ty_brun_start.
 
     " 开始一次运行: 校验开通 / 开关 / 会话 / 场景 / 技能 / 模型, 建会话头, 返回可用工具
@@ -482,6 +489,7 @@ CLASS zcl_ai_agent_service DEFINITION
                 iv_think      TYPE string OPTIONAL
                 iv_focus_artifact_id TYPE string OPTIONAL   " V15.20: 前端聚焦的结果(Fiori「交给模型分析」用)
                 iv_builtin_ver TYPE string OPTIONAL         " V15.30: 浏览器手里那份内置技能的版本号
+                iv_chat_context TYPE abap_bool OPTIONAL
       EXPORTING es_start      TYPE ty_brun_start
                 ev_error      TYPE string
                 ev_http       TYPE i.
@@ -533,6 +541,8 @@ CLASS zcl_ai_agent_service DEFINITION
                 it_skills  TYPE string_table OPTIONAL
                 it_steps   TYPE tt_bstep_in OPTIONAL
                 iv_title   TYPE string OPTIONAL   " V15.26: 模型总结的会话标题(只替换默认标题)
+                iv_context_seq TYPE i OPTIONAL
+                iv_context_summary TYPE string OPTIONAL
       EXPORTING ev_error   TYPE string
                 ev_http    TYPE i.
 
@@ -3111,8 +3121,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         " V15.15: query_result 的 args 是嵌套对象(格式见工具描述)
         lv_tools = lv_tools && |- { ls_tool-tool_id }(args=\{filters, group_by, metrics, columns, sort, limit, purpose\}): { ls_tool-description }\n|.
       ELSEIF ls_tool-tool_id = zcl_ai_report_relay=>gc_tool.
-        " V15.17: prefill_report 的 args 是嵌套对象(格式见工具描述)
-        lv_tools = lv_tools && |- { ls_tool-tool_id }(args=\{tcode, target_param, source_column, filters\}): { ls_tool-description }\n|.
+        " V15.17/V15.33: prefill_report 的 args 是嵌套对象(格式见工具描述)
+        lv_tools = lv_tools && |- { ls_tool-tool_id }(args=\{tcode, target_param, source_column, filters, params\}): { ls_tool-description }\n|.
       ELSEIF ls_tool-tool_id = zcl_ai_result_lookup=>gc_tool.
         " V15.16: lookup_by_result 的 args 是嵌套对象(格式见工具描述)
         lv_tools = lv_tools && |- { ls_tool-tool_id }(args=\{table, key_field, source_column, fields, conditions, | &&
@@ -3647,6 +3657,15 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           EXIT.
         ENDIF.
       ENDLOOP.
+      " V15.33(11.17 #02①): 参数编号没对上时按显示标题匹配(如「工廠」→ 参数编号)
+      IF lv_hit = abap_false.
+        LOOP AT lt_p INTO ls_p.
+          IF to_upper( condense( ls_p-display_label ) ) = lv_kname.
+            lv_hit = abap_true.
+            EXIT.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
       IF lv_hit = abap_false.
         APPEND lv_kname TO lt_skip.
         CONTINUE.
@@ -4251,7 +4270,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                                iv_desc   = |result_id = list_results 的结果号(必填)。{ lv_r_desc }|
                                iv_params = |\{"type":"object","properties":\{{ lv_rid_prop },| &&
                                            |"tcode":\{"type":"string"\},"target_param":\{"type":"string"\},"source_column":\{"type":"string"\},| &&
-                                           |"filters":\{"type":"array","items":\{"type":"object"\}\}\},| &&
+                                           |"filters":\{"type":"array","items":\{"type":"object"\}\},| &&
+                                           |"params":\{"type":"object","description":"其它已知参数的预填值 \{参数编号或标题: 值\}, 值都写成字符串",| &&
+                                           |"additionalProperties":\{"type":"string"\}\}\},| &&
                                            |"required":["result_id","tcode","target_param","source_column"]\}|
                      CHANGING  cv_json   = lv_tools_json
                                cv_csv    = lv_tools_csv ).
@@ -4414,7 +4435,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                |先 list_results 找结果号, 再 read_result 看概况| &&
                COND string( WHEN lv_rq_ok = abap_true THEN `; 排名 / 汇总 / 筛选计数用 query_result(后端在全部行上算)` ) &&
                COND string( WHEN lv_lk_ok = abap_true THEN `; 拿结果里的值去别的表查字段用 lookup_by_result` ) &&
-               COND string( WHEN lv_rl_ok = abap_true THEN `; 把结果里某列的值带进另一张报表的参数用 prefill_report` ) &&
+               COND string( WHEN lv_rl_ok = abap_true THEN `; 把结果里某列的值带进另一张报表的参数用 prefill_report(工厂/日期等其它已知参数用 params 一并预填)` ) &&
                COND string( WHEN lv_joint_on = abap_true THEN `; 跨报表按键分析用 combine_report_results，关联前核对字段、粒度、单位和时间口径` ) &&
                |。所有数字都要来自工具结果, 不要用举例行推算全量结论。|.
     ENDIF.
@@ -4553,6 +4574,37 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                                    iv_module  = zcl_ai_fiori_report_service=>gc_module ).
       ENDIF.
       RETURN.   " 技能清单用不上
+    ENDIF.
+
+    IF iv_chat_context = abap_true.
+      " 先读摘要边界，再读后续消息。两次读取之间如果有新结果提交，也会纳入消息列表。
+      TYPES: BEGIN OF ty_context_message,
+               seq     TYPE i,
+               role    TYPE string,
+               content TYPE string,
+             END OF ty_context_message.
+      DATA: BEGIN OF ls_chat_context,
+              through  TYPE i,
+              summary  TYPE string,
+              messages TYPE STANDARD TABLE OF ty_context_message WITH EMPTY KEY,
+            END OF ls_chat_context.
+      SELECT SINGLE msg_seq, text FROM zai_bstep
+        WHERE session_id = @iv_session_id AND userid = @sy-uname AND kind = 'CONTEXT'
+        INTO ( @ls_chat_context-through, @ls_chat_context-summary ).
+      SELECT msg_seq AS seq, role, content FROM zai_chat_msg
+        WHERE session_id = @iv_session_id AND created_by = @sy-uname
+          AND msg_seq > @ls_chat_context-through AND role IN ( 'user', 'assistant' )
+        ORDER BY msg_seq DESCENDING
+        INTO TABLE @ls_chat_context-messages
+        UP TO 200 ROWS.
+      SORT ls_chat_context-messages BY seq.
+      LOOP AT ls_chat_context-messages ASSIGNING FIELD-SYMBOL(<ls_context_msg>).
+        IF strlen( <ls_context_msg>-content ) > 4000.
+          <ls_context_msg>-content = substring( val = <ls_context_msg>-content len = 4000 ).
+        ENDIF.
+      ENDLOOP.
+      es_start-chat_context = /ui2/cl_json=>serialize( data = ls_chat_context
+                                   pretty_name = /ui2/cl_json=>pretty_mode-camel_case ).
     ENDIF.
 
     " ---- 10. V15.19 可让模型自己选用的技能(同技能下拉: 开关 + 公开 / 管理员 + 适用场景; 已选的那个已在系统说明里) ----
@@ -5371,6 +5423,9 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       ENDIF.
     ENDIF.
     LOOP AT it_steps INTO DATA(ls_in).
+      IF to_upper( ls_in-k ) = 'CONTEXT'.
+        CONTINUE.
+      ENDIF.
       lv_bn = lv_bn + 1.
       IF lv_bn > 200.
         EXIT.
@@ -5394,6 +5449,40 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       ls_bs-created_at = lv_now.
       INSERT zai_bstep FROM @ls_bs.
     ENDLOOP.
+
+    " 会话锁覆盖摘要替换。并发运行只接受覆盖边界向前推进的摘要。
+    IF lv_status = 'OK' AND iv_context_seq > 0 AND iv_context_seq < lv_seq - 1
+       AND iv_context_summary IS NOT INITIAL AND strlen( iv_context_summary ) <= 1300.
+      SELECT MAX( msg_seq ) FROM zai_bstep
+        WHERE session_id = @ls_run-session_id AND userid = @sy-uname AND kind = 'CONTEXT'
+        INTO @DATA(lv_context_seq).
+      IF iv_context_seq > lv_context_seq.
+        SELECT SINGLE msg_seq FROM zai_chat_msg
+          WHERE session_id = @ls_run-session_id AND created_by = @sy-uname
+            AND msg_seq = @iv_context_seq AND role = 'assistant'
+          INTO @DATA(lv_context_boundary).
+        IF sy-subrc = 0.
+          DELETE FROM zai_bstep
+            WHERE session_id = @ls_run-session_id AND userid = @sy-uname AND kind = 'CONTEXT'.
+          CLEAR ls_bs.
+          ls_bs-mandt = sy-mandt.
+          ls_bs-run_id = ls_run-run_id.
+          ls_bs-session_id = ls_run-session_id.
+          ls_bs-userid = sy-uname.
+          ls_bs-kind = 'CONTEXT'.
+          ls_bs-msg_seq = lv_context_boundary.
+          ls_bs-seq = 201.
+          ls_bs-created_at = lv_now.
+          ls_bs-text = iv_context_summary.
+          INSERT zai_bstep FROM @ls_bs.
+          IF sy-subrc <> 0.
+            ev_http = 409.
+            ev_error = '会话摘要写入失败'.
+            RETURN.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+    ENDIF.
 
   ENDMETHOD.
 
@@ -5530,6 +5619,8 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       WHERE session_id = @iv_session_id AND userid = @sy-uname
         AND kind <> 'ADT'                 " V15.25: ADT 审计行只供审计, 界面过程用浏览器交来的那份
         AND kind <> 'MCP'                 " V15.29: MCP 审计行同 ADT
+        AND kind <> 'CONTEXT'
+        AND kind <> 'USAGE'
       ORDER BY msg_seq, run_id, seq
       INTO TABLE @DATA(lt_bs)
       UP TO 5000 ROWS.
@@ -5555,7 +5646,19 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     IF lv_cur IS NOT INITIAL.
       lv_runs = |{ lv_runs }{ lv_st }]\}|.
     ENDIF.
-    ev_json = |\{"ok":true,"runs":[{ lv_runs }]\}|.
+    " 用量独立取最新一笔，长会话也不受上面 5000 步的限制。USAGE 行的 DS_IDX / DS_CNT 保存已用和上限。
+    SELECT ds_idx, ds_cnt FROM zai_bstep
+      WHERE session_id = @iv_session_id AND userid = @sy-uname AND kind = 'USAGE'
+        AND ds_idx > 0 AND ds_cnt > 0
+      ORDER BY msg_seq DESCENDING
+      INTO TABLE @DATA(lt_usage)
+      UP TO 1 ROWS.
+    DATA(lv_usage) = `null`.
+    READ TABLE lt_usage INDEX 1 INTO DATA(ls_usage).
+    IF sy-subrc = 0.
+      lv_usage = |\{"input":{ ls_usage-ds_idx },"limit":{ ls_usage-ds_cnt }\}|.
+    ENDIF.
+    ev_json = |\{"ok":true,"runs":[{ lv_runs }],"contextUsage":{ lv_usage }\}|.
 
   ENDMETHOD.
 
