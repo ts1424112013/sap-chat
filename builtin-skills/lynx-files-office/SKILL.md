@@ -22,7 +22,7 @@ metadata:
 
 | 要做的 | 工具 |
 |---|---|
-| 报表结果存成文件 | `save_result_to_folder`（`.xlsx` 或 `.csv`，数据由 SAP 直接写，**不要**自己拼表格再写） |
+| 报表结果存成文件 | `save_result_to_folder`（`.xlsx` 或 `.csv`）。筛选后导出时传 `filters`，明细由 SAP 按条件返回 |
 | 自己算出的汇总表、对照表做成 Excel | `create_excel_file`：数字用数值类型（能求和），料号、单号等编号用字符串（保留前导 0）；一份文件可以多个工作表 |
 | 分析报告、说明文档做成 Word | `create_word_file`：内容用简单 Markdown（标题、列表、表格、粗体） |
 | 文本文件（md / csv / txt / sql / abap / json …） | 新建 `write_file`；小改 `edit_file`（先读再改，不要整份重写） |

@@ -16,6 +16,7 @@ sap.ui.define([
         "sap/ui/core/HTML",
         "sap/ui/util/Storage",
         "zai/chat/service/ChatService",
+        "zai/chat/service/BrowserAgentService",
         "zai/chat/service/TraceService",
         "zai/chat/utils/Formatter",
         "zai/chat/utils/ChartRenderer",
@@ -47,7 +48,7 @@ sap.ui.define([
         "zai/chat/controller/mixin/BrowserAgentPanel",
         "zai/chat/controller/mixin/RunTimeline",
         "zai/chat/controller/mixin/McpPanel"
-], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SessionGroups, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel, BrowserAgentPanel, RunTimeline, McpPanel) {
+], function (Controller, JSONModel, Item, MessageToast, MessageBox, CustomListItem, HBox, VBox, Text, Button, FlexItemData, Dialog, Input, InstanceManager, HTML, Storage, ChatService, BrowserAgentService, TraceService, Formatter, ChartRenderer, ChartBuilder, ChartFx, AskCard, DataGrid, LingXiMark, LingXiState, OfflineNotice, WelcomeToast, HeroGreeting, UndoToast, SessionGroups, SceneModels, SettingsPanel, EvalPanel, RunTracker, AuthPanel, AuthApprove, CatalogPanel, FioriPanel, SessionMessages, SkillPanel, ResultRestore, ComboPanel, UserAccessPanel, SchedulePanel, BrowserAgentPanel, RunTimeline, McpPanel) {
         "use strict";
 
         /**
@@ -1370,7 +1371,8 @@ sap.ui.define([
                                         // 显示过，直接收起放在回答上方），再打正文。思考只在 reasoning 里，sAnswer 不含
                                         return that._showThink(iAssistantIdx, oRes.reasoning || "", sSendToken, !bAgent)
                                                 .then(function () {
-                                                        return that._streamAnswer(iAssistantIdx, sAnswer, sDoneMeta, sSendToken);
+                                                        return that._streamAnswer(iAssistantIdx, sAnswer, sDoneMeta, sSendToken,
+                                                                oAnalysisLater && oAnalysisLater.datasets);
                                                 })
                                                 .then(function () {
                                                         if (oAnalysisLater) {
@@ -1864,9 +1866,11 @@ sap.ui.define([
                                 } else {
                                         // 20261024（10.24 记录 #02）：超过 DataGrid.PREVIEW_ROWS 行只画预览，完整数据走「查看全部」分页查看器
                                         var bPreview = oDs.rows.length > DataGrid.PREVIEW_ROWS;
+                                        var iTotal = oDs.total || oDs.totalRows;
+                                        var bPartial = oDs.truncated || iTotal > oDs.rows.length;
                                         var aMeta = [oRB.getText("analysisRowsCols", [oDs.rows.length, oDs.columns.length])];
-                                        if (oDs.truncated) {
-                                                aMeta.push(oDs.total > oDs.rows.length ? oRB.getText("analysisTotalRows", [oDs.total]) : oRB.getText("analysisTruncated"));
+                                        if (bPartial) {
+                                                aMeta.push(iTotal > oDs.rows.length ? oRB.getText("analysisTotalRows", [iTotal]) : oRB.getText("analysisTruncated"));
                                         }
                                         if (bPreview) {
                                                 aMeta.push(oRB.getText("dgPreviewMeta", [DataGrid.PREVIEW_ROWS]));
@@ -1890,9 +1894,11 @@ sap.ui.define([
                                                 var bSched = !!(oEntry && oEntry.localResult && oEntry.artifactId && iDs === 0 && !oEntry.combo);
                                                 s += Formatter.dataToolsHtml(iDs, oHint ? oRB.getText("chartSuggest",
                                                         [ChartRenderer.typeText(oHint.type)]) : "",
-                                                        bPreview ? oRB.getText("dgShowAll", [oDs.rows.length]) : "", bSched,
+                                                        bPartial ? oRB.getText("dgShowLoaded", [oDs.rows.length]) :
+                                                                bPreview ? oRB.getText("dgShowAll", [oDs.rows.length]) : oRB.getText("dgFilterView"), bSched,
                                                         // 20261105（报表接力）：这份结果是从上一份结果带参数跑出来的 → 「和结果 X 关联」
-                                                        oEntry && oEntry.relay && iDs === 0 ? (oEntry.relay.srcShort || "上一份") : "");
+                                                        oEntry && oEntry.relay && iDs === 0 ? (oEntry.relay.srcShort || "上一份") : "",
+                                                        oDs.exportQuery ? oRB.getText("analysisCsvMatches") : bPartial ? oRB.getText("analysisCsvPreview") : "");
                                                 // 20261011：该表生成的图表就放在这张表下方
                                                 s += oEntry ? that._chartDeckHtml(oEntry, "ds:" + iDs) : "";
                                         }
@@ -2504,9 +2510,10 @@ sap.ui.define([
                  * @param {string} sAnswer 完整回复（Markdown）
                  * @param {string} sMeta 元信息
                  * @param {string} sToken V5：由 onSend 生成的本轮令牌（停止生成即失效）
+                 * @param {object[]} [aDatasets] 将在回答末尾展示的结果
                  * @returns {Promise} 打字完成（或被中断）后 resolve
                  */
-                _streamAnswer: function (iIndex, sAnswer, sMeta, sToken) {
+                _streamAnswer: function (iIndex, sAnswer, sMeta, sToken, aDatasets) {
                         var that = this;
                         var oChatModel = this.getView().getModel("chat");
                         sToken = sToken || this._newSessionId(); // 兼容旧调用
@@ -2514,8 +2521,9 @@ sap.ui.define([
                         this._syncActivity();
 
                         return new Promise(function (fnResolve) {
+                                var sStream = Formatter.stripRepeatedTables(sAnswer, aDatasets);
                                 var iPos = 0;
-                                var iLen = sAnswer.length;
+                                var iLen = sStream.length;
                                 // 新块淡入用：记录上一帧正文块数量（新增块才触发 tokenIn 动画，
                                 // 避免每帧整段重写导致的闪烁）
                                 that._iPrevBlockCount = -1;
@@ -2532,7 +2540,7 @@ sap.ui.define([
                                         }
                                         iPos = that._sStreamSkip === sToken ? iLen : Math.min(iLen, iPos + iChunk);
                                         var bDone = iPos >= iLen;
-                                        var sPart = sAnswer.substring(0, iPos);
+                                        var sPart = sStream.substring(0, iPos);
                                         var sHtml = Formatter.markdownToHtml(sPart);
                                         // 流式光标：进行中为细竖条闪烁；完成时以淡出版本渲染，
                                         // 300ms 后透明，不再打字即自然消失
@@ -2541,7 +2549,7 @@ sap.ui.define([
                                                 : '<span class="typeCursor"></span>';
 
                                         // 同步数据模型（会话保存/重建列表时以此为最终状态）
-                                        oChatModel.setProperty("/messages/" + iIndex + "/raw", sPart);
+                                        oChatModel.setProperty("/messages/" + iIndex + "/raw", bDone ? sAnswer : sPart);
                                         oChatModel.setProperty("/messages/" + iIndex + "/html",
                                                 sHtml.replace(/<span class="typeCursor[^"]*"><\/span>/, ""));
 
@@ -4854,6 +4862,7 @@ sap.ui.define([
                                 oAsk.originQuestion = this._originQuestionForAsk ? this._originQuestionForAsk(iAssistantIdx) : this._prevUserText(iAssistantIdx);
                                 oEntry.ask = oAsk;
                                 if (!oAsk.fiori) {
+                                        this._autoFillReportAsk(oEntry, iAssistantIdx, oRes);
                                         this._enrichReportAsk(oEntry);
                                 }
                         }
@@ -4916,16 +4925,19 @@ sap.ui.define([
                                         autoFocus: false
                                 };
                         }
-                        // 20261117（11.17 #02①）：后端预填 values 键名大小写不一致时兜底对齐参数定义的 param_id
+                        // 20261117（11.17 #02①）：后端预填 values 键名大小写不一致或按标题/同义词传入时兜底对齐参数定义的 param_id
+                        var that = this;
                         var mRawVals = (oPendingObj && oPendingObj.values) || {};
                         var mNormVals = jQuery.extend({}, mRawVals);
                         (aPending || []).forEach(function (p) {
-                                if (p && p.param_id && mNormVals[p.param_id] === undefined) {
+                                if (p && p.param_id && (mNormVals[p.param_id] === undefined || mNormVals[p.param_id] === "")) {
                                         var sUp = String(p.param_id).toUpperCase();
                                         Object.keys(mRawVals).some(function (k) {
-                                                if (String(k).toUpperCase() === sUp) {
-                                                        mNormVals[p.param_id] = mRawVals[k];
-                                                        return true;
+                                                if (String(k).toUpperCase() === sUp || that._matchReportParam(p, k, aPending)) {
+                                                        if (mRawVals[k] !== undefined && mRawVals[k] !== "") {
+                                                                mNormVals[p.param_id] = mRawVals[k];
+                                                                return true;
+                                                        }
                                                 }
                                                 return false;
                                         });
@@ -5027,8 +5039,246 @@ sap.ui.define([
                                         var bNoName = !p.label || String(p.label).toUpperCase() === sId;
                                         return bNoName && mLbl[sId] ? Object.assign({}, p, { label: mLbl[sId] }) : p;
                                 });
+                                that._autoFillReportAsk(oEntry);
                                 that._renderAsk(oEntry.uid);
                         }).catch(function () { /* 取不到：参数卡保持普通输入框 */ });
+                },
+
+                /**
+                  * 参数名或列标题归一（去 P_/S_ 前缀、繁简转换、常见 SAP 业务概念如 工廠/工厂/PLANT → WERKS 对齐）
+                  */
+                _normReportParamKey: function (s) {
+                        var mTrad = {
+                                "廠": "厂", "號": "号", "單": "单", "類": "类", "庫": "库", "區": "区", "間": "间", "碼": "码",
+                                "員": "员", "購": "购", "銷": "销", "發": "发", "貨": "货", "過": "过", "帳": "账", "賬": "账",
+                                "點": "点", "數": "数", "據": "据", "組": "组", "織": "织", "別": "别", "種": "种", "機": "机",
+                                "產": "产", "線": "线", "戶": "户", "倉": "仓", "儲": "储", "門": "门", "計": "计", "劃": "划",
+                                "訂": "订", "價": "价", "幣": "币", "額": "额", "車": "车", "專": "专", "階": "阶", "層": "层",
+                                "狀": "状", "態": "态", "採": "采", "應": "应", "驗": "验", "證": "证", "憑": "凭", "總": "总",
+                                "匯": "汇", "彙": "汇", "報": "报", "錶": "表"
+                        };
+                        var k = String(s || "").trim().replace(/\s*[（(][^）)]*[）)]\s*/g, "").replace(/[\s*:：\-]+/g, "").toUpperCase();
+                        k = k.replace(/[\u4e00-\u9fff]/g, function (ch) { return mTrad[ch] || ch; });
+                        k = k.replace(/^(?:P_|S_|PA_|SO_|GV_|LV_)/, "");
+                        if (/^[PS](?:WERKS|PLANT|BUKRS|LGORT|MATNR|KUNNR|LIFNR|EKORG|EKGRP|VKORG|AUFNR|EBELN|VBELN|CHARG)$/.test(k)) {
+                                k = k.substring(1);
+                        }
+                        if (["PLANT", "SITE", "工厂", "工厂代码", "工厂编码", "工厂别", "厂别", "厂区"].indexOf(k) >= 0) { return "WERKS"; }
+                        if (["COMPANYCODE", "公司代码", "公司别"].indexOf(k) >= 0) { return "BUKRS"; }
+                        if (["库存地点", "库位", "仓位", "存储地点"].indexOf(k) >= 0) { return "LGORT"; }
+                        if (["MATERIAL", "物料", "料号", "物料号", "物料编码", "物料代码", "鸿海料号"].indexOf(k) >= 0) { return "MATNR"; }
+                        if (["客户料号", "客户物料", "客户零件号"].indexOf(k) >= 0) { return "CPN"; }
+                        return k;
+                },
+
+                /** 判断候选键名/列名是否对应参数 p（同类概念在当前参数卡上唯一时允许跨前缀/同义词匹配） */
+                _matchReportParam: function (p, sKey, aAllParams) {
+                        if (!p || !sKey) { return false; }
+                        var sUk = String(sKey).trim().toUpperCase();
+                        var sUid = String(p.param_id || "").trim().toUpperCase();
+                        var sUlbl = String(p.label || p.display_label || "").trim().toUpperCase();
+                        if (!sUk) { return false; }
+                        if (sUk === sUid || (sUlbl && sUk === sUlbl)) { return true; }
+                        var that = this;
+                        var nKey = this._normReportParamKey(sKey);
+                        var nId = this._normReportParamKey(p.param_id);
+                        var nLbl = this._normReportParamKey(p.label || p.display_label);
+                        if (!nKey || (nKey !== nId && nKey !== nLbl)) { return false; }
+                        var aSame = (aAllParams || []).filter(function (x) {
+                                return x && (that._normReportParamKey(x.param_id) === nKey || that._normReportParamKey(x.label || x.display_label) === nKey);
+                        });
+                        return aSame.length <= 1;
+                },
+
+                /**
+                  * 20261118：多步报表自动续接/接力时，把本轮工具调用参数、正文已写明的唯一值、
+                  * 或同会话上一张报表结果列唯一值 / 上一张参数卡同名值自动补进当前参数卡未填项（如工厂 ABZ1）。
+                  */
+                _autoFillReportAsk: function (oEntry, iAssistantIdx, oRes) {
+                        var that = this;
+                        var oAsk = oEntry && oEntry.ask;
+                        if (!oAsk || oAsk.fiori || !Array.isArray(oAsk.params) || !oAsk.params.length) {
+                                return;
+                        }
+                        oAsk.values = oAsk.values || {};
+                        var aParams = oAsk.params;
+                        var oState = this._sessionMessageState(oAsk.sessionId);
+                        var aMsgs = (oState && oState.messages) || (this.getView() && this.getView().getModel("chat") && this.getView().getModel("chat").getProperty("/messages")) || [];
+                        var iIdx = typeof iAssistantIdx === "number" ? iAssistantIdx : aMsgs.indexOf(oEntry);
+                        if (iIdx < 0) { iIdx = aMsgs.length - 1; }
+
+                        var oRt = this._mRt && oEntry.uid ? this._mRt[oEntry.uid] : null;
+                        var aRtItems = (oRt && Array.isArray(oRt.items)) ? oRt.items : [];
+                        var mToolExplicit = {};
+                        var aTexts = [];
+                        aRtItems.forEach(function (it) {
+                                if (!it) { return; }
+                                if (it.k === "say" && it.text) { aTexts.unshift(String(it.text)); }
+                                if (it.k === "tool" && (it.tool === "open_report" || it.tool === "prefill_report") && it.args && typeof it.args === "object") {
+                                        Object.keys(it.args).forEach(function (k) {
+                                                if (["result_id", "tcode", "target_param", "source_column", "filters", "params", "purpose", "report_name"].indexOf(k) < 0) {
+                                                        var v = it.args[k];
+                                                        if ((typeof v === "string" || typeof v === "number") && String(v).trim()) {
+                                                                mToolExplicit[k] = String(v).trim();
+                                                        }
+                                                }
+                                        });
+                                        if (it.args.params && typeof it.args.params === "object") {
+                                                Object.keys(it.args.params).forEach(function (k) {
+                                                        var v = it.args.params[k];
+                                                        if ((typeof v === "string" || typeof v === "number") && String(v).trim()) {
+                                                                mToolExplicit[k] = String(v).trim();
+                                                        }
+                                                });
+                                        }
+                                }
+                        });
+                        if (oRes && oRes.answer) { aTexts.push(String(oRes.answer)); }
+                        if (oEntry.raw) { aTexts.push(String(oEntry.raw)); }
+                        if (oAsk.originQuestion) { aTexts.push(String(oAsk.originQuestion)); }
+
+                        var aDatasets = [];
+                        if (oRes && oRes.analysis && Array.isArray(oRes.analysis.datasets)) {
+                                aDatasets = aDatasets.concat(oRes.analysis.datasets);
+                        }
+                        var aPrevAsks = [];
+                        for (var i = iIdx; i >= 0; i--) {
+                                var m = aMsgs[i];
+                                if (!m) { continue; }
+                                if (m.analysis && Array.isArray(m.analysis.datasets)) {
+                                        aDatasets = aDatasets.concat(m.analysis.datasets);
+                                }
+                                if (i < iIdx && m.ask && m.ask.kind === "params" && m.ask.values) {
+                                        aPrevAsks.push(m.ask);
+                                }
+                                if (i < iIdx && m.role === "assistant" && m.raw && aTexts.length < 6) {
+                                        aTexts.push(String(m.raw));
+                                }
+                        }
+
+                        var fnFmtVal = function (p, sVal) {
+                                var s = String(sVal === undefined || sVal === null ? "" : sVal).trim();
+                                if (!s) { return ""; }
+                                if (/DAT/i.test(p.data_type || "")) { s = s.replace(/[-/.]/g, ""); }
+                                return s;
+                        };
+                        var fnExtractFromText = function (p) {
+                                var nk = that._normReportParamKey(p.param_id) || that._normReportParamKey(p.label);
+                                var aToks = [p.param_id, p.label, String(p.param_id || "").replace(/^(?:P_|S_|PA_|SO_)/i, "")].filter(Boolean);
+                                if (nk === "WERKS") {
+                                        aToks = aToks.concat(["工厂", "工廠", "厂别", "廠別", "工厂代码", "工廠代碼", "WERKS", "PLANT"]);
+                                }
+                                var mSeenTok = {}, aEsc = [];
+                                aToks.forEach(function (t) {
+                                        var sT = String(t || "").trim();
+                                        if (sT && !mSeenTok[sT]) {
+                                                mSeenTok[sT] = true;
+                                                aEsc.push(sT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+                                        }
+                                });
+                                if (!aEsc.length) { return ""; }
+                                var mStop = { THE: 1, AND: 1, FOR: 1, NULL: 1, TRUE: 1, FALSE: 1, NONE: 1, SQL: 1, SAP: 1, CSV: 1, XLSX: 1 };
+                                if (oAsk.tcode) { mStop[String(oAsk.tcode).toUpperCase()] = 1; }
+                                var re = new RegExp("(?:^|[^A-Za-z0-9_])(?:" + aEsc.join("|") + ")(?:代码|代碼|编码|編碼|欄位|字段|参数|參數|唯一值)*\\s*(?:唯一值)?\\s*(?:请?填(?:入|写)?|设为|設為|等于|等於|为|為|是|[=:：])\\s*[「\"'`(\\[（【]?\\s*([A-Za-z0-9][A-Za-z0-9_-]{1,19})\\b", "i");
+                                for (var tIdx = 0; tIdx < aTexts.length; tIdx++) {
+                                        var mHit = String(aTexts[tIdx] || "").match(re);
+                                        if (mHit && mHit[1] && !mStop[mHit[1].toUpperCase()]) {
+                                                return mHit[1];
+                                        }
+                                }
+                                return "";
+                        };
+
+                        aParams.forEach(function (p) {
+                                if (!p || !p.param_id) { return; }
+                                var sDt = String(p.data_type || "").toUpperCase();
+                                if (sDt === "BOOL" || sDt === "TABLE") { return; }
+                                if (oAsk.values[p.param_id] !== undefined && oAsk.values[p.param_id] !== "") {
+                                        return;
+                                }
+                                // 1) 本轮工具调用显式传入的 params / 顶层参数
+                                Object.keys(mToolExplicit).some(function (k) {
+                                        if (that._matchReportParam(p, k, aParams)) {
+                                                oAsk.values[p.param_id] = fnFmtVal(p, mToolExplicit[k]);
+                                                return true;
+                                        }
+                                        return false;
+                                });
+                                if (oAsk.values[p.param_id]) { return; }
+
+                                // 2) 同会话已加载的报表结果或查询结果里，同名/同概念列只有唯一非空值（如工厂唯一值 ABZ1）
+                                for (var dIdx = 0; dIdx < aDatasets.length; dIdx++) {
+                                        var oDs = aDatasets[dIdx];
+                                        if (!oDs || !Array.isArray(oDs.columns) || !Array.isArray(oDs.rows) || !oDs.rows.length) {
+                                                continue;
+                                        }
+                                        var iCol = -1;
+                                        for (var cIdx = 0; cIdx < oDs.columns.length; cIdx++) {
+                                                var oCol = oDs.columns[cIdx];
+                                                if (oCol && (that._matchReportParam(p, oCol.name, aParams) || that._matchReportParam(p, oCol.label, aParams))) {
+                                                        iCol = cIdx;
+                                                        break;
+                                                }
+                                        }
+                                        if (iCol < 0) { continue; }
+                                        var mUniq = {}, aUniq = [], bMany = false;
+                                        for (var rIdx = 0; rIdx < oDs.rows.length; rIdx++) {
+                                                var aRow = oDs.rows[rIdx];
+                                                var sCell = String((Array.isArray(aRow) ? aRow[iCol] : "") || "").trim();
+                                                if (!sCell || sCell.length > 60 || /[,|]/.test(sCell)) { continue; }
+                                                var sUk = sCell.toUpperCase();
+                                                if (!mUniq[sUk]) {
+                                                        mUniq[sUk] = true;
+                                                        aUniq.push(sCell);
+                                                        if (aUniq.length > 1) { bMany = true; break; }
+                                                }
+                                        }
+                                        if (!bMany && aUniq.length === 1) {
+                                                oAsk.values[p.param_id] = fnFmtVal(p, aUniq[0]);
+                                                break;
+                                        }
+                                }
+                                if (oAsk.values[p.param_id]) { return; }
+
+                                // 3) 同会话上一张报表参数卡已提交的同名/同概念参数（如上一张卡的 P_WERKS / S_WERKS）
+                                for (var aIdx = 0; aIdx < aPrevAsks.length; aIdx++) {
+                                        var oPrev = aPrevAsks[aIdx];
+                                        var aPrevParams = oPrev.params || [];
+                                        var sCarried = "";
+                                        aPrevParams.some(function (prevP) {
+                                                if (!prevP || !prevP.param_id) { return false; }
+                                                var vPrev = oPrev.values[prevP.param_id];
+                                                if (!vPrev || (!p.multi_value && String(vPrev).indexOf(",") >= 0)) { return false; }
+                                                if (that._matchReportParam(p, prevP.param_id, aParams) || that._matchReportParam(p, prevP.label, aParams)) {
+                                                        sCarried = vPrev;
+                                                        return true;
+                                                }
+                                                return false;
+                                        });
+                                        if (!sCarried) {
+                                                Object.keys(oPrev.values).some(function (k) {
+                                                        var vPrev = oPrev.values[k];
+                                                        if (!vPrev || (!p.multi_value && String(vPrev).indexOf(",") >= 0)) { return false; }
+                                                        if (that._matchReportParam(p, k, aParams)) {
+                                                                sCarried = vPrev;
+                                                                return true;
+                                                        }
+                                                        return false;
+                                                });
+                                        }
+                                        if (sCarried) {
+                                                oAsk.values[p.param_id] = fnFmtVal(p, sCarried);
+                                                break;
+                                        }
+                                }
+                                if (oAsk.values[p.param_id]) { return; }
+
+                                // 4) Agent 过程说明或回答正文里明确写出的参数值（如「工厂填 ABZ1」「工廠唯一值 ABZ1」）
+                                var sFromText = fnExtractFromText(p);
+                                if (sFromText) {
+                                        oAsk.values[p.param_id] = fnFmtVal(p, sFromText);
+                                }
+                        });
                 },
 
                 /** V16：按 uid 找消息条目（不依赖下标） */
@@ -5155,14 +5405,17 @@ sap.ui.define([
                         return "";
                 },
 
-                /** 20261117（11.17 #02②）：取发起参数卡那轮的用户原话；若本轮是短答澄清，合并上一条指令 */
+                /** 20261117（11.17 #02②）：取发起参数卡那轮的用户原话；若本轮是短答澄清或报表就绪自动续接，合并/提取原始指令 */
                 _originQuestionForAsk: function (iIndex, aMsgsOverride) {
                         var aMsgs = aMsgsOverride || this.getView().getModel("chat").getProperty("/messages") || [];
                         var aParts = [];
                         for (var i = iIndex - 1; i >= 0; i--) {
                                 if (aMsgs[i] && aMsgs[i].role === "user") {
-                                        var s = String(aMsgs[i].raw || aMsgs[i].question || "").trim();
-                                        if (!s) { continue; }
+                                        var sRaw = String(aMsgs[i].raw || "").trim();
+                                        var sQ = String(aMsgs[i].question || "").trim();
+                                        var mOrig = sQ.match(/用户的原指令是：「([\s\S]*?)」\r?\n/);
+                                        var s = mOrig && mOrig[1] ? mOrig[1].trim() : (sRaw || sQ);
+                                        if (!s || /^报表已就绪（/.test(s)) { continue; }
                                         aParts.unshift(s);
                                         if (aParts.length >= 2 || s.length >= 20) {
                                                 break;
@@ -5457,10 +5710,34 @@ sap.ui.define([
                         } else if (sAct === "copy") {
                                 this._copyText(ChartRenderer.toDelimited(oDs, "\t"), this._rb().getText("copiedForExcel"));
                         } else if (sAct === "csv") {
-                                this._download("\uFEFF" + ChartRenderer.toDelimited(oDs, ","), (oDs.name || this._rb().getText("dataDefaultName")) + ".csv", "text/csv;charset=utf-8");
+                                return this._exportDatasetCsv(oDs, oBtn);
                         } else if (sAct === "chart") {
                                 this._openChartFor(oEntry, oDs, oHint, sSrc);
                         }
+                },
+
+                _exportDatasetCsv: function (oDs, oBtn) {
+                        var oRB = this._rb();
+                        var sName = (oDs.name || oRB.getText("dataDefaultName")) + ".csv";
+                        var fnDownload = function (sCsv) {
+                                this._download("\uFEFF" + sCsv, sName, "text/csv;charset=utf-8");
+                        }.bind(this);
+                        if (!oDs.exportQuery) {
+                                fnDownload(ChartRenderer.toDelimited(oDs, ","));
+                                return;
+                        }
+                        oBtn.disabled = true;
+                        return BrowserAgentService.exportQuery(oDs.exportQuery, ChatService._basicHeader ? ChatService._basicHeader() : "")
+                                .then(function (oResult) {
+                                        fnDownload(oResult.csv);
+                                        if (oResult.truncated) {
+                                                MessageToast.show(oRB.getText("analysisCsvTruncated", [oResult.rows]));
+                                        }
+                                }).catch(function (e) {
+                                        MessageToast.show(oRB.getText("analysisCsvError", [e.message || String(e)]));
+                                }).finally(function () {
+                                        oBtn.disabled = false;
+                                });
                 },
 
                 /** 20261024：「查看全部」分页查看器（复制 / 导出复用表格工具条的同一套实现，导出的是查看器当前的搜索 + 排序结果） */
@@ -5475,6 +5752,20 @@ sap.ui.define([
                                 texts: mT,
                                 onCopy: function (oView) {
                                         that._copyText(ChartRenderer.toDelimited(oView, "\t"), oRB.getText("copiedForExcel"));
+                                },
+                                onXlsx: function (oView) {
+                                        if (!oView.rows.length) {
+                                                MessageToast.show(mT.noMatch);
+                                                return;
+                                        }
+                                        var sName = oView.name || oRB.getText("dataDefaultName");
+                                        BrowserAgentService.load().then(function (oEngine) {
+                                                return oEngine.buildResultXlsx(oView);
+                                        }).then(function (aBytes) {
+                                                that._download(aBytes, sName + ".xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+                                        }).catch(function (e) {
+                                                MessageToast.show(oRB.getText("dgXlsxError", [e.message || String(e)]));
+                                        });
                                 },
                                 onCsv: function (oView) {
                                         that._download("\uFEFF" + ChartRenderer.toDelimited(oView, ","), (oView.name || oRB.getText("dataDefaultName")) + ".csv", "text/csv;charset=utf-8");

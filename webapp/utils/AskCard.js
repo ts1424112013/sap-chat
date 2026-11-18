@@ -542,7 +542,7 @@ sap.ui.define([
         function buildMulti(oP, oRec, mVals, oAsk, fnSave) {
                 var sId = oP.param_id;
                 var oInp = oRec.input;
-                var oPre = oAsk && oAsk.prefill && oAsk.prefill[String(sId).toUpperCase()];
+                var oPre = oAsk && oAsk.prefill && (oAsk.prefill[sId] || oAsk.prefill[String(sId).toUpperCase()]);
                 var bFromPre = !!(oPre && oPre.count);
                 var oSumText = new Text({ text: "" }).addStyleClass("askPrefillText");
                 var oSum = new HBox({ alignItems: "Center" }).addStyleClass("askPrefill");
@@ -881,7 +881,7 @@ sap.ui.define([
                         }
                 }
                 // 20261105：从上一次运行沿用的同名参数，说明里标出来
-                var oCarry = oAsk && oAsk.prefill && oAsk.prefill[String(sId).toUpperCase()];
+                var oCarry = oAsk && oAsk.prefill && (oAsk.prefill[sId] || oAsk.prefill[String(sId).toUpperCase()]);
                 if (oCarry && oCarry.carried && !oP.help_text) {
                         oP = Object.assign({}, oP, { help_text: "沿用上一次运行的值" });
                 }

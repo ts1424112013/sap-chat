@@ -477,6 +477,7 @@ CLASS zcl_ai_agent_service DEFINITION
              builtin_json TYPE string,  " V15.30: 内置技能 [{dir,title,content,files}]; 浏览器版本号相同时为空
              skills_open  TYPE abap_bool, " V15.30: X = 管理员(IT), 技能内容不对他保密
              chat_context TYPE string,
+             last_result_filter TYPE string,
            END OF ty_brun_start.
 
     " 开始一次运行: 校验开通 / 开关 / 会话 / 场景 / 技能 / 模型, 建会话头, 返回可用工具
@@ -514,7 +515,8 @@ CLASS zcl_ai_agent_service DEFINITION
                 ev_message TYPE string
                 ev_http    TYPE i
                 ev_card    TYPE string
-                ev_datasets TYPE string.   " V15.20: 本次工具产出的数据集 JSON 数组(界面表格 / 图表用, 不回模型)
+                ev_datasets TYPE string   " V15.20: 本次工具产出的数据集 JSON 数组(界面表格 / 图表用, 不回模型)
+                ev_query_seq TYPE i.
 
     " V15.22: 浏览器交来的一步精简过程记录(引擎 compactSteps; 键名同 JSON: k / tool / arg / sum / st / ms / ds / dn / text)
     TYPES: BEGIN OF ty_bstep_in,
@@ -570,20 +572,30 @@ CLASS zcl_ai_agent_service DEFINITION
                 ev_message TYPE string
                 ev_http    TYPE i.
 
-    " V15.19: 把一份报表结果整份导出成 CSV(浏览器写进用户选的文件夹; 数据不经过模型)
+    " 把报表结果导出成 CSV(可选筛选条件；数据不经过模型)
     " ev_error 非空且 ev_http = 200 = 给模型看的失败原因; ev_http <> 200 = 请求本身被拒
     CLASS-METHODS browser_export
       IMPORTING iv_run_id    TYPE string
                 iv_result_id TYPE string
+                iv_filters_json TYPE string OPTIONAL
+                iv_query_seq TYPE i OPTIONAL
       EXPORTING ev_csv       TYPE string
                 ev_label     TYPE string
                 ev_rows      TYPE i
                 ev_cols      TYPE i
                 ev_trunc     TYPE abap_bool
+                ev_filtered  TYPE abap_bool
                 ev_error     TYPE string
                 ev_http      TYPE i.
 
   PRIVATE SECTION.
+
+    CLASS-METHODS brun_save_result_filter
+      IMPORTING is_run TYPE zai_brun
+                iv_seq TYPE i
+                iv_result_id TYPE string
+                iv_args TYPE string
+      RETURNING VALUE(rv_seq) TYPE i.
 
     " V15.18: 读运行号并校验归属 / 状态 / 有效期
     CLASS-METHODS brun_get
@@ -3657,10 +3669,21 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           EXIT.
         ENDIF.
       ENDLOOP.
-      " V15.33(11.17 #02①): 参数编号没对上时按显示标题匹配(如「工廠」→ 参数编号)
+      " V15.33(11.17 #02①): 参数编号没对上时按显示标题匹配(如「工廠」→ 参数编号)，再按繁简/前缀归一匹配
       IF lv_hit = abap_false.
         LOOP AT lt_p INTO ls_p.
           IF to_upper( condense( ls_p-display_label ) ) = lv_kname.
+            lv_hit = abap_true.
+            EXIT.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+      IF lv_hit = abap_false.
+        DATA(lv_knorm) = zcl_ai_report_relay=>norm_param_key( lv_kname ).
+        LOOP AT lt_p INTO ls_p.
+          IF lv_knorm IS NOT INITIAL
+             AND ( zcl_ai_report_relay=>norm_param_key( ls_p-param_id ) = lv_knorm
+                   OR zcl_ai_report_relay=>norm_param_key( ls_p-display_label ) = lv_knorm ).
             lv_hit = abap_true.
             EXIT.
           ENDIF.
@@ -4576,6 +4599,29 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       RETURN.   " 技能清单用不上
     ENDIF.
 
+    IF ls_run-session_id IS NOT INITIAL AND lv_res_on = abap_true.
+      SELECT target, text FROM zai_bstep
+        WHERE session_id = @ls_run-session_id AND userid = @sy-uname
+          AND kind = 'QFILTER' AND msg_seq > 0
+          AND seq BETWEEN 2001 AND 2300
+        ORDER BY msg_seq DESCENDING, seq DESCENDING
+        INTO TABLE @DATA(lt_last_filter)
+        UP TO 1 ROWS.
+      READ TABLE lt_last_filter INDEX 1 INTO DATA(ls_last_filter).
+      IF sy-subrc = 0 AND ls_last_filter-text IS NOT INITIAL
+         AND brun_art( is_run = ls_run iv_result_id = CONV string( ls_last_filter-target ) ) IS INITIAL.
+        DATA(lo_query) = NEW zcl_ai_odata_shaper( ).
+        IF lo_query->parse( CONV string( ls_last_filter-text ) ) = abap_true.
+          DATA(lv_filters) = lo_query->child( iv_id = lo_query->root( ) iv_name = 'filters' ).
+          IF lo_query->kind( lv_filters ) = 'A' AND lo_query->kids( lv_filters ) IS NOT INITIAL.
+            es_start-last_result_filter =
+              |\{"resultId":{ zcl_ai_odata_shaper=>json_str( CONV string( ls_last_filter-target ) ) },| &&
+              |"filters":{ lo_query->to_json( lv_filters ) }\}|.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
     IF iv_chat_context = abap_true.
       " 先读摘要边界，再读后续消息。两次读取之间如果有新结果提交，也会纳入消息列表。
       TYPES: BEGIN OF ty_context_message,
@@ -4763,7 +4809,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
   METHOD browser_tool.
 
-    CLEAR: ev_ok, ev_content, ev_message, ev_card, ev_datasets.
+    CLEAR: ev_ok, ev_content, ev_message, ev_card, ev_datasets, ev_query_seq.
     ev_http = 200.
     DATA: ls_run  TYPE zai_brun,
           lv_err  TYPE string,
@@ -4793,6 +4839,10 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       ev_http    = 429.
       ev_message = |这次运行的工具调用已达上限({ lv_max } 次), 请基于已有结果回答|.
       RETURN.
+    ENDIF.
+    IF lv_tool = zcl_ai_result_query=>gc_tool.
+      " 更新的行锁仍在，读取本次调用的唯一序号。
+      SELECT SINGLE tool_calls FROM zai_brun WHERE run_id = @ls_run-run_id INTO @DATA(lv_query_call).
     ENDIF.
     COMMIT WORK.
 
@@ -4944,6 +4994,10 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
                                                 ev_label       = lv_r_lbl
                                                 ev_detail      = lv_r_det
                                                 ev_error       = lv_rerr ).
+            IF lv_rerr IS INITIAL.
+              ev_query_seq = brun_save_result_filter( is_run = ls_run iv_seq = lv_query_call
+                                                     iv_result_id = lv_rid iv_args = iv_args ).
+            ENDIF.
           ELSE.
             zcl_ai_result_lookup=>run( EXPORTING iv_artifact_id = lv_rid
                                                  iv_args_json   = iv_args
@@ -5404,8 +5458,11 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
           lv_bn TYPE i.
     " V15.25: ADT 审计行(KIND = ADT)是调用时写的, 不删; 只补上这次回答的消息序号
     " V15.29: MCP 审计行(KIND = MCP)同 ADT
-    DELETE FROM zai_bstep WHERE run_id = @ls_run-run_id AND kind <> 'ADT' AND kind <> 'MCP'.
+    DELETE FROM zai_bstep WHERE run_id = @ls_run-run_id AND kind <> 'ADT' AND kind <> 'MCP' AND kind <> 'QFILTER'.
     UPDATE zai_bstep SET msg_seq = @lv_seq WHERE run_id = @ls_run-run_id AND ( kind = 'ADT' OR kind = 'MCP' ).
+    IF lv_status = 'OK'.
+      UPDATE zai_bstep SET msg_seq = @lv_seq WHERE run_id = @ls_run-run_id AND kind = 'QFILTER'.
+    ENDIF.
 
     " ---- V15.26: 模型总结的会话标题 —— 标题还是默认值(第一句问题)时才换, 用户改过名的不动 ----
     IF iv_title IS NOT INITIAL AND iv_status = 'OK'.
@@ -5423,7 +5480,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
       ENDIF.
     ENDIF.
     LOOP AT it_steps INTO DATA(ls_in).
-      IF to_upper( ls_in-k ) = 'CONTEXT'.
+      IF to_upper( ls_in-k ) = 'CONTEXT' OR to_upper( ls_in-k ) = 'QFILTER'.
         CONTINUE.
       ENDIF.
       lv_bn = lv_bn + 1.
@@ -5620,6 +5677,7 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
         AND kind <> 'ADT'                 " V15.25: ADT 审计行只供审计, 界面过程用浏览器交来的那份
         AND kind <> 'MCP'                 " V15.29: MCP 审计行同 ADT
         AND kind <> 'CONTEXT'
+        AND kind <> 'QFILTER'
         AND kind <> 'USAGE'
       ORDER BY msg_seq, run_id, seq
       INTO TABLE @DATA(lt_bs)
@@ -5663,39 +5721,118 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD brun_save_result_filter.
+
+    " 每张结果表记录自己的查询。辅助计数/汇总不覆盖明细的筛选条件。
+    IF iv_seq < 1 OR iv_seq > 300.
+      RETURN.
+    ENDIF.
+    DATA(lo_args) = NEW zcl_ai_odata_shaper( ).
+    DATA lv_plan TYPE string.
+    IF lo_args->parse( iv_args ) = abap_true.
+      DATA(lv_root) = lo_args->root( ).
+      IF lo_args->kids( lo_args->child( iv_id = lv_root iv_name = 'group_by' ) ) IS NOT INITIAL
+         OR lo_args->kids( lo_args->child( iv_id = lv_root iv_name = 'metrics' ) ) IS NOT INITIAL.
+        RETURN.
+      ENDIF.
+      DATA(lv_fid) = lo_args->child( iv_id = lv_root iv_name = 'filters' ).
+      IF lo_args->kind( lv_fid ) = 'A' AND lo_args->kids( lv_fid ) IS NOT INITIAL.
+        DATA(lv_sort) = lo_args->child( iv_id = lv_root iv_name = 'sort' ).
+        DATA(lv_cols) = lo_args->child( iv_id = lv_root iv_name = 'columns' ).
+        lv_plan = |\{"filters":{ lo_args->to_json( lv_fid ) }| &&
+                  COND string( WHEN lv_sort > 0 THEN |,"sort":{ lo_args->to_json( lv_sort ) }| ) &&
+                  COND string( WHEN lv_cols > 0 THEN |,"columns":{ lo_args->to_json( lv_cols ) }| ) && |\}|.
+        IF strlen( lv_plan ) > 1333.
+          lv_plan = |\{"filters":{ lo_args->to_json( lv_fid ) }\}|.
+        ENDIF.
+        IF strlen( lv_plan ) > 1333.
+          RETURN.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+    DATA ls_filter TYPE zai_bstep.
+    ls_filter-mandt = sy-mandt.
+    ls_filter-run_id = is_run-run_id.
+    ls_filter-seq = 2000 + iv_seq.   " 1001~1300 保留给 ADT/MCP 审计
+    ls_filter-session_id = is_run-session_id.
+    ls_filter-userid = sy-uname.
+    ls_filter-kind = 'QFILTER'.
+    ls_filter-target = iv_result_id.
+    ls_filter-text = lv_plan.
+    GET TIME STAMP FIELD ls_filter-created_at.
+    MODIFY zai_bstep FROM @ls_filter.
+    IF sy-subrc = 0 AND ls_filter-text IS NOT INITIAL.
+      rv_seq = ls_filter-seq.
+    ENDIF.
+
+  ENDMETHOD.
+
+
   METHOD browser_export.
 
-    CLEAR: ev_csv, ev_label, ev_rows, ev_cols, ev_trunc, ev_error.
+    CLEAR: ev_csv, ev_label, ev_rows, ev_cols, ev_trunc, ev_filtered, ev_error.
     ev_http = 200.
     DATA: ls_run  TYPE zai_brun,
-          lv_http TYPE i.
-    brun_get( EXPORTING iv_run_id = iv_run_id
-              IMPORTING es_run    = ls_run
-                        ev_error  = ev_error
-                        ev_http   = lv_http ).
-    IF ev_error IS NOT INITIAL.
-      ev_http = lv_http.
-      RETURN.
+          lv_http TYPE i,
+          lv_rid  TYPE string,
+          lv_plan TYPE string.
+    IF iv_query_seq <> 0.
+      " 结果卡下载只接受已完成的服务器查询记录。先核对开通与开关，再从记录里取报表号和条件。
+      SELECT SINGLE userid FROM zai_chat_user
+        WHERE userid = @sy-uname AND active = 'X'
+        INTO @DATA(lv_export_user).
+      IF sy-subrc <> 0 OR brun_cfg( 'BROWSER_AGENT_ON' ) <> 'X'
+         OR zcl_ai_result_query=>enabled( ) = abap_false.
+        ev_http = 403.
+        ev_error = '当前没有导出筛选结果的权限或功能未开启'.
+        RETURN.
+      ENDIF.
+      IF strlen( iv_run_id ) <> 32 OR iv_query_seq < 2001 OR iv_query_seq > 2300.
+        ev_http = 400.
+        ev_error = '结果卡的查询编号无效'.
+        RETURN.
+      ENDIF.
+      SELECT SINGLE q~target, q~text, q~session_id
+        FROM zai_bstep AS q INNER JOIN zai_chat_sess AS s ON q~session_id = s~session_id
+        WHERE q~run_id = @iv_run_id AND q~seq = @iv_query_seq AND q~kind = 'QFILTER'
+          AND q~userid = @sy-uname AND s~created_by = @sy-uname AND q~msg_seq > 0
+        INTO @DATA(ls_query).
+      IF sy-subrc <> 0 OR ls_query-text IS INITIAL.
+        ev_http = 404.
+        ev_error = '找不到这张结果卡的筛选记录，请重新筛选后再导出'.
+        RETURN.
+      ENDIF.
+      lv_rid = ls_query-target.
+      lv_plan = ls_query-text.
+      ls_run-session_id = ls_query-session_id.
+    ELSE.
+      brun_get( EXPORTING iv_run_id = iv_run_id
+                IMPORTING es_run    = ls_run
+                          ev_error  = ev_error
+                          ev_http   = lv_http ).
+      IF ev_error IS NOT INITIAL.
+        ev_http = lv_http.
+        RETURN.
+      ENDIF.
+      IF |,{ ls_run-tools },| NS ',list_results,'.
+        ev_http  = 403.
+        ev_error = '这次运行没有报表结果可以导出'.
+        RETURN.
+      ENDIF.
+      DATA(lv_max) = read_cfg_int( iv_key = 'BRUN_MAX_TOOL' iv_default = 60 iv_min = 5 iv_max = 300 ).
+      UPDATE zai_brun SET tool_calls = tool_calls + 1
+        WHERE run_id = @ls_run-run_id AND userid = @sy-uname
+          AND status = 'RUNNING' AND tool_calls < @lv_max.
+      IF sy-dbcnt = 0.
+        ev_http  = 429.
+        ev_error = |这次运行的工具调用已达上限({ lv_max } 次)|.
+        RETURN.
+      ENDIF.
+      COMMIT WORK.
+      lv_rid = condense( iv_result_id ).
     ENDIF.
-    " 只有开始时下发了结果工具(本会话有结果)的运行才能导出
-    IF |,{ ls_run-tools },| NS ',list_results,'.
-      ev_http  = 403.
-      ev_error = '这次运行没有报表结果可以导出'.
-      RETURN.
-    ENDIF.
-    DATA(lv_max) = read_cfg_int( iv_key = 'BRUN_MAX_TOOL' iv_default = 60 iv_min = 5 iv_max = 300 ).
-    UPDATE zai_brun SET tool_calls = tool_calls + 1
-      WHERE run_id = @ls_run-run_id AND userid = @sy-uname
-        AND status = 'RUNNING' AND tool_calls < @lv_max.
-    IF sy-dbcnt = 0.
-      ev_http  = 429.
-      ev_error = |这次运行的工具调用已达上限({ lv_max } 次)|.
-      RETURN.
-    ENDIF.
-    COMMIT WORK.
 
-    DATA(lv_rid) = condense( iv_result_id ).
-    " 导出直接进用户自己的文件夹, 不经过模型 → 不要求 Fiori 分析闸门
+    " 导出不经过模型 → 不要求 Fiori 分析闸门
     ev_error = brun_art( is_run = ls_run iv_result_id = lv_rid iv_for_model = abap_false ).
     IF ev_error IS NOT INITIAL.
       RETURN.
@@ -5716,6 +5853,36 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     ENDIF.
 
     DATA(lv_max_rows) = read_cfg_int( iv_key = 'BRUN_EXPORT_ROWS' iv_default = 20000 iv_min = 100 iv_max = 200000 ).
+    IF lv_plan IS NOT INITIAL.
+      zcl_ai_result_query=>export_detail(
+        EXPORTING is_ds = ls_ds iv_args_json = lv_plan iv_max_rows = lv_max_rows
+        IMPORTING es_out = DATA(ls_matches) ev_error = ev_error ).
+      IF ev_error IS NOT INITIAL.
+        RETURN.
+      ENDIF.
+      ls_ds = ls_matches.
+      ev_filtered = abap_true.
+    ELSEIF iv_filters_json IS NOT INITIAL.
+      DATA(lo_filters) = NEW zcl_ai_odata_shaper( ).
+      IF lo_filters->parse( iv_filters_json ) = abap_false
+         OR lo_filters->kind( lo_filters->root( ) ) <> 'A'
+         OR lo_filters->kids( lo_filters->root( ) ) IS INITIAL.
+        ev_error = '请提供有效的筛选条件数组'.
+        RETURN.
+      ENDIF.
+      " 先筛选已保存的明细，再应用导出行数和体积上限。
+      zcl_ai_result_query=>prefilter_rows(
+        EXPORTING is_schema    = ls_ds
+                  iv_args_json = |\{"filters":{ iv_filters_json }\}|
+                  iv_max_ci    = lines( ls_ds-columns )
+        IMPORTING ev_error     = ev_error
+        CHANGING  ct_rows      = ls_ds-rows ).
+      IF ev_error IS NOT INITIAL.
+        RETURN.
+      ENDIF.
+      ev_filtered = abap_true.
+    ENDIF.
+
     DATA(lv_max_kb)   = read_cfg_int( iv_key = 'BRUN_EXPORT_KB' iv_default = 8000 iv_min = 100 iv_max = 50000 ).
     DATA lt_lines TYPE string_table.
     DATA lv_line TYPE string.

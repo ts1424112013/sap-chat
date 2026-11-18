@@ -241,6 +241,17 @@ const countOf = (s, sub) => s.split(sub).length - 1;
   check('sanitizeHtml 保留 https 链接', /href="https:\/\/ok"/.test(clean), clean);
   const md = Formatter.markdownToHtml('说明\n```abap\nDATA lv TYPE i.\n  lv = <1>.\n```');
   check('markdownToHtml 代码块生成 pre 并转义尖括号', /<pre/.test(md) && /&lt;1&gt;/.test(md) && !/<1>/.test(md), md);
+  const previewMarkdown = '库存明细\n\n| **物料** | 数量 |\n| --- | --- |\n| `000123` | 10 |';
+  const attached = [{
+    status: 'OK', columns: [{ name: 'MATNR', label: '物料' }, { name: 'QTY', label: '数量' }],
+    rows: [['000123', 10], ['000456', 20]]
+  }];
+  const separateTable = '\n\n| 物料 | 数量 |\n| --- | --- |\n| 000123 | 30 |';
+  const combinedHtml = Formatter.markdownToHtml(previewMarkdown + separateTable, attached);
+  check('同一结果的正文预览只保留结果卡，数字不同的表格照常展示',
+    combinedHtml.includes('库存明细') && countOf(combinedHtml, '<table') === 1 && combinedHtml.includes('<td>30</td>'));
+  check('回读只有正文的消息仍能显示和筛选表格',
+    Formatter.markdownToHtml(previewMarkdown).includes('data-act="all">筛选数据'));
 
   console.log('\n━━ TraceService');
   const norm = TraceService.normalizeResult({ d: { AnalyzeTask: { Answer: 'ok', Status: 'ok', Rounds: '2', TraceJson: '[]' } } });
@@ -1027,6 +1038,9 @@ const countOf = (s, sub) => s.split(sub).length - 1;
     /originQuestion: oRun\.originQuestion \|\| ""/.test(rrSrc) &&
     /r\.originQuestion/.test(rrSrc) &&
     /String\(k\)\.toUpperCase\(\) === sUp/.test(ctlSrc));
+  check('第二张报表参数卡：从同会话上一份报表结果唯一值或过程说明自动补齐工厂参数，且跨自动续接保留原指令',
+    /_autoFillReportAsk/.test(ctlSrc) && /_matchReportParam/.test(ctlSrc) &&
+    /用户的原指令是：「/.test(ctlSrc));
 
   console.log(`\n━━ 结果：${passed} 通过，${failed} 失败`);
   process.exit(failed ? 1 : 0);

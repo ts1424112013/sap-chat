@@ -117,6 +117,14 @@ CLASS zcl_ai_result_query DEFINITION
       EXPORTING ev_error     TYPE string
       CHANGING  ct_rows      TYPE zcl_ai_odata_shaper=>tt_row.
 
+    " 导出筛选明细：应用与查询相同的筛选、列和排序；预览页码不影响导出。
+    CLASS-METHODS export_detail
+      IMPORTING is_ds        TYPE zcl_ai_odata_shaper=>ty_dataset
+                iv_args_json TYPE string
+                iv_max_rows  TYPE i
+      EXPORTING es_out       TYPE zcl_ai_odata_shaper=>ty_dataset
+                ev_error     TYPE string.
+
     " 列名或列标题 → 列下标(没有 = 0); V1.1 起公开
     CLASS-METHODS find_col
       IMPORTING is_ds     TYPE zcl_ai_odata_shaper=>ty_dataset
@@ -1154,6 +1162,29 @@ CLASS zcl_ai_result_query IMPLEMENTATION.
       ENDIF.
     ENDLOOP.
     ct_rows = lt_keep.
+
+  ENDMETHOD.
+
+
+  METHOD export_detail.
+
+    CLEAR es_out.
+    parse_query( EXPORTING is_ds = is_ds iv_json = iv_args_json
+                 IMPORTING es_q = DATA(ls_q) ev_error = ev_error ).
+    IF ev_error IS NOT INITIAL.
+      RETURN.
+    ENDIF.
+    IF ls_q-filters IS INITIAL OR ls_q-group_by IS NOT INITIAL OR ls_q-metrics IS NOT INITIAL.
+      ev_error = '缺少可导出的明细筛选条件'.
+      RETURN.
+    ENDIF.
+    ls_q-limit = iv_max_rows.
+    CLEAR ls_q-offset.
+    execute( EXPORTING is_ds = is_ds is_q = ls_q
+             IMPORTING es_out = es_out ev_error = ev_error ).
+    IF is_ds-truncated = abap_true.
+      es_out-truncated = abap_true.
+    ENDIF.
 
   ENDMETHOD.
 

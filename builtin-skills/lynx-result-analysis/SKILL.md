@@ -26,8 +26,8 @@ metadata:
 | 看某个值的明细 | `query_result`：`filters` + `columns` + `sort` |
 | 「后面的 / 下一页」 | 同样的条件再调，`offset` 填上次的 `next_offset` |
 | 结果里的料号去表 X 补字段 / 关联表 X | `lookup_by_result`：`table`、`key_field`（表里的关联字段）、`source_column`（结果里的列）、`fields`；可同时带 `group_by` 等在接好的数据上算 |
-| 把结果里某列的值带进另一张报表 | `prefill_report`：`tcode`、`target_param`（必须是多值或范围参数）、`source_column`，可先 `filters`；成功后运行结束 |
-| 导出成文件 | `save_result_to_folder`：`.xlsx` 或 `.csv`，数据由 SAP 直接写，不要自己拼表格 |
+| 把结果里某列的值带进另一张报表 | `prefill_report`：先 `get_report_parameters` 看目标报表参数编号；传 `tcode`、`target_param`（必须是多值或范围参数）、`source_column`，可先 `filters`；工厂、日期等其它已知参数（用户给出的或从结果查出的唯一值）务必放进 `params` 一并预填，不要留空；成功后运行结束 |
+| 导出成文件 | `save_result_to_folder`：`.xlsx` 或 `.csv`。接着导出刚筛出的数据时用相同的结果号和 `scope: "filtered"`，工具会复用上次条件；当轮指定新条件时用 `filters` |
 
 每次调用都写 `purpose`（一句话，会作为结果标题）。
 
@@ -43,7 +43,7 @@ metadata:
 ## 回答格式
 
 1. 先直接回答原来的问题（「库存最高的是 A，共 1,200 PC」）。
-2. 再给支撑数字（小表格，最多十几行），说明来自哪份结果、按什么条件算的。
+2. 再给支撑数字，说明来自哪份结果、按什么条件算的。有可展示的结果表编号时用 `[[结果表:D…]]`，正文用文字讲重点。没有结果表编号时可用小表格。
 3. 有截断、单位混合、没查到的值时，最后一句说明。
 
 用户要「做成报告」时：数字先用工具算好，再用 `create_word_file` 写成文档（结论 → 表格 → 说明）；要表格文件用 `save_result_to_folder`，汇总后的小表可以用 `create_excel_file`。

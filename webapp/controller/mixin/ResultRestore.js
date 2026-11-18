@@ -111,10 +111,16 @@ sap.ui.define([
                         }, 300);
                 },
 
-                /** 任务号 → {values, paste}（没有返回空对象） */
+                /** 任务号 → {values, paste}（没有返回空对象；空串不覆盖后端或接力预填的值） */
                 _askDraftOf: function (sTaskId) {
                         var d = sTaskId ? this._askDraftAll()[sTaskId] : null;
-                        return { values: (d && d.values) || {}, paste: (d && d.paste) || {} };
+                        var mRaw = (d && d.values) || {}, mVals = {};
+                        Object.keys(mRaw).forEach(function (k) {
+                                if (mRaw[k] !== "" && mRaw[k] !== undefined && mRaw[k] !== null) {
+                                        mVals[k] = mRaw[k];
+                                }
+                        });
+                        return { values: mVals, paste: (d && d.paste) || {} };
                 },
 
                 _askDraftClear: function (sTaskId) {

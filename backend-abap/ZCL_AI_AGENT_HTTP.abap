@@ -11,7 +11,7 @@
 *         POST /tools/exec        { runId, tool, args:{…}, requestId } → { ok, content, message, card? }
 *              card = 报表参数卡(open_report / prefill_report), 浏览器拿到即结束运行
 *         POST /run/finish        { runId, status, answer, message, skillsUsed } → { ok }
-*         POST /results/export    { runId, resultId } → { ok, label, rows, columns, truncated, csv }(V1.1)
+*         POST /results/export    { runId, resultId, filtersJson? } 或 { runId, querySeq } → { ok, label, rows, columns, truncated, filtered, csv }
 *         POST /admin/mcp/<动作>  MCP 连接管理(V1.7, 只限管理员): list / get / save / delete / test / fetch / tools
 *         POST /admin/bskill/<动作> 内置技能管理(V1.8, 只限管理员): list / get / import / active
 *
@@ -97,8 +97,10 @@ CLASS zcl_ai_agent_http DEFINITION
              session_id TYPE string,
            END OF ty_steps_req.
     TYPES: BEGIN OF ty_export_req,
-             run_id    TYPE string,
-             result_id TYPE string,
+             run_id       TYPE string,
+             result_id    TYPE string,
+             filters_json TYPE string,
+             query_seq    TYPE i,
            END OF ty_export_req.
 
     " 写 JSON 响应
@@ -191,6 +193,7 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                              |"tools":{ ls_out-tools_json },"systemPrompt":{ jstr( ls_out-system ) },| &&
                              |"skills":{ COND string( WHEN ls_out-skills_json IS INITIAL THEN `[]` ELSE ls_out-skills_json ) },| &&
                              |"export":{ COND string( WHEN ls_out-export = abap_true THEN `true` ELSE `false` ) },| &&
+                             |"exportFilters":{ COND string( WHEN ls_out-export = abap_true THEN `true` ELSE `false` ) },| &&
                              |"adt":{ COND string( WHEN ls_out-adt = abap_true THEN `true` ELSE `false` ) },| &&
                              |"builtinVersion":{ jstr( ls_out-builtin_ver ) },| &&
                              |"skillsOpen":{ COND string( WHEN ls_out-skills_open = abap_true THEN `true` ELSE `false` ) },| &&
@@ -198,6 +201,7 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                              |"answer":{ jstr( ls_out-answer ) },| &&
                              COND string( WHEN ls_out-card IS NOT INITIAL THEN |"card":{ ls_out-card },| ) &&
                              COND string( WHEN ls_out-chat_context IS NOT INITIAL THEN |"chatContext":{ ls_out-chat_context },| ) &&
+                             COND string( WHEN ls_out-last_result_filter IS NOT INITIAL THEN |"lastResultFilter":{ ls_out-last_result_filter },| ) &&
                              |"limits":\{"maxModelCalls":{ ls_out-max_model },"maxToolCalls":{ ls_out-max_tool },| &&
                              |"contextTokens":{ ls_out-ctx_tokens },| &&
                              |"recursionLimit":{ ( ls_out-max_model + ls_out-max_tool ) * 2 + 10 }\}\}| ).
@@ -232,7 +236,8 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                   lv_content TYPE string,
                   lv_msg     TYPE string,
                   lv_card    TYPE string,
-                  lv_ds      TYPE string.
+                  lv_ds      TYPE string,
+                  lv_query_seq TYPE i.
             " V1.9: 工具内部的异常只算这一步失败(回给模型), 不中止整轮
             TRY.
                 zcl_ai_agent_service=>browser_tool(
@@ -245,10 +250,11 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                             ev_message = lv_msg
                             ev_http    = lv_http
                             ev_card    = lv_card
-                            ev_datasets = lv_ds ).
+                            ev_datasets = lv_ds
+                            ev_query_seq = lv_query_seq ).
               CATCH cx_root INTO DATA(lx_tool).
                 ROLLBACK WORK.
-                CLEAR: lv_content, lv_card, lv_ds.
+                CLEAR: lv_content, lv_card, lv_ds, lv_query_seq.
                 lv_ok   = abap_false.
                 lv_http = 200.
                 lv_msg  = |工具 { ls_tool-tool } 执行出错({ substring_after( val = cl_abap_classdescr=>get_class_name( lx_tool ) sub = '=' ) }): | &&
@@ -262,7 +268,8 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                      iv_json = |\{"ok":{ COND string( WHEN lv_ok = abap_true THEN `true` ELSE `false` ) },| &&
                                |"content":{ jstr( lv_content ) },"message":{ jstr( lv_msg ) }| &&
                                COND string( WHEN lv_card IS NOT INITIAL THEN |,"card":{ lv_card }| ) &&
-                               COND string( WHEN lv_ds IS NOT INITIAL THEN |,"datasets":{ lv_ds }| ) && |\}| ).
+                               COND string( WHEN lv_ds IS NOT INITIAL THEN |,"datasets":{ lv_ds }| ) &&
+                               COND string( WHEN lv_query_seq > 0 THEN |,"querySeq":{ lv_query_seq }| ) && |\}| ).
             ENDIF.
 
           " ---------------- V1.5: ADT 代码工具调用报备 / 回填(浏览器直连 /sap/bc/adt 前后各一次) ----------------
@@ -298,7 +305,7 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
                    iv_json = |\{"ok":{ COND string( WHEN lv_aok = abap_true THEN `true` ELSE `false` ) },| &&
                              |"seq":{ lv_aseq },"message":{ jstr( lv_amsg ) }\}| ).
 
-          " ---------------- V1.1: 把一份报表结果导出成 CSV(浏览器写进用户文件夹) ----------------
+          " ---------------- 导出报表结果(可选筛选条件；浏览器写进用户文件夹) ----------------
           WHEN '/results/export'.
             DATA ls_exp TYPE ty_export_req.
             parse( EXPORTING iv_json = lv_body CHANGING cs_data = ls_exp ).
@@ -306,19 +313,23 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
               fail( io_server = server iv_code = 400 iv_msg = '运行号不一致' ).
               RETURN.
             ENDIF.
-            DATA: lv_csv   TYPE string,
-                  lv_label TYPE string,
-                  lv_rows  TYPE i,
-                  lv_cols  TYPE i,
-                  lv_trunc TYPE abap_bool.
+            DATA: lv_csv      TYPE string,
+                  lv_label    TYPE string,
+                  lv_rows     TYPE i,
+                  lv_cols     TYPE i,
+                  lv_trunc    TYPE abap_bool,
+                  lv_filtered TYPE abap_bool.
             zcl_ai_agent_service=>browser_export(
               EXPORTING iv_run_id    = ls_exp-run_id
                         iv_result_id = ls_exp-result_id
+                        iv_filters_json = ls_exp-filters_json
+                        iv_query_seq = ls_exp-query_seq
               IMPORTING ev_csv       = lv_csv
                         ev_label     = lv_label
                         ev_rows      = lv_rows
                         ev_cols      = lv_cols
                         ev_trunc     = lv_trunc
+                        ev_filtered  = lv_filtered
                         ev_error     = lv_err
                         ev_http      = lv_http ).
             COMMIT WORK.
@@ -330,6 +341,8 @@ CLASS zcl_ai_agent_http IMPLEMENTATION.
               reply( io_server = server iv_code = 200
                      iv_json = |\{"ok":true,"label":{ jstr( lv_label ) },"rows":{ lv_rows },"columns":{ lv_cols },| &&
                                |"truncated":{ COND string( WHEN lv_trunc = abap_true THEN `true` ELSE `false` ) },| &&
+                               |"filtered":{ COND string( WHEN lv_filtered = abap_true THEN `true` ELSE `false` ) },| &&
+                               COND string( WHEN ls_exp-query_seq > 0 THEN |"querySeq":{ ls_exp-query_seq },| ) &&
                                |"csv":{ jstr( lv_csv ) }\}| ).
             ENDIF.
 

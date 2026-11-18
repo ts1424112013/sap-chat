@@ -1226,6 +1226,11 @@ sap.ui.define([
                                         elapsedMs: parseInt(d.elapsed_ms, 10) || 0,
                                         source: String(d.source || "")
                                 };
+                                var oQuery = d.export_query;
+                                if (oQuery && typeof oQuery.runId === "string" && /^[a-f0-9]{32}$/i.test(oQuery.runId) &&
+                                        Number.isInteger(oQuery.querySeq) && oQuery.querySeq >= 2001 && oQuery.querySeq <= 2300) {
+                                        oDs.exportQuery = { runId: oQuery.runId, querySeq: oQuery.querySeq };
+                                }
                                 (Array.isArray(d.columns) ? d.columns : []).slice(0, 12).forEach(function (c) {
                                         if (c && c.name) {
                                                 oDs.columns.push({

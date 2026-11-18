@@ -8,6 +8,7 @@ import {
   openZip, makeZip, officeToText, buildXlsx, buildDocx, parseCsv, csvValue, colName, colIndex, excelDate, markdownToDocxBody, topLevel
 } from "../src/office.js";
 import { FolderBackend, canWritePath } from "../src/folder-backend.js";
+import { run } from "../src/index.js";
 
 // ---------- 内存文件夹（File System Access API 的最小替身） ----------
 class MemFile {
@@ -49,6 +50,138 @@ class MemDir {
     for (const n of this.files.keys()) yield [n, new MemFile(n, this)];
   }
 }
+
+test("聊天导出传递筛选条件，只在 SAP 确认已筛选时保存匹配的数据", async () => {
+  const filters = [{ column: "工厂", op: "eq", value: "1000" }];
+  for (const scenario of ["filtered", "unsupported", "unconfirmed", "full"]) {
+    const folder = new MemDir();
+    const requests = [];
+    let turn = 0;
+    await run({
+      question: "导出库存",
+      folder,
+      confirm: async () => true,
+      client: {
+        root: "https://sap.test",
+        startRun: async () => ({ runId: "export-test", model: "mock", export: true, exportFilters: scenario !== "unsupported" }),
+        finishRun: async () => {},
+        exportResult: async (req) => {
+          requests.push(req);
+          const filtered = scenario === "filtered";
+          return {
+            filtered, label: "库存", rows: filtered ? 1 : 2, columns: 2,
+            csv: "工厂,物料\r\n1000,000123\r\n" + (filtered ? "" : "2000,000456\r\n")
+          };
+        },
+        modelFetch: () => async () => {
+          const args = { result_id: "ART1", file_path: "/库存.xlsx", ...(scenario === "full" ? {} : { filters }) };
+          const message = turn++ === 0
+            ? { role: "assistant", content: "", tool_calls: [{
+              id: "export", type: "function", function: { name: "save_result_to_folder", arguments: JSON.stringify(args) }
+            }] }
+            : { role: "assistant", content: "导出已结束。" };
+          return Response.json({
+            id: "mock", object: "chat.completion", model: "mock",
+            choices: [{ index: 0, finish_reason: message.tool_calls ? "tool_calls" : "stop", message }]
+          });
+        }
+      }
+    });
+    const saved = folder.files.get("库存.xlsx");
+    if (scenario === "unsupported") {
+      assert.deepEqual(requests, []);
+      assert.equal(saved, undefined);
+      continue;
+    }
+    assert.deepEqual(requests, [{
+      runId: "export-test", resultId: "ART1", ...(scenario === "full" ? {} : { filtersJson: JSON.stringify(filters) })
+    }]);
+    if (scenario === "unconfirmed") {
+      assert.equal(saved, undefined);
+      continue;
+    }
+    const workbook = await officeToText("/库存.xlsx", saved.bytes);
+    assert.match(workbook, /1000\t000123/);
+    assert.equal(workbook.includes("000456"), scenario === "full");
+  }
+});
+
+test("ZDPPP001：跨轮导出沿用 MCOO = CN，模型漏传条件也只保存匹配行", async () => {
+  const rows = Array.from({ length: 1700 }, (_, i) => [i % 7 === 0 ? "CN" : "US", "M" + i]);
+  const filters = [{ column: "MCOO", op: "eq", value: "CN" }];
+  const queryArgs = { result_id: "ZDPPP001-ART", filters };
+  const exportArgs = { result_id: queryArgs.result_id, file_path: "/ZDPPP001.xlsx" };
+  const columns = [{ name: "MCOO" }, { name: "MATNR" }];
+  let savedFilter;
+  const requests = [];
+
+  async function send(question, tool, args) {
+    let turn = 0;
+    let resultFilter;
+    const folder = new MemDir();
+    await run({
+      question, folder, confirm: async () => true, context: { sessionId: "zdppp001-chat" },
+      client: {
+        root: "https://sap.test",
+        startRun: async () => ({
+          runId: question, model: "mock", export: true, exportFilters: true,
+          lastResultFilter: savedFilter && structuredClone(savedFilter),
+          tools: [{ name: "query_result", parameters: { type: "object" } }]
+        }),
+        execTool: async ({ tool, args }) => {
+          assert.equal(tool, "query_result");
+          assert.deepEqual(args, queryArgs);
+          const matches = rows.filter(r => r[0] === "CN");
+          resultFilter = { resultId: args.result_id, filters: args.filters };
+          return {
+            ok: true, content: JSON.stringify({ ok: true, total: matches.length, more: true }),
+            datasets: [{ name: "CN 明细", status: "OK", columns, rows: matches.slice(0, 20) }]
+          };
+        },
+        finishRun: async ({ status }) => {
+          assert.equal(status, "OK");
+          if (resultFilter) savedFilter = resultFilter;
+        },
+        exportResult: async (req) => {
+          requests.push(req);
+          const active = req.filtersJson && JSON.parse(req.filtersJson);
+          const output = active ? rows.filter(r => r[0] === active[0].value) : rows;
+          const csv = ["MCOO,MATNR", ...output.map(r => r.join(","))].join("\r\n") + "\r\n";
+          return { filtered: !!active, label: "ZDPPP001", rows: output.length, columns: 2, csv };
+        },
+        modelFetch: () => async () => {
+          const message = turn++ === 0 && tool
+            ? { role: "assistant", content: "", tool_calls: [{
+              id: "report", type: "function", function: { name: tool, arguments: JSON.stringify(args) }
+            }] }
+            : { role: "assistant", content: "处理完毕。" };
+          return Response.json({
+            id: "mock", object: "chat.completion", model: "mock",
+            choices: [{ index: 0, finish_reason: message.tool_calls ? "tool_calls" : "stop", message }]
+          });
+        }
+      }
+    });
+    return folder.files.get("ZDPPP001.xlsx")?.bytes;
+  }
+
+  await send("执行 ZDPPP001", null);
+  await send("帮我筛选出来 MCOO = CN 的数据", "query_result", queryArgs);
+  const file = await send("导出筛选后的数据到 Excel", "save_result_to_folder", exportArgs);
+  assert.deepEqual(JSON.parse(requests[0].filtersJson), filters);
+  const matched = (await officeToText("/ZDPPP001.xlsx", file)).split("\n").filter(line => /^\d+\t/.test(line)).slice(1);
+  assert.equal(matched.length, 243);
+  assert.ok(matched.every(line => line.includes("\tCN\t")));
+
+  await send("导出全部 1700 条数据到 Excel", "save_result_to_folder", exportArgs);
+  assert.equal(requests[1].filtersJson, undefined);
+  await send("导出 ZDPPP001 到 Excel", "save_result_to_folder", { ...exportArgs, scope: "full" });
+  assert.equal(requests[2].filtersJson, undefined);
+  assert.equal(await send("导出筛选后的数据到 Excel", "save_result_to_folder", { ...exportArgs, result_id: "OTHER" }), undefined);
+  savedFilter = undefined;
+  assert.equal(await send("导出筛选后的数据到 Excel", "save_result_to_folder", exportArgs), undefined);
+  assert.equal(requests.length, 3);
+});
 
 // ---------- zip ----------
 test("zip：打包再解开，压缩 / 不压缩都对，中文文件名", async () => {

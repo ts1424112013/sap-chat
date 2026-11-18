@@ -1305,6 +1305,13 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
     /iv_module\s+= zcl_ai_fiori_report_service=>gc_module/.test(bs));
   check('brun_art：Fiori 结果要求用户已「交给模型分析」（ANALYZED = X），导出不要求',
     /FROM zai_frpt_run/.test(ba) && /lv_an <> 'X'/.test(ba) && /iv_for_model = abap_false/.test(be));
+  check('筛选导出：先核对结果归属，再筛选，最后按导出上限写 CSV；成功才回筛选确认',
+    be.indexOf('brun_art(') < be.indexOf('load_dataset(') &&
+    be.indexOf('load_dataset(') < be.indexOf('prefilter_rows(') &&
+    be.indexOf('prefilter_rows(') < be.indexOf('LOOP AT ls_ds-rows') &&
+    /ev_filtered = abap_true/.test(be) &&
+    /iv_filters_json\s+= ls_exp-filters_json/.test(hr) &&
+    /"filtered":\{ COND string\( WHEN lv_filtered = abap_true/.test(hr));
   /* ---- 20261108 场景只作权限（AGENT_SERVICE V15.23） ---- */
   check('V15.23：工具域 = 开放的全部场景（数据 → 数据 + 库存；代码 → 代码；通用总有），去重；报表参数卡只看报表权限',
     /^\* V15\.23 20261108/m.test(agRaw2) && /APPEND zcl_ai_domain_cards=>gc_dom_general TO lt_doms/.test(bs) &&
@@ -1326,6 +1333,26 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
 
   /* ---- 20261108 界面改版：过程记录（AGENT_SERVICE V15.22 / HTTP V1.4） ---- */
   const bst = methodOf(ag2, 'browser_steps');
+  const saveFilter = methodOf(ag2, 'brun_save_result_filter');
+  check('跨轮筛选导出：SAP 保存成功查询的条件，收尾成功后才供同用户同会话复用',
+    /IF lv_rerr IS INITIAL\.\s+ev_query_seq = brun_save_result_filter\(/.test(bt) &&
+    /"filters":\{ lo_args->to_json\( lv_fid \) \}/.test(saveFilter) &&
+    /IF lv_status = 'OK'\.\s+UPDATE zai_bstep SET msg_seq = @lv_seq WHERE run_id = @ls_run-run_id AND kind = 'QFILTER'/.test(bf) &&
+    /session_id = @ls_run-session_id AND userid = @sy-uname\s+AND kind = 'QFILTER' AND msg_seq > 0/.test(bs) &&
+    /ORDER BY msg_seq DESCENDING, seq DESCENDING/.test(bs) &&
+    /brun_art\( is_run = ls_run iv_result_id = CONV string\( ls_last_filter-target \) \)/.test(bs) &&
+    /"lastResultFilter":\{ ls_out-last_result_filter \}/.test(hr) && /AND kind <> 'QFILTER'/.test(bst));
+  const detailExport = methodOf(read('ZCL_AI_RESULT_QUERY.abap'), 'export_detail');
+  check('结果卡下载：读取已完成的服务器筛选记录，按同样的筛选、排序和列导出所有匹配行',
+    /ls_filter-seq = 2000 \+ iv_seq/.test(saveFilter) &&
+    /FROM zai_chat_user/.test(be) && /brun_cfg\( 'BROWSER_AGENT_ON' \)/.test(be) &&
+    /zcl_ai_result_query=>enabled\( \)/.test(be) &&
+    /q~run_id = @iv_run_id AND q~seq = @iv_query_seq AND q~kind = 'QFILTER'/.test(be) &&
+    /q~userid = @sy-uname AND s~created_by = @sy-uname AND q~msg_seq > 0/.test(be) &&
+    /lv_rid = ls_query-target\.\s+lv_plan = ls_query-text\./.test(be) &&
+    /export_detail\(\s+EXPORTING is_ds = ls_ds iv_args_json = lv_plan/.test(be) &&
+    /ls_q-limit = iv_max_rows\.\s+CLEAR ls_q-offset\.\s+execute\(/.test(detailExport) &&
+    /WHEN ls_exp-query_seq > 0 THEN \|"querySeq":\{ ls_exp-query_seq \}/.test(hr));
   check('V15.22：收尾写 ZAI_BSTEP（先删本运行旧记录、最多 200 步、按会话 + 回复消息序号）；browser_steps 只限本人会话',
     /^\* V15\.22 20261108/m.test(agRaw2) && /DELETE FROM zai_bstep WHERE run_id = @ls_run-run_id/.test(bf) && /lv_bn > 200/.test(bf) &&
     /ls_bs-msg_seq\s+= lv_seq/.test(bf) && /INSERT zai_bstep FROM @ls_bs/.test(bf) &&
@@ -1531,7 +1558,8 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
   const hr = methodOf(ht, 'if_http_extension~handle_request');
   const iTry = hr.indexOf('CATCH cx_root INTO DATA(lx_tool)'), iBt = hr.indexOf('zcl_ai_agent_service=>browser_tool(');
   check('AGENT_HTTP V1.9：/tools/exec 的 browser_tool 包在 TRY 里，异常回滚后回 ok:false（lv_http = 200）',
-    /^\*\s+V1\.9 20261111/m.test(htRaw) && iBt > 0 && iTry > iBt && /ROLLBACK WORK\.\s+CLEAR: lv_content, lv_card, lv_ds\.\s+lv_ok\s+= abap_false\.\s+lv_http = 200\./.test(hr.slice(iTry)));
+    /^\*\s+V1\.9 20261111/m.test(htRaw) && iBt > 0 && iTry > iBt &&
+    /ROLLBACK WORK\.\s+CLEAR: lv_content, lv_card, lv_ds(?:, lv_query_seq)?\.\s+lv_ok\s+= abap_false\.\s+lv_http = 200\./.test(hr.slice(iTry)));
   check('三个类行长 ≤ 255、无 7.55 以上专有写法（FINAL( )）',
     [cpRaw, agRaw, htRaw].every(r => r.split(/\r?\n/).every(l => l.length <= 255)) && ![cp, ag, ht].some(c => /\bFINAL\(/.test(c)));
 }

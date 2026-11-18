@@ -98,6 +98,19 @@ sap.ui.define([
 			});
 		},
 
+		/** 按这张结果卡的查询编号下载后端明细。 */
+		exportQuery: function (oQuery, sAuthHeader) {
+			return this.load().then(function (LA) {
+				return LA.createSapClient({ base: cfg().path, authHeader: sAuthHeader }).exportResult(oQuery);
+			}).then(function (oResult) {
+				if (!oResult || oResult.ok !== true || oResult.filtered !== true ||
+					oResult.querySeq !== oQuery.querySeq || typeof oResult.csv !== "string") {
+					throw new Error("SAP 没有返回本次筛选的完整导出响应");
+				}
+				return oResult;
+			});
+		},
+
 		/** 浏览器条件：安全上下文（HTTPS / localhost）；配置可关 */
 		available: function () {
 			return cfg().enabled && !!window.isSecureContext && typeof window.fetch === "function";

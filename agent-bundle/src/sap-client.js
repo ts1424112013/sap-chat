@@ -3,12 +3,13 @@
  *
  * 约定（与 ABAP 端一致，见 功能计划书/Deep Agents浏览器接入/02 §5.1）：
  *   POST {base}/run/start         { sessionId, scene, modelId, question, think }
- *        → { runId, model, tools:[{name,description,parameters}], limits, systemPrompt }
+ *        → { runId, model, tools:[{name,description,parameters}], limits, systemPrompt, lastResultFilter?:{resultId,filters} }
  *   POST {base}/chat/completions  OpenAI 兼容；头 X-Lingxi-Run 指明运行号；SAP 用自己的模型配置转发
- *   POST {base}/tools/exec        { runId, tool, args, requestId } → { ok, content, message, display? }
+ *   POST {base}/tools/exec        { runId, tool, args, requestId } → { ok, content, message, display?, querySeq? }
  *   POST {base}/run/finish        { runId, status, answer, skillsUsed, steps }（steps = 精简过程记录）
  *   POST {base}/run/steps         { sessionId } → { runs: [{ msgSeq, steps }] }
- *   POST {base}/results/export    { runId, resultId } → { ok, label, rows, columns, csv, truncated }
+ *   POST {base}/results/export    { runId, resultId, filtersJson? } 或 { runId, querySeq }
+ *        → { ok, label, rows, columns, csv, truncated, filtered, querySeq? }
  *   POST {base}/tools/audit       ADT 调用前 { runId, tool, target } → { ok, seq }（计入工具次数，超限 429）；
  *                                 调用后 { runId, seq, status, ms, rows } → { ok }
  *   /run/start 回 adt:true 时引擎挂上 adt_* 工具，浏览器直接调同主机的 /sap/bc/adt（用户自己的权限）

@@ -12,7 +12,7 @@ sap.ui.define([
          * 卡顿根因：报表 / 分析结果最多 2000 行 × 全部列一次拼成一整张表塞进消息（DOM 几万格），
          * 单元格还自动折行把行撑高。现在：
          *  · 聊天里最多画 PREVIEW_ROWS 行（tableHtml），单元格不折行、放不下省略（悬停看全）
-         *  · 工具条「查看全部 N 行」→ open()：分页查看器（每页 PAGE_SIZE 行；搜索 / 点列头排序 / 复制 / 导出 CSV），
+         *  · 工具条「筛选数据 / 查看全部」→ open()：分页查看器（搜索 / 排序 / 复制 / 导出 Excel 或 CSV），
          *    任何时候只画一页 DOM。数据就是消息里已有的数据集，不再请求后端。
          * 纯函数（filterRows / sortRows / pageOf / tableHtml / viewerBodyHtml）无 UI5 依赖，test-server 里有单测。
          * =====================================================================
@@ -175,8 +175,9 @@ sap.ui.define([
                         '<button type="button" class="dtBtn" data-act="last"' + (pg.page >= pg.pages ? " disabled" : "") + ">»</button>" +
                         "</span>";
                 var aMeta = [fmt(t.size, [(oDs.rows || []).length, aCols.length])];
-                if (oDs.truncated && oDs.total > (oDs.rows || []).length) {
-                        aMeta.push(fmt(t.truncated, [oDs.total]));
+                var iTotal = oDs.total || oDs.totalRows;
+                if (oDs.truncated && iTotal > (oDs.rows || []).length) {
+                        aMeta.push(fmt(t.truncated, [iTotal]));
                 }
                 if (String(st.query || "").trim()) {
                         aMeta.push(fmt(t.matched, [aHit.length]));
@@ -188,6 +189,7 @@ sap.ui.define([
                 close: "关闭",
                 search: "在结果里搜索…",
                 copy: "复制",
+                xlsx: "导出 Excel",
                 csv: "导出 CSV",
                 prev: "上一页",
                 next: "下一页",
@@ -199,13 +201,14 @@ sap.ui.define([
                 noMatch: "没有匹配的行",
                 sortTip: "点击按这一列排序（再点一次倒序，第三次取消）",
                 copyTip: "复制当前结果（搜索时只复制匹配的行），可直接粘贴到 Excel",
+                xlsxTip: "将所有匹配行按当前顺序导出为 Excel",
                 csvTip: "导出当前结果（搜索时只导出匹配的行），Excel 可直接打开"
         };
 
         /**
           * 打开分页查看器
           * @param {object} oDs 数据集 { name, columns, rows, truncated, total }
-          * @param {object} oOpt { onCopy(oDsView), onCsv(oDsView), texts }
+          * @param {object} oOpt { onCopy(oDsView), onXlsx(oDsView), onCsv(oDsView), texts }
           */
         function open(oDs, oOpt) {
                 oOpt = oOpt || {};
@@ -225,16 +228,12 @@ sap.ui.define([
                         oBody.scrollTop = 0;
                         oRoot.querySelector(".dgFoot").innerHTML = o.foot;
                 };
-                // 当前视图（搜索 + 排序后）的数据集，复制 / 导出用
-                var fnView = function () {
-                        return { name: oDs.name, columns: oDs.columns, rows: st.hits || [] };
-                };
-
                 var sShell = '<div class="dgRoot">' +
                         '<div class="dgHead">' +
                         '<div class="dgTitleBox"><div class="dgTitle">' + esc(oDs.name || "") + '</div><div class="dgMeta"></div></div>' +
                         '<label class="catSearch dgSearch"><input type="search" class="dgQ" placeholder="' + esc(t.search) + '" aria-label="' + esc(t.search) + '"></label>' +
                         '<button type="button" class="dtBtn" data-act="copy" title="' + esc(t.copyTip) + '">' + esc(t.copy) + "</button>" +
+                        (oOpt.onXlsx ? '<button type="button" class="dtBtn dtPrimary" data-act="xlsx" title="' + esc(t.xlsxTip) + '">' + esc(t.xlsx) + "</button>" : "") +
                         '<button type="button" class="dtBtn" data-act="csv" title="' + esc(t.csvTip) + '">' + esc(t.csv) + "</button>" +
                         '<button type="button" class="dgClose" data-act="close" title="' + esc(t.close) + '" aria-label="' + esc(t.close) + '">✕</button>' +
                         "</div>" +
@@ -250,7 +249,10 @@ sap.ui.define([
                         verticalScrolling: false,
                         horizontalScrolling: false,
                         content: [oHtml],
-                        afterClose: function () { oDlg.destroy(); }
+                        afterClose: function () {
+                                clearTimeout(iTimer);
+                                oDlg.destroy();
+                        }
                 }).addStyleClass("apvDialog dgDialog");
 
                 var iTimer = null;
@@ -259,6 +261,17 @@ sap.ui.define([
                         if (!oRoot) {
                                 return;
                         }
+                        var oQ = oRoot.querySelector(".dgQ");
+                        oQ.value = st.query;
+                        var fnApplyQuery = function () {
+                                clearTimeout(iTimer);
+                                if (st.query !== oQ.value) {
+                                        st.query = oQ.value;
+                                        st.page = 1;
+                                        fnPaint();
+                                }
+                        };
+                        var mActions = { copy: oOpt.onCopy, xlsx: oOpt.onXlsx, csv: oOpt.onCsv };
                         oRoot.onclick = function (ev) {
                                 var oTh = ev.target.closest("th[data-col]");
                                 if (oTh) {
@@ -283,23 +296,18 @@ sap.ui.define([
                                 var sAct = oBtn.getAttribute("data-act");
                                 if (sAct === "close") {
                                         oDlg.close();
-                                } else if (sAct === "copy" && oOpt.onCopy) {
-                                        oOpt.onCopy(fnView());
-                                } else if (sAct === "csv" && oOpt.onCsv) {
-                                        oOpt.onCsv(fnView());
+                                } else if (Object.prototype.hasOwnProperty.call(mActions, sAct) && mActions[sAct]) {
+                                        // 点导出时立即读取最新输入，避免防抖未结束就导出旧数据。
+                                        fnApplyQuery();
+                                        mActions[sAct]({ name: oDs.name, columns: oDs.columns, rows: st.hits });
                                 } else if (/^(first|prev|next|last)$/.test(sAct)) {
                                         st.page = sAct === "first" ? 1 : sAct === "prev" ? st.page - 1 : sAct === "next" ? st.page + 1 : 1e9;
                                         fnPaint();
                                 }
                         };
-                        var oQ = oRoot.querySelector(".dgQ");
                         oQ.oninput = function () {
                                 clearTimeout(iTimer);
-                                iTimer = setTimeout(function () {
-                                        st.query = oQ.value;
-                                        st.page = 1;
-                                        fnPaint();
-                                }, 180);
+                                iTimer = setTimeout(fnApplyQuery, 180);
                         };
                         fnPaint();
                 });

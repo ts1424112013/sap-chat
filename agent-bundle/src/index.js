@@ -165,7 +165,7 @@ const BASE_PROMPT = `你是「灵犀」，公司内部的 SAP 业务助手，运
 - 多步任务先用 write_todos 列出计划，做完一项勾一项；简单问题直接回答，不必列计划。
 - SAP 数据只能通过 SAP 工具获取，不要编造数字；工具返回"部分数据 / 已截断"时，回答里要说明。
 - 回答用中文，先给结论，再给依据。
-- 查数工具返回的表在对应过程步骤里。用户需要明细、排名或对照表时，在最终回答末尾另起一行写 [[结果表:D2,D4]]。工具回传的编号按表格顺序对应，只选本轮直接回答问题的表，最多 4 张。界面会在回答下方展示所选表格（可排序、导出、画图）。探索、试查、估算用的表不选。只需文字结论时省略这行。正文写结论、关键数字和说明，不要复抄整张表。
+- 查数工具返回的表在对应过程步骤里。用户需要明细、排名或对照表时，在最终回答末尾另起一行写 [[结果表:D2,D4]]。工具回传的编号按表格顺序对应，只选本轮直接回答问题的表，最多 4 张。界面会在回答下方展示所选表格（可排序、导出、画图）。探索、试查、估算用的表不选。只需文字结论时省略这行。正文用文字说明结论和关键数字，不要用 Markdown 表格重复已选结果的明细或预览。
 - 工具报「没有权限」「表 / 对象不存在」这类错误时，重试也一样失败：不要用同样的参数再调用，也不要把同一个计划原样再走一遍；换别的办法，换不了就停下来告诉用户缺什么（如缺哪张表的权限）。
 过程说明（用户在界面上实时看你的每一步）：
 - 开始干活时，在第一次调用工具的同时用一句话说打算怎么做（先查什么、再看什么）。
@@ -276,7 +276,7 @@ const CHOICE_PROMPT = `回答写完后，如果要问用户下一步做什么，
 [[选项: 导出 Excel | 不用了]]
 界面会把这一行画成按钮，用户点哪个就等于回复哪句话。选项写成用户会说的短句（不超过 10 个字），第一个放你建议的。开放式问题、选项多于 3 个时不要写这一行，正常用文字问；不需要问时也不要写。`;
 
-const EXPORT_PROMPT = `用户要把报表结果存到文件夹（导出、另存、存成 CSV / Excel）时，用 save_result_to_folder：数据由 SAP 直接写进文件，不经过你，不要自己拼表格内容再 write_file / create_excel_file。要 Excel 就把 file_path 写成 .xlsx，否则用 .csv。`;
+const EXPORT_PROMPT = `用户要把报表结果存到文件夹（导出、另存、存成 CSV / Excel）时，用 save_result_to_folder。要 Excel 就把 file_path 写成 .xlsx，否则用 .csv。用户接着要导出刚筛出的明细时，沿用最近一次成功筛选的结果号，设置 scope=filtered；工具会复用保存的条件。用户指定新条件时把它们传给 filters。缺少可复用的条件时，从会话里找回确切条件或重新调 query_result；只有条件不清楚时才问用户。用户说的是界面里的关键词筛选时，引导他在结果查看器点「导出 Excel」，你读不到界面里的关键词。用户明确要求整份原报表时才按全量导出。不要用原报表全量导出代替筛选、排名或汇总后的数据，也不要用举例或分页的行手工拼成文件。`;
 
 /** 会话标题：任务第一轮回答后让模型起一个短标题（多一次很短的模型调用；失败就不改标题） */
 export const TITLE_PROMPT = `你在给一段 SAP 业务助手的对话起标题。根据用户的问题和助手的回答，写一个 6~16 个字的中文标题：
@@ -397,42 +397,228 @@ async function prepAbapCheck(args, folderBackend) {
   return { args: a, lint: lintText(lintAbap(a.source || "")) };
 }
 
-function buildSapTools(client, run, emit, signal, onCard, onDatasets, folderBackend) {
-  // adt_run_sql 由 SAP 下发说明，但在浏览器里经 ADT 执行（见 buildAdtSqlTool），不走 /tools/exec
-  return (run.tools || []).filter(t => t && t.name !== ADT_SQL_TOOL).map(t => tool(
-    async (args, config) => {
-      const requestId = rid();
-      let lint = "";
-      if (t.name === ABAP_CHECK_TOOL) {
-        const p = await prepAbapCheck(args, folderBackend);
-        if (p.error) return p.error;
-        args = p.args;
-        lint = p.lint;
+const TRAD_TO_SIMP = {
+  "廠": "厂", "號": "号", "單": "单", "類": "类", "庫": "库", "區": "区", "間": "间", "碼": "码",
+  "員": "员", "購": "购", "銷": "销", "發": "发", "貨": "货", "過": "过", "帳": "账", "賬": "账",
+  "點": "点", "數": "数", "據": "据", "組": "组", "織": "织", "別": "别", "種": "种", "機": "机",
+  "產": "产", "線": "线", "戶": "户", "倉": "仓", "儲": "储", "門": "门", "計": "计", "劃": "划",
+  "訂": "订", "價": "价", "幣": "币", "額": "额", "車": "车", "專": "专", "階": "阶", "層": "层",
+  "狀": "状", "態": "态", "採": "采", "應": "应", "驗": "验", "證": "证", "憑": "凭", "總": "总",
+  "匯": "汇", "彙": "汇", "報": "报", "錶": "表"
+};
+
+export function normParamKey(s) {
+  let k = String(s || "").trim().replace(/\s*[（(][^）)]*[）)]\s*/g, "").replace(/[\s*:：\-]+/g, "").toUpperCase();
+  k = k.replace(/[\u4e00-\u9fff]/g, ch => TRAD_TO_SIMP[ch] || ch);
+  k = k.replace(/^(?:P_|S_|PA_|SO_|GV_|LV_)/, "");
+  if (/^[PS](?:WERKS|PLANT|BUKRS|LGORT|MATNR|KUNNR|LIFNR|EKORG|EKGRP|VKORG|AUFNR|EBELN|VBELN|CHARG)$/.test(k)) k = k.slice(1);
+  if (["PLANT", "SITE", "工厂", "工厂代码", "工厂编码", "工厂别", "厂别", "厂区"].includes(k)) return "WERKS";
+  if (["COMPANYCODE", "公司代码", "公司别"].includes(k)) return "BUKRS";
+  if (["库存地点", "库位", "仓位", "存储地点"].includes(k)) return "LGORT";
+  if (["MATERIAL", "物料", "料号", "物料号", "物料编码", "物料代码", "鸿海料号"].includes(k)) return "MATNR";
+  if (["客户料号", "客户物料", "客户零件号"].includes(k)) return "CPN";
+  return k;
+}
+
+function parseReadResultDatasets(text) {
+  const out = [];
+  const s = String(text || "");
+  const mCols = s.match(/列定义:\s*(\[[\s\S]*?\])\r?\n/);
+  let cols = [];
+  if (mCols) {
+    try { cols = JSON.parse(mCols[1]) || []; } catch {}
+  }
+  const mGrp = s.match(/分组汇总\([^)]*\):\s*(\{[\s\S]*?\})\r?\n/);
+  if (mGrp) {
+    try {
+      const g = JSON.parse(mGrp[1]);
+      if (g && Array.isArray(g.by) && Array.isArray(g.groups) && g.groups.length === 1 && !g.other && Array.isArray(g.groups[0].key)) {
+        out.push({
+          columns: g.by.map(name => ({ name: String(name), label: String(name) })),
+          rows: [g.groups[0].key.map(v => String(v ?? ""))]
+        });
       }
-      const r = await client.execTool({ runId: run.runId, tool: t.name, args: args || {}, requestId }, { signal });
-      if (r && r.display) emit({ type: "display", tool: t.name, display: r.display });
-      if (r && r.ok === false) {
-        const msg = r.message || "未知原因";
-        const hint = QUOTA_RE.test(msg) ? QUOTA_HINT : NO_RETRY_RE.test(msg) ? NO_RETRY_HINT : "";
-        return `工具执行失败：${msg}` + hint;
+    } catch {}
+  }
+  const rowRe = /(?:全部明细|前\s*\d+\s*行)[^:\n]*:\s*(\[[\s\S]*?\])(?=\r?\n|$)/g;
+  let m;
+  while ((m = rowRe.exec(s)) !== null) {
+    try {
+      const arr = JSON.parse(m[1]);
+      if (Array.isArray(arr) && arr.length && typeof arr[0] === "object" && !Array.isArray(arr[0])) {
+        const columns = cols.length ? cols : Object.keys(arr[0]).map(k => ({ name: k, label: k }));
+        const rows = arr.map(obj => columns.map(c => obj[c.name] ?? obj[c.label] ?? ""));
+        out.push({ columns, rows });
       }
-      if (r && r.card && typeof r.card === "object") {
-        onCard(r.card);
-        return CARD_TOOL_TEXT;
-      }
-      const out = clip(r && r.content != null ? r.content : r);
-      const ok = toolOk(out);
-      const ids = r && Array.isArray(r.datasets) && ok
-        ? onDatasets(t.name, r.datasets, config && config.toolCall && config.toolCall.id) : [];
-      const extraHint = !ok ? (QUOTA_RE.test(out) ? QUOTA_HINT : NO_RETRY_RE.test(out) ? NO_RETRY_HINT : "") : "";
-      return withTableRefs((lint ? out + "\n\n" + lint : out) + extraHint, ids);
-    },
-    {
-      name: t.name,
-      description: t.description || t.name,
-      schema: t.parameters && typeof t.parameters === "object" ? t.parameters : { type: "object", properties: {} }
+    } catch {}
+  }
+  return out;
+}
+
+function extractParamFromTexts(p, texts, tcode) {
+  const nk = normParamKey(p.param_id || "") || normParamKey(p.label || "");
+  const tokens = new Set([p.param_id, p.label, String(p.param_id || "").replace(/^(?:P_|S_|PA_|SO_)/i, "")].filter(Boolean));
+  if (nk === "WERKS") ["工厂", "工廠", "厂别", "廠別", "工厂代码", "工廠代碼", "WERKS", "PLANT"].forEach(x => tokens.add(x));
+  const stop = new Set(["THE", "AND", "FOR", "NULL", "TRUE", "FALSE", "NONE", "SQL", "SAP", "CSV", "XLSX", String(tcode || "").toUpperCase()]);
+  const escaped = [...tokens].map(t => String(t).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).filter(Boolean);
+  if (!escaped.length) return "";
+  const re = new RegExp(`(?:${escaped.join("|")})(?:代码|代碼|编码|編碼|欄位|字段|参数|參數|唯一值)*\\s*(?:唯一值)?\\s*(?:请?填(?:入|写)?|设为|設為|等于|等於|为|為|是|[=:：])\\s*[「"'\`(\\[（【]?\\s*([A-Za-z0-9][A-Za-z0-9_-]{1,19})\\b`, "i");
+  for (const t of texts || []) {
+    const m = String(t || "").match(re);
+    if (m && m[1] && !stop.has(m[1].toUpperCase())) return m[1];
+  }
+  return "";
+}
+
+export function enrichReportCard(card, args, ctx = {}) {
+  if (!card || typeof card.pendingParamsJson !== "string" || !card.pendingParamsJson) return card;
+  let pend;
+  try { pend = JSON.parse(card.pendingParamsJson); } catch { return card; }
+  if (!pend || !Array.isArray(pend.params) || !pend.params.length) return card;
+  const vals = { ...(pend.values || {}) };
+  const reserved = new Set(["result_id", "tcode", "target_param", "source_column", "filters", "params", "purpose", "report_name"]);
+  const explicit = {};
+  if (args && typeof args === "object") {
+    for (const [k, v] of Object.entries(args)) {
+      if (!reserved.has(k) && (typeof v === "string" || typeof v === "number") && String(v).trim()) explicit[k] = String(v).trim();
     }
-  ));
+    if (args.params && typeof args.params === "object") {
+      for (const [k, v] of Object.entries(args.params)) {
+        if ((typeof v === "string" || typeof v === "number") && String(v).trim()) explicit[k] = String(v).trim();
+      }
+    }
+  }
+  const matchParam = (p, key) => {
+    const uKey = String(key || "").trim().toUpperCase();
+    const uId = String(p.param_id || "").trim().toUpperCase();
+    const uLbl = String(p.label || "").trim().toUpperCase();
+    if (!uKey) return false;
+    if (uKey === uId || (uLbl && uKey === uLbl)) return true;
+    const nKey = normParamKey(key);
+    const nId = normParamKey(p.param_id);
+    const nLbl = normParamKey(p.label);
+    if (!nKey || (nKey !== nId && nKey !== nLbl)) return false;
+    const sameGroup = pend.params.filter(x => x && (normParamKey(x.param_id) === nKey || normParamKey(x.label) === nKey));
+    return sameGroup.length === 1;
+  };
+  const fmtVal = (p, v) => {
+    let s = String(v ?? "").trim();
+    if (!s) return "";
+    if (/DAT/i.test(p.data_type || "")) s = s.replace(/[-/.]/g, "");
+    return s;
+  };
+  for (const p of pend.params) {
+    if (!p || !p.param_id) continue;
+    const dt = String(p.data_type || "").toUpperCase();
+    if (dt === "BOOL" || dt === "TABLE") continue;
+    if (vals[p.param_id] === undefined || vals[p.param_id] === "") {
+      for (const [k, v] of Object.entries(vals)) {
+        if (v !== undefined && v !== "" && matchParam(p, k)) { vals[p.param_id] = fmtVal(p, v); break; }
+      }
+    }
+    if (vals[p.param_id] === undefined || vals[p.param_id] === "") {
+      for (const [k, v] of Object.entries(explicit)) {
+        if (matchParam(p, k)) { vals[p.param_id] = fmtVal(p, v); break; }
+      }
+    }
+    if (vals[p.param_id] === undefined || vals[p.param_id] === "") {
+      const datasets = [...(ctx.datasets || [])].reverse();
+      for (const d of datasets) {
+        if (!d || !Array.isArray(d.columns) || !Array.isArray(d.rows) || !d.rows.length) continue;
+        const ci = d.columns.findIndex(c => c && (matchParam(p, c.name) || matchParam(p, c.label)));
+        if (ci < 0) continue;
+        const uniq = new Map();
+        for (const r of d.rows) {
+          const cell = String((Array.isArray(r) ? r[ci] : "") ?? "").trim();
+          if (!cell || cell.length > 60 || /[,|]/.test(cell)) continue;
+          const uk = cell.toUpperCase();
+          if (!uniq.has(uk)) uniq.set(uk, cell);
+          if (uniq.size > 1) break;
+        }
+        if (uniq.size === 1) {
+          vals[p.param_id] = fmtVal(p, [...uniq.values()][0]);
+          break;
+        }
+      }
+    }
+    if (vals[p.param_id] === undefined || vals[p.param_id] === "") {
+      const fromText = extractParamFromTexts(p, ctx.texts, pend.tcode);
+      if (fromText) vals[p.param_id] = fmtVal(p, fromText);
+    }
+  }
+  pend.values = vals;
+  card.pendingParamsJson = JSON.stringify(pend);
+  return card;
+}
+
+function buildSapTools(client, run, emit, signal, onCard, onDatasets, folderBackend, cardCtx) {
+  // adt_run_sql 由 SAP 下发说明，但在浏览器里经 ADT 执行（见 buildAdtSqlTool），不走 /tools/exec
+  return (run.tools || []).filter(t => t && t.name !== ADT_SQL_TOOL).map(t => {
+    const schema = t.parameters && typeof t.parameters === "object"
+      ? structuredClone(t.parameters) : { type: "object", properties: {} };
+    if ((t.name === "open_report" || t.name === "prefill_report") && schema.properties && !schema.properties.params) {
+      schema.properties.params = {
+        type: "object",
+        description: "其它已知参数的预填值 {参数编号或标题: 值}（如工厂、日期等单值参数，务必一并预填），值都写成字符串",
+        additionalProperties: { type: "string" }
+      };
+    }
+    return tool(
+      async (args, config) => {
+        const requestId = rid();
+        let lint = "";
+        if (t.name === ABAP_CHECK_TOOL) {
+          const p = await prepAbapCheck(args, folderBackend);
+          if (p.error) return p.error;
+          args = p.args;
+          lint = p.lint;
+        }
+        if ((t.name === "open_report" || t.name === "prefill_report") && args && typeof args === "object") {
+          const reserved = new Set(["result_id", "tcode", "target_param", "source_column", "filters", "params", "purpose", "report_name"]);
+          const extra = {};
+          for (const [k, v] of Object.entries(args)) {
+            if (!reserved.has(k) && (typeof v === "string" || typeof v === "number") && String(v).trim()) extra[k] = String(v).trim();
+          }
+          if (Object.keys(extra).length) {
+            args = { ...args, params: { ...extra, ...(args.params && typeof args.params === "object" ? args.params : {}) } };
+          }
+        }
+        const r = await client.execTool({ runId: run.runId, tool: t.name, args: args || {}, requestId }, { signal });
+        if (r && r.display) emit({ type: "display", tool: t.name, display: r.display });
+        if (r && r.ok === false) {
+          const msg = r.message || "未知原因";
+          const hint = QUOTA_RE.test(msg) ? QUOTA_HINT : NO_RETRY_RE.test(msg) ? NO_RETRY_HINT : "";
+          return `工具执行失败：${msg}` + hint;
+        }
+        if (r && r.card && typeof r.card === "object") {
+          onCard(enrichReportCard(r.card, args, cardCtx ? cardCtx() : {}));
+          return CARD_TOOL_TEXT;
+        }
+        const out = clip(r && r.content != null ? r.content : r);
+        const ok = toolOk(out);
+        if (t.name === "read_result" && ok && cardCtx) {
+          cardCtx().onReadResult?.(out);
+        }
+        if (t.name === "query_result" && ok && Array.isArray(r?.datasets)) {
+          const { result_id, filters, group_by, metrics } = args || {};
+          if (!group_by?.length && !metrics?.length) {
+            run.lastResultFilter = result_id && Array.isArray(filters) && filters.length
+              ? { resultId: result_id, filters } : null;
+          }
+        }
+        const ids = r && Array.isArray(r.datasets) && ok
+          ? onDatasets(t.name, r.datasets, config && config.toolCall && config.toolCall.id,
+            t.name === "query_result" && r.querySeq > 0 ? { runId: run.runId, querySeq: r.querySeq } : null) : [];
+        const extraHint = !ok ? (QUOTA_RE.test(out) ? QUOTA_HINT : NO_RETRY_RE.test(out) ? NO_RETRY_HINT : "") : "";
+        return withTableRefs((lint ? out + "\n\n" + lint : out) + extraHint, ids);
+      },
+      {
+        name: t.name,
+        description: t.description || t.name,
+        schema
+      }
+    );
+  });
 }
 
 /**
@@ -600,25 +786,48 @@ function buildOfficeTools(folderBackend) {
   return [excel, word];
 }
 
-/** 把一份报表结果整份写进文件夹（数据 SAP → 浏览器 → 文件，不经过模型；写前同样要用户确认） */
-function buildExportTool(client, run, folderBackend, signal) {
+/** 把报表结果写进文件夹（SAP 可先筛选；明细不经过模型）。 */
+function buildExportTool(client, run, folderBackend, signal, question) {
+  const refersToFiltered = /(?:筛选|过滤)(?:后的|过的|出来的|出的|结果)|(?:刚才|上次)筛的|筛出来的|\bfiltered (?:data|rows|results?)\b/i.test(question);
+  const requestsFull = !refersToFiltered &&
+    /全量|整份|完整报表|原始(?:报表|数据|明细)|取消筛选|不(?:用|需要)?筛选|(?:全部|所有)的?\s*(?:数据|明细|记录|行|\d+\s*[条行])|\b(?:unfiltered|all rows|full report)\b/i.test(question);
   return tool(
-    async ({ result_id, file_path }) => {
+    async ({ result_id, file_path, filters, scope }) => {
       const path = String(file_path || "").trim();
       const asXlsx = /\.xlsx$/i.test(path);
       if (!asXlsx && !/\.csv$/i.test(path)) return "工具执行失败：file_path 要以 .csv 或 .xlsx 结尾";
+      const resultId = String(result_id || "").trim();
+      const full = !refersToFiltered && (requestsFull || scope === "full");
+      const previous = run.lastResultFilter;
+      const sameResult = previous?.resultId?.toUpperCase() === resultId.toUpperCase();
+      if (!full && sameResult && (refersToFiltered || !filters?.length)) filters = previous.filters;
+      const filtered = !full && Array.isArray(filters) && filters.length > 0;
+      if (!full && !filtered && (refersToFiltered || scope === "filtered")) {
+        const retry = previous?.resultId && !sameResult
+          ? `最近一次筛选对应结果号 ${previous.resultId}，请用该结果号重试，或明确传入目标报表的 filters。`
+          : "请找回实际筛选条件并传入 filters，或先按原条件调用 query_result。";
+        return "工具执行失败：缺少可复用的筛选条件，未导出原报表。" + retry;
+      }
+      if (filtered && run.exportFilters !== true) {
+        return "工具执行失败：当前 SAP 版本不支持带筛选条件保存报表。请在结果查看器筛选后点「导出 Excel」。";
+      }
       let r;
       try {
-        r = await client.exportResult({ runId: run.runId, resultId: String(result_id || "") }, { signal });
+        r = await client.exportResult({
+          runId: run.runId,
+          resultId,
+          ...(filtered ? { filtersJson: JSON.stringify(filters) } : {})
+        }, { signal });
       } catch (e) {
         if (signal && signal.aborted) throw e;
         return `工具执行失败：${(e && e.message) || e}`;
       }
       if (!r || typeof r.csv !== "string") return "工具执行失败：SAP 没有返回数据";
+      if (filtered && r.filtered !== true) return "工具执行失败：SAP 没有确认应用筛选条件，未保存文件。";
       let w;
       if (asXlsx) {
         // 0.13.0：存成 Excel。普通数字存成数字（能求和），料号等有前导 0 的保留文本
-        const rows = parseCsv(r.csv).filter(x => x.length > 1 || (x[0] || "") !== "");
+        const rows = parseCsv(r.csv);
         const head = rows.shift() || [];
         try {
           const bytes = await buildXlsx([{ name: r.label || "结果", columns: head, rows: rows.map(x => x.map(csvValue)) }]);
@@ -630,16 +839,30 @@ function buildExportTool(client, run, folderBackend, signal) {
       }
       if (w && w.error) return w.error;
       return `已保存 ${path}：「${r.label || result_id}」${r.rows} 行 × ${r.columns} 列` +
-        (r.truncated ? `（结果超过导出上限，只导出了前 ${r.rows} 行）` : "") + "。";
+        (filtered ? "（已应用筛选条件）" : "") + (r.truncated ? "（源结果或导出已截断）" : "") + "。";
     },
     {
       name: "save_result_to_folder",
-      description: "把一份报表结果的全部行存成 CSV 或 Excel（.xlsx）文件，放进用户授权的文件夹（写前会让用户确认）。result_id 用 list_results 查到的结果号。",
+      description: "把报表结果存成 CSV 或 Excel（.xlsx）文件（写前会让用户确认）。可传 filters 指定条件；沿用最近一次筛选时用同一结果号和 scope=filtered。",
       schema: {
         type: "object",
         properties: {
           result_id: { type: "string", description: "结果号（list_results 返回的 id）" },
-          file_path: { type: "string", description: "文件夹里的路径，以 .csv 或 .xlsx 结尾，如 /报表结果/库存.xlsx" }
+          file_path: { type: "string", description: "文件夹里的路径，以 .csv 或 .xlsx 结尾，如 /报表结果/库存.xlsx" },
+          scope: { type: "string", enum: ["filtered", "full"], description: "导出已筛选结果用 filtered，用户明确要原报表全量时用 full" },
+          filters: {
+            type: "array", maxItems: 10, description: "可选，与 query_result 的筛选条件一致，所有条件同时满足。",
+            items: {
+              type: "object",
+              properties: {
+                column: { type: "string", description: "报表列名或列标题" },
+                op: { type: "string", enum: ["eq", "ne", "gt", "ge", "lt", "le", "contains", "not_contains", "starts_with", "in", "not_in", "empty", "not_empty"] },
+                value: { type: "string", description: "比较值；有前导零的编号按原文传" },
+                values: { type: "array", items: { type: "string" }, description: "in / not_in 的值列表" }
+              },
+              required: ["column", "op"]
+            }
+          }
         },
         required: ["result_id", "file_path"]
       }
@@ -1107,14 +1330,15 @@ async function executeRun(o, { runInfo, client, inner, trace, changes, started, 
   };
 
   const resultTables = new Map();
-  const onDatasets = (toolName, list, callId) => {
+  const readResultDatasets = [];
+  const onDatasets = (toolName, list, callId, exportQuery) => {
     const first = resultTables.size;
     const ids = [];
     const preview = [];
     for (const d of list) {
       if (!d || (d.status && d.status !== "OK") || !Array.isArray(d.columns) || !d.columns.length || !Array.isArray(d.rows)) continue;
       const id = "D" + (resultTables.size + 1);
-      resultTables.set(id, d);
+      resultTables.set(id, exportQuery ? { ...d, export_query: exportQuery } : d);
       ids.push(id);
       const columns = d.columns.slice(0, 6);
       preview.push({
@@ -1127,10 +1351,15 @@ async function executeRun(o, { runInfo, client, inner, trace, changes, started, 
     if (ids.length) track({ type: "datasets", tool: toolName, id: callId || "", index: first, count: ids.length, preview });
     return ids;
   };
-  const tools = buildSapTools(client, runInfo, emit, inner.signal, onCard, onDatasets, folderBackend);
+  const cardCtx = () => ({
+    datasets: [...readResultDatasets, ...resultTables.values()],
+    texts: [...trace.filter(x => x && x.type === "say").map(x => x.text).reverse(), o.question || ""],
+    onReadResult: text => readResultDatasets.push(...parseReadResultDatasets(text))
+  });
+  const tools = buildSapTools(client, runInfo, emit, inner.signal, onCard, onDatasets, folderBackend, cardCtx);
   if (folderBackend && !(folderBackend.opts && folderBackend.opts.readOnly)) tools.push(buildDeleteTool(folderBackend), ...buildOfficeTools(folderBackend));
   const canExport = !!(folderBackend && runInfo.export);
-  if (canExport) tools.push(buildExportTool(client, runInfo, folderBackend, inner.signal));
+  if (canExport) tools.push(buildExportTool(client, runInfo, folderBackend, inner.signal, o.question));
   // ADT 代码工具：SAP 说这次可以用（开关 + 代码分析权限 + 开发显示权限）才挂上
   const canAdt = runInfo.adt === true && typeof client.adtFetch === "function" && typeof client.auditAdt === "function";
   const adtClient = canAdt ? createAdtClient({ fetch: client.adtFetch }) : null;
@@ -1168,6 +1397,8 @@ async function executeRun(o, { runInfo, client, inner, trace, changes, started, 
       skillSources.length ? SKILL_PROMPT : "",
       skillSources.length && runInfo.skillsOpen !== true ? SKILL_SECRET_PROMPT : "",
       canExport ? EXPORT_PROMPT : "",
+      canExport && runInfo.lastResultFilter
+        ? "最近一次成功的报表筛选（供导出承接）：\n" + JSON.stringify(runInfo.lastResultFilter) : "",
       canAsk ? ASK_PROMPT : "",
       canAsk ? CHOICE_PROMPT : "",
       canAdt ? ADT_PROMPT : "",
@@ -1347,6 +1578,7 @@ async function executeRun(o, { runInfo, client, inner, trace, changes, started, 
 }
 
 export { lintAbap, prepAbapCheck };
+export { buildResultXlsx } from "./office.js";
 export {
   createSapClient, SapAgentError,
   FolderBackend, folderSupported, pickFolder, restoreFolder, requestFolderPermission, forgetFolder,

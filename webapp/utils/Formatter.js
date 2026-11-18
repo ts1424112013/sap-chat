@@ -33,16 +33,17 @@ sap.ui.define([], function () {
                  *       无序/有序列表、引用、链接、图片![alt](url)、
                  *       表格(| a | b | + |---|---| 分隔行)、换行
                  * @param {string} sMarkdown Markdown 文本
+                 * @param {object[]} [aDatasets] 消息附带的结构化表格，用于跳过正文里的重复预览
                  * @returns {string} HTML 文本
                  */
-                markdownToHtml: function (sMarkdown) {
+                markdownToHtml: function (sMarkdown, aDatasets) {
                         var that = this;
                         if (!sMarkdown) {
                                 return "";
                         }
 
                         // 20261110（11.10 #08）：回答末尾的选项行「[[选项: A | B]]」由界面画成按钮，正文不显示
-                        sMarkdown = String(sMarkdown).replace(/\n?[ \t]*\[\[\s*选项\s*[:：][^\]\n]*\]\][ \t]*\s*$/, "");
+                        sMarkdown = this.stripRepeatedTables(String(sMarkdown).replace(/\n?[ \t]*\[\[\s*选项\s*[:：][^\]\n]*\]\][ \t]*\s*$/, ""), aDatasets);
                         if (!sMarkdown) {
                                 return "";
                         }
@@ -80,6 +81,72 @@ sap.ui.define([], function () {
                 },
 
                 /**
+                 * 去掉正文里与附带数据集重复的 Markdown 预览表（流式输出前即可剔除，避免边打边闪）
+                 * @param {string} sMarkdown Markdown 文本
+                 * @param {object[]} [aDatasets] 消息附带的结构化表格
+                 * @returns {string} 过滤后的 Markdown 文本
+                 */
+                stripRepeatedTables: function (sMarkdown, aDatasets) {
+                        var that = this;
+                        if (!sMarkdown || !Array.isArray(aDatasets) || !aDatasets.length) {
+                                return sMarkdown || "";
+                        }
+                        var fnPlain = function (sCell) {
+                                return that._inline(that.escapeHtml(sCell.trim())).replace(/<[^>]*>/g, "").trim();
+                        };
+                        var fnCells = function (sRow) {
+                                return sRow.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map(fnPlain);
+                        };
+                        var fnIsPipe = function (sLine) {
+                                return /^\s*\|.*\|\s*$/.test(sLine);
+                        };
+                        var fnIsSep = function (sLine) {
+                                return /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(sLine) &&
+                                        sLine.indexOf("-") >= 0 && sLine.indexOf("|") >= 0;
+                        };
+                        var fnRepeats = function (aBuf) {
+                                if (aBuf.length < 3 || !fnIsSep(aBuf[1])) {
+                                        return false;
+                                }
+                                var aHead = fnCells(aBuf[0]);
+                                var aRows = aBuf.slice(2).map(fnCells);
+                                return aDatasets.some(function (d) {
+                                        return d && d.status === "OK" && Array.isArray(d.columns) && Array.isArray(d.rows) &&
+                                                d.columns.length === aHead.length && d.rows.length >= aRows.length &&
+                                                d.columns.every(function (c, i) {
+                                                        return aHead[i] === that.escapeHtml(c.label).trim() || aHead[i] === that.escapeHtml(c.name).trim();
+                                                }) && aRows.every(function (r, i) {
+                                                        return aHead.every(function (_, j) {
+                                                                return (r[j] || "") === that.escapeHtml(d.rows[i][j]).trim();
+                                                        });
+                                                });
+                                });
+                        };
+                        return String(sMarkdown).split(/(```[\w-]*\r?\n[\s\S]*?```)/g).map(function (sSeg) {
+                                if (/^```/.test(sSeg)) {
+                                        return sSeg;
+                                }
+                                var aOut = [], aBuf = [];
+                                var fnFlush = function () {
+                                        if (aBuf.length && !fnRepeats(aBuf)) {
+                                                aOut.push.apply(aOut, aBuf);
+                                        }
+                                        aBuf = [];
+                                };
+                                sSeg.split(/\r?\n/).forEach(function (sLine) {
+                                        if (fnIsPipe(sLine)) {
+                                                aBuf.push(sLine);
+                                        } else {
+                                                fnFlush();
+                                                aOut.push(sLine);
+                                        }
+                                });
+                                fnFlush();
+                                return aOut.join("\n");
+                        }).join("");
+                },
+
+                /**
                  * 文本段行内格式化（代码块之外的 Markdown 元素）
                  * @param {string} sText 已转义的文本段
                  * @returns {string} HTML
@@ -102,32 +169,36 @@ sap.ui.define([], function () {
                                         sLine.indexOf("-") >= 0 && sLine.indexOf("|") >= 0;
                         }
 
+                        function tableCells(sRow) {
+                                return sRow.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map(function (sCell) {
+                                        return that._inline(sCell.trim());
+                                });
+                        }
+
                         function flushTable() {
                                 if (!aTableBuf.length) {
                                         return;
                                 }
                                 if (aTableBuf.length >= 2 && isSepRow(aTableBuf[1])) {
-                                        var fnCells = function (sRow) {
-                                                return sRow.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|");
-                                        };
-                                        var aHead = fnCells(aTableBuf[0]);
+                                        var aHead = tableCells(aTableBuf[0]);
+                                        var aRows = aTableBuf.slice(2).map(tableCells);
+                                        aTableBuf = [];
                                         var sHtml = '<div class="mdTableWrap"><table class="mdTable"><thead><tr>';
                                         aHead.forEach(function (sCell) {
-                                                sHtml += "<th>" + that._inline(sCell.trim()) + "</th>";
+                                                sHtml += "<th>" + sCell + "</th>";
                                         });
                                         sHtml += "</tr></thead><tbody>";
-                                        for (var i = 2; i < aTableBuf.length; i++) {
-                                                var aCells = fnCells(aTableBuf[i]);
+                                        aRows.forEach(function (aCells) {
                                                 sHtml += "<tr>";
                                                 aHead.forEach(function (sUnused, idx) {
-                                                        sHtml += "<td>" + that._inline((aCells[idx] || "").trim()) + "</td>";
+                                                        sHtml += "<td>" + (aCells[idx] || "") + "</td>";
                                                 });
                                                 sHtml += "</tr>";
-                                        }
+                                        });
                                         sHtml += "</tbody></table></div>";
                                         // V16：表格下方数据工具条（生成图表/复制/CSV），事件由控制器在 document 上委托
-                                        if (aTableBuf.length > 2) {
-                                                sHtml += that.dataToolsHtml();
+                                        if (aRows.length) {
+                                                sHtml += that.dataToolsHtml(undefined, "", "筛选数据");
                                         }
                                         aOut.push(sHtml);
                                 } else {
@@ -267,16 +338,17 @@ sap.ui.define([], function () {
                  * @param {string} [sAllText] 20261024：给了就加「查看全部」主按钮（data-act="all"）
                  * @param {boolean} [bSched] 20261104：结果卡加「设为定时」（data-act="sched-add"）
                  * @param {string} [sRelay] 20261105（报表接力）：给了就加「和结果 X 关联」（data-act="relay-join"，X = 来源结果短号）
+                 * @param {string} [sCsvText] 自定义 CSV 导出按钮文字
                  * @returns {string} HTML（动态文本都经 escapeHtml）
                  */
-                dataToolsHtml: function (sDsIdx, sHint, sAllText, bSched, sRelay) {
+                dataToolsHtml: function (sDsIdx, sHint, sAllText, bSched, sRelay, sCsvText) {
                         var sDs = sDsIdx === undefined ? "" : ' data-ds="' + String(parseInt(sDsIdx, 10) || 0) + '"';
                         // 20261024：大结果集只画了预览时，最前面加「查看全部 N 行」（打开分页查看器），它当主按钮
                         return '<div class="dataTools"' + sDs + ">" +
                                 (sAllText ? '<button type="button" class="dtBtn dtPrimary" data-act="all">' + this.escapeHtml(sAllText) + "</button>" : "") +
                                 '<button type="button" class="dtBtn' + (sAllText ? "" : " dtPrimary") + '" data-act="chart">生成图表</button>' +
                                 '<button type="button" class="dtBtn" data-act="copy">复制表格</button>' +
-                                '<button type="button" class="dtBtn" data-act="csv">导出 CSV</button>' +
+                                '<button type="button" class="dtBtn" data-act="csv">' + this.escapeHtml(sCsvText || "导出 CSV") + "</button>" +
                                 '<button type="button" class="dtBtn dtCombo" data-act="combo-add" title="放进右侧组合分析，和别的结果一起看">加入组合</button>' +
                                 (bSched ? '<button type="button" class="dtBtn dtSched" data-act="sched-add" title="按这次的参数定时运行（日期可改成相对日期）">设为定时</button>' : "") +
                                 (sRelay ? '<button type="button" class="dtBtn dtRelay" data-act="relay-join" title="把上一份结果和这份放进右侧组合分析，按带入的那一列关联">和结果 ' +

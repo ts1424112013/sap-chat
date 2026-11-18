@@ -906,6 +906,18 @@ export function csvValue(v) {
   return neg ? -n : n;
 }
 
+/** 按结果查看器的列与顺序导出，文本列保留编码和前导零。 */
+export function buildResultXlsx({ name, columns, rows }) {
+  return buildXlsx([{
+    name,
+    columns: columns.map(c => c.label || c.name),
+    rows: rows.map(row => columns.map((c, i) => {
+      const value = row[i];
+      return c.numeric && typeof value === "string" ? csvValue(value) : value;
+    }))
+  }]);
+}
+
 // ======================================================================
 // 写 docx
 // ======================================================================

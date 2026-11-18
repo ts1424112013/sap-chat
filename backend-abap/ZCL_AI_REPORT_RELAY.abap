@@ -61,6 +61,11 @@ CLASS zcl_ai_report_relay DEFINITION
                 iv_extra      TYPE string
       RETURNING VALUE(rv)     TYPE string.
 
+    " 参数编号或标题归一(去 P_/S_ 前缀、繁简与常见同义词对齐, 如 P_WERKS / 工廠 / 工厂 → WERKS)
+    CLASS-METHODS norm_param_key
+      IMPORTING iv        TYPE string
+      RETURNING VALUE(rv) TYPE string.
+
   PRIVATE SECTION.
 
     TYPES tt_str TYPE STANDARD TABLE OF string WITH DEFAULT KEY.
@@ -191,6 +196,28 @@ CLASS zcl_ai_report_relay IMPLEMENTATION.
       RETURN.
     ENDIF.
     rv = rv(lv_last) && `,` && iv_extra && `}`.
+
+  ENDMETHOD.
+
+
+  METHOD norm_param_key.
+
+    rv = to_upper( condense( iv ) ).
+    REPLACE ALL OCCURRENCES OF REGEX `\s*[（(][^）)]*[）)]\s*` IN rv WITH ``.
+    CONDENSE rv NO-GAPS.
+    TRANSLATE rv USING '廠厂號号單单類类庫库區区间间碼码員员購购銷销發发貨货過过帳账賬账點点数数據据組组织织別别種种機机產产線线戶户倉仓储储門门計计劃划訂订價价幣币額额車车專专階阶層层狀状态态採采應应驗验证证憑凭總总匯汇彙汇報报錶表'.
+    REPLACE FIRST OCCURRENCE OF REGEX `^(P_|S_|PA_|SO_|GV_|LV_)` IN rv WITH ``.
+    IF rv = 'PLANT' OR rv = 'SITE' OR rv = '工厂' OR rv = '工厂代码' OR rv = '工厂编码' OR rv = '工厂别' OR rv = '厂别' OR rv = '厂区'.
+      rv = 'WERKS'.
+    ELSEIF rv = 'COMPANYCODE' OR rv = '公司代码' OR rv = '公司别'.
+      rv = 'BUKRS'.
+    ELSEIF rv = '库存地点' OR rv = '库位' OR rv = '仓位' OR rv = '存储地点'.
+      rv = 'LGORT'.
+    ELSEIF rv = 'MATERIAL' OR rv = '物料' OR rv = '料号' OR rv = '物料号' OR rv = '物料编码' OR rv = '物料代码' OR rv = '鸿海料号'.
+      rv = 'MATNR'.
+    ELSEIF rv = '客户料号' OR rv = '客户物料' OR rv = '客户零件号'.
+      rv = 'CPN'.
+    ENDIF.
 
   ENDMETHOD.
 
@@ -358,7 +385,7 @@ CLASS zcl_ai_report_relay IMPLEMENTATION.
         EXIT.
       ENDIF.
 
-      " ---- 来源运行里同名的参数一起带入(目标参数本身除外) ----
+      " ---- 来源运行里同名的参数一起带入(目标参数本身除外); 来源结果列唯一值兜底带入 ----
       source_params( EXPORTING iv_artifact_id = iv_artifact_id
                      IMPORTING et_kv = lt_kv ev_run_id = lv_srun ).
       APPEND |{ js( lv_tid ) }:{ js( concat_lines_of( table = lt_vals sep = `,` ) ) }| TO lt_vj.
@@ -366,10 +393,61 @@ CLASS zcl_ai_report_relay IMPLEMENTATION.
         IF to_upper( ls_p-param_id ) = to_upper( lv_tid ).
           CONTINUE.
         ENDIF.
+        DATA(lv_cval) = ``.
         READ TABLE lt_kv INTO DATA(ls_kv) WITH KEY name = to_upper( ls_p-param_id ).
         IF sy-subrc = 0.
+          lv_cval = ls_kv-value.
+        ELSE.
+          DATA(lv_pnorm) = norm_param_key( ls_p-param_id ).
+          DATA(lv_lnorm) = norm_param_key( ls_p-display_label ).
+          LOOP AT lt_kv INTO ls_kv.
+            DATA(lv_kn) = norm_param_key( ls_kv-name ).
+            IF lv_kn IS NOT INITIAL AND ( lv_kn = lv_pnorm OR lv_kn = lv_lnorm )
+               AND ( ls_p-multi_value = abap_true OR ls_kv-value NA ',~' ).
+              lv_cval = ls_kv-value.
+              EXIT.
+            ENDIF.
+          ENDLOOP.
+        ENDIF.
+        IF lv_cval IS INITIAL AND to_upper( ls_p-data_type ) <> 'BOOL' AND to_upper( ls_p-data_type ) <> 'TABLE'.
+          DATA(lv_pnorm2) = norm_param_key( ls_p-param_id ).
+          DATA(lv_lnorm2) = norm_param_key( ls_p-display_label ).
+          LOOP AT ls_src-columns INTO DATA(ls_scol).
+            DATA(lv_ci) = sy-tabix.
+            IF lv_ci = lv_sci.
+              CONTINUE.
+            ENDIF.
+            DATA(lv_cn1) = norm_param_key( ls_scol-name ).
+            DATA(lv_cn2) = norm_param_key( ls_scol-label ).
+            IF ( lv_pnorm2 IS NOT INITIAL AND ( lv_cn1 = lv_pnorm2 OR lv_cn2 = lv_pnorm2 ) )
+               OR ( lv_lnorm2 IS NOT INITIAL AND ( lv_cn1 = lv_lnorm2 OR lv_cn2 = lv_lnorm2 ) ).
+              DATA lv_uval TYPE string.
+              DATA lv_umany TYPE abap_bool.
+              CLEAR: lv_uval, lv_umany.
+              LOOP AT ls_src-rows INTO ls_row.
+                CLEAR lv_cell.
+                READ TABLE ls_row-cells INTO lv_cell INDEX lv_ci.
+                lv_cell = condense( lv_cell ).
+                IF lv_cell IS INITIAL.
+                  CONTINUE.
+                ENDIF.
+                IF lv_uval IS INITIAL.
+                  lv_uval = lv_cell.
+                ELSEIF zcl_ai_combo_service=>norm_key( lv_cell ) <> zcl_ai_combo_service=>norm_key( lv_uval ).
+                  lv_umany = abap_true.
+                  EXIT.
+                ENDIF.
+              ENDLOOP.
+              IF lv_uval IS NOT INITIAL AND lv_umany = abap_false AND lv_uval NA ',|' AND strlen( lv_uval ) <= 60.
+                lv_cval = lv_uval.
+                EXIT.
+              ENDIF.
+            ENDIF.
+          ENDLOOP.
+        ENDIF.
+        IF lv_cval IS NOT INITIAL.
           APPEND VALUE #( key = to_upper( ls_p-param_id ) param = ls_p-param_id
-                          label = ls_p-display_label value = ls_kv-value carried = abap_true ) TO lt_ext.
+                          label = ls_p-display_label value = lv_cval carried = abap_true ) TO lt_ext.
         ENDIF.
       ENDLOOP.
 
@@ -392,6 +470,16 @@ CLASS zcl_ai_report_relay IMPLEMENTATION.
           IF lv_phit = abap_false.
             LOOP AT lt_p INTO ls_p.
               IF to_upper( condense( ls_p-display_label ) ) = lv_pk.
+                lv_phit = abap_true.
+                EXIT.
+              ENDIF.
+            ENDLOOP.
+          ENDIF.
+          IF lv_phit = abap_false.
+            DATA(lv_pkn) = norm_param_key( lv_pk ).
+            LOOP AT lt_p INTO ls_p.
+              IF lv_pkn IS NOT INITIAL
+                 AND ( norm_param_key( ls_p-param_id ) = lv_pkn OR norm_param_key( ls_p-display_label ) = lv_pkn ).
                 lv_phit = abap_true.
                 EXIT.
               ENDIF.

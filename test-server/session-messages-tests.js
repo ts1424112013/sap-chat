@@ -383,7 +383,7 @@ async function test(name, fn) { await fn(); passed++; console.log('  ✅ ' + nam
     assert.ok(e.extraHtml.includes('data-act="all"') && e.extraHtml.includes('120'));
     assert.ok(e.extraHtml.includes('500'));                         // 后端共 500 行
     const small = c._pushReportResult(result, 'RSMALL');
-    assert.ok(!small.extraHtml.includes('data-act="all"'));
+    assert.match(small.extraHtml, /data-act="all">dgFilterView<\/button>/);
   });
   await test('20261028：边跑边看 —— 进度步骤写进条目、文字转义、标题跟着当前步骤；刚完成的一步带动效', () => {
     const c = controller(); activate(c, 'LIVE');
