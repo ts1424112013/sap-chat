@@ -1222,9 +1222,10 @@ console.log('\n[21] 报表接力：REPORT_RELAY V1.0 / ROUTER V1.0.9 / REGISTRY 
   check('browser_model：先校验运行号，模型调用次数原子 +1（超上限 429）且立即提交，再 forward_openai',
     /brun_get\(/.test(bm) && /SET model_calls = model_calls \+ 1/.test(bm) && /model_calls < @lv_max/.test(bm) &&
     bm.indexOf('COMMIT WORK') > bm.indexOf('model_calls + 1') && bm.indexOf('forward_openai') > bm.indexOf('COMMIT WORK') && /ev_code\s+= 429/.test(bm));
-  check('browser_tool：工具必须在运行清单内；参数走 parse_flat_json + validate_args；run_sql 先 describe、次数按运行累计',
+  check('browser_tool：工具必须在运行清单内；参数走 parse_flat_json + validate_args；run_sql 先 describe、次数按运行累计；并发 describe_table 加锁重读 desc_tabs',
     /\|,\{ ls_run-tools \},\| NS \|,\{ lv_tool \},\|/.test(bt) && /parse_flat_json\(/.test(bt) && /validate_args\(/.test(bt) &&
-    /必须先 describe_table/.test(bt) && /SET sql_execs = sql_execs \+ 1/.test(bt) && /zcl_ai_sql_guard=>read_max_exec\( \)/.test(bt));
+    /必须先 describe_table/.test(bt) && /SET sql_execs = sql_execs \+ 1/.test(bt) && /zcl_ai_sql_guard=>read_max_exec\( \)/.test(bt) &&
+    /UPDATE zai_brun SET status = 'RUNNING'[\s\S]*?SELECT SINGLE desc_tabs FROM zai_brun/.test(bt));
   check('browser_finish：只写自己的运行；重复收尾直接返回；问题取 ZAI_BRUN 里存的原文',
     /ls_run-userid <> sy-uname/.test(bf) && /ls_run-status <> 'RUNNING'\.\s*RETURN\./.test(bf) && /iv_question\s+= ls_run-question/.test(bf));
   check('brun_get：归属 / 状态 / 有效期都校验',

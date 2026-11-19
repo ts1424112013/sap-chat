@@ -552,6 +552,16 @@ export function enrichReportCard(card, args, ctx = {}) {
 }
 
 function buildSapTools(client, run, emit, signal, onCard, onDatasets, folderBackend, cardCtx) {
+  // 同一轮并行 describe_table 时串行发给 SAP，避免并发更新 ZAI_BRUN-DESC_TABS 互相覆盖
+  let descQueue = Promise.resolve();
+  const describedTables = new Set();
+  const hasDescribeTool = (run.tools || []).some(x => x && x.name === "describe_table");
+  const runSerializedDesc = fn => {
+    const p = descQueue.then(fn, fn);
+    descQueue = p.catch(() => {});
+    return p;
+  };
+  const NEED_DESC_RE = /必须先\s*describe_table\s*确认表\s*([A-Za-z0-9_\/]+)\s*的字段/;
   // adt_run_sql 由 SAP 下发说明，但在浏览器里经 ADT 执行（见 buildAdtSqlTool），不走 /tools/exec
   return (run.tools || []).filter(t => t && t.name !== ADT_SQL_TOOL).map(t => {
     const schema = t.parameters && typeof t.parameters === "object"
@@ -583,7 +593,8 @@ function buildSapTools(client, run, emit, signal, onCard, onDatasets, folderBack
             args = { ...args, params: { ...extra, ...(args.params && typeof args.params === "object" ? args.params : {}) } };
           }
         }
-        const r = await client.execTool({ runId: run.runId, tool: t.name, args: args || {}, requestId }, { signal });
+        const execOnce = () => client.execTool({ runId: run.runId, tool: t.name, args: args || {}, requestId }, { signal });
+        let r = t.name === "describe_table" ? await runSerializedDesc(execOnce) : await execOnce();
         if (r && r.display) emit({ type: "display", tool: t.name, display: r.display });
         if (r && r.ok === false) {
           const msg = r.message || "未知原因";
@@ -594,8 +605,26 @@ function buildSapTools(client, run, emit, signal, onCard, onDatasets, folderBack
           onCard(enrichReportCard(r.card, args, cardCtx ? cardCtx() : {}));
           return CARD_TOOL_TEXT;
         }
-        const out = clip(r && r.content != null ? r.content : r);
-        const ok = toolOk(out);
+        let out = clip(r && r.content != null ? r.content : r);
+        let ok = toolOk(out);
+        if (t.name === "describe_table" && ok) {
+          const tab = String(args?.table || "").trim().toUpperCase();
+          if (tab) describedTables.add(tab);
+        }
+        if (t.name === "run_sql" && !ok && hasDescribeTool) {
+          for (let retry = 0; retry < 3 && !ok; retry++) {
+            const mNeed = NEED_DESC_RE.exec(out);
+            const needTab = mNeed ? mNeed[1].toUpperCase() : "";
+            if (!needTab || !describedTables.has(needTab)) break;
+            const dr = await runSerializedDesc(() => client.execTool({
+              runId: run.runId, tool: "describe_table", args: { table: needTab }, requestId: rid()
+            }, { signal }));
+            if (!dr || dr.ok === false || !toolOk(clip(dr.content != null ? dr.content : dr))) break;
+            r = await client.execTool({ runId: run.runId, tool: t.name, args: args || {}, requestId: rid() }, { signal });
+            out = clip(r && r.content != null ? r.content : r);
+            ok = toolOk(out);
+          }
+        }
         if (t.name === "read_result" && ok && cardCtx) {
           cardCtx().onReadResult?.(out);
         }
@@ -609,7 +638,10 @@ function buildSapTools(client, run, emit, signal, onCard, onDatasets, folderBack
         const ids = r && Array.isArray(r.datasets) && ok
           ? onDatasets(t.name, r.datasets, config && config.toolCall && config.toolCall.id,
             t.name === "query_result" && r.querySeq > 0 ? { runId: run.runId, querySeq: r.querySeq } : null) : [];
-        const extraHint = !ok ? (QUOTA_RE.test(out) ? QUOTA_HINT : NO_RETRY_RE.test(out) ? NO_RETRY_HINT : "") : "";
+        let extraHint = !ok ? (QUOTA_RE.test(out) ? QUOTA_HINT : NO_RETRY_RE.test(out) ? NO_RETRY_HINT : "") : "";
+        if (!ok && t.name === "run_sql" && NEED_DESC_RE.test(out)) {
+          extraHint += "\n（提示：系统按本次运行单独校验 describe_table 记录，请先调用 describe_table 确认该表，不要原样重试 run_sql。）";
+        }
         return withTableRefs((lint ? out + "\n\n" + lint : out) + extraHint, ids);
       },
       {

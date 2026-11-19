@@ -137,3 +137,70 @@ test("第二张报表参数卡：从上一份报表的查询结果或过程说�
   assert.equal(pending.values.P_WERKS, "ABZ1");
   assert.equal(pending.values.CPN, "A01,A02");
 });
+
+test("同一轮并行 describe_table 串行发送给 SAP，避免覆盖 ZAI_BRUN-DESC_TABS 导致 run_sql 误报未描述", async () => {
+  let step = 0;
+  let inFlight = 0;
+  let maxInFlight = 0;
+  let descTabs = "";
+  const client = {
+    root: "https://sap.test",
+    startRun: async () => ({
+      runId: "desc-serial-test",
+      model: "mock",
+      tools: [
+        { name: "describe_table", description: "看表结构", parameters: { type: "object", properties: { table: { type: "string" } }, required: ["table"] } },
+        { name: "run_sql", description: "查表", parameters: { type: "object", properties: { sql: { type: "string" }, purpose: { type: "string" } }, required: ["sql"] } }
+      ]
+    }),
+    execTool: async ({ tool, args }) => {
+      if (tool === "describe_table") {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        // 模拟旧版 SAP 非原子读写 desc_tabs：并发执行会互相覆盖
+        const snap = descTabs;
+        await new Promise(r => setTimeout(r, 20));
+        descTabs = snap ? `${snap},${args.table}` : args.table;
+        inFlight--;
+        return { ok: true, content: JSON.stringify({ ok: true, table: args.table }) };
+      }
+      const m = /FROM\s+([A-Z0-9_]+)/i.exec(args.sql);
+      const tab = m ? m[1].toUpperCase() : "";
+      if (!`,${descTabs},`.includes(`,${tab},`)) {
+        return { ok: true, content: JSON.stringify({ ok: false, error: `执行 run_sql 前必须先 describe_table 确认表 ${tab} 的字段` }) };
+      }
+      return { ok: true, content: JSON.stringify({ ok: true, rows: 1 }) };
+    },
+    finishRun: async () => {},
+    modelFetch: () => async () => {
+      step++;
+      const message = step === 1
+        ? {
+          role: "assistant",
+          content: "同时查 RESB 和 MSEG 表结构。",
+          tool_calls: [
+            { id: "d1", type: "function", function: { name: "describe_table", arguments: '{"table":"RESB"}' } },
+            { id: "d2", type: "function", function: { name: "describe_table", arguments: '{"table":"MSEG"}' } }
+          ]
+        }
+        : step === 2
+          ? {
+            role: "assistant",
+            content: "查 RESB 和 MSEG。",
+            tool_calls: [
+              { id: "q1", type: "function", function: { name: "run_sql", arguments: '{"sql":"SELECT AUFNR FROM RESB","purpose":"组件需求"}' } },
+              { id: "q2", type: "function", function: { name: "run_sql", arguments: '{"sql":"SELECT AUFNR FROM MSEG","purpose":"发料凭证"}' } }
+            ]
+          }
+          : { role: "assistant", content: "RESB 与 MSEG 均查询成功。" };
+      return Response.json({
+        id: "mock_" + step, object: "chat.completion", model: "mock",
+        choices: [{ index: 0, finish_reason: message.tool_calls ? "tool_calls" : "stop", message }]
+      });
+    }
+  };
+  const res = await run({ question: "看一下工单发料情况", client });
+  assert.equal(maxInFlight, 1);
+  assert.equal(descTabs, "RESB,MSEG");
+  assert.equal(res.answer, "RESB 与 MSEG 均查询成功。");
+});

@@ -4568,6 +4568,33 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
     ls_run-question   = iv_question.
     ls_run-created_at = lv_now.
     ls_run-expires_at = cl_abap_tstmp=>add( tstmp = lv_now secs = lv_ttl * 60 ).
+    " 继承同会话前面轮次已 describe_table 过的表，避免跨轮追问时被误判未描述
+    IF iv_session_id IS NOT INITIAL AND lv_tools_csv CS 'run_sql'.
+      SELECT desc_tabs FROM zai_brun
+        WHERE session_id = @iv_session_id AND userid = @sy-uname
+        ORDER BY created_at DESCENDING
+        INTO TABLE @DATA(lt_prev_desc)
+        UP TO 20 ROWS.
+      DATA lv_init_desc TYPE string.
+      LOOP AT lt_prev_desc INTO DATA(ls_pd).
+        IF ls_pd-desc_tabs IS INITIAL.
+          CONTINUE.
+        ENDIF.
+        SPLIT ls_pd-desc_tabs AT ',' INTO TABLE DATA(lt_ptabs).
+        LOOP AT lt_ptabs INTO DATA(lv_pt).
+          CONDENSE lv_pt NO-GAPS.
+          lv_pt = to_upper( lv_pt ).
+          IF lv_pt IS NOT INITIAL AND |,{ lv_init_desc },| NS |,{ lv_pt },|.
+            DATA(lv_next_desc) = COND string( WHEN lv_init_desc IS INITIAL THEN lv_pt
+                                              ELSE |{ lv_init_desc },{ lv_pt }| ).
+            IF strlen( lv_next_desc ) <= 1000.
+              lv_init_desc = lv_next_desc.
+            ENDIF.
+          ENDIF.
+        ENDLOOP.
+      ENDLOOP.
+      ls_run-desc_tabs = lv_init_desc.
+    ENDIF.
     INSERT zai_brun FROM @ls_run.
     IF sy-subrc <> 0.
       ev_http  = 500.
@@ -5265,13 +5292,22 @@ CLASS zcl_ai_agent_service IMPLEMENTATION.
 
       WHEN zcl_ai_tool_registry=>gc_tool_describe_tab.
         DATA(lv_tab) = to_upper( zcl_ai_agent_guard=>kv_get( it_kv = lt_norm iv_name = 'table' ) ).
+        CONDENSE lv_tab NO-GAPS.
         lv_json = zcl_ai_ddic_tools=>describe_table( iv_tabname = lv_tab ).
-        IF lv_json CS '"ok":true' AND |,{ ls_run-desc_tabs },| NS |,{ lv_tab },|.
-          DATA(lv_tabs) = COND string( WHEN ls_run-desc_tabs IS INITIAL THEN lv_tab
-                                       ELSE |{ ls_run-desc_tabs },{ lv_tab }| ).
-          IF strlen( lv_tabs ) <= 1000.
-            UPDATE zai_brun SET desc_tabs = @lv_tabs WHERE run_id = @ls_run-run_id.
+        IF lv_json CS '"ok":true'.
+          " 并发 describe_table 时先拿本运行行锁再重读 desc_tabs 追加，避免互相覆盖
+          UPDATE zai_brun SET status = 'RUNNING'
+            WHERE run_id = @ls_run-run_id AND status = 'RUNNING'.
+          SELECT SINGLE desc_tabs FROM zai_brun
+            WHERE run_id = @ls_run-run_id INTO @DATA(lv_cur_tabs).
+          IF |,{ lv_cur_tabs },| NS |,{ lv_tab },|.
+            DATA(lv_tabs) = COND string( WHEN lv_cur_tabs IS INITIAL THEN lv_tab
+                                         ELSE |{ lv_cur_tabs },{ lv_tab }| ).
+            IF strlen( lv_tabs ) <= 1000.
+              UPDATE zai_brun SET desc_tabs = @lv_tabs WHERE run_id = @ls_run-run_id.
+            ENDIF.
           ENDIF.
+          COMMIT WORK.
         ENDIF.
 
       WHEN zcl_ai_tool_registry=>gc_tool_run_sql.
